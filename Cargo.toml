@@ -1,0 +1,24 @@
+[package]
+name = "roadmap-viewer"
+version = "0.1.0"
+edition = "2024"
+description = "Fast, local kanban board and markdown reader for roadmap/ directories"
+autobins = false
+
+[[bin]]
+name = "roadmap"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+eframe = "0.36.2"
+egui = "0.36.2"
+egui_commonmark = "0.25.0"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-app-kit = "0.3.2"
+objc2-foundation = "0.3.2"

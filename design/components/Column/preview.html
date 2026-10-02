@@ -1,0 +1,13 @@
+<!-- @dsCard group="Board" height=200 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Column</title></head>
+<body>
+<div class="rv-board" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+<section class="rv-col is-todo"><header class="rv-col__head"><span class="rv-dot"></span><span class="rv-col__title">Todo</span><span class="rv-col__count">1</span><button class="rv-btn rv-btn--ghost rv-btn--icon rv-col__add" aria-label="New ticket in Todo (⌘N)"><svg class="rv-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></header><article class="rv-card"><div class="rv-card__title">AI assist to refine a ticket</div><div class="rv-card__summary">Challenge a ticket before anyone picks it up.</div></article></section>
+<section class="rv-col is-ready"><header class="rv-col__head"><span class="rv-dot"></span><span class="rv-col__title">Ready</span><span class="rv-col__count">1</span></header><article class="rv-card"><div class="rv-card__title">Make the accent colour green</div><div class="rv-card__summary">Refined and queued: first in line for an agent.</div><div class="rv-card__meta">001-make-accent-green.md</div></article></section>
+<section class="rv-col is-doing"><header class="rv-col__head"><span class="rv-dot"></span><span class="rv-col__title">Doing</span><span class="rv-col__count">0</span></header><div class="rv-empty">No tickets in doing/</div></section>
+<section class="rv-col is-done"><header class="rv-col__head"><span class="rv-dot"></span><span class="rv-col__title">Done</span><span class="rv-col__count">3</span></header><article class="rv-card"><div class="rv-card__title">Board and markdown reader</div><div class="rv-card__summary">A kanban board of all tickets, and a reader.</div></article></section>
+</div>
+</body>
+</html>

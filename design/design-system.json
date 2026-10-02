@@ -1,0 +1,25 @@
+{
+ "v": 3,
+ "layout": "files",
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-10-02T14:07:45Z"
+ },
+ "title": "Roadmap Viewer",
+ "namespace": "RoadmapViewer",
+ "libraries": [],
+ "sections": {},
+ "groups": [],
+ "assetGroups": {},
+ "blobs": {},
+ "docs": {
+  "readme": "project/README.md",
+  "sections": []
+ },
+ "lastChange": {
+  "by": "Cl\u00e9ment",
+  "at": "2026-10-02T16:41:25Z",
+  "via": "Claude Code",
+  "note": "Added the Ready column: status-ready token, Ready in the Column, BoardScreen and Cover previews, numbered Ready tickets."
+ }
+}

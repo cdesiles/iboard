@@ -1,0 +1,60 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Roadmap Viewer</title>
+<style>
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--ink); font-family:var(--font-sans); overflow:hidden; }
+  .cover { position:relative; height:288px; overflow:hidden; }
+  .art { position:absolute; top:0; left:480px; width:480px; height:288px; overflow:hidden; }
+  .art svg { display:block; width:480px; height:288px; }
+  .todo { fill:var(--status-todo); }
+  .ready { fill:var(--status-ready); }
+  .doing { fill:var(--status-doing); }
+  .done { fill:var(--status-done); }
+  .acc { fill:var(--accent); }
+  .rev { fill:var(--review); }
+  .card { fill:var(--surface); stroke:var(--line-strong); stroke-width:1; }
+  .cardsel { fill:var(--accent-soft); stroke:var(--accent); stroke-width:2; }
+  .well { fill:var(--surface-sunken); stroke:var(--line-strong); stroke-width:1; stroke-dasharray:4 4; }
+  .words { position:absolute; left:32px; bottom:32px; max-width:440px; }
+  .name { margin:0; font-size:80px; line-height:.95; font-weight:600; letter-spacing:-.02em; color:var(--ink); }
+  .tag { margin:8px 0 0 4px; font-size:14px; line-height:20px; color:var(--ink-muted); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 480 288" width="480" height="288">
+<!--
+  blocks      status-todo, status-ready, status-doing, status-done as four 88-wide column slabs bled off the top (each 88 visible, cards hanging below), accent-soft selected card, one small review tile: ~30% of 960x288
+  arrangement four flush columns at a space-5 gutter, like the board itself, in flow order todo, ready, doing, done; slab heights follow how many tickets each folder holds
+  pattern     geometric, modular, dense UI: card tiles cut by radius-md hanging under each slab at a space-3 gap; the empty doing column shows its dashed well
+  scales      column width 88, gutter space-5 16, slab 96 tall, card 40 tall, gap space-3 8, corners radius-md 6, review tile radius-sm 4
+-->
+<rect class="todo" x="48" y="-8" width="88" height="96" rx="6"/>
+<rect class="cardsel" x="49" y="100" width="86" height="48" rx="6"/>
+<rect class="card" x="48.5" y="156.5" width="87" height="39" rx="6"/>
+<rect class="ready" x="152" y="-8" width="88" height="96" rx="6"/>
+<rect class="card" x="152.5" y="100.5" width="87" height="39" rx="6"/>
+<rect class="card" x="152.5" y="147.5" width="87" height="39" rx="6"/>
+<rect class="doing" x="256" y="-8" width="88" height="96" rx="6"/>
+<rect class="well" x="256.5" y="100.5" width="87" height="63" rx="6"/>
+<rect class="done" x="360" y="-8" width="88" height="96" rx="6"/>
+<rect class="card" x="360.5" y="100.5" width="87" height="39" rx="6"/>
+<rect class="card" x="360.5" y="147.5" width="87" height="39" rx="6"/>
+<rect class="card" x="360.5" y="194.5" width="87" height="39" rx="6"/>
+<rect class="card" x="360.5" y="241.5" width="87" height="39" rx="6"/>
+<rect class="acc" x="48" y="204" width="88" height="8" rx="4"/>
+<rect class="rev" x="112" y="112" width="16" height="16" rx="4"/>
+</svg>
+</div>
+<div class="words">
+<p class="name">Roadmap<br>Viewer</p>
+<p class="tag">Markdown tickets in four folders, read and edited in place.</p>
+</div>
+</div>
+</body>
+</html>
