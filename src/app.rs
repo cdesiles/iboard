@@ -1591,7 +1591,7 @@ impl IboardApp {
             .columns
             .iter()
             .flat_map(|column| column.issues.iter())
-            .filter_map(|issue| issue.label.clone())
+            .flat_map(|issue| issue.labels.iter().cloned())
             .collect();
         self.settings = Some(
             review_settings::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
@@ -3605,10 +3605,10 @@ impl IboardApp {
         let Some(issue) = self.board.find(path) else {
             return;
         };
-        let mut text = issue.markdown.clone();
+        // The title's `[label]` groups show as tags above it, not as text.
+        let (mut text, title_line) = sheet::hide_title_labels(&issue.markdown);
         let modified = issue.modified;
-        let label = issue.label.clone();
-        let label_color = label.as_deref().and_then(|name| self.labels.color(name));
+        let issue_labels = issue.labels.clone();
         let p = theme::palette(ui);
         let (column_name, status, todo_issue) = self
             .column_of(path)
@@ -3674,8 +3674,10 @@ impl IboardApp {
         let mut draft_review = false;
         let mut edit_at_end = false;
         let mut changed = false;
+        let mut label_clicked: Option<String> = None;
         {
             let cache = &mut self.cache;
+            let labels = &self.labels;
             egui::ScrollArea::vertical()
                 .id_salt(("detail", path))
                 .auto_shrink([false, false])
@@ -3691,13 +3693,28 @@ impl IboardApp {
                                 column: &column_name,
                                 status,
                                 path: &relative,
-                                label: label.as_deref(),
-                                label_color,
                                 modified,
                                 checklist: (ticked, tasks),
                                 words,
                             },
                         );
+
+                        // The labels, on their own row between the head and
+                        // the title; a click filters the board by one.
+                        if !issue_labels.is_empty() {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
+                                for name in &issue_labels {
+                                    if widgets::label_pill(ui, name, labels.color(name))
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .on_hover_text(format!("Filter by {name}"))
+                                        .clicked()
+                                    {
+                                        label_clicked = Some(name.clone());
+                                    }
+                                }
+                            });
+                        }
 
                         let body = ui.vertical(|ui| {
                             // The body spans the sheet, so a short issue still
@@ -3800,9 +3817,15 @@ impl IboardApp {
         self.preview_rect = outline;
 
         if changed {
+            if let Some((index, line)) = &title_line {
+                text = sheet::restore_line(&text, *index, line);
+            }
             self.write_issue(path, &text);
         }
-        if let Some(section) = add_section {
+        if let Some(label) = label_clicked {
+            self.filter.pick(&label);
+            self.back_to_board();
+        } else if let Some(section) = add_section {
             self.add_section(path, &section);
         } else if edit_at_end {
             self.start_editing(path);
@@ -4790,15 +4813,15 @@ fn group_issues<'a>(issues: Vec<&'a Issue>) -> Vec<(Option<String>, Vec<&'a Issu
     let mut map: Vec<(String, Vec<&Issue>)> = Vec::new();
     let mut unlabelled: Vec<&Issue> = Vec::new();
     for issue in issues {
-        match issue.label.as_deref() {
-            Some(label) => {
-                let label = label.to_lowercase();
-                match map.iter_mut().find(|(name, _)| *name == label) {
-                    Some((_, group)) => group.push(issue),
-                    None => map.push((label, vec![issue])),
-                }
+        // An issue with two labels shows under both.
+        if issue.labels.is_empty() {
+            unlabelled.push(issue);
+        }
+        for label in &issue.labels {
+            match map.iter_mut().find(|(name, _)| name == label) {
+                Some((_, group)) => group.push(issue),
+                None => map.push((label.clone(), vec![issue])),
             }
-            None => unlabelled.push(issue),
         }
     }
     map.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
@@ -5776,42 +5799,28 @@ fn card_body(
         .show(ui, |ui| {
             ui.set_width(inner);
             ui.spacing_mut().item_spacing.y = if extras.wide { 6.0 } else { theme::SPACE_2 };
-            // The label rides at the right of the title's first line; the
-            // title wraps in what is left, so a long one never shifts it.
-            let mut label_click: Option<(String, Rect, bool)> = None;
-            match &issue.label {
-                Some(label) => {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                            let pill = widgets::label_pill(ui, label, labels.color(label))
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .on_hover_text(format!("Filter by {}", label.to_lowercase()));
-                            label_click = Some((label.clone(), pill.rect, pill.clicked()));
-                            ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                                ui.add(
-                                    egui::Label::new(
-                                        RichText::new(&issue.title)
-                                            .font(theme::ui_strong())
-                                            .color(p.ink),
-                                    )
-                                    .wrap(),
-                                );
-                            });
-                        });
-                    });
-                }
-                None => {
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(&issue.title)
-                                .font(theme::ui_strong())
-                                .color(p.ink),
-                        )
-                        .wrap(),
-                    );
-                }
+            // Labels sit on their own row above the title, 4pt apart and
+            // wrapping; no labels, no row.
+            let mut label_clicks: Vec<(String, Rect, bool)> = Vec::new();
+            if !issue.labels.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
+                    for label in &issue.labels {
+                        let pill = widgets::label_pill(ui, label, labels.color(label))
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(format!("Filter by {label}"));
+                        label_clicks.push((label.clone(), pill.rect, pill.clicked()));
+                    }
+                });
             }
+            ui.add(
+                egui::Label::new(
+                    RichText::new(&issue.title)
+                        .font(theme::ui_strong())
+                        .color(p.ink),
+                )
+                .wrap(),
+            );
             if !issue.summary.is_empty() {
                 let mut job =
                     LayoutJob::simple(issue.summary.clone(), theme::ui_small(), p.ink_muted, inner);
@@ -5926,8 +5935,8 @@ fn card_body(
                 .inner
             });
             let (mut action, mut action_rects) = meta.inner;
-            // The label is its own click target: it filters the board.
-            if let Some((label, rect, clicked)) = label_click {
+            // Each label is its own click target: it filters the board.
+            for (label, rect, clicked) in label_clicks {
                 action_rects.push(rect);
                 if clicked {
                     action = Some(CardAction::FilterLabel(label));
@@ -6114,10 +6123,6 @@ struct SheetHead<'a> {
     column: &'a str,
     status: Color32,
     path: &'a str,
-    /// The issue's label, lowercased, and its colour; `None` when the issue
-    /// carries no label.
-    label: Option<&'a str>,
-    label_color: Option<Color32>,
     modified: Option<std::time::SystemTime>,
     /// `(ticked, total)` checkboxes; with none, the word count shows instead.
     checklist: (usize, usize),
@@ -6146,9 +6151,6 @@ fn sheet_head(ui: &mut egui::Ui, head: SheetHead) {
                         .color(p.ink),
                 );
             });
-            if let Some(label) = head.label {
-                widgets::label_pill(ui, label, head.label_color);
-            }
             ui.add(meta("·".into(), p.ink_faint));
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -6281,9 +6283,10 @@ fn slugify(title: &str) -> String {
 }
 
 /// The file name the composer will write for `title` in `dir`, and whether the
-/// plain slug was taken (so a `-2`, `-3`... suffix was added).
+/// plain slug was taken (so a `-2`, `-3`... suffix was added). The slug leaves
+/// the title's `[label]` groups out.
 fn planned_issue_name(dir: &Path, title: &str) -> (String, bool) {
-    let slug = slugify(title);
+    let slug = slugify(&labels::display_title(title));
     let mut candidate = format!("{slug}.md");
     let mut n = 2;
     while dir.join(&candidate).exists() {
@@ -6583,7 +6586,7 @@ mod tests {
 
         let issue = app.board.find(&file).unwrap();
         assert_eq!(issue.title, "Hey look!");
-        assert_eq!(issue.label.as_deref(), Some("discovery"));
+        assert_eq!(issue.labels, ["discovery"]);
 
         pass(&mut app); // board: chip beside the card title
 
@@ -7602,6 +7605,11 @@ mod tests {
         assert_eq!(
             planned_issue_name(&dir, "Fix it"),
             ("fix-it.md".to_string(), false)
+        );
+        assert_eq!(
+            planned_issue_name(&dir, "[Bug] [UI] Fix it"),
+            ("fix-it.md".to_string(), false),
+            "labels stay out of the file name"
         );
         std::fs::write(dir.join("fix-it.md"), "").unwrap();
         assert_eq!(

@@ -19,10 +19,11 @@ const SUMMARY_LIMIT: usize = 180;
 #[derive(Debug, Clone)]
 pub struct Issue {
     pub path: PathBuf,
-    /// The display title, without a leading `[label]`.
+    /// The display title, without its leading `[label]` groups.
     pub title: String,
-    /// The label parsed from the `# H1`, lowercased. `None` when there is none.
-    pub label: Option<String>,
+    /// The labels: the `# H1`'s leading `[Brackets]`, then the front matter's
+    /// `labels:`, normalized and merged. Empty when there is none.
+    pub labels: Vec<String>,
     pub summary: String,
     /// Full raw markdown, rendered in the detail view.
     pub markdown: String,
@@ -37,7 +38,12 @@ pub struct Issue {
 impl Issue {
     pub fn load(path: &Path) -> std::io::Result<Self> {
         let markdown = fs::read_to_string(path)?;
-        let (title, label, title_line) = extract_title(&markdown, path);
+        let (title, mut labels, title_line) = extract_title(&markdown, path);
+        for name in labels::front_matter_labels(&markdown) {
+            if !labels.contains(&name) {
+                labels.push(name);
+            }
+        }
         let summary = extract_summary(&markdown, title_line);
         let metadata = fs::metadata(path).ok();
         let modified = metadata.as_ref().and_then(|m| m.modified().ok());
@@ -45,7 +51,7 @@ impl Issue {
         Ok(Self {
             path: path.to_path_buf(),
             title,
-            label,
+            labels,
             summary,
             markdown,
             modified,
@@ -74,18 +80,18 @@ impl Issue {
     }
 }
 
-/// Returns the display title, its optional label and the line index it came
-/// from (so the summary can skip that line and avoid repeating it).
-fn extract_title(content: &str, path: &Path) -> (String, Option<String>, Option<usize>) {
-    // Prefer the first level-1 heading. Its leading `[label]`, if any, is
-    // split off before the inline markup is stripped.
+/// Returns the display title, its labels and the line index it came from (so
+/// the summary can skip that line and avoid repeating it).
+fn extract_title(content: &str, path: &Path) -> (String, Vec<String>, Option<usize>) {
+    // Prefer the first level-1 heading. Its leading `[label]` groups are split
+    // off before the inline markup is stripped.
     for (idx, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("# ") {
-            let (label, display) = labels::split_leading_label(rest.trim());
+            let (labels, display) = labels::split_leading_labels(rest.trim());
             let heading = strip_inline(&display);
             if !heading.is_empty() {
-                return (heading, label, Some(idx));
+                return (heading, labels, Some(idx));
             }
         }
     }
@@ -97,10 +103,10 @@ fn extract_title(content: &str, path: &Path) -> (String, Option<String>, Option<
         }
         let cleaned = strip_inline(trimmed.trim_start_matches('#').trim());
         if !cleaned.is_empty() {
-            return (cleaned, None, Some(idx));
+            return (cleaned, Vec::new(), Some(idx));
         }
     }
-    (pretty_stem(path), None, None)
+    (pretty_stem(path), Vec::new(), None)
 }
 
 /// Builds a one-paragraph plain-text summary of the issue body.
@@ -323,7 +329,7 @@ mod tests {
             &PathBuf::from("x.md"),
         );
         assert_eq!(title, "10 — Validate on a real card");
-        assert_eq!(label, None);
+        assert!(label.is_empty());
         assert_eq!(line, Some(0));
         let summary = extract_summary(
             "# 10 — Validate on a real card\n\nNeeds: a card\n- [ ] do it\n",
@@ -339,7 +345,7 @@ mod tests {
             &PathBuf::from("x.md"),
         );
         assert_eq!(title, "Hey look!");
-        assert_eq!(label.as_deref(), Some("discovery"));
+        assert_eq!(label, ["discovery"]);
         assert_eq!(line, Some(0));
         let summary = extract_summary("# [Discovery] Hey look!\n\nThe body.\n", line);
         assert_eq!(summary, "The body.");
@@ -348,11 +354,11 @@ mod tests {
     #[test]
     fn a_mid_heading_bracket_is_not_a_label() {
         // Not a label; the existing inline stripping still drops the brackets
-        // and keeps the words (`split_leading_label` leaves it literal).
+        // and keeps the words (`split_leading_labels` leaves it literal).
         let (title, label, _) =
             extract_title("# Hey [there] you\n\nBody\n", &PathBuf::from("x.md"));
         assert_eq!(title, "Hey there you");
-        assert_eq!(label, None);
+        assert!(label.is_empty());
     }
 
     #[test]
@@ -361,7 +367,7 @@ mod tests {
         let (title, label, line) =
             extract_title(content, &PathBuf::from("2026-08-23-dashboard.md"));
         assert_eq!(title, "console.jokester.fr");
-        assert_eq!(label, None);
+        assert!(label.is_empty());
         assert_eq!(summary_for(content, line), "and build something on top");
     }
 

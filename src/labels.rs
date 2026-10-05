@@ -1,6 +1,6 @@
-//! Issue labels: one bracketed token at the very start of an issue's `# H1`
-//! (`# [Discovery] Hey look!`), shown as a small chip on the board and in the
-//! reader.
+//! Issue labels: the bracketed tokens at the very start of an issue's `# H1`
+//! (`# [Discovery][UI] Hey look!`), plus a front-matter `labels:` list, shown
+//! as small chips on the board and in the reader.
 //!
 //! The name is display data and is lowercased (`discovery`). Its colour is a
 //! user preference: iboard ships a built-in preset, and the `[labels]` table of
@@ -172,21 +172,95 @@ pub fn parse_hex(value: &str) -> Option<Color32> {
     Some(Color32::from_rgb(byte(0)?, byte(2)?, byte(4)?))
 }
 
-/// Splits a leading `[label]` off a level-1 heading, returning the lowercased
-/// label (when present) and the display title. A token that is not at the very
-/// start, an empty `[]`, and a markdown link (`[text](url)`) stay in the title.
-pub fn split_leading_label(heading: &str) -> (Option<String>, String) {
-    let trimmed = heading.trim_start();
-    if let Some(rest) = trimmed.strip_prefix('[')
-        && let Some(end) = rest.find(']')
+/// The longest label kept, in characters.
+const MAX_LABEL_CHARS: usize = 24;
+
+/// A label as iboard shows it: trimmed, lowercased, spaces as hyphens, at most
+/// 24 characters (`[Tech debt]` gives `tech-debt`). `None` when empty.
+pub fn normalize(name: &str) -> Option<String> {
+    let name = name
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
+        .to_lowercase();
+    let name: String = name.chars().take(MAX_LABEL_CHARS).collect();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Splits the leading `[label]` groups off a level-1 heading, returning the
+/// labels (normalized, repeats merged) and the display title. `[Bug] [UI] T`
+/// and `[Bug][UI] T` both give `bug` and `ui`. Brackets later in the title, an
+/// empty `[]` (dropped) and a markdown link (`[text](url)`) end the run.
+pub fn split_leading_labels(heading: &str) -> (Vec<String>, String) {
+    let mut labels: Vec<String> = Vec::new();
+    let mut rest = heading.trim_start();
+    while let Some(inner) = rest.strip_prefix('[')
+        && let Some(end) = inner.find(']')
     {
-        let name = rest[..end].trim();
-        let after = &rest[end + 1..];
-        if !name.is_empty() && !after.starts_with('(') {
-            return (Some(name.to_lowercase()), after.trim_start().to_string());
+        let after = &inner[end + 1..];
+        if after.starts_with('(') {
+            break;
+        }
+        if let Some(name) = normalize(&inner[..end])
+            && !labels.contains(&name)
+        {
+            labels.push(name);
+        }
+        rest = after.trim_start();
+    }
+    (labels, rest.trim().to_string())
+}
+
+/// The `labels:` list of a markdown file's front matter, normalized: either
+/// inline (`labels: [bug, ui]`) or one `- item` per line.
+pub fn front_matter_labels(markdown: &str) -> Vec<String> {
+    let mut lines = markdown.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return Vec::new();
+    }
+    let mut labels: Vec<String> = Vec::new();
+    let mut push = |raw: &str| {
+        let raw = raw.trim().trim_matches(['"', '\'']);
+        if let Some(name) = normalize(raw)
+            && !labels.contains(&name)
+        {
+            labels.push(name);
+        }
+    };
+    let mut in_list = false;
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed == "---" {
+            break;
+        }
+        if in_list {
+            if let Some(item) = trimmed.strip_prefix("- ") {
+                push(item);
+                continue;
+            }
+            in_list = false;
+        }
+        if let Some(value) = trimmed.strip_prefix("labels:") {
+            let value = value.trim();
+            if value.is_empty() {
+                in_list = true;
+            } else {
+                for item in value
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .split(',')
+                {
+                    push(item);
+                }
+            }
         }
     }
-    (None, heading.trim().to_string())
+    labels
+}
+
+/// The display title of a heading: without its leading `[label]` groups.
+pub fn display_title(heading: &str) -> String {
+    split_leading_labels(heading).1
 }
 
 #[cfg(test)]
@@ -195,32 +269,70 @@ mod tests {
 
     #[test]
     fn a_leading_bracket_is_the_label() {
-        let (label, title) = split_leading_label("[Discovery] Hey look!");
-        assert_eq!(label.as_deref(), Some("discovery"));
+        let (labels, title) = split_leading_labels("[Discovery] Hey look!");
+        assert_eq!(labels, ["discovery"]);
         assert_eq!(title, "Hey look!");
     }
 
     #[test]
     fn the_label_is_case_insensitive_and_lowercased() {
-        let (label, title) = split_leading_label("[BUG] Fix the crash");
-        assert_eq!(label.as_deref(), Some("bug"));
+        let (labels, title) = split_leading_labels("[BUG] Fix the crash");
+        assert_eq!(labels, ["bug"]);
         assert_eq!(title, "Fix the crash");
     }
 
     #[test]
-    fn only_the_first_bracket_counts() {
-        let (label, title) = split_leading_label("Hey [there]");
-        assert_eq!(label, None);
+    fn every_leading_bracket_counts_and_later_ones_stay() {
+        let (labels, title) = split_leading_labels("Hey [there]");
+        assert!(labels.is_empty());
         assert_eq!(title, "Hey [there]");
-        let (label, title) = split_leading_label("[x][y] nested");
-        assert_eq!(label.as_deref(), Some("x"));
-        assert_eq!(title, "[y] nested");
+        assert_eq!(
+            split_leading_labels("[Bug] [UI] Title"),
+            (
+                vec!["bug".to_string(), "ui".to_string()],
+                "Title".to_string()
+            )
+        );
+        assert_eq!(
+            split_leading_labels("[Bug][UI][bug] Support [WIP] markers"),
+            (
+                vec!["bug".to_string(), "ui".to_string()],
+                "Support [WIP] markers".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn labels_are_hyphenated_and_capped() {
+        assert_eq!(split_leading_labels("[Tech debt] x").0, ["tech-debt"]);
+        let long = split_leading_labels("[abcdefghijklmnopqrstuvwxyz] x").0;
+        assert_eq!(long, ["abcdefghijklmnopqrstuvwx"]);
     }
 
     #[test]
     fn empty_brackets_and_links_are_not_labels() {
-        assert_eq!(split_leading_label("[] nothing").0, None);
-        assert_eq!(split_leading_label("[home](https://x)").0, None);
+        assert_eq!(
+            split_leading_labels("[] nothing"),
+            (vec![], "nothing".to_string())
+        );
+        assert!(split_leading_labels("[home](https://x)").0.is_empty());
+        assert_eq!(
+            display_title("[home](https://x) page"),
+            "[home](https://x) page"
+        );
+    }
+
+    #[test]
+    fn front_matter_labels_read_inline_and_block_lists() {
+        assert_eq!(
+            front_matter_labels("---\nlabels: [Bug, \"tech debt\"]\n---\n# T\n"),
+            ["bug", "tech-debt"]
+        );
+        assert_eq!(
+            front_matter_labels("---\ntitle: x\nlabels:\n  - ui\n  - ops\nowner: me\n---\n"),
+            ["ui", "ops"]
+        );
+        assert!(front_matter_labels("# T\nlabels: [bug]\n").is_empty());
     }
 
     #[test]
