@@ -177,7 +177,7 @@ enum CardAction {
 struct CardExtras<'a> {
     review_pill: Option<(&'a str, Color32)>,
     review_button: bool,
-    /// In a widened column: show more of the description.
+    /// In ColumnFocus: show more of the description.
     wide: bool,
     /// The reader's standard sections, for the wide card's facts row.
     sections: &'a [String],
@@ -327,9 +327,8 @@ struct ColumnActions {
     review: Option<PathBuf>,
     /// A card's verdict pill was clicked.
     show_review: Option<PathBuf>,
-    /// The column was double-clicked: widen it, or put it back.
-    toggle_wide: bool,
-    /// The column title was clicked: expand it to the whole window.
+    /// The column title was clicked, or the column double-clicked: expand it
+    /// to the whole window.
     focus_column: Option<PathBuf>,
     /// "Archive all" at the foot of Done: these issues.
     archive_all: Vec<PathBuf>,
@@ -609,8 +608,6 @@ pub struct IboardApp {
     /// The last finished review of each issue this session, behind the
     /// card's verdict pill.
     past_reviews: HashMap<PathBuf, PastReview>,
-    /// The column widened by a double-click, by folder.
-    wide_column: Option<PathBuf>,
     /// The column expanded to the whole window (ColumnFocus), by folder.
     focused_column: Option<PathBuf>,
     /// ColumnFocus's sort per folder, remembered for the session.
@@ -722,7 +719,6 @@ impl IboardApp {
             confirm_delete: true,
             undo: None,
             past_reviews: HashMap::new(),
-            wide_column: None,
             focused_column: None,
             column_sorts: HashMap::new(),
             group_by_label: false,
@@ -3284,13 +3280,6 @@ impl IboardApp {
         let count = self.board.columns.len() as f32;
         let available = ui.available_width() - 2.0 * gutter - (count - 1.0) * gutter;
         let width = (available / count).clamp(theme::COLUMN_MIN, theme::COLUMN_MAX);
-        // A double-clicked column takes the room the others give up.
-        let wide_column = self
-            .wide_column
-            .clone()
-            .filter(|dir| self.board.columns.iter().any(|c| &c.dir == dir));
-        let narrow = theme::COLUMN_MIN;
-        let wide_width = (available - (count - 1.0) * narrow).max(WIDE_COLUMN_MIN.max(width));
         let height = (ui.available_height() - 2.0 * gutter).max(120.0);
         let filter = &self.filter;
         let labels = &self.labels;
@@ -3317,7 +3306,6 @@ impl IboardApp {
         let mut filter_label: Option<String> = None;
         let mut review: Option<PathBuf> = None;
         let mut show_review: Option<PathBuf> = None;
-        let mut toggle_wide: Option<PathBuf> = None;
         let mut focus_column: Option<PathBuf> = None;
         let mut archive_all: Vec<PathBuf> = Vec::new();
 
@@ -3337,12 +3325,6 @@ impl IboardApp {
                         } else {
                             None
                         };
-                        let wide = wide_column.as_ref() == Some(&column.dir);
-                        let width = match &wide_column {
-                            Some(_) if wide => wide_width,
-                            Some(_) => narrow,
-                            None => width,
-                        };
                         let view = ColumnView {
                             column,
                             index,
@@ -3356,8 +3338,6 @@ impl IboardApp {
                             labels,
                             past_reviews: &self.past_reviews,
                             can_review: self.agent.configured(),
-                            wide,
-                            sections: &self.board.reader_sections,
                         };
                         let actions = column_ui(ui, &view, composer);
                         if let Some(found) = actions.clicked {
@@ -3384,9 +3364,6 @@ impl IboardApp {
                         }
                         if show_review.is_none() {
                             show_review = actions.show_review;
-                        }
-                        if actions.toggle_wide {
-                            toggle_wide = Some(column.dir.clone());
                         }
                         if focus_column.is_none() {
                             focus_column = actions.focus_column;
@@ -3422,13 +3399,6 @@ impl IboardApp {
         }
         if let Some(label) = filter_label {
             self.filter.pick(&label);
-        }
-        if let Some(dir) = toggle_wide {
-            self.wide_column = if self.wide_column.as_ref() == Some(&dir) {
-                None
-            } else {
-                Some(dir)
-            };
         }
         if let Some(dir) = focus_column {
             self.focus_column(dir);
@@ -4260,10 +4230,6 @@ struct ColumnView<'a> {
     past_reviews: &'a HashMap<PathBuf, PastReview>,
     /// An agent is set up, so the selected Todo card offers Review.
     can_review: bool,
-    /// Widened by a double-click.
-    wide: bool,
-    /// The reader's standard sections, for a wide card's facts row.
-    sections: &'a [String],
 }
 
 /// The status color of a column, from its folder's role.
@@ -4351,8 +4317,6 @@ fn column_ui(
         labels,
         past_reviews,
         can_review,
-        wide,
-        sections,
     } = *view;
     let p = theme::palette(ui);
     let mut actions = ColumnActions::default();
@@ -4372,14 +4336,14 @@ fn column_ui(
     let origin = ui.cursor().min;
     let drop_rect = Rect::from_min_size(origin, Vec2::new(width, height));
     // A double-click on the column (its header or empty space; cards take
-    // their own clicks) widens it, or puts it back.
+    // their own clicks) expands it to the whole window, like its title.
     let drop_response = ui.interact(
         drop_rect,
         egui::Id::new(("column_drop", index)),
         Sense::click(),
     );
     if drop_response.double_clicked() {
-        actions.toggle_wide = true;
+        actions.focus_column = Some(column.dir.clone());
     }
 
     ui.allocate_ui_with_layout(
@@ -4476,8 +4440,7 @@ fn column_ui(
                             review_button: can_review
                                 && column.accepts_new_issues()
                                 && matches!(look, CardLook::Selected { .. }),
-                            wide,
-                            sections,
+                            ..CardExtras::default()
                         };
                         let (action, rect) = issue_card(ui, issue, width, look, labels, extras);
                         cards.push((issue.path.clone(), rect));
@@ -5973,8 +5936,6 @@ fn page_column<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) ->
     result
 }
 
-/// Narrowest a double-clicked column gets, even on a small window.
-const WIDE_COLUMN_MIN: f32 = 640.0;
 
 /// Height of a ghost tile in the "Not written yet" block.
 const GHOST_TILE_H: f32 = 72.0;
@@ -8102,7 +8063,7 @@ mod tests {
     }
 
     #[test]
-    fn archive_all_clears_done_and_a_wide_column_draws() {
+    fn archive_all_clears_done() {
         let dir = scratch_dir("archive-all");
         let done = dir.join("issues/done");
         std::fs::create_dir_all(&done).unwrap();
@@ -8112,18 +8073,6 @@ mod tests {
         std::fs::write(&a, "# A\n").unwrap();
         std::fs::write(&b, "# B\n").unwrap();
         let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-
-        // The board draws with Done widened.
-        app.wide_column = Some(done.clone());
-        let ctx = themed_ctx();
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1280.0, 800.0),
-            )),
-            ..Default::default()
-        };
-        ctx.run_ui(input, |ui| app.draw(ui)).textures_delta.clear();
 
         app.archive_all(&[a.clone(), b.clone()]);
         assert!(!a.exists() && !b.exists());
