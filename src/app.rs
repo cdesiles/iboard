@@ -3094,6 +3094,9 @@ impl IboardApp {
                         );
 
                         let body = ui.vertical(|ui| {
+                            // The body spans the sheet, so a short issue still
+                            // gets an outline wide enough for its legend.
+                            ui.set_min_width(ui.available_width());
                             // Reading sizes: `read-body` 14, `read-h1` 20.
                             let styles = &mut ui.style_mut().text_styles;
                             styles.insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
