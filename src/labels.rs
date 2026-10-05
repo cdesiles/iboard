@@ -6,7 +6,8 @@
 //! user preference: iboard ships a built-in preset, and the `[labels]` table of
 //! the user configuration (`~/.config/iboard/iboard.toml`) overrides or adds a
 //! `name = "#rrggbb"` mapping. The raw issue file is never rewritten for a
-//! label; only the derived display title drops it.
+//! label; only the derived display title drops it. An empty value
+//! (`bug = ""`) removes a preset.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -61,6 +62,11 @@ impl Labels {
             if name.is_empty() {
                 continue;
             }
+            // An empty colour removes the label, presets included.
+            if value.trim().is_empty() {
+                labels.colors.remove(&name);
+                continue;
+            }
             match parse_hex(&value) {
                 Some(color) => {
                     labels.colors.insert(name, color);
@@ -102,7 +108,8 @@ impl Labels {
 }
 
 /// Writes the `[labels]` table: only what differs from the presets, so a
-/// preset later improved by iboard still reaches labels left untouched.
+/// preset later improved by iboard still reaches labels left untouched. A
+/// preset missing from `entries` was removed and is written as `name = ""`.
 /// Keeps the file's other sections.
 pub fn save(file: &Path, entries: &[(String, String)]) -> Result<(), String> {
     let mut table = toml::map::Map::new();
@@ -116,6 +123,14 @@ pub fn save(file: &Path, entries: &[(String, String)]) -> Result<(), String> {
             continue;
         }
         table.insert(name, toml::Value::String(hex));
+    }
+    for (preset, _) in PRESETS {
+        let kept = entries.iter().any(|(name, hex)| {
+            name.trim().eq_ignore_ascii_case(preset) && parse_hex(hex).is_some()
+        });
+        if !kept {
+            table.insert(preset.to_string(), toml::Value::String(String::new()));
+        }
     }
     let parent = file
         .parent()
@@ -276,6 +291,10 @@ mod tests {
         let labels = Labels::load(Some(&file));
         assert_eq!(labels.color("feature"), parse_hex("#123456"));
         assert_eq!(labels.color("bug"), parse_hex("#b12f22"));
+        // The presets left out of `entries` were removed and stay removed.
+        assert!(text.contains("chore = \"\""), "{text}");
+        assert_eq!(labels.color("chore"), None);
+        assert_eq!(labels.color("discovery"), None);
         std::fs::remove_dir_all(&dir).ok();
     }
 }
