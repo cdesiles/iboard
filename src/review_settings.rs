@@ -951,7 +951,7 @@ impl Dialog {
                         (Engine::Agent, Availability::Ready) => {
                             Some((self.form.label(), p.status_done))
                         }
-                        (Engine::Off, _) => None,
+                        (Engine::Manual, _) => None,
                         (_, Availability::Unavailable { state, fixable, .. }) => Some((
                             state.to_string(),
                             if *fixable {
@@ -1285,7 +1285,7 @@ mod tests {
 
     #[test]
     fn the_model_menu_lists_default_then_favorites_then_all() {
-        let dialog = Dialog::new(&AgentConfig::default(), Engine::Off, true, Tab::Review);
+        let dialog = Dialog::new(&AgentConfig::default(), Engine::Manual, true, Tab::Review);
         let models = models(&[("a/one", false), ("b/two", true)]);
         let rows: Vec<(String, bool)> = dialog
             .model_rows(Some(&models))
@@ -1305,7 +1305,7 @@ mod tests {
 
     #[test]
     fn the_filter_narrows_models_but_keeps_default() {
-        let mut dialog = Dialog::new(&AgentConfig::default(), Engine::Off, true, Tab::Review);
+        let mut dialog = Dialog::new(&AgentConfig::default(), Engine::Manual, true, Tab::Review);
         dialog.filter = "ONE".into();
         let models = models(&[("a/one", false), ("b/two", true)]);
         let values: Vec<String> = dialog
@@ -1324,7 +1324,7 @@ mod tests {
                 model: "a/one".into(),
                 ..AgentConfig::default()
             },
-            Engine::Off,
+            Engine::Manual,
             true,
             Tab::Review,
         );
@@ -1346,7 +1346,7 @@ mod tests {
                 command: "llm -m {model}".into(),
                 ..AgentConfig::default()
             },
-            Engine::Off,
+            Engine::Manual,
             true,
             Tab::Review,
         );
@@ -1377,7 +1377,7 @@ mod tests {
                         tool,
                         ..AgentConfig::default()
                     },
-                    Engine::Off,
+                    Engine::Manual,
                     true,
                     Tab::Review,
                 );

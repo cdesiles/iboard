@@ -711,7 +711,7 @@ impl IboardApp {
             filter: Filter::default(),
             focus_filter: false,
             suggestions: filter::load_suggestions(None),
-            title_engine: Engine::Off,
+            title_engine: Engine::Manual,
             settings_tab: review_settings::Tab::General,
             chip_cursor: None,
             filter_open: false,
@@ -1617,7 +1617,7 @@ impl IboardApp {
         // Checked on every open: Apple Intelligence or an agent may have been
         // set up meanwhile.
         let engine = Some(self.title_engine).filter(|engine| {
-            *engine != Engine::Off && titles::availability(*engine, &self.agent).is_ready()
+            *engine != Engine::Manual && titles::availability(*engine, &self.agent).is_ready()
         });
         if let Some(engine) = engine {
             titles::prewarm(engine);
@@ -5232,7 +5232,12 @@ fn composer_ui(
             let (row, _) = ui.allocate_exact_size(Vec2::new(width, 22.0), Sense::hover());
             let rule_y = row.max.y - 0.5;
             let rule = [Pos2::new(row.min.x, rule_y), Pos2::new(row.max.x, rule_y)];
-            match (composer.stage, composer.engine) {
+            // A title typed by hand is Manual, whatever the engine: `↩` won't
+            // infer one.
+            let manual =
+                composer.stage != TitleStage::Inferred && !composer.title.trim().is_empty();
+            let engine = if manual { None } else { composer.engine };
+            match (composer.stage, engine) {
                 (TitleStage::Failed | TitleStage::Skipped, _) => {
                     ui.painter()
                         .line_segment(rule, Stroke::new(1.0, p.status_doing));
@@ -5255,11 +5260,11 @@ fn composer_ui(
                     .layout(Layout::right_to_left(Align::Center)),
             );
             row_ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-            let (tag, inferred) = match (composer.stage, composer.engine) {
+            let (tag, inferred) = match (composer.stage, engine) {
                 (TitleStage::Inferred, _) => (Some("Inferred"), true),
                 (TitleStage::Failed | TitleStage::Skipped, _) => (None, false),
                 (_, Some(engine)) => (Some(engine.tag()), false),
-                (_, None) => (Some(Engine::Off.tag()), false),
+                (_, None) => (Some(Engine::Manual.tag()), false),
             };
             if let Some(tag) = tag {
                 let response = widgets::tag(&mut row_ui, tag, inferred);
