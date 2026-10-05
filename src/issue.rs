@@ -1,4 +1,4 @@
-//! A single roadmap ticket (one markdown file) and the heuristics used to
+//! A single issue (one markdown file) and the heuristics used to
 //! derive a display title and a short summary from it.
 //!
 //! Templates are intentionally inconsistent across projects, so nothing here is
@@ -11,30 +11,36 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Local};
 
+use crate::labels;
+
 /// Maximum number of characters shown in a card summary (before the ellipsis).
 const SUMMARY_LIMIT: usize = 180;
 
 #[derive(Debug, Clone)]
-pub struct Ticket {
+pub struct Issue {
     pub path: PathBuf,
+    /// The display title, without a leading `[label]`.
     pub title: String,
+    /// The label parsed from the `# H1`, lowercased. `None` when there is none.
+    pub label: Option<String>,
     pub summary: String,
     /// Full raw markdown, rendered in the detail view.
     pub markdown: String,
     pub modified: Option<SystemTime>,
-    /// When the ticket was done; only set in the Done column.
+    /// When the issue was done; only set in the Done column.
     pub done_at: Option<DateTime<Local>>,
 }
 
-impl Ticket {
+impl Issue {
     pub fn load(path: &Path) -> std::io::Result<Self> {
         let markdown = fs::read_to_string(path)?;
-        let (title, title_line) = extract_title(&markdown, path);
+        let (title, label, title_line) = extract_title(&markdown, path);
         let summary = extract_summary(&markdown, title_line);
         let modified = fs::metadata(path).and_then(|m| m.modified()).ok();
         Ok(Self {
             path: path.to_path_buf(),
             title,
+            label,
             summary,
             markdown,
             modified,
@@ -62,16 +68,18 @@ impl Ticket {
     }
 }
 
-/// Returns the display title and the line index it came from (so the summary
-/// can skip that line and avoid repeating it).
-fn extract_title(content: &str, path: &Path) -> (String, Option<usize>) {
-    // Prefer the first level-1 heading.
+/// Returns the display title, its optional label and the line index it came
+/// from (so the summary can skip that line and avoid repeating it).
+fn extract_title(content: &str, path: &Path) -> (String, Option<String>, Option<usize>) {
+    // Prefer the first level-1 heading. Its leading `[label]`, if any, is
+    // split off before the inline markup is stripped.
     for (idx, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("# ") {
-            let heading = strip_inline(rest.trim());
+            let (label, display) = labels::split_leading_label(rest.trim());
+            let heading = strip_inline(&display);
             if !heading.is_empty() {
-                return (heading, Some(idx));
+                return (heading, label, Some(idx));
             }
         }
     }
@@ -83,13 +91,13 @@ fn extract_title(content: &str, path: &Path) -> (String, Option<usize>) {
         }
         let cleaned = strip_inline(trimmed.trim_start_matches('#').trim());
         if !cleaned.is_empty() {
-            return (cleaned, Some(idx));
+            return (cleaned, None, Some(idx));
         }
     }
-    (pretty_stem(path), None)
+    (pretty_stem(path), None, None)
 }
 
-/// Builds a one-paragraph plain-text summary of the ticket body.
+/// Builds a one-paragraph plain-text summary of the issue body.
 fn extract_summary(content: &str, title_line: Option<usize>) -> String {
     let start = title_line.map(|i| i + 1).unwrap_or(0);
     let mut out = String::new();
@@ -304,11 +312,12 @@ mod tests {
 
     #[test]
     fn heading_wins_over_first_line() {
-        let (title, line) = extract_title(
+        let (title, label, line) = extract_title(
             "# 10 — Validate on a real card\n\nNeeds: a card\n",
             &PathBuf::from("x.md"),
         );
         assert_eq!(title, "10 — Validate on a real card");
+        assert_eq!(label, None);
         assert_eq!(line, Some(0));
         let summary = extract_summary(
             "# 10 — Validate on a real card\n\nNeeds: a card\n- [ ] do it\n",
@@ -318,16 +327,41 @@ mod tests {
     }
 
     #[test]
+    fn a_leading_label_is_split_off_the_heading() {
+        let (title, label, line) = extract_title(
+            "# [Discovery] Hey look!\n\nThe body.\n",
+            &PathBuf::from("x.md"),
+        );
+        assert_eq!(title, "Hey look!");
+        assert_eq!(label.as_deref(), Some("discovery"));
+        assert_eq!(line, Some(0));
+        let summary = extract_summary("# [Discovery] Hey look!\n\nThe body.\n", line);
+        assert_eq!(summary, "The body.");
+    }
+
+    #[test]
+    fn a_mid_heading_bracket_is_not_a_label() {
+        // Not a label; the existing inline stripping still drops the brackets
+        // and keeps the words (`split_leading_label` leaves it literal).
+        let (title, label, _) =
+            extract_title("# Hey [there] you\n\nBody\n", &PathBuf::from("x.md"));
+        assert_eq!(title, "Hey there you");
+        assert_eq!(label, None);
+    }
+
+    #[test]
     fn plain_text_falls_back_to_first_line() {
         let content = "console.jokester.fr\nand build something on top\n";
-        let (title, line) = extract_title(content, &PathBuf::from("2026-08-23-dashboard.md"));
+        let (title, label, line) =
+            extract_title(content, &PathBuf::from("2026-08-23-dashboard.md"));
         assert_eq!(title, "console.jokester.fr");
+        assert_eq!(label, None);
         assert_eq!(summary_for(content, line), "and build something on top");
     }
 
     #[test]
     fn filename_fallback_is_pretty() {
-        let (title, _) = extract_title("", &PathBuf::from("2026-05-29-merge-nut-exporter.md"));
+        let (title, _, _) = extract_title("", &PathBuf::from("2026-05-29-merge-nut-exporter.md"));
         assert_eq!(title, "Merge nut exporter");
     }
 

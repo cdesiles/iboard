@@ -1,4 +1,4 @@
-//! The Roadmap Viewer design system mapped onto egui.
+//! The iboard design system mapped onto egui.
 //!
 //! Tokens come from `design/tokens.json` (the brand book is `design/README.md`).
 //! Sizes are points, which map 1:1 to egui points. egui has no font weights, so
@@ -37,8 +37,19 @@ pub struct Palette {
     pub status_ready: Color32,
     pub status_doing: Color32,
     pub status_done: Color32,
-    /// Write failures, conflicting file on disk.
+    /// The AI review button and the Challenge verdict. Reserved: nothing else
+    /// uses this hue.
+    pub review: Color32,
+    /// Review panel header fill and the pending-review card flag.
+    pub review_soft: Color32,
+    /// Write failures, conflicting file on disk, the Delete drop zone.
     pub danger: Color32,
+    /// The Delete drop zone while a card is over it.
+    pub danger_soft: Color32,
+    /// Label on the `danger`-filled Delete button.
+    pub on_danger: Color32,
+    /// Dims the board behind a modal confirmation.
+    pub scrim: Color32,
     pub popover_shadow: Color32,
 }
 
@@ -63,7 +74,12 @@ pub const LIGHT: Palette = Palette {
     status_ready: hex(0x0f6e78),
     status_doing: hex(0xa04f00),
     status_done: hex(0x1d7347),
+    review: hex(0x7a3fd1),
+    review_soft: hex(0xf1ebfc),
     danger: hex(0xb42318),
+    danger_soft: hex(0xfdecea),
+    on_danger: hex(0xffffff),
+    scrim: Color32::from_rgba_premultiplied(7, 8, 9, 82),
     popover_shadow: Color32::from_rgba_premultiplied(3, 3, 3, 31),
 };
 
@@ -84,7 +100,12 @@ pub const DARK: Palette = Palette {
     status_ready: hex(0x4fc4cf),
     status_doing: hex(0xeda24a),
     status_done: hex(0x5fc98e),
+    review: hex(0xb79cff),
+    review_soft: hex(0x2a2245),
     danger: hex(0xff8a7a),
+    danger_soft: hex(0x3d1a17),
+    on_danger: hex(0x3a0d08),
+    scrim: Color32::from_rgba_premultiplied(0, 0, 0, 140),
     popover_shadow: Color32::from_rgba_premultiplied(0, 0, 0, 128),
 };
 
@@ -95,6 +116,38 @@ pub fn palette(ui: &egui::Ui) -> &'static Palette {
     } else {
         &LIGHT
     }
+}
+
+/// The relative luminance of a colour (WCAG 2.x), 0 (black) to 1 (white).
+pub fn luminance(color: Color32) -> f32 {
+    let channel = |value: u8| {
+        let c = value as f32 / 255.0;
+        if c <= 0.03928 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(color.r()) + 0.7152 * channel(color.g()) + 0.0722 * channel(color.b())
+}
+
+/// The WCAG contrast ratio between two colours, 1 (identical) to 21.
+pub fn contrast_ratio(a: Color32, b: Color32) -> f32 {
+    let (la, lb) = (luminance(a), luminance(b));
+    let (hi, lo) = if la >= lb { (la, lb) } else { (lb, la) };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+/// Blends `color` into `base`, keeping mostly `base`: a soft tint of a label
+/// colour that reads as a chip fill in the current theme.
+pub fn tint(color: Color32, base: Color32) -> Color32 {
+    let keep = if luminance(base) < 0.5 { 0.80 } else { 0.86 };
+    let lerp = |a: u8, b: u8| (a as f32 * (1.0 - keep) + b as f32 * keep).round() as u8;
+    Color32::from_rgb(
+        lerp(color.r(), base.r()),
+        lerp(color.g(), base.g()),
+        lerp(color.b(), base.b()),
+    )
 }
 
 // Spacing (`space-*`), radii and fixed sizes.
@@ -157,7 +210,7 @@ pub const LABEL_TRACKING: f32 = 0.66;
 pub fn meta() -> FontId {
     FontId::new(11.0, family(MONO_MEDIUM))
 }
-/// `read-h1`: the ticket title in the reader.
+/// `read-h1`: the issue title in the reader.
 pub fn read_h1() -> FontId {
     FontId::new(20.0, family(SANS_SEMIBOLD))
 }
@@ -322,10 +375,20 @@ pub enum Icon {
     Edit,
     /// The back chevron, pointing left.
     Back,
-    /// A waste basket: delete a ticket for good.
+    /// A waste basket: delete an issue for good.
     Trash,
-    /// A lidded box: move a done ticket to `.archive`.
+    /// A lidded box: move a done issue to `.archive`.
     Archive,
+    /// A small down chevron, marking a control that opens a menu.
+    ChevronDown,
+    /// A speech bubble with a question mark: ask an agent to review.
+    Review,
+    /// A cross: close a dialog.
+    Close,
+    /// A tick: the chosen option of a select menu.
+    Check,
+    /// A magnifier: the board filter.
+    Search,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -407,6 +470,47 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
                 stroke,
             );
             painter.line_segment([at(10.0, 12.0), at(14.0, 12.0)], stroke);
+        }
+        Icon::Close => {
+            painter.line_segment([at(18.0, 6.0), at(6.0, 18.0)], stroke);
+            painter.line_segment([at(6.0, 6.0), at(18.0, 18.0)], stroke);
+        }
+        Icon::Check => {
+            painter.line(vec![at(20.0, 6.0), at(9.0, 17.0), at(4.0, 12.0)], stroke);
+        }
+        Icon::Search => {
+            painter.circle_stroke(at(11.0, 11.0), 7.0 * s, stroke);
+            painter.line_segment([at(20.0, 20.0), at(16.0, 16.0)], stroke);
+        }
+        Icon::ChevronDown => {
+            painter.line(vec![at(6.0, 9.5), at(12.0, 15.0), at(18.0, 9.5)], stroke);
+        }
+        Icon::Review => {
+            // A speech bubble (Lucide's message-circle-question): a circle
+            // with a tail at the lower left, and a question mark inside.
+            let center = at(11.5, 11.0);
+            let radius = 7.6 * s;
+            let bubble: Vec<Pos2> = (0..=40)
+                .map(|i| {
+                    let turn = std::f32::consts::TAU * (i as f32 / 40.0);
+                    center + radius * Vec2::new(turn.cos(), turn.sin())
+                })
+                .collect();
+            painter.line(bubble, stroke);
+            painter.line(vec![at(5.4, 16.6), at(3.6, 20.6), at(8.4, 19.2)], stroke);
+            painter.line(
+                vec![
+                    at(9.6, 9.4),
+                    at(10.2, 8.2),
+                    at(11.8, 7.8),
+                    at(13.4, 8.6),
+                    at(13.5, 10.2),
+                    at(11.8, 11.3),
+                    at(11.7, 12.6),
+                ],
+                stroke,
+            );
+            painter.circle_filled(at(11.7, 15.0), 1.0 * s, color);
         }
     }
 }

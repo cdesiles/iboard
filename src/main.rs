@@ -1,14 +1,23 @@
-//! roadmap-viewer: a fast, local kanban board + markdown reader for the
-//! `roadmap/` directories used across projects.
+//! iboard: a fast, local kanban board + markdown reader for the
+//! `issues/` directories used across projects.
 
+mod agent;
 mod app;
 mod config;
+mod dialog;
 mod discovery;
+mod filter;
+mod general;
 mod history;
+mod issue;
+mod labels;
 #[cfg(target_os = "macos")]
 mod menu;
+mod recents;
+mod review_settings;
+mod sheet;
 mod theme;
-mod ticket;
+mod titles;
 mod widgets;
 
 use std::path::PathBuf;
@@ -18,6 +27,7 @@ use eframe::egui;
 fn main() -> eframe::Result {
     let mut path: Option<PathBuf> = None;
     let mut list = false;
+    let mut init = false;
 
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
@@ -29,9 +39,10 @@ fn main() -> eframe::Result {
                 println!("{} {}", env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
+            "init" => init = true,
             "-l" | "--list" | "--print" => list = true,
             other if other.starts_with('-') => {
-                eprintln!("roadmap-viewer: unknown option `{other}`\n");
+                eprintln!("iboard: unknown option `{other}`\n");
                 print_help();
                 std::process::exit(2);
             }
@@ -43,51 +54,57 @@ fn main() -> eframe::Result {
         Some(path) => path,
         None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
     };
-    // Normalize so `roadmap .` and `roadmap ..` report a real project name.
+    // Normalize so `iboard .` and `iboard ..` report a real project name.
     let start = std::fs::canonicalize(&start).unwrap_or(start);
+
+    if init {
+        // Create the layout, then carry on and open the board on it as usual.
+        match discovery::init(&start) {
+            Ok(located) => println!(
+                "iboard: initialized {} ({})",
+                located.root.display(),
+                discovery::INIT_COLUMNS.join(", ")
+            ),
+            Err(err) => {
+                eprintln!("iboard: {err:#}");
+                std::process::exit(1);
+            }
+        }
+    }
 
     let located = match discovery::locate(&start) {
         Ok(located) => located,
         Err(err) => {
-            eprintln!("roadmap-viewer: {err:#}");
+            eprintln!("iboard: {err:#}");
             std::process::exit(1);
         }
     };
 
     if list {
         match discovery::build(&located) {
-            Ok(roadmap) => {
-                print_listing(&roadmap);
+            Ok(board) => {
+                print_listing(&board);
                 return Ok(());
             }
             Err(err) => {
-                eprintln!("roadmap-viewer: {err:#}");
+                eprintln!("iboard: {err:#}");
                 std::process::exit(1);
             }
         }
     }
 
-    let project_name = located
-        .project_dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("project");
-    let app_title = located
-        .config
-        .as_ref()
-        .and_then(|config| config.title.clone())
-        .unwrap_or_else(|| project_name.to_string());
+    let app_title = discovery::window_title(&located);
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])
         .with_min_inner_size([880.0, 480.0]);
     if app::UNIFIED_TITLEBAR {
         // macOS names the app menu after the title the window starts with
-        // (given the Info.plist `build.rs` embeds), so start as "Roadmap
+        // (given the Info.plist `build.rs` embeds), so start as "Board
         // Viewer" and rename the window once it is up. The header bar is the
         // title bar: no native title, content under the traffic lights.
         viewport = viewport
-            .with_title("Roadmap Viewer")
+            .with_title("iboard")
             .with_fullsize_content_view(true)
             .with_titlebar_shown(false)
             .with_title_shown(false);
@@ -100,45 +117,45 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "Roadmap",
+        "iboard",
         options,
-        Box::new(move |cc| Ok(Box::new(app::RoadmapApp::new(cc, located, app_title)))),
+        Box::new(move |cc| Ok(Box::new(app::IboardApp::new(cc, located, app_title)))),
     )
 }
 
 /// Text-mode dump of the board, useful for scripting and for checking discovery
 /// without opening a window.
-fn print_listing(roadmap: &discovery::Roadmap) {
-    let title = roadmap
+fn print_listing(board: &discovery::Board) {
+    let title = board
         .title
         .clone()
         .or_else(|| {
-            roadmap
+            board
                 .project_dir
                 .file_name()
                 .and_then(|name| name.to_str())
                 .map(str::to_string)
         })
-        .unwrap_or_else(|| "Roadmap".to_string());
+        .unwrap_or_else(|| "iboard".to_string());
 
-    println!("{title}  ({})", roadmap.root.display());
-    for column in &roadmap.columns {
-        println!("\n{} ({})", column.name, column.tickets.len());
-        if column.tickets.is_empty() {
+    println!("{title}  ({})", board.root.display());
+    for column in &board.columns {
+        println!("\n{} ({})", column.name, column.issues.len());
+        if column.issues.is_empty() {
             println!("  (empty)");
             continue;
         }
-        for ticket in &column.tickets {
-            match ticket.done_at {
-                Some(date) => println!("  • {}  {}", ticket.title, date.format("%Y-%m-%d")),
-                None => println!("  • {}", ticket.title),
+        for issue in &column.issues {
+            match issue.done_at {
+                Some(date) => println!("  • {}  {}", issue.title, date.format("%Y-%m-%d")),
+                None => println!("  • {}", issue.title),
             }
-            if !ticket.summary.is_empty() {
-                println!("    {}", ticket.summary);
+            if !issue.summary.is_empty() {
+                println!("    {}", issue.summary);
             }
         }
     }
-    for warning in &roadmap.warnings {
+    for warning in &board.warnings {
         eprintln!("warning: {warning}");
     }
 }
@@ -147,12 +164,14 @@ fn print_help() {
     println!(
         "{name} {version}\n\
          \n\
-         A fast, local kanban board and markdown reader for `roadmap/` directories.\n\
+         A fast, local kanban board and markdown reader for `issues/` directories.\n\
          \n\
-         USAGE:\n    {name} [OPTIONS] [PATH]\n\
+         USAGE:\n    {name} [OPTIONS] [PATH]\n    {name} init [OPTIONS] [PATH]\n\
          \n\
-         PATH may be a project root, a `roadmap/` directory, or any folder inside\n\
+         PATH may be a project root, a `issues/` directory, or any folder inside\n\
          one. Defaults to the current directory; parent folders are searched too.\n\
+         \n\
+         COMMANDS:\n    init             Create issues/ with todo, ready, doing and done,\n                     then open the board on it\n\
          \n\
          OPTIONS:\n    -l, --list       Print the board to stdout and exit (no window)\n    -h, --help       Print this help\n    -V, --version    Print the version",
         name = env!("CARGO_BIN_NAME"),
