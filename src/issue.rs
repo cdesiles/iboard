@@ -27,6 +27,9 @@ pub struct Issue {
     /// Full raw markdown, rendered in the detail view.
     pub markdown: String,
     pub modified: Option<SystemTime>,
+    /// When the file was created, when the filesystem can say (ColumnFocus's
+    /// "Recently created"). Falls back to `modified` sorts.
+    pub created: Option<SystemTime>,
     /// When the issue was done; only set in the Done column.
     pub done_at: Option<DateTime<Local>>,
 }
@@ -36,7 +39,9 @@ impl Issue {
         let markdown = fs::read_to_string(path)?;
         let (title, label, title_line) = extract_title(&markdown, path);
         let summary = extract_summary(&markdown, title_line);
-        let modified = fs::metadata(path).and_then(|m| m.modified()).ok();
+        let metadata = fs::metadata(path).ok();
+        let modified = metadata.as_ref().and_then(|m| m.modified().ok());
+        let created = metadata.as_ref().and_then(|m| m.created().ok());
         Ok(Self {
             path: path.to_path_buf(),
             title,
@@ -44,6 +49,7 @@ impl Issue {
             summary,
             markdown,
             modified,
+            created,
             done_at: None,
         })
     }

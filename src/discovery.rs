@@ -1,10 +1,10 @@
-//! Locating the roadmap directory and turning its folders into kanban columns.
+//! Locating the issues directory and turning its folders into kanban columns.
 //!
 //! Because layouts differ between projects, discovery is deliberately lenient:
 //! any known column name (`todo`, `doing`, `done`, ...) is always shown, any
 //! other sub-directory is shown only if it directly contains markdown files,
-//! and markdown files sitting directly in the roadmap root form the first
-//! column. A `roadmap-viewer.toml` can override all of this.
+//! and markdown files sitting directly in the issues root form the first
+//! column. A `iboard.toml` can override all of this.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,9 +13,9 @@ use anyhow::{Context, Result, bail};
 
 use crate::config::Config;
 use crate::history;
-use crate::ticket::Ticket;
+use crate::issue::Issue;
 
-/// A resolved project: where the roadmap lives and how it was configured.
+/// A resolved project: where the issues live and how it was configured.
 #[derive(Clone)]
 pub struct Located {
     pub project_dir: PathBuf,
@@ -25,55 +25,58 @@ pub struct Located {
 
 pub struct Column {
     pub name: String,
-    /// The directory holding this column's tickets. Dropping a card here moves
+    /// The directory holding this column's issues. Dropping a card here moves
     /// its markdown file into this directory.
     pub dir: PathBuf,
-    pub tickets: Vec<Ticket>,
+    pub issues: Vec<Issue>,
 }
 
 impl Column {
-    /// Whether the "+" / new-ticket affordance is offered here. New tickets
+    /// Whether the "+" / new-issue affordance is offered here. New issues
     /// start life in the todo column.
-    pub fn accepts_new_tickets(&self) -> bool {
+    pub fn accepts_new_issues(&self) -> bool {
         self.name.eq_ignore_ascii_case("todo")
     }
 }
 
-pub struct Roadmap {
+pub struct Board {
     pub project_dir: PathBuf,
     pub root: PathBuf,
     pub title: Option<String>,
+    /// The `##` sections the reader asks for, from `[reader] sections`.
+    pub reader_sections: Vec<String>,
     pub columns: Vec<Column>,
     /// Non-fatal problems encountered while scanning (unreadable files, ...).
     pub warnings: Vec<String>,
 }
 
-impl Roadmap {
-    /// An empty roadmap, used when a scan fails so the UI can still render.
+impl Board {
+    /// An empty board, used when a scan fails so the UI can still render.
     pub fn empty(located: &Located) -> Self {
         Self {
             project_dir: located.project_dir.clone(),
             root: located.root.clone(),
             title: located.config.as_ref().and_then(|c| c.title.clone()),
+            reader_sections: reader_sections(located.config.as_ref()),
             columns: Vec::new(),
             warnings: Vec::new(),
         }
     }
 
-    pub fn find(&self, path: &Path) -> Option<&Ticket> {
+    pub fn find(&self, path: &Path) -> Option<&Issue> {
         self.columns
             .iter()
-            .flat_map(|column| column.tickets.iter())
-            .find(|ticket| ticket.path == path)
+            .flat_map(|column| column.issues.iter())
+            .find(|issue| issue.path == path)
     }
 
-    pub fn ticket_count(&self) -> usize {
-        self.columns.iter().map(|c| c.tickets.len()).sum()
+    pub fn issue_count(&self) -> usize {
+        self.columns.iter().map(|c| c.issues.len()).sum()
     }
 }
 
-/// Walks up from `start` looking for a configured project or a `roadmap/`
-/// directory. Running from inside the roadmap (or any sub-folder) also works.
+/// Walks up from `start` looking for a configured project or an `issues/`
+/// directory. Running from inside the issues folder (or any sub-folder) also works.
 pub fn locate(start: &Path) -> Result<Located> {
     let start = if start.is_file() {
         start.parent().unwrap_or(start)
@@ -87,7 +90,7 @@ pub fn locate(start: &Path) -> Result<Located> {
         if let Some(loaded) = crate::config::load(&dir) {
             let root = match loaded.config.root.as_deref() {
                 Some(relative) => dir.join(relative),
-                None => dir.join("roadmap"),
+                None => dir.join("issues"),
             };
             if !root.is_dir() {
                 bail!(
@@ -103,7 +106,7 @@ pub fn locate(start: &Path) -> Result<Located> {
             });
         }
 
-        let candidate = dir.join("roadmap");
+        let candidate = dir.join("issues");
         if candidate.is_dir() {
             return Ok(Located {
                 project_dir: dir,
@@ -112,7 +115,7 @@ pub fn locate(start: &Path) -> Result<Located> {
             });
         }
 
-        if dir.file_name().and_then(|n| n.to_str()) == Some("roadmap") && dir.is_dir() {
+        if dir.file_name().and_then(|n| n.to_str()) == Some("issues") && dir.is_dir() {
             let project_dir = dir.parent().unwrap_or(&dir).to_path_buf();
             return Ok(Located {
                 project_dir,
@@ -124,15 +127,120 @@ pub fn locate(start: &Path) -> Result<Located> {
         match dir.parent() {
             Some(parent) if parent != dir => dir = parent.to_path_buf(),
             _ => bail!(
-                "no `roadmap/` directory found from `{}` (and no parent contains one)",
+                "no `issues/` directory found from `{}` (and no parent contains one)",
                 origin.display()
             ),
         }
     }
 }
 
-/// Scans the roadmap directory into columns.
-pub fn build(located: &Located) -> Result<Roadmap> {
+/// The columns a fresh project is created with: `todo → ready → doing → done`.
+pub const INIT_COLUMNS: [&str; 4] = ["todo", "ready", "doing", "done"];
+
+/// Creates the standard `issues/` layout for `start` and returns the resolved
+/// project, ready to open. It resolves the project like [`locate`], so a config
+/// file or an `issues/` directory found up the tree is used instead of a new
+/// project being started below it; a path that does not exist yet is created as
+/// a fresh project. Existing files and directories are never touched, so
+/// running it again is safe.
+pub fn init(start: &Path) -> Result<Located> {
+    let start = if start.is_file() {
+        start.parent().unwrap_or(start).to_path_buf()
+    } else {
+        start.to_path_buf()
+    };
+
+    if start.is_dir() {
+        let mut dir = start.clone();
+        loop {
+            if let Some(loaded) = crate::config::load(&dir) {
+                let root = match loaded.config.root.as_deref() {
+                    Some(relative) => dir.join(relative),
+                    None => dir.join("issues"),
+                };
+                create_columns(&root)?;
+                return Ok(Located {
+                    project_dir: dir,
+                    root,
+                    config: Some(loaded.config),
+                });
+            }
+
+            let candidate = dir.join("issues");
+            if candidate.is_dir() {
+                create_columns(&candidate)?;
+                return Ok(Located {
+                    project_dir: dir,
+                    root: candidate,
+                    config: None,
+                });
+            }
+
+            if dir.file_name().and_then(|n| n.to_str()) == Some("issues") {
+                let root = dir.clone();
+                create_columns(&root)?;
+                return Ok(Located {
+                    project_dir: dir.parent().unwrap_or(&dir).to_path_buf(),
+                    root,
+                    config: None,
+                });
+            }
+
+            match dir.parent() {
+                Some(parent) if parent != dir => dir = parent.to_path_buf(),
+                _ => break,
+            }
+        }
+    }
+
+    // Nothing to join: start a brand new project here.
+    let project_dir = start;
+    let root = project_dir.join("issues");
+    create_columns(&root)?;
+    Ok(Located {
+        project_dir,
+        root,
+        config: None,
+    })
+}
+
+/// Creates the issues root and one directory per standard column. Each column
+/// gets a `.gitkeep`, because git does not track empty directories and the
+/// layout is meant to survive a clone.
+fn create_columns(root: &Path) -> Result<()> {
+    fs::create_dir_all(root)
+        .with_context(|| format!("cannot create issues directory {}", root.display()))?;
+    for name in INIT_COLUMNS {
+        let dir = root.join(name);
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("cannot create column {}", dir.display()))?;
+        let keep = dir.join(".gitkeep");
+        if !keep.exists() {
+            fs::File::create(&keep).with_context(|| format!("cannot create {}", keep.display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// The window title for a resolved project: the configured title, else the
+/// project folder name, else `Board`.
+pub fn window_title(located: &Located) -> String {
+    located
+        .config
+        .as_ref()
+        .and_then(|config| config.title.clone())
+        .or_else(|| {
+            located
+                .project_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "iboard".to_string())
+}
+
+/// Scans the issues directory into columns.
+pub fn build(located: &Located) -> Result<Board> {
     let root = &located.root;
     let config = located.config.as_ref();
     let mut warnings = Vec::new();
@@ -155,7 +263,7 @@ pub fn build(located: &Located) -> Result<Roadmap> {
 
     if dirs.is_empty() {
         let entries = fs::read_dir(root)
-            .with_context(|| format!("cannot read roadmap directory {}", root.display()))?;
+            .with_context(|| format!("cannot read issues directory {}", root.display()))?;
         let mut subs: Vec<PathBuf> = entries
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
@@ -172,7 +280,7 @@ pub fn build(located: &Located) -> Result<Roadmap> {
         dirs = subs;
     }
 
-    // 2. Files sitting directly in the roadmap root form the first column.
+    // 2. Files sitting directly in the issues root form the first column.
     let mut columns = Vec::new();
     let root_files = collect_markdown(root, &mut warnings);
     if !root_files.is_empty() {
@@ -189,52 +297,66 @@ pub fn build(located: &Located) -> Result<Roadmap> {
         columns.push(Column {
             name,
             dir: root.clone(),
-            tickets: load_tickets(root_files, &mut warnings),
+            issues: load_issues(root_files, &mut warnings),
         });
     }
 
     // 3. One column per sub-directory.
     for dir in &dirs {
         let files = collect_markdown(dir, &mut warnings);
-        let mut tickets = load_tickets(files, &mut warnings);
+        let mut issues = load_issues(files, &mut warnings);
         match canonical_name(dir) {
-            Some("Done") => sort_recent_first(dir, &mut tickets, true),
-            Some("Doing") => sort_recent_first(dir, &mut tickets, false),
+            Some("Done") => sort_recent_first(dir, &mut issues, true),
+            Some("Doing") => sort_recent_first(dir, &mut issues, false),
             _ => {}
         }
         columns.push(Column {
             name: display_name(dir),
             dir: dir.clone(),
-            tickets,
+            issues,
         });
     }
 
-    Ok(Roadmap {
+    Ok(Board {
         project_dir: located.project_dir.clone(),
         root: root.clone(),
         title: config.and_then(|c| c.title.clone()),
+        reader_sections: reader_sections(config),
         columns,
         warnings,
     })
 }
 
-/// Puts the most recently edited tickets first (Doing and Done), and with
-/// `show_date` keeps the date on each card. Tickets with the same date (one
-/// commit) go in reverse file-name order, so numbered tickets stay newest
+/// The configured reader sections, or the standard four.
+fn reader_sections(config: Option<&Config>) -> Vec<String> {
+    config
+        .and_then(|c| c.reader.as_ref())
+        .and_then(|r| r.sections.clone())
+        .unwrap_or_else(|| {
+            crate::sheet::DEFAULT_SECTIONS
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        })
+}
+
+/// Puts the most recently edited issues first (Doing and Done), and with
+/// `show_date` keeps the date on each card. Issues with the same date (one
+/// commit) go in reverse file-name order, so numbered issues stay newest
 /// first too.
-fn sort_recent_first(dir: &Path, tickets: &mut [Ticket], show_date: bool) {
-    let paths: Vec<PathBuf> = tickets.iter().map(|t| t.path.clone()).collect();
+fn sort_recent_first(dir: &Path, issues: &mut [Issue], show_date: bool) {
+    let paths: Vec<PathBuf> = issues.iter().map(|t| t.path.clone()).collect();
     let dates = history::done_dates(dir, &paths);
-    tickets.reverse();
-    tickets.sort_by_key(|t| std::cmp::Reverse(dates.get(&t.path).copied()));
+    issues.reverse();
+    issues.sort_by_key(|t| std::cmp::Reverse(dates.get(&t.path).copied()));
     if show_date {
-        for ticket in tickets.iter_mut() {
-            ticket.done_at = dates.get(&ticket.path).copied();
+        for issue in issues.iter_mut() {
+            issue.done_at = dates.get(&issue.path).copied();
         }
     }
 }
 
-/// Whether `dir` is the Ready column, whose tickets carry a priority prefix.
+/// Whether `dir` is the Ready column, whose issues carry a priority prefix.
 pub fn is_ready_column(dir: &Path) -> bool {
     canonical_name(dir) == Some("Ready")
 }
@@ -262,8 +384,8 @@ pub fn strip_priority(name: &str) -> &str {
     }
 }
 
-/// The name a ticket takes when moved from one folder into another: entering
-/// Ready numbers it after the last ticket there, leaving Ready drops the
+/// The name an issue takes when moved from one folder into another: entering
+/// Ready numbers it after the last issue there, leaving Ready drops the
 /// number. Other moves keep the name.
 pub fn moved_name(name: &str, from_dir: &Path, to_dir: &Path) -> String {
     if is_ready_column(to_dir) {
@@ -307,15 +429,15 @@ pub fn numbered_name(position: usize, name: &str) -> String {
     )
 }
 
-fn load_tickets(files: Vec<PathBuf>, warnings: &mut Vec<String>) -> Vec<Ticket> {
-    let mut tickets = Vec::with_capacity(files.len());
+fn load_issues(files: Vec<PathBuf>, warnings: &mut Vec<String>) -> Vec<Issue> {
+    let mut issues = Vec::with_capacity(files.len());
     for path in files {
-        match Ticket::load(&path) {
-            Ok(ticket) => tickets.push(ticket),
+        match Issue::load(&path) {
+            Ok(issue) => issues.push(issue),
             Err(err) => warnings.push(format!("cannot read {}: {err}", path.display())),
         }
     }
-    tickets
+    issues
 }
 
 fn collect_markdown(dir: &Path, warnings: &mut Vec<String>) -> Vec<PathBuf> {
@@ -492,19 +614,19 @@ mod tests {
 
     #[test]
     fn ready_sits_between_todo_and_doing() {
-        let dir = std::env::temp_dir().join(format!("roadmap-viewer-ready-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("iboard-ready-{}", std::process::id()));
         for name in ["done", "doing", "ready", "todo"] {
-            fs::create_dir_all(dir.join("roadmap").join(name)).unwrap();
+            fs::create_dir_all(dir.join("issues").join(name)).unwrap();
         }
-        let roadmap = build(&locate(&dir).unwrap()).unwrap();
-        let names: Vec<&str> = roadmap.columns.iter().map(|c| c.name.as_str()).collect();
+        let board = build(&locate(&dir).unwrap()).unwrap();
+        let names: Vec<&str> = board.columns.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["Todo", "Ready", "Doing", "Done"]);
         fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn entering_ready_numbers_a_ticket_and_leaving_drops_the_number() {
-        let dir = std::env::temp_dir().join(format!("roadmap-viewer-prio-{}", std::process::id()));
+    fn entering_ready_numbers_an_issue_and_leaving_drops_the_number() {
+        let dir = std::env::temp_dir().join(format!("iboard-prio-{}", std::process::id()));
         let (todo, ready, doing) = (dir.join("todo"), dir.join("ready"), dir.join("doing"));
         for d in [&todo, &ready, &doing] {
             fs::create_dir_all(d).unwrap();
@@ -521,7 +643,7 @@ mod tests {
             moved_name("make-green.md", &todo, &ready),
             "008-make-green.md"
         );
-        // A renumbered ticket loses its old priority, other numbers stay.
+        // A renumbered issue loses its old priority, other numbers stay.
         assert_eq!(moved_name("003-x.md", &doing, &ready), "008-x.md");
         assert_eq!(moved_name("02-ai.md", &todo, &ready), "008-02-ai.md");
 
@@ -535,9 +657,9 @@ mod tests {
 
     /// Doing is ordered by last edit too, but its cards carry no date.
     #[test]
-    fn doing_tickets_are_most_recent_first_without_a_date() {
-        let dir = std::env::temp_dir().join(format!("roadmap-viewer-doing-{}", std::process::id()));
-        let doing = dir.join("roadmap/doing");
+    fn doing_issues_are_most_recent_first_without_a_date() {
+        let dir = std::env::temp_dir().join(format!("iboard-doing-{}", std::process::id()));
+        let doing = dir.join("issues/doing");
         fs::create_dir_all(&doing).unwrap();
         for name in ["a.md", "b.md"] {
             fs::write(doing.join(name), "# T\n").unwrap();
@@ -550,20 +672,20 @@ mod tests {
             .set_modified(later)
             .unwrap();
 
-        let roadmap = build(&locate(&dir).unwrap()).unwrap();
-        let column = roadmap.columns.iter().find(|c| c.name == "Doing").unwrap();
-        let names: Vec<String> = column.tickets.iter().map(|t| t.file_name()).collect();
+        let board = build(&locate(&dir).unwrap()).unwrap();
+        let column = board.columns.iter().find(|c| c.name == "Doing").unwrap();
+        let names: Vec<String> = column.issues.iter().map(|t| t.file_name()).collect();
         assert_eq!(names, ["a.md", "b.md"]);
-        assert!(column.tickets.iter().all(|t| t.done_at.is_none()));
+        assert!(column.issues.iter().all(|t| t.done_at.is_none()));
         fs::remove_dir_all(&dir).ok();
     }
 
-    /// Outside git, done tickets are dated by their file times.
+    /// Outside git, done issues are dated by their file times.
     #[test]
-    fn done_tickets_are_dated_and_most_recent_first() {
-        let dir = std::env::temp_dir().join(format!("roadmap-viewer-done-{}", std::process::id()));
-        let done = dir.join("roadmap/done");
-        let todo = dir.join("roadmap/todo");
+    fn done_issues_are_dated_and_most_recent_first() {
+        let dir = std::env::temp_dir().join(format!("iboard-done-{}", std::process::id()));
+        let done = dir.join("issues/done");
+        let todo = dir.join("issues/todo");
         fs::create_dir_all(&done).unwrap();
         fs::create_dir_all(&todo).unwrap();
         for name in ["01-old.md", "02-mid.md", "03-new.md"] {
@@ -579,17 +701,17 @@ mod tests {
             .set_modified(later)
             .unwrap();
 
-        let roadmap = build(&locate(&dir).unwrap()).unwrap();
-        let column = |name: &str| roadmap.columns.iter().find(|c| c.name == name).unwrap();
+        let board = build(&locate(&dir).unwrap()).unwrap();
+        let column = |name: &str| board.columns.iter().find(|c| c.name == name).unwrap();
         let names: Vec<String> = column("Done")
-            .tickets
+            .issues
             .iter()
             .map(|t| t.file_name())
             .collect();
         assert_eq!(names, ["01-old.md", "03-new.md", "02-mid.md"]);
-        assert!(column("Done").tickets.iter().all(|t| t.done_at.is_some()));
+        assert!(column("Done").issues.iter().all(|t| t.done_at.is_some()));
         assert!(
-            column("Todo").tickets[0].done_at.is_none(),
+            column("Todo").issues[0].done_at.is_none(),
             "only Done is dated"
         );
 
@@ -605,5 +727,57 @@ mod tests {
         assert!(is_orderable_column(Path::new("/x/ready")));
         assert!(!is_orderable_column(Path::new("/x/doing")));
         assert!(!is_orderable_column(Path::new("/x/done")));
+    }
+
+    #[test]
+    fn init_creates_the_standard_columns_and_is_idempotent() {
+        let dir = std::env::temp_dir().join(format!("iboard-init-{}", std::process::id()));
+        fs::remove_dir_all(&dir).ok();
+
+        let located = init(&dir).unwrap();
+        assert_eq!(located.project_dir, dir);
+        assert_eq!(located.root, dir.join("issues"));
+        for name in INIT_COLUMNS {
+            let column = dir.join("issues").join(name);
+            assert!(column.is_dir(), "{name} exists");
+            assert!(column.join(".gitkeep").is_file(), "{name} kept in git");
+        }
+        let board = build(&located).unwrap();
+        let names: Vec<&str> = board.columns.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["Todo", "Ready", "Doing", "Done"]);
+
+        // A second run keeps the layout and never fails.
+        let again = init(&dir).unwrap();
+        assert_eq!(again.root, located.root);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn init_respects_a_configured_root() {
+        let dir = std::env::temp_dir().join(format!("iboard-init-cfg-{}", std::process::id()));
+        fs::remove_dir_all(&dir).ok();
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("iboard.toml"), "root = \"tasks\"\n").unwrap();
+
+        let located = init(&dir).unwrap();
+        assert_eq!(located.root, dir.join("tasks"));
+        assert!(dir.join("tasks/todo/.gitkeep").is_file());
+        assert!(!dir.join("issues").exists());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn init_from_a_subfolder_uses_the_enclosing_project() {
+        let dir = std::env::temp_dir().join(format!("iboard-init-sub-{}", std::process::id()));
+        fs::remove_dir_all(&dir).ok();
+        let nested = dir.join("src/deep");
+        fs::create_dir_all(&nested).unwrap();
+        fs::create_dir_all(dir.join("issues")).unwrap();
+
+        let located = init(&nested).unwrap();
+        assert_eq!(located.project_dir, dir);
+        assert_eq!(located.root, dir.join("issues"));
+        assert!(!nested.join("issues").exists());
+        fs::remove_dir_all(&dir).ok();
     }
 }

@@ -389,6 +389,10 @@ pub enum Icon {
     Check,
     /// A magnifier: the board filter.
     Search,
+    /// Two arrows pointing outwards: expand a column to ColumnFocus.
+    Expand,
+    /// Two arrows pointing inwards: leave ColumnFocus for the board.
+    Collapse,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -484,6 +488,20 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
         }
         Icon::ChevronDown => {
             painter.line(vec![at(6.0, 9.5), at(12.0, 15.0), at(18.0, 9.5)], stroke);
+        }
+        Icon::Expand => {
+            // Lucide's maximize-2: two corner brackets and a diagonal each.
+            painter.line(vec![at(15.0, 3.0), at(21.0, 3.0), at(21.0, 9.0)], stroke);
+            painter.line(vec![at(9.0, 21.0), at(3.0, 21.0), at(3.0, 15.0)], stroke);
+            painter.line_segment([at(21.0, 3.0), at(14.0, 10.0)], stroke);
+            painter.line_segment([at(3.0, 21.0), at(10.0, 14.0)], stroke);
+        }
+        Icon::Collapse => {
+            // Lucide's minimize-2: the two brackets point inwards.
+            painter.line(vec![at(4.0, 14.0), at(10.0, 14.0), at(10.0, 20.0)], stroke);
+            painter.line(vec![at(20.0, 10.0), at(14.0, 10.0), at(14.0, 4.0)], stroke);
+            painter.line_segment([at(14.0, 10.0), at(21.0, 3.0)], stroke);
+            painter.line_segment([at(3.0, 21.0), at(10.0, 14.0)], stroke);
         }
         Icon::Review => {
             // A speech bubble (Lucide's message-circle-question): a circle

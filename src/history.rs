@@ -1,4 +1,4 @@
-//! When a ticket was done: the last commit that touched its file, or the
+//! When an issue was done: the last commit that touched its file, or the
 //! file's own times when git knows nothing about it.
 //!
 //! `git log` over a folder walks the whole history, so its answer is cached

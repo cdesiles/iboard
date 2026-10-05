@@ -5,9 +5,9 @@ The rendered markdown of one issue, laid out as a **sheet**: a `surface` page up
 ## Layout, top to bottom
 
 1. **Head**, a `meta` strip with a `line` rule under it:
-   - On the left, the column as a status mark: an 8pt dot in the column's status colour and the word in `ui-label`, then, when the issue carries one, its label chip (the same 18pt chip as the card, see IssueCard), then the file path, which truncates with an ellipsis when space runs out.
+   - On the left, the column as a status mark: an 8pt dot in the column's status colour and the word in `ui-label`, then the file path, which truncates with an ellipsis when space runs out.
    - On the right, "modified 1h ago" and either the word count, or checklist progress when the issue has checkboxes: a 48pt `status-done` meter with "2/5 done".
-2. **Title**: the first `#` heading in `read-h1`.
+2. **Labels and title**: the labels from the title's `[Brackets]` as a row of Label tags, then the first `#` heading without them in `read-h1`. Clicking a label goes back to the board filtered by it.
 3. **Body** in `read-body`, at most 68ch per line. Links in `accent`, code on `surface-sunken`, `- [ ]` rendered as read-only checkboxes.
 4. **The rest of the sheet** stays empty and clickable. At its foot, `ink-faint` reads "Click below the text to keep writing E". A click there opens the Editor with the cursor at the end of the file.
 

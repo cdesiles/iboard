@@ -5,8 +5,8 @@
   "v": 1,
   "at": "2026-10-02T14:07:45Z"
  },
- "title": "Roadmap Viewer",
- "namespace": "RoadmapViewer",
+ "title": "iboard",
+ "namespace": "iboard",
  "libraries": [],
  "sections": {},
  "groups": [],
@@ -17,9 +17,9 @@
   "sections": []
  },
  "lastChange": {
-  "by": "Cl\u00e9ment",
-  "at": "2026-10-02T16:41:25Z",
+  "by": "Clément",
+  "at": "2026-10-05T20:50:00Z",
   "via": "Claude Code",
-  "note": "Added the Ready column: status-ready token, Ready in the Column, BoardScreen and Cover previews, numbered Ready tickets."
+  "note": "ColumnFocus: column titles are buttons that expand a column to the full window (⌘1–4), with column tabs, per-column default sort, Group by label and wide cards; esc or the active tab goes back."
  }
 }

@@ -9,7 +9,7 @@ iboard is a desktop tool for developers who keep their issues as markdown files 
 
 ## Content
 
-- Sentence case everywhere except column titles (`TODO`, `DOING`, `DONE` in `ui-label`).
+- Sentence case everywhere except column titles (`TODO`, `DOING`, `DONE` in `ui-label`). Labels are always lowercase (`bug`, `discovery`), whatever the case in the title.
 - Buttons are verbs: New issue, Refresh, Save, Review, Discard. No "OK", no ellipses unless a dialog follows.
 - Counts are bare numbers in `meta`. "4 issues", never "4 issue(s)".
 - Empty states say what goes there: "No issues in doing/" rather than "Empty".
@@ -25,7 +25,6 @@ iboard is a desktop tool for developers who keep their issues as markdown files 
 - Columns carry a status color as a 2px rule under the column title plus an 8px dot: `status-todo`, `status-ready`, `status-doing`, `status-done`. The column word is always shown, so color is never the only signal.
 - `review` (violet) is reserved for the AI review feature. Nothing else in the app may use it, so the user learns that this hue means "an agent is talking". It is inviting on purpose: distinct from the blue `accent` and never close to `danger`.
 - `danger` only for write failures, file conflicts and the Block verdict.
-- **Labels** are the one colour the user picks. A `[name]` token at the very start of an issue's `# H1` (`# [Discovery] Hey look!`) shows an 18pt chip in the preset hue behind the lowercased name, on every card and in the reader head; the display title drops the token, and the raw file is never rewritten for it. The preset is `discovery` `#0b6076`, `bug` `#b12f22`, `feature` `#1a6e42`, `chore` `#5b6472`, `question` `#8a5006`; the name is case-insensitive and unknown labels show neutrally (`surface-sunken` on `ink-muted`). A hue too faint to read on its tint falls back to `ink`, so every chip clears 4.5:1 in both themes. The mapping is a user preference, not project data: `~/.config/iboard/iboard.toml` `[labels]` (`name = "#rrggbb"`) overrides or extends the preset; a per-project `iboard.toml` may override a name later.
 - Delete is the one control drawn in `danger` at rest: an outlined, labelled button in the Reader and Editor header (`Delete` `Del`; in the Editor it drops the key hint, because there `Del` edits text). The filled `danger` button only appears inside the ConfirmDialog, which is on by default and can be turned off in Settings › General.
 
 ## Type
@@ -50,7 +49,7 @@ Navigation is three discreet pieces:
 2. **Breadcrumb in the header**, in `ink-muted`: `iboard / Todo / AI assist to refine an issue`. Every segment but the last is a link back, with a hover fill and underline. On the board it shows only the project name and path.
 3. **Status bar at the bottom**: the current file path on the left, save state and the two or three shortcuts that apply to the current screen on the right.
 
-There is no sidebar and no tab bar. Three screens are enough: Board, Reader, Editor.
+There is no sidebar and no tab bar. Three screens are enough: Board, Reader, Editor. The Board has one extra mode, **ColumnFocus**: clicking a column title (or `⌘1` to `⌘4`) gives that column the whole window, with wide cards and its own sort, and `esc` goes back.
 
 ## Adding an issue
 
@@ -63,7 +62,8 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 - **Never blocked.** With the engine Off, unavailable, failing or too slow, the first line of the description becomes the title.
 - **Long notes** stop growing at 8 lines and scroll inside the composer, which stays sticky at the top of Todo. The board stays usable; `⌘↩` moves to the Editor.
 - **`esc` closes** the composer; an empty composer never creates a file.
-- **File name** is the title slugified (lowercase ASCII, hyphens, at most 60 characters). If the file exists, append `-2`, `-3`; the meta line shows the final name before the file is written.
+- **Labels** come from `[Brackets]` at the start of the title: `[Discovery]` gives the label discovery, and `[BUG]` gives bug (see Label). The title is shown without them everywhere except the Editor.
+- **File name** is the title without its labels, slugified (lowercase ASCII, hyphens, at most 60 characters). If the file exists, append `-2`, `-3`; the meta line shows the final name before the file is written.
 - **The engine** (On-device Apple by default, Review agent, or Off) is chosen in Settings › Titles (`⌘,`).
 - New issues always land in Todo. Creating directly in Doing or Done is not offered; move the card afterwards.
 
@@ -80,6 +80,7 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 | `⌘[` | | Back | Back (asks if unsaved) |
 | `⌘⇧R` | | Review this issue | Review draft |
 | `⌘Z` | Undo the last delete, when asking is off | | Undo typing |
+| `⌘1`–`⌘4` | Show Todo, Ready, Doing or Done full screen (again: back to the board) | | |
 | `⌘,` | Open Settings (last tab used) | Open Settings | Open Settings |
 | `⇧↩` | New line in the composer's description | | |
 | `A` | Archive selected (Done only) | | |
@@ -107,9 +108,14 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Editor | Type | DraftChanged | Editor, Unsaved pill |
 | Editor | Save (`⌘S`, or auto on leave when Auto is on) | IssueSaved / SaveFailed | Reader / Editor with error |
 | Any | Refresh, or file watcher fires | IssuesReloaded | Same screen; open draft kept, conflict flagged |
-| Board | Focus filter (`⌘F`, click) | FilterFocused | Field widens to 480pt, suggestions bug and feature shown |
+| Board | Focus filter (`⌘F`, click) | FilterFocused | Field widens to 480pt, the three most used labels shown |
+| Board, Reader | Click a label | LabelClicked → FilterSuggestionPicked | Board filtered by that label |
 | Board | Click a suggestion, or type | FilterSuggestionPicked / FilterChanged | Board shows matches only; counts read "2/6" |
 | Board | `esc` in the filter | FilterCleared | Full board; field back to 220pt on blur |
+| Board | Click a column title, `⌘1`–`⌘4` | ColumnFocused | ColumnFocus: that column full screen, wide cards, its default sort |
+| ColumnFocus | Pick a sort, toggle Group by label | ColumnSortChanged / ColumnGroupingToggled | Same view, reordered; files untouched |
+| ColumnFocus | Click another column tab | ColumnFocused | That column full screen |
+| ColumnFocus | Click the active tab, Board button, `esc` | ColumnUnfocused | Board, same card selected |
 | Any | Move to column (drag, or menu) | IssueMoved | Same screen; file moved between folders |
 | Board | Start dragging a card | IssueDragStarted → DropZonesShown | Board, Archive and Delete zones slide up from the bottom |
 | Board | Drop on Archive (Done only), or card Archive button, `A` | IssueArchived | Board; file moved to `.archive/` |

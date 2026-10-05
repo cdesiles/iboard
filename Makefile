@@ -29,7 +29,7 @@ run:
 list:
 	cargo run -- --list $(ARGS)
 
-## Install the `roadmap` binary into the Cargo bin directory
+## Install the `iboard` binary into the Cargo bin directory
 install:
 	cargo install --path .
 

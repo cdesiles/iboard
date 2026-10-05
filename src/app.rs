@@ -2,6 +2,7 @@
 //! rendered markdown reader, and an editor with debounced autosave. Its look
 //! follows the design system in `design/` (see `theme.rs`).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
@@ -18,7 +19,7 @@ use crate::discovery::{self, Board, Column, Located};
 use crate::filter::{self, Filter};
 use crate::general;
 use crate::issue::Issue;
-use crate::labels::Labels;
+use crate::labels::{self, Labels};
 use crate::review_settings::{self, Catalog};
 use crate::theme::{self, Icon, Palette};
 use crate::titles::{self, Engine};
@@ -96,8 +97,65 @@ enum ProjectChoice {
     Browse,
 }
 
-/// An issue action available from a card or the detail header.
+/// How a column orders its cards in ColumnFocus. The choice is remembered per
+/// column for the session; only [`Sort::Board`] offers drag reordering.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Sort {
+    /// The order the files are in on the board.
+    Board,
+    /// Most recently edited first.
+    Modified,
+    /// Most recently created first.
+    Created,
+    /// Title, A to Z.
+    Title,
+    /// The most open checklist items first.
+    MostToDo,
+    /// Most recently finished first; Done's default.
+    Finished,
+}
+
+impl Sort {
+    /// The five sorts every column offers; Done additionally opens with
+    /// [`Sort::Finished`].
+    const MENU: [Sort; 5] = [
+        Sort::Board,
+        Sort::Modified,
+        Sort::Created,
+        Sort::Title,
+        Sort::MostToDo,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Sort::Board => "Board order",
+            Sort::Modified => "Recently modified",
+            Sort::Created => "Recently created",
+            Sort::Title => "Title A to Z",
+            Sort::MostToDo => "Most to do",
+            Sort::Finished => "Recently finished",
+        }
+    }
+}
+
+/// The default sort of a focused column, chosen by what people look for there.
+fn default_sort(dir: &Path) -> Sort {
+    let name = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if discovery::is_ready_column(dir) {
+        Sort::Board
+    } else if name == "done" || name == "completed" {
+        Sort::Finished
+    } else {
+        Sort::Modified
+    }
+}
+
+/// An issue action available from a card or the detail header.
+#[derive(Clone, PartialEq, Eq, Debug)]
 enum CardAction {
     /// Open the issue in the reader.
     Open,
@@ -105,6 +163,65 @@ enum CardAction {
     Delete,
     /// Move a done issue to `.archive`.
     Archive,
+    /// Add the card's label to the filter.
+    FilterLabel(String),
+    /// Run the AI review (selected Todo card).
+    Review,
+    /// Reopen the last review, from the card's verdict pill.
+    ShowReview,
+}
+
+/// What a card shows beyond its file: the last review's verdict pill, and
+/// whether the selected card offers Review.
+#[derive(Clone, Copy)]
+struct CardExtras<'a> {
+    review_pill: Option<(&'a str, Color32)>,
+    review_button: bool,
+    /// In a widened column: show more of the description.
+    wide: bool,
+    /// The reader's standard sections, for the wide card's facts row.
+    sections: &'a [String],
+}
+
+impl Default for CardExtras<'_> {
+    fn default() -> Self {
+        Self {
+            review_pill: None,
+            review_button: false,
+            wide: false,
+            sections: &[],
+        }
+    }
+}
+
+/// A finished review kept for the session, so its card pill can reopen it.
+struct PastReview {
+    draft: bool,
+    agent: String,
+    raw: String,
+    report: Option<Report>,
+}
+
+impl PastReview {
+    /// The pill: the worst verdict of the three, or "Reviewed" when the
+    /// answer did not parse.
+    fn pill(&self, p: &Palette) -> (&'static str, Color32) {
+        let verdicts = self
+            .report
+            .iter()
+            .flat_map(|r| r.findings.iter().map(|f| f.verdict));
+        let worst = verdicts.max_by_key(|v| match v {
+            agent::Verdict::Pass => 0,
+            agent::Verdict::Challenge => 1,
+            agent::Verdict::Block => 2,
+        });
+        match worst {
+            Some(agent::Verdict::Pass) => ("Pass", p.status_done),
+            Some(agent::Verdict::Challenge) => ("Challenge", p.review),
+            Some(agent::Verdict::Block) => ("Block", p.danger),
+            None => ("Reviewed", p.review),
+        }
+    }
 }
 
 /// A destructive action waiting for confirmation.
@@ -204,6 +321,18 @@ struct ColumnActions {
     close_composer: bool,
     /// The composer's engine tag was clicked: open Settings › Titles.
     title_settings: bool,
+    /// A card's label was clicked: filter by it.
+    filter_label: Option<String>,
+    /// The selected card's Review was clicked.
+    review: Option<PathBuf>,
+    /// A card's verdict pill was clicked.
+    show_review: Option<PathBuf>,
+    /// The column was double-clicked: widen it, or put it back.
+    toggle_wide: bool,
+    /// The column title was clicked: expand it to the whole window.
+    focus_column: Option<PathBuf>,
+    /// "Archive all" at the foot of Done: these issues.
+    archive_all: Vec<PathBuf>,
 }
 
 /// The inline quick-add composer at the top of the Todo column: you describe
@@ -223,6 +352,13 @@ struct Composer {
     /// Select the whole title when it gets focus, so typing replaces it.
     select_title: bool,
     error: Option<String>,
+}
+
+impl Composer {
+    /// Nothing typed: closing it loses nothing.
+    fn is_empty(&self) -> bool {
+        self.title.trim().is_empty() && self.description.trim().is_empty()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -469,6 +605,17 @@ pub struct IboardApp {
     confirm_delete: bool,
     /// The last issue deleted without asking, for `⌘Z`.
     undo: Option<Deleted>,
+    /// The last finished review of each issue this session, behind the
+    /// card's verdict pill.
+    past_reviews: HashMap<PathBuf, PastReview>,
+    /// The column widened by a double-click, by folder.
+    wide_column: Option<PathBuf>,
+    /// The column expanded to the whole window (ColumnFocus), by folder.
+    focused_column: Option<PathBuf>,
+    /// ColumnFocus's sort per folder, remembered for the session.
+    column_sorts: HashMap<PathBuf, Sort>,
+    /// ColumnFocus: split the grid into sections by label.
+    group_by_label: bool,
     /// The last drag's Archive eligibility, so the dock keeps its look while
     /// it slides away after the drop.
     dock_archivable: bool,
@@ -573,6 +720,11 @@ impl IboardApp {
             notice: None,
             confirm_delete: true,
             undo: None,
+            past_reviews: HashMap::new(),
+            wide_column: None,
+            focused_column: None,
+            column_sorts: HashMap::new(),
+            group_by_label: false,
             dock_archivable: false,
             auto: true,
             last_refresh: Instant::now(),
@@ -776,7 +928,11 @@ impl IboardApp {
     /// Opens an issue in the reader. Editing is a separate step, entered from
     /// the detail view.
     fn open_issue(&mut self, path: PathBuf) {
-        self.composer = None;
+        // A composer with text is an unsaved issue: it waits on the board
+        // until the user adds or closes it. Only an empty one goes.
+        if self.composer.as_ref().is_some_and(Composer::is_empty) {
+            self.composer = None;
+        }
         self.cancel_review();
         self.selected = Some(path.clone());
         self.screen = Screen::Detail(path);
@@ -1027,6 +1183,27 @@ impl IboardApp {
             .find(|column| column.issues.iter().any(|issue| issue.path == path))
     }
 
+    /// Expands a column to the whole window (ColumnFocus).
+    fn focus_column(&mut self, dir: PathBuf) {
+        if self.board.columns.iter().any(|column| column.dir == dir) {
+            self.focused_column = Some(dir);
+        }
+    }
+
+    /// Leaves ColumnFocus for the board, keeping the selection.
+    fn unfocus_column(&mut self) {
+        self.focused_column = None;
+    }
+
+    /// The sort a focused column uses: the one the user picked, or its
+    /// default.
+    fn column_sort(&self, dir: &Path) -> Sort {
+        self.column_sorts
+            .get(dir)
+            .copied()
+            .unwrap_or_else(|| default_sort(dir))
+    }
+
     /// Every delete lands here: the trash icons, the Delete key and button,
     /// and the Delete drop zone. It asks first unless Settings › General says
     /// not to; then the file goes at once and `⌘Z` can bring it back.
@@ -1064,7 +1241,17 @@ impl IboardApp {
             return;
         }
         let restored = match &deleted.trashed {
-            Some(trashed) if std::fs::rename(trashed, &deleted.path).is_ok() => Ok(()),
+            Some(trashed) if std::fs::rename(trashed, &deleted.path).is_ok() => {
+                // A freedesktop Trash also holds `info/<name>.trashinfo`.
+                if let (Some(files), Some(name)) = (trashed.parent(), trashed.file_name())
+                    && let Some(trash) = files.parent().filter(|_| files.ends_with("files"))
+                {
+                    let mut info = name.to_os_string();
+                    info.push(".trashinfo");
+                    let _ = std::fs::remove_file(trash.join("info").join(info));
+                }
+                Ok(())
+            }
             _ => atomic_write_bytes(&deleted.path, &deleted.content),
         };
         match restored {
@@ -1170,6 +1357,20 @@ impl IboardApp {
         }
     }
 
+    /// "Archive all" at the foot of Done: moves every listed issue to
+    /// `.archive/` and says how many went.
+    fn archive_all(&mut self, paths: &[PathBuf]) {
+        let before = self.board.issue_count();
+        for path in paths {
+            self.archive_issue(path);
+        }
+        let archived = before.saturating_sub(self.board.issue_count());
+        if archived > 0 {
+            let noun = if archived == 1 { "issue" } else { "issues" };
+            self.notice = Some((format!("Archived {archived} {noun}"), Instant::now()));
+        }
+    }
+
     /// Writes an issue the reader changed via a checkbox.
     fn write_issue(&mut self, path: &Path, contents: &str) {
         match atomic_write(path, contents) {
@@ -1186,6 +1387,13 @@ impl IboardApp {
             .columns
             .iter()
             .find(|column| column.accepts_new_issues())
+    }
+
+    /// Whether `path` is still being written, in Todo: the only issues that
+    /// get the AI review and the "Not written yet" block.
+    fn is_todo_issue(&self, path: &Path) -> bool {
+        self.column_of(path)
+            .is_some_and(|column| column.accepts_new_issues())
     }
 
     /// The text an agent should read: the saved file, or the editor draft when
@@ -1222,6 +1430,9 @@ impl IboardApp {
 
     /// Starts a one-shot review of the open issue (or the editor draft).
     fn start_review(&mut self, path: &Path, draft: bool) {
+        if !self.is_todo_issue(path) {
+            return;
+        }
         let Some(content) = self.review_content(path, draft) else {
             return;
         };
@@ -1262,10 +1473,41 @@ impl IboardApp {
 
     /// Cancels a running review, or closes a finished one.
     fn cancel_review(&mut self) {
-        if let Some(review) = self.review.take()
-            && let ReviewStatus::Running { pid, .. } = review.status
-        {
-            agent::cancel(pid);
+        let Some(review) = self.review.take() else {
+            return;
+        };
+        match review.status {
+            ReviewStatus::Running { pid, .. } => agent::cancel(pid),
+            // A finished review stays reachable from the card's pill.
+            ReviewStatus::Done { raw, report } => {
+                self.past_reviews.insert(
+                    review.path,
+                    PastReview {
+                        draft: review.draft,
+                        agent: review.agent,
+                        raw,
+                        report,
+                    },
+                );
+            }
+            ReviewStatus::Failed { .. } => {}
+        }
+    }
+
+    /// The card's verdict pill: opens the issue with its last review.
+    fn show_past_review(&mut self, path: PathBuf) {
+        self.open_issue(path.clone());
+        if let Some(past) = self.past_reviews.remove(&path) {
+            self.review = Some(ReviewState {
+                path,
+                draft: past.draft,
+                agent: past.agent,
+                status: ReviewStatus::Done {
+                    raw: past.raw,
+                    report: past.report,
+                },
+                follow_up: String::new(),
+            });
         }
     }
 
@@ -1344,12 +1586,17 @@ impl IboardApp {
     }
 
     fn open_settings(&mut self, tab: review_settings::Tab) {
-        self.settings = Some(review_settings::Dialog::new(
-            &self.agent,
-            self.title_engine,
-            self.confirm_delete,
-            tab,
-        ));
+        let used: Vec<String> = self
+            .board
+            .columns
+            .iter()
+            .flat_map(|column| column.issues.iter())
+            .filter_map(|issue| issue.label.clone())
+            .collect();
+        self.settings = Some(
+            review_settings::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
+                .with_labels(&self.labels, used),
+        );
     }
 
     /// Opens the quick-add composer at the top of Todo, from any screen.
@@ -1365,6 +1612,8 @@ impl IboardApp {
     }
 
     fn show_composer(&mut self) {
+        // New issues belong to the board's Todo column, so leave ColumnFocus.
+        self.focused_column = None;
         // Checked on every open: Apple Intelligence or an agent may have been
         // set up meanwhile.
         let engine = Some(self.title_engine).filter(|engine| {
@@ -1551,6 +1800,10 @@ impl IboardApp {
 
     /// Moves the board selection one step with an arrow key.
     fn move_selection(&mut self, key: Key) {
+        if self.focused_column.is_some() {
+            self.move_focus_selection(key);
+            return;
+        }
         let grid = self.visible_grid();
         let at = self.selected.as_ref().and_then(|selected| {
             grid.iter().enumerate().find_map(|(column, paths)| {
@@ -1564,6 +1817,69 @@ impl IboardApp {
             self.selected = Some(grid[column][row].clone());
             self.scroll_to_selected = true;
         }
+    }
+
+    /// Moves the selection inside a focused column: `↑ ↓` step through its
+    /// sorted cards, `← →` switch to the neighbouring column.
+    fn move_focus_selection(&mut self, key: Key) {
+        match key {
+            Key::ArrowLeft => self.focus_neighbor(-1),
+            Key::ArrowRight => self.focus_neighbor(1),
+            _ => {
+                let Some(dir) = self.focused_column.clone() else {
+                    return;
+                };
+                let Some(column) = self.board.columns.iter().find(|column| column.dir == dir)
+                else {
+                    return;
+                };
+                let paths: Vec<PathBuf> =
+                    focus_issues(column, &self.filter, self.column_sort(&dir))
+                        .into_iter()
+                        .map(|issue| issue.path.clone())
+                        .collect();
+                if paths.is_empty() {
+                    return;
+                }
+                let at = self
+                    .selected
+                    .as_ref()
+                    .and_then(|selected| paths.iter().position(|path| path == selected));
+                let next = match key {
+                    Key::ArrowUp => at.map(|at| at.saturating_sub(1)).or(Some(0)),
+                    _ => match at {
+                        Some(at) if at + 1 < paths.len() => Some(at + 1),
+                        Some(at) => Some(at),
+                        None => Some(0),
+                    },
+                };
+                if let Some(next) = next {
+                    self.selected = Some(paths[next].clone());
+                    self.scroll_to_selected = true;
+                }
+            }
+        }
+    }
+
+    /// Shows the column `delta` tabs away from the focused one, wrapping.
+    fn focus_neighbor(&mut self, delta: isize) {
+        let Some(dir) = self.focused_column.clone() else {
+            return;
+        };
+        let count = self.board.columns.len();
+        if count == 0 {
+            return;
+        }
+        let Some(index) = self
+            .board
+            .columns
+            .iter()
+            .position(|column| column.dir == dir)
+        else {
+            return;
+        };
+        let next = (index as isize + delta).rem_euclid(count as isize) as usize;
+        self.focused_column = Some(self.board.columns[next].dir.clone());
     }
 
     /// The selected issue, if it is still on the board.
@@ -1633,7 +1949,17 @@ impl IboardApp {
                 }
                 match self.screen.clone() {
                     Screen::Board => {
-                        self.board_ui(ui);
+                        // A focused column (ColumnFocus) is a board mode: the
+                        // header and status bar stay, the board is replaced.
+                        self.focused_column = self
+                            .focused_column
+                            .clone()
+                            .filter(|dir| self.board.columns.iter().any(|c| &c.dir == dir));
+                        if self.focused_column.is_some() {
+                            self.column_focus_ui(ui);
+                        } else {
+                            self.board_ui(ui);
+                        }
                         self.drop_dock(ui);
                     }
                     Screen::Detail(path) => self.detail_ui(ui, &path),
@@ -1883,6 +2209,26 @@ impl IboardApp {
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
         let project = self.project_name();
         match self.screen.clone() {
+            Screen::Board if self.focused_column.is_some() => {
+                // ColumnFocus: `project / Column`, the project linking back.
+                let dir = self.focused_column.clone().unwrap_or_default();
+                let column = self
+                    .board
+                    .columns
+                    .iter()
+                    .find(|column| column.dir == dir)
+                    .map(|column| column.name.clone())
+                    .unwrap_or_default();
+                let back = widgets::crumb(ui, &project, theme::ui_body()).clicked();
+                ui.label(RichText::new("/").color(p.ink_faint));
+                ui.add(
+                    egui::Label::new(RichText::new(column).font(theme::ui_strong()).color(p.ink))
+                        .truncate(),
+                );
+                if back {
+                    self.unfocus_column();
+                }
+            }
             Screen::Board => {
                 let path = display_path(&self.board.root);
                 let response = ui
@@ -2049,7 +2395,23 @@ impl IboardApp {
                     .column_of(&path)
                     .map(|column| column.name == "Done")
                     .unwrap_or(false);
-                self.review_button(ui, &path);
+                // Reviewing refines an issue, so only Todo issues offer it.
+                if self.is_todo_issue(&path) {
+                    self.review_button(ui, &path);
+                }
+                // In the Editor, Save and Discard take Edit's place.
+                if self.detail_mode == DetailMode::Edit && exists {
+                    if widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S")).clicked()
+                    {
+                        self.save_and_preview();
+                    }
+                    if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None)
+                        .on_hover_text("Drop unsaved changes and go back to the issue")
+                        .clicked()
+                    {
+                        self.discard_edits();
+                    }
+                }
                 if self.detail_mode == DetailMode::Preview
                     && exists
                     && widgets::button(
@@ -2115,7 +2477,7 @@ impl IboardApp {
         } else if configured {
             "Ask an agent to challenge this issue"
         } else {
-            "Set up an AI agent to review this issue (⌘,)"
+            "No agent is set up yet: choose one in Settings › AI review (⌘, or the caret)"
         };
         let (main, caret) = widgets::split_button(
             ui,
@@ -2124,6 +2486,7 @@ impl IboardApp {
             Some(Icon::Review),
             review_label,
             Some(if running { "esc" } else { "⌘⇧R" }),
+            running || configured,
         );
         let draft = self.detail_mode == DetailMode::Edit;
         if main.on_hover_text(review_hint).clicked() {
@@ -2468,6 +2831,25 @@ impl IboardApp {
                         ui.ctx()
                             .request_repaint_after(NOTICE_FOR.saturating_sub(at.elapsed()));
                         hints = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
+                    } else if let Some(dir) = self.focused_column.clone() {
+                        // ColumnFocus: what is shown, and how it is sorted.
+                        let sort = self.column_sort(&dir);
+                        let n = self
+                            .board
+                            .columns
+                            .iter()
+                            .find(|column| column.dir == dir)
+                            .map(|column| column.issues.len())
+                            .unwrap_or(0);
+                        let noun = if n == 1 { "issue" } else { "issues" };
+                        ui.label(meta(format!(
+                            "{} · {} {} · sorted by {}",
+                            self.relative(&dir),
+                            n,
+                            noun,
+                            sort.label().to_lowercase()
+                        )));
+                        hints = vec![("↩", "open"), ("⌘1–4", "column"), ("esc", "board")];
                     } else if self.composer.is_some()
                         && let Some(todo) = self.todo_column()
                     {
@@ -2487,7 +2869,9 @@ impl IboardApp {
                     } else {
                         hints = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
                     }
-                    ui.label(meta(format!("{count} {noun}")));
+                    if self.focused_column.is_none() {
+                        ui.label(meta(format!("{count} {noun}")));
+                    }
                     if !self.board.warnings.is_empty() {
                         let n = self.board.warnings.len();
                         let noun = if n == 1 { "warning" } else { "warnings" };
@@ -2531,14 +2915,16 @@ impl IboardApp {
         let Some(editor) = self.editor.as_ref().filter(|e| e.path == path) else {
             return;
         };
-        if editor.error.is_some() {
-            widgets::pill(ui, "Save failed", p.danger);
-        } else if editor.conflict.is_some() {
-            widgets::pill(ui, "Changed on disk", p.danger);
-        } else if editor.is_dirty() {
-            widgets::pill(ui, "Unsaved", p.status_doing);
-        } else {
-            widgets::pill(ui, "Saved", p.status_done);
+        let (word, color) = save_state(editor, p);
+        widgets::pill(ui, word, color);
+    }
+
+    /// Save in the Editor header (`⌘S` too): writes the draft and, when it
+    /// went through, shows the issue again.
+    fn save_and_preview(&mut self) {
+        self.flush_autosave(true);
+        if self.editor.as_ref().is_some_and(|e| e.error.is_none()) {
+            self.detail_mode = DetailMode::Preview;
         }
     }
 
@@ -2797,6 +3183,8 @@ impl IboardApp {
                 config.configured = self.agent.configured() || save_review;
                 let engine = dialog.engine;
                 let confirm_delete = dialog.confirm_delete;
+                // `[labels]` is rewritten only once its tab was looked at.
+                let label_rows = dialog.labels_seen.then(|| dialog.label_rows.clone());
                 let result = match &self.agent_file {
                     Some(file) => (if save_review {
                         agent::save(file, &config)
@@ -2804,7 +3192,14 @@ impl IboardApp {
                         Ok(())
                     })
                     .and_then(|()| titles::save_engine(file, engine))
-                    .and_then(|()| general::save_confirm_delete(file, confirm_delete)),
+                    .and_then(|()| general::save_confirm_delete(file, confirm_delete))
+                    .and_then(|()| {
+                        if label_rows.is_some() {
+                            labels::save(file, label_rows.as_deref().unwrap_or_default())
+                        } else {
+                            Ok(())
+                        }
+                    }),
                     None => Ok(()),
                 };
                 match result {
@@ -2815,6 +3210,9 @@ impl IboardApp {
                         }
                         self.title_engine = engine;
                         self.confirm_delete = confirm_delete;
+                        if label_rows.is_some() {
+                            self.labels = Labels::load(self.agent_file.as_deref());
+                        }
                         self.settings = None;
                         // The composer follows the new engine at once.
                         if self.composer.is_some() {
@@ -2885,6 +3283,13 @@ impl IboardApp {
         let count = self.board.columns.len() as f32;
         let available = ui.available_width() - 2.0 * gutter - (count - 1.0) * gutter;
         let width = (available / count).clamp(theme::COLUMN_MIN, theme::COLUMN_MAX);
+        // A double-clicked column takes the room the others give up.
+        let wide_column = self
+            .wide_column
+            .clone()
+            .filter(|dir| self.board.columns.iter().any(|c| &c.dir == dir));
+        let narrow = theme::COLUMN_MIN;
+        let wide_width = (available - (count - 1.0) * narrow).max(WIDE_COLUMN_MIN.max(width));
         let height = (ui.available_height() - 2.0 * gutter).max(120.0);
         let filter = &self.filter;
         let labels = &self.labels;
@@ -2908,6 +3313,12 @@ impl IboardApp {
         let mut submit: Option<bool> = None;
         let mut close_composer = false;
         let mut title_settings = false;
+        let mut filter_label: Option<String> = None;
+        let mut review: Option<PathBuf> = None;
+        let mut show_review: Option<PathBuf> = None;
+        let mut toggle_wide: Option<PathBuf> = None;
+        let mut focus_column: Option<PathBuf> = None;
+        let mut archive_all: Vec<PathBuf> = Vec::new();
 
         egui::ScrollArea::horizontal()
             .id_salt("board")
@@ -2925,6 +3336,12 @@ impl IboardApp {
                         } else {
                             None
                         };
+                        let wide = wide_column.as_ref() == Some(&column.dir);
+                        let width = match &wide_column {
+                            Some(_) if wide => wide_width,
+                            Some(_) => narrow,
+                            None => width,
+                        };
                         let view = ColumnView {
                             column,
                             index,
@@ -2936,6 +3353,10 @@ impl IboardApp {
                             scroll_to_selected,
                             root: &self.board.root,
                             labels,
+                            past_reviews: &self.past_reviews,
+                            can_review: self.agent.configured(),
+                            wide,
+                            sections: &self.board.reader_sections,
                         };
                         let actions = column_ui(ui, &view, composer);
                         if let Some(found) = actions.clicked {
@@ -2954,6 +3375,24 @@ impl IboardApp {
                         submit = submit.or(actions.submit);
                         close_composer |= actions.close_composer;
                         title_settings |= actions.title_settings;
+                        if filter_label.is_none() {
+                            filter_label = actions.filter_label;
+                        }
+                        if review.is_none() {
+                            review = actions.review;
+                        }
+                        if show_review.is_none() {
+                            show_review = actions.show_review;
+                        }
+                        if actions.toggle_wide {
+                            toggle_wide = Some(column.dir.clone());
+                        }
+                        if focus_column.is_none() {
+                            focus_column = actions.focus_column;
+                        }
+                        if !actions.archive_all.is_empty() {
+                            archive_all = actions.archive_all;
+                        }
                     }
                     // Ends the scrollable width one gutter after the last column.
                     ui.allocate_space(Vec2::ZERO);
@@ -2980,7 +3419,141 @@ impl IboardApp {
         if title_settings {
             self.open_title_settings();
         }
+        if let Some(label) = filter_label {
+            self.filter.pick(&label);
+        }
+        if let Some(dir) = toggle_wide {
+            self.wide_column = if self.wide_column.as_ref() == Some(&dir) {
+                None
+            } else {
+                Some(dir)
+            };
+        }
+        if let Some(dir) = focus_column {
+            self.focus_column(dir);
+        }
+        if !archive_all.is_empty() {
+            self.archive_all(&archive_all);
+        }
+        if let Some(path) = review {
+            self.open_issue(path.clone());
+            self.start_review(&path, false);
+        } else if let Some(path) = show_review {
+            self.show_past_review(path);
+        }
         if let Some(path) = clicked {
+            self.open_issue(path);
+        }
+    }
+
+    /// ColumnFocus: one column across the whole window (the design's
+    /// ColumnFocus component). The header stays; under it a focus bar holds the
+    /// column tabs, the sort select, Group by label and Board, then the cards
+    /// flow in a wide grid.
+    fn column_focus_ui(&mut self, ui: &mut egui::Ui) {
+        let Some(dir) = self.focused_column.clone() else {
+            return;
+        };
+        let p = theme::palette(ui);
+
+        // The focus bar, over the board's columns.
+        let tabs: Vec<FocusTab> = self
+            .board
+            .columns
+            .iter()
+            .map(|column| FocusTab {
+                name: column.name.clone(),
+                count: column.issues.len(),
+                color: status_color(p, column),
+                active: column.dir == dir,
+            })
+            .collect();
+        let done = self
+            .board
+            .columns
+            .iter()
+            .find(|column| column.dir == dir)
+            .is_some_and(|column| column.name.eq_ignore_ascii_case("done"));
+        let sort = self.column_sort(&dir);
+        let mut group = self.group_by_label;
+        let action = focus_bar(ui, &tabs, sort, &mut group, done);
+        self.group_by_label = group;
+
+        if let Some(at) = action.switch
+            && let Some(column) = self.board.columns.get(at)
+        {
+            if column.dir == dir {
+                self.unfocus_column();
+            } else {
+                self.focus_column(column.dir.clone());
+            }
+        }
+        if let Some((path, at)) = action.drop
+            && let Some(column) = self.board.columns.get(at)
+        {
+            let target = column.dir.clone();
+            if path.parent() != Some(target.as_path()) {
+                self.move_issue(&path, &target);
+            }
+        }
+        if let Some(sort) = action.sort {
+            self.column_sorts.insert(dir.clone(), sort);
+        }
+        if action.unfocus {
+            self.unfocus_column();
+        }
+
+        // The bar may have switched or left the focus; redraw with the state it
+        // set. When it left, the next frame draws the board.
+        let Some(dir) = self.focused_column.clone() else {
+            return;
+        };
+        let Some(column) = self.board.columns.iter().find(|column| column.dir == dir) else {
+            return;
+        };
+        let sort = self.column_sort(&dir);
+        let selected = self.selected.clone();
+        let scroll_to_selected = std::mem::take(&mut self.scroll_to_selected);
+        let new_card = self
+            .new_card
+            .as_ref()
+            .filter(|(_, at)| at.elapsed() < NEW_CARD_FLASH)
+            .map(|(path, _)| path.clone());
+        let view = FocusGrid {
+            column,
+            root: &self.board.root,
+            filter: &self.filter,
+            sort,
+            group: self.group_by_label,
+            labels: &self.labels,
+            sections: &self.board.reader_sections,
+            past_reviews: &self.past_reviews,
+            can_review: self.agent.configured(),
+            selected: selected.as_deref(),
+            scroll_to_selected,
+            new_card: new_card.as_deref(),
+        };
+        let actions = focus_grid(ui, &view);
+
+        if let Some(path) = actions.delete {
+            self.request_delete(path);
+        }
+        if let Some(path) = actions.archive {
+            self.archive_issue(&path);
+        }
+        if let Some(label) = actions.filter_label {
+            self.filter.pick(&label);
+        }
+        if let Some((path, anchor)) = actions.reorder {
+            self.place_issue(&path, &dir, anchor);
+        }
+        if let Some(path) = actions.review {
+            self.open_issue(path.clone());
+            self.start_review(&path, false);
+        } else if let Some(path) = actions.show_review {
+            self.show_past_review(path);
+        }
+        if let Some(path) = actions.clicked {
             self.open_issue(path);
         }
     }
@@ -3037,21 +3610,24 @@ impl IboardApp {
         let label = issue.label.clone();
         let label_color = label.as_deref().and_then(|name| self.labels.color(name));
         let p = theme::palette(ui);
-        let (column_name, status, done_column) = self
+        let (column_name, status, todo_issue) = self
             .column_of(path)
             .map(|column| {
                 (
                     column.name.clone(),
                     status_color(p, column),
-                    column.name.eq_ignore_ascii_case("done"),
+                    column.accepts_new_issues(),
                 )
             })
             .unwrap_or_else(|| (String::new(), p.status_todo, false));
+        let review_ready = self.agent.configured();
         let relative = self.relative(path);
         let (ticked, tasks) = sheet::checklist(&text);
         let words = sheet::word_count(&text);
         let sections = &self.board.reader_sections;
-        let missing: Vec<String> = if done_column {
+        // Only Todo issues are still being written: Ready, Doing and Done
+        // ones never get the "Not written yet" block.
+        let missing: Vec<String> = if !todo_issue {
             Vec::new()
         } else {
             sheet::missing_sections(&text, sections)
@@ -3065,8 +3641,34 @@ impl IboardApp {
         // double-click reliably opens the editor instead of selecting a word.
         ui.style_mut().interaction.selectable_labels = false;
 
-        // The sheet fills the window between the header and the status bar.
-        let sheet_height = ui.available_height() - 2.0 * theme::SPACE_5;
+        // Two blocks: the sheet, and under it the "Not written yet" block,
+        // docked at the bottom of the window. The sheet takes the spare
+        // height; the block stays put while a long issue scrolls.
+        let full = ui.available_rect_before_wrap();
+        let gutter = theme::SPACE_5;
+        let page_width = (full.width() - 2.0 * gutter).min(theme::READER_MAX);
+        let page_left = full.min.x + ((full.width() - page_width) / 2.0).max(gutter);
+        let tiles_across = if page_width >= 560.0 { 4 } else { 2 }.min(missing.len().max(1));
+        let block_height = if none_written {
+            let rows = missing.len().div_ceil(tiles_across) as f32;
+            2.0 * theme::SPACE_4
+                + theme::CONTROL_H
+                + theme::SPACE_3
+                + rows * GHOST_TILE_H
+                + (rows - 1.0) * theme::SPACE_3
+        } else if !missing.is_empty() {
+            40.0
+        } else {
+            0.0
+        };
+        let block_gap = if block_height > 0.0 {
+            theme::SPACE_4
+        } else {
+            0.0
+        };
+        let scroll_height = (full.height() - block_height - block_gap).max(120.0);
+        // The sheet fills its share between the header and the block.
+        let sheet_height = scroll_height - 2.0 * gutter;
         let mut body_rect = Rect::NOTHING;
         let mut add_section: Option<String> = None;
         let mut draft_review = false;
@@ -3077,6 +3679,7 @@ impl IboardApp {
             egui::ScrollArea::vertical()
                 .id_salt(("detail", path))
                 .auto_shrink([false, false])
+                .max_height(scroll_height)
                 .show(ui, |ui| {
                     page(ui, |ui| {
                         let top = ui.cursor().min.y;
@@ -3115,53 +3718,6 @@ impl IboardApp {
                         body_rect = body.response.rect;
                         changed = body.inner;
 
-                        if none_written {
-                            ui.add_space(theme::SPACE_6);
-                            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                            widgets::section_label(ui, "Not written yet");
-                            for section in &missing {
-                                if widgets::ghost_section(ui, section, sheet::section_hint(section))
-                                    .on_hover_text(format!("Add ## {section} in the editor"))
-                                    .clicked()
-                                {
-                                    add_section = Some(section.clone());
-                                }
-                            }
-                            ui.add_space(theme::SPACE_1);
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                                draft_review = widgets::button(
-                                    ui,
-                                    ButtonKind::Review,
-                                    Some(Icon::Review),
-                                    "Draft them with Review",
-                                    Some("⌘⇧R"),
-                                )
-                                .on_hover_text("Ask the review agent to propose these sections")
-                                .clicked();
-                                ui.label(
-                                    RichText::new("or click a section to write it yourself")
-                                        .font(theme::meta())
-                                        .color(p.ink_muted),
-                                );
-                            });
-                        } else if !missing.is_empty() {
-                            ui.add_space(theme::SPACE_5);
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing.x = 6.0;
-                                ui.label(
-                                    RichText::new("Add a section:")
-                                        .font(theme::ui_small())
-                                        .color(p.ink_muted),
-                                );
-                                for section in &missing {
-                                    if widgets::chip(ui, &format!("+ {section}"), false).clicked() {
-                                        add_section = Some(section.clone());
-                                    }
-                                }
-                            });
-                        }
-
                         // The rest of the sheet: empty, and a click edits at
                         // the end of the file.
                         let used = ui.cursor().min.y - top;
@@ -3175,6 +3731,31 @@ impl IboardApp {
                         paint_rest_hint(ui, rest);
                     });
                 });
+        }
+
+        if block_height > 0.0 {
+            let rect = Rect::from_min_size(
+                Pos2::new(page_left, full.max.y - gutter - block_height),
+                Vec2::new(page_width, block_height),
+            );
+            let mut block = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(rect)
+                    .layout(Layout::top_down(Align::Min)),
+            );
+            let picked = not_written_block(
+                &mut block,
+                rect,
+                &missing,
+                none_written,
+                tiles_across,
+                review_ready,
+            );
+            match picked {
+                Some(NotWritten::Section(section)) => add_section = Some(section),
+                Some(NotWritten::Review) => draft_review = true,
+                None => {}
+            }
         }
 
         // Hovering the text shows that it is one edit target: a `line-strong`
@@ -3252,8 +3833,6 @@ impl IboardApp {
             .unwrap_or_default();
         let mut reload = false;
         let mut keep = false;
-        let mut save = false;
-        let mut discard = false;
         let mut answer: Option<LeaveChoice> = None;
         let prompting = self.leave_prompt.is_some();
 
@@ -3279,13 +3858,11 @@ impl IboardApp {
                     editor.last_edit = Some(Instant::now());
                     ui.ctx().request_repaint_after(AUTOSAVE_AFTER);
                 }
+                // Save and Discard live in the header; the bar keeps the
+                // file and its save state.
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    save = widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S"))
-                        .clicked();
-                    discard = widgets::button(ui, ButtonKind::Secondary, None, "Discard", None)
-                        .on_hover_text("Drop unsaved changes and go back to the issue")
-                        .clicked();
+                    let (word, color) = save_state(editor, p);
+                    widgets::pill(ui, word, color);
                 });
             });
 
@@ -3383,15 +3960,6 @@ impl IboardApp {
         if keep {
             self.flush_autosave(true);
         }
-        if save {
-            self.flush_autosave(true);
-            if self.editor.as_ref().is_some_and(|e| e.error.is_none()) {
-                self.detail_mode = DetailMode::Preview;
-            }
-        }
-        if discard {
-            self.discard_edits();
-        }
         if let Some(choice) = answer {
             self.answer_leave(choice);
         }
@@ -3415,6 +3983,10 @@ impl eframe::App for IboardApp {
         #[cfg(target_os = "macos")]
         if crate::menu::take_quit_request() {
             self.leave(Leave::Quit);
+        }
+        #[cfg(target_os = "macos")]
+        if crate::menu::take_settings_request() && self.settings.is_none() {
+            self.open_settings(self.settings_tab);
         }
 
         // Closing the window is one more way of leaving the editor.
@@ -3480,6 +4052,7 @@ impl eframe::App for IboardApp {
                     _ if self.leave_prompt.is_some() => self.answer_leave(LeaveChoice::KeepEditing),
                     Screen::Board if self.composer.is_some() => self.composer_escape(),
                     Screen::Board if !self.filter.is_empty() => self.filter.clear(),
+                    Screen::Board if self.focused_column.is_some() => self.unfocus_column(),
                     Screen::Board => self.selected = None,
                     Screen::Detail(_) if self.detail_mode == DetailMode::Edit => {
                         self.show_preview();
@@ -3494,6 +4067,24 @@ impl eframe::App for IboardApp {
         }
         if command(Key::F) && matches!(self.screen, Screen::Board) {
             self.focus_filter = true;
+        }
+        // `⌘1`–`⌘4` show a column full screen (ColumnFocus); again goes back.
+        if matches!(self.screen, Screen::Board) && !typing {
+            for (at, key) in [Key::Num1, Key::Num2, Key::Num3, Key::Num4]
+                .into_iter()
+                .enumerate()
+            {
+                if command(key)
+                    && let Some(column) = self.board.columns.get(at)
+                {
+                    let dir = column.dir.clone();
+                    if self.focused_column.as_ref() == Some(&dir) {
+                        self.unfocus_column();
+                    } else {
+                        self.focus_column(dir);
+                    }
+                }
+            }
         }
         if command(Key::R) && !ctx.input(|i| i.modifiers.shift) {
             self.refresh();
@@ -3530,11 +4121,14 @@ impl eframe::App for IboardApp {
             }
         }
 
-        // Cmd/Ctrl+S forces a save (and overwrites a conflict). On the board
-        // it adds the composer's issue, as `↩` does.
+        // `⌘S` is the header's Save: it forces a save (overwriting a
+        // conflict) and, when it went through, shows the issue again.
+        // On the board it adds the composer's issue, as `↩` does.
         if command(Key::S) {
             if matches!(self.screen, Screen::Board) && self.composer.is_some() {
                 self.submit_composer(false);
+            } else if self.detail_mode == DetailMode::Edit {
+                self.save_and_preview();
             } else {
                 self.flush_autosave(true);
             }
@@ -3638,6 +4232,14 @@ struct ColumnView<'a> {
     root: &'a Path,
     /// The label colours, for the chip on each card.
     labels: &'a Labels,
+    /// The last review of each issue, for the cards' verdict pills.
+    past_reviews: &'a HashMap<PathBuf, PastReview>,
+    /// An agent is set up, so the selected Todo card offers Review.
+    can_review: bool,
+    /// Widened by a double-click.
+    wide: bool,
+    /// The reader's standard sections, for a wide card's facts row.
+    sections: &'a [String],
 }
 
 /// The status color of a column, from its folder's role.
@@ -3648,6 +4250,63 @@ fn status_color(p: &Palette, column: &Column) -> Color32 {
         "done" => p.status_done,
         _ => p.status_todo,
     }
+}
+
+/// The column header's title as a button (see the Column component): at rest
+/// it is just the uppercase `ui-label`, on hover it takes a `surface-hover`
+/// fill and shows a small expand icon in `ink-muted`. Clicking it expands the
+/// column to the whole window (ColumnFocus); the tooltip names the shortcut.
+fn column_title_button(ui: &mut egui::Ui, name: &str, shortcut: Option<&str>) -> egui::Response {
+    let p = theme::palette(ui);
+    let label = name.to_uppercase();
+    let text = widgets::text_width(ui, &label, theme::ui_label())
+        + label.chars().count() as f32 * theme::LABEL_TRACKING;
+    let pad = theme::SPACE_2;
+    let gap = 6.0;
+    let icon = 12.0;
+    let width = pad * 2.0 + text + gap + icon;
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 20.0), Sense::click());
+    let tooltip = match shortcut {
+        Some(key) => format!("Show {name} full screen ({key})"),
+        None => format!("Show {name} full screen"),
+    };
+    let response = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tooltip);
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        if response.hovered() {
+            painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_hover);
+        }
+        let mut job = LayoutJob::default();
+        job.append(
+            &label,
+            0.0,
+            egui::TextFormat {
+                font_id: theme::ui_label(),
+                color: p.ink,
+                extra_letter_spacing: theme::LABEL_TRACKING,
+                ..Default::default()
+            },
+        );
+        let label_galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+        painter.galley(
+            Pos2::new(
+                rect.min.x + pad,
+                rect.center().y - label_galley.size().y / 2.0,
+            ),
+            label_galley,
+            p.ink,
+        );
+        if response.hovered() {
+            let icon_rect = Rect::from_center_size(
+                Pos2::new(rect.max.x - pad - icon / 2.0, rect.center().y),
+                Vec2::splat(icon),
+            );
+            theme::paint_icon(painter, Icon::Expand, icon_rect, p.ink_muted);
+        }
+    }
+    response
 }
 
 fn column_ui(
@@ -3666,6 +4325,10 @@ fn column_ui(
         scroll_to_selected,
         root,
         labels,
+        past_reviews,
+        can_review,
+        wide,
+        sections,
     } = *view;
     let p = theme::palette(ui);
     let mut actions = ColumnActions::default();
@@ -3684,11 +4347,16 @@ fn column_ui(
     // empty space below the cards accepts a drop too.
     let origin = ui.cursor().min;
     let drop_rect = Rect::from_min_size(origin, Vec2::new(width, height));
+    // A double-click on the column (its header or empty space; cards take
+    // their own clicks) widens it, or puts it back.
     let drop_response = ui.interact(
         drop_rect,
         egui::Id::new(("column_drop", index)),
-        Sense::hover(),
+        Sense::click(),
     );
+    if drop_response.double_clicked() {
+        actions.toggle_wide = true;
+    }
 
     ui.allocate_ui_with_layout(
         Vec2::new(width, height),
@@ -3709,12 +4377,11 @@ fn column_ui(
             head.spacing_mut().item_spacing.x = theme::SPACE_3;
             let (dot, _) = head.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
             head.painter().circle_filled(dot.center(), 4.0, status);
-            head.label(
-                RichText::new(column.name.to_uppercase())
-                    .font(theme::ui_label())
-                    .extra_letter_spacing(theme::LABEL_TRACKING)
-                    .color(p.ink),
-            );
+            // The title is a button: it expands the column to the whole window.
+            let shortcut = (index < 4).then(|| ["⌘1", "⌘2", "⌘3", "⌘4"][index]);
+            if column_title_button(&mut head, &column.name, shortcut).clicked() {
+                actions.focus_column = Some(column.dir.clone());
+            }
             head.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_2;
                 if column.accepts_new_issues()
@@ -3766,6 +4433,8 @@ fn column_ui(
                         empty_well(ui, &message, width);
                     }
                     let mut cards: Vec<(PathBuf, Rect)> = Vec::new();
+                    let visible_paths: Vec<PathBuf> =
+                        visible.iter().map(|issue| issue.path.clone()).collect();
                     for issue in visible {
                         let fresh = new_card == Some(issue.path.as_path());
                         let look = if selected == Some(issue.path.as_path()) {
@@ -3777,9 +4446,27 @@ fn column_ui(
                         } else {
                             CardLook::Plain
                         };
-                        let (action, rect) = issue_card(ui, issue, width, look, labels);
+                        let pill = past_reviews.get(&issue.path).map(|past| past.pill(p));
+                        let extras = CardExtras {
+                            review_pill: pill,
+                            review_button: can_review
+                                && column.accepts_new_issues()
+                                && matches!(look, CardLook::Selected { .. }),
+                            wide,
+                            sections,
+                        };
+                        let (action, rect) = issue_card(ui, issue, width, look, labels, extras);
                         cards.push((issue.path.clone(), rect));
                         match action {
+                            Some(CardAction::FilterLabel(label)) => {
+                                actions.filter_label = Some(label);
+                            }
+                            Some(CardAction::Review) => {
+                                actions.review = Some(issue.path.clone());
+                            }
+                            Some(CardAction::ShowReview) => {
+                                actions.show_review = Some(issue.path.clone());
+                            }
                             Some(CardAction::Open) => {
                                 actions.clicked = Some(issue.path.clone());
                             }
@@ -3790,6 +4477,25 @@ fn column_ui(
                                 actions.archive = Some(issue.path.clone());
                             }
                             None => {}
+                        }
+                    }
+
+                    // At the end of a session, Done can be cleared at once:
+                    // the issues it lists (after the filter) go to `.archive/`.
+                    if column.name.eq_ignore_ascii_case("done") && visible_paths.len() > 1 {
+                        ui.add_space(theme::SPACE_1);
+                        let label = format!("Archive the {} issues above", visible_paths.len());
+                        if widgets::button(
+                            ui,
+                            ButtonKind::Secondary,
+                            Some(Icon::Archive),
+                            &label,
+                            None,
+                        )
+                        .on_hover_text(format!("Move them all to {ARCHIVE_DIR}/"))
+                        .clicked()
+                        {
+                            actions.archive_all = visible_paths.clone();
                         }
                     }
 
@@ -3864,6 +4570,469 @@ fn column_ui(
         actions.dropped = Some(drag.path.clone());
     }
 
+    actions
+}
+
+/// One column tab of ColumnFocus: its name, count and status colour, and
+/// whether it is the column being shown.
+struct FocusTab {
+    name: String,
+    count: usize,
+    color: Color32,
+    active: bool,
+}
+
+/// What the ColumnFocus focus bar asked for.
+#[derive(Default)]
+struct FocusBarAction {
+    /// Another tab was clicked: show that column.
+    switch: Option<usize>,
+    /// The active tab was clicked (or Board): leave ColumnFocus.
+    unfocus: bool,
+    /// A sort was picked.
+    sort: Option<Sort>,
+    /// A card was dropped on a tab: its path and the tab's index.
+    drop: Option<(PathBuf, usize)>,
+}
+
+/// The ColumnFocus focus bar: the segmented column tabs on the left, then the
+/// Sort select, Group by label and the bordered Board button on the right,
+/// over a `line` rule.
+fn focus_bar(
+    ui: &mut egui::Ui,
+    tabs: &[FocusTab],
+    sort: Sort,
+    group: &mut bool,
+    done: bool,
+) -> FocusBarAction {
+    let p = theme::palette(ui);
+    let mut action = FocusBarAction::default();
+    let tabs: Vec<widgets::ColumnTab> = tabs
+        .iter()
+        .map(|tab| widgets::ColumnTab {
+            name: &tab.name,
+            count: tab.count,
+            color: tab.color,
+            active: tab.active,
+        })
+        .collect();
+
+    let bar = Frame::new()
+        .inner_margin(Margin {
+            left: theme::SPACE_5 as i8,
+            right: theme::SPACE_5 as i8,
+            top: theme::SPACE_4 as i8,
+            bottom: theme::SPACE_4 as i8,
+        })
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                let shown = widgets::column_tabs(ui, &tabs);
+                if let Some(at) = shown.clicked {
+                    action.switch = Some(at);
+                }
+                // While a card is dragged, the tabs are drop targets: a drop
+                // moves it to that column without leaving the view.
+                if let Some(payload) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx()) {
+                    for (at, rect) in shown.tab_rects.iter().enumerate() {
+                        let response =
+                            ui.interact(*rect, egui::Id::new(("coltab_drop", at)), Sense::hover());
+                        if response.dnd_hover_payload::<IssueDrag>().is_some() {
+                            ui.painter().rect_stroke(
+                                *rect,
+                                CornerRadius::same(3),
+                                Stroke::new(2.0, p.accent),
+                                StrokeKind::Outside,
+                            );
+                        }
+                        if response.dnd_release_payload::<IssueDrag>().is_some() {
+                            action.drop = Some((payload.path.clone(), at));
+                        }
+                    }
+                }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                    // Board, the visible way out (`esc`).
+                    if widgets::button(
+                        ui,
+                        ButtonKind::Secondary,
+                        Some(Icon::Collapse),
+                        "Board",
+                        Some("esc"),
+                    )
+                    .on_hover_text("Back to the whole board (esc)")
+                    .clicked()
+                    {
+                        action.unfocus = true;
+                    }
+                    if widgets::checkbox(ui, group, "Group by label").changed() {
+                        // `group` is mutated in place; nothing else to do.
+                    }
+                    let response = widgets::select_sized(
+                        ui,
+                        egui::Id::new("focus-sort"),
+                        sort.label(),
+                        None,
+                        false,
+                        170.0,
+                    );
+                    let options: Vec<Sort> = if done {
+                        let mut options = vec![Sort::Finished];
+                        options.extend(Sort::MENU);
+                        options
+                    } else {
+                        Sort::MENU.to_vec()
+                    };
+                    let picked = egui::Popup::menu(&response)
+                        .width(170.0)
+                        .align(egui::RectAlign::BOTTOM_START)
+                        .show(|ui| {
+                            ui.set_min_width(170.0);
+                            ui.spacing_mut().item_spacing = Vec2::ZERO;
+                            let mut picked = None;
+                            for option in &options {
+                                if widgets::menu_option(
+                                    ui,
+                                    widgets::MenuOption {
+                                        name: option.label(),
+                                        mono: false,
+                                        muted: false,
+                                        meta: "",
+                                        checked: *option == sort,
+                                        active: false,
+                                    },
+                                )
+                                .clicked()
+                                {
+                                    picked = Some(*option);
+                                }
+                            }
+                            picked
+                        })
+                        .and_then(|inner| inner.inner);
+                    if let Some(option) = picked {
+                        action.sort = Some(option);
+                    }
+                    let cap = RichText::new("Sort").font(theme::meta()).color(p.ink_muted);
+                    ui.label(cap);
+                });
+            });
+        });
+    // The `line` rule under the bar, across the whole window.
+    ui.painter().hline(
+        bar.response.rect.x_range(),
+        bar.response.rect.max.y - 0.5,
+        Stroke::new(1.0, p.line),
+    );
+    action
+}
+
+/// Everything `focus_grid` needs to know about the focused column.
+struct FocusGrid<'a> {
+    column: &'a Column,
+    root: &'a Path,
+    filter: &'a Filter,
+    sort: Sort,
+    group: bool,
+    labels: &'a Labels,
+    sections: &'a [String],
+    past_reviews: &'a HashMap<PathBuf, PastReview>,
+    can_review: bool,
+    selected: Option<&'a Path>,
+    scroll_to_selected: bool,
+    new_card: Option<&'a Path>,
+}
+
+/// What the ColumnFocus grid asked for (it mirrors [`ColumnActions`], plus a
+/// Board-order reorder).
+#[derive(Default)]
+struct FocusGridActions {
+    clicked: Option<PathBuf>,
+    delete: Option<PathBuf>,
+    archive: Option<PathBuf>,
+    filter_label: Option<String>,
+    review: Option<PathBuf>,
+    show_review: Option<PathBuf>,
+    /// A card dropped in a Board-order column: it and the card to land in
+    /// front of.
+    reorder: Option<(PathBuf, Option<PathBuf>)>,
+}
+
+/// The focused column's issues, filtered and ordered by `sort`.
+fn focus_issues<'a>(column: &'a Column, filter: &Filter, sort: Sort) -> Vec<&'a Issue> {
+    let mut issues: Vec<&Issue> = column
+        .issues
+        .iter()
+        .filter(|issue| filter.matches(issue))
+        .collect();
+    match sort {
+        Sort::Board => {}
+        Sort::Modified => issues.sort_by_key(|issue| std::cmp::Reverse(issue.modified)),
+        Sort::Created => {
+            issues.sort_by_key(|issue| std::cmp::Reverse(issue.created.or(issue.modified)))
+        }
+        Sort::Title => issues.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+        Sort::MostToDo => issues.sort_by_key(|issue| {
+            let (done, total) = sheet::checklist(&issue.markdown);
+            std::cmp::Reverse(total.saturating_sub(done))
+        }),
+        Sort::Finished => issues.sort_by_key(|issue| {
+            std::cmp::Reverse(issue.done_at.map(|at| at.timestamp()).unwrap_or(i64::MIN))
+        }),
+    }
+    issues
+}
+
+/// Splits sorted issues into label sections, most-used label first with the
+/// unlabelled ones last, for Group by label.
+fn group_issues<'a>(issues: Vec<&'a Issue>) -> Vec<(Option<String>, Vec<&'a Issue>)> {
+    let mut map: Vec<(String, Vec<&Issue>)> = Vec::new();
+    let mut unlabelled: Vec<&Issue> = Vec::new();
+    for issue in issues {
+        match issue.label.as_deref() {
+            Some(label) => {
+                let label = label.to_lowercase();
+                match map.iter_mut().find(|(name, _)| *name == label) {
+                    Some((_, group)) => group.push(issue),
+                    None => map.push((label, vec![issue])),
+                }
+            }
+            None => unlabelled.push(issue),
+        }
+    }
+    map.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+    let mut groups: Vec<(Option<String>, Vec<&Issue>)> = map
+        .into_iter()
+        .map(|(name, group)| (Some(name), group))
+        .collect();
+    if !unlabelled.is_empty() {
+        groups.push((None, unlabelled));
+    }
+    groups
+}
+
+/// Where a card dropped at `pos` lands among `cards` (row-major): the index to
+/// insert before, or `cards.len()` at the end.
+fn insertion_index(cards: &[(PathBuf, Rect)], pos: Pos2) -> usize {
+    for (index, (_, rect)) in cards.iter().enumerate() {
+        if pos.y < rect.center().y {
+            return index;
+        }
+        if pos.y <= rect.max.y && pos.x < rect.center().x {
+            return index;
+        }
+    }
+    cards.len()
+}
+
+/// The label heading of a Group by label section: the chip and the count over a
+/// `line` rule.
+fn section_heading(ui: &mut egui::Ui, label: Option<&str>, count: usize, labels: &Labels) {
+    let p = theme::palette(ui);
+    ui.add_space(theme::SPACE_4);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+        match label {
+            Some(label) => {
+                widgets::label_pill(ui, label, labels.color(label));
+            }
+            None => {
+                ui.label(
+                    RichText::new("No label")
+                        .font(theme::ui_strong())
+                        .color(p.ink_muted),
+                );
+            }
+        }
+        let noun = if count == 1 { "issue" } else { "issues" };
+        ui.label(
+            RichText::new(format!("{count} {noun}"))
+                .font(theme::meta())
+                .color(p.ink_muted),
+        );
+    });
+    let y = ui.cursor().min.y + theme::SPACE_1;
+    let left = ui.max_rect().min.x;
+    let right = ui.max_rect().max.x;
+    ui.painter()
+        .hline(left..=right, y, Stroke::new(1.0, p.line));
+    ui.add_space(theme::SPACE_3);
+}
+
+/// The ColumnFocus grid: the focused column's cards at a 300pt-minimum, in
+/// `SPACE_4`-apart columns, optionally split by label. Cards are the board's
+/// [`issue_card`] with the wide extras: more summary, a facts row and the
+/// modified date.
+fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> FocusGridActions {
+    let p = theme::palette(ui);
+    let mut actions = FocusGridActions::default();
+    let issues = focus_issues(view.column, view.filter, view.sort);
+    let empty = issues.is_empty();
+    let groups = if view.group {
+        group_issues(issues)
+    } else {
+        vec![(None, issues)]
+    };
+
+    let gutter = theme::SPACE_5;
+    let gap = theme::SPACE_4;
+    let min = 300.0;
+    let available = (ui.available_width() - 2.0 * gutter).max(0.0);
+    let columns = (((available + gap) / (min + gap)).floor() as usize).max(1);
+    let cell = ((available - (columns as f32 - 1.0) * gap) / columns as f32).max(1.0);
+
+    let mut cards: Vec<(PathBuf, Rect)> = Vec::new();
+    egui::ScrollArea::vertical()
+        .id_salt("focus")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.add_space(gutter);
+            ui.horizontal(|ui| {
+                ui.add_space(gutter);
+                ui.vertical(|ui| {
+                    ui.set_width(available);
+                    ui.spacing_mut().item_spacing.y = gap;
+                    if empty {
+                        let folder = match view.column.dir.strip_prefix(view.root) {
+                            Ok(relative) if !relative.as_os_str().is_empty() => {
+                                format!("{}/", relative.display())
+                            }
+                            _ => String::new(),
+                        };
+                        let message = if view.column.issues.is_empty() {
+                            if folder.is_empty() {
+                                "No issues at the root".to_string()
+                            } else {
+                                format!("No issues in {folder}")
+                            }
+                        } else {
+                            format!("No issues match {}", view.filter.describe())
+                        };
+                        empty_well(ui, &message, available);
+                        return;
+                    }
+                    for (group_index, (label, group)) in groups.iter().enumerate() {
+                        if view.group {
+                            if group_index > 0 {
+                                ui.add_space(theme::SPACE_4);
+                            }
+                            section_heading(ui, label.as_deref(), group.len(), view.labels);
+                        }
+                        // Row by row, `columns` cards each: `horizontal_top`
+                        // keeps every card in a row at the same top, and the
+                        // vertical `gap` spaces the rows.
+                        for row in group.chunks(columns) {
+                            ui.horizontal_top(|ui| {
+                                ui.spacing_mut().item_spacing.x = gap;
+                                for issue in row {
+                                    let fresh = view.new_card == Some(issue.path.as_path());
+                                    let look = if view.selected == Some(issue.path.as_path()) {
+                                        CardLook::Selected {
+                                            scroll: view.scroll_to_selected,
+                                        }
+                                    } else if fresh {
+                                        CardLook::Fresh
+                                    } else {
+                                        CardLook::Plain
+                                    };
+                                    let pill =
+                                        view.past_reviews.get(&issue.path).map(|past| past.pill(p));
+                                    let extras = CardExtras {
+                                        review_pill: pill,
+                                        review_button: view.can_review
+                                            && view.column.accepts_new_issues()
+                                            && matches!(look, CardLook::Selected { .. }),
+                                        wide: true,
+                                        sections: view.sections,
+                                    };
+                                    let (action, rect) = ui
+                                        .allocate_ui_with_layout(
+                                            Vec2::new(cell, 0.0),
+                                            Layout::top_down(Align::Min),
+                                            |ui| {
+                                                ui.set_width(cell);
+                                                issue_card(
+                                                    ui,
+                                                    issue,
+                                                    cell,
+                                                    look,
+                                                    view.labels,
+                                                    extras,
+                                                )
+                                            },
+                                        )
+                                        .inner;
+                                    cards.push((issue.path.clone(), rect));
+                                    match action {
+                                        Some(CardAction::FilterLabel(label)) => {
+                                            actions.filter_label = Some(label);
+                                        }
+                                        Some(CardAction::Review) => {
+                                            actions.review = Some(issue.path.clone());
+                                        }
+                                        Some(CardAction::ShowReview) => {
+                                            actions.show_review = Some(issue.path.clone());
+                                        }
+                                        Some(CardAction::Open) => {
+                                            actions.clicked = Some(issue.path.clone());
+                                        }
+                                        Some(CardAction::Delete) => {
+                                            actions.delete = Some(issue.path.clone());
+                                        }
+                                        Some(CardAction::Archive) => {
+                                            actions.archive = Some(issue.path.clone());
+                                        }
+                                        None => {}
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    ui.add_space(gutter);
+
+                    // Reordering by drag is offered only where the order is
+                    // the files' order on the board.
+                    if view.sort == Sort::Board
+                        && let Some(drag) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx())
+                    {
+                        let area = ui.min_rect();
+                        let response =
+                            ui.interact(area, egui::Id::new("focus_drop"), Sense::hover());
+                        let pointer = ui
+                            .ctx()
+                            .pointer_interact_pos()
+                            .or(ui.ctx().pointer_hover_pos());
+                        let insert = pointer
+                            .map(|pos| insertion_index(&cards, pos))
+                            .unwrap_or(cards.len());
+                        if response.dnd_hover_payload::<IssueDrag>().is_some()
+                            && let Some(pos) = pointer
+                            && !cards.is_empty()
+                        {
+                            let (x, y0, y1) = match cards.get(insert) {
+                                Some((_, rect)) => (rect.min.x - gap / 2.0, rect.min.y, rect.max.y),
+                                None => {
+                                    let last = cards.last().expect("not empty");
+                                    (last.1.max.x + gap / 2.0, last.1.min.y, last.1.max.y)
+                                }
+                            };
+                            ui.painter().line_segment(
+                                [Pos2::new(x, y0), Pos2::new(x, y1)],
+                                Stroke::new(2.0, p.accent),
+                            );
+                            let _ = pos;
+                        }
+                        if response.dnd_release_payload::<IssueDrag>().is_some() {
+                            actions.reorder = Some((
+                                drag.path.clone(),
+                                cards.get(insert).map(|(path, _)| path.clone()),
+                            ));
+                        }
+                    }
+                });
+            });
+        });
     actions
 }
 
@@ -4324,6 +5493,19 @@ fn fade_out(ui: &egui::Ui, rect: Rect, ground: Color32) {
     ui.painter().add(Shape::mesh(mesh));
 }
 
+/// The editor's save state as a pill word and its colour.
+fn save_state(editor: &EditorState, p: &Palette) -> (&'static str, Color32) {
+    if editor.error.is_some() {
+        ("Save failed", p.danger)
+    } else if editor.conflict.is_some() {
+        ("Changed on disk", p.danger)
+    } else if editor.is_dirty() {
+        ("Unsaved", p.status_doing)
+    } else {
+        ("Saved", p.status_done)
+    }
+}
+
 /// How a card stands out from the others.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CardLook {
@@ -4345,6 +5527,7 @@ fn issue_card(
     width: f32,
     look: CardLook,
     labels: &Labels,
+    extras: CardExtras,
 ) -> (Option<CardAction>, Rect) {
     let p = theme::palette(ui);
     let card_id = egui::Id::new(("issue_card", &issue.path));
@@ -4380,6 +5563,7 @@ fn issue_card(
                 look != CardLook::Plain,
                 Some(show_actions),
                 labels,
+                extras,
             )
         },
     );
@@ -4424,7 +5608,9 @@ fn issue_card(
                     let lifted = Frame::new()
                         .shadow(ui.visuals().popup_shadow)
                         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-                        .show(ui, |ui| card_body(ui, issue, width, false, None, labels));
+                        .show(ui, |ui| {
+                            card_body(ui, issue, width, false, None, labels, CardExtras::default())
+                        });
                     ui.painter().rect_stroke(
                         lifted.response.rect,
                         CornerRadius::same(theme::RADIUS_MD),
@@ -4469,6 +5655,84 @@ struct CardBody {
     action_rects: Vec<Rect>,
 }
 
+/// One entry of a wide card's facts row: a small `meta` label, with a check
+/// icon when the section is written.
+fn fact(ui: &mut egui::Ui, text: &str, color: Color32, checked: bool) {
+    let icon = 12.0;
+    let gap = 4.0;
+    let text_width = widgets::text_width(ui, text, theme::meta());
+    let width = if checked { icon + gap } else { 0.0 } + text_width;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 16.0), Sense::hover());
+    let cy = rect.center().y;
+    let mut x = rect.min.x;
+    if checked {
+        let icon_rect = Rect::from_center_size(Pos2::new(x + icon / 2.0, cy), Vec2::splat(icon));
+        theme::paint_icon(ui.painter(), Icon::Check, icon_rect, color);
+        x += icon + gap;
+    }
+    ui.painter().text(
+        Pos2::new(x, cy),
+        egui::Align2::LEFT_CENTER,
+        text,
+        theme::meta(),
+        color,
+    );
+}
+
+/// A wide card's facts: each standard section, `true` when it is written (and
+/// so gets a check; acceptance criteria carries its checklist count), `false`
+/// and `Name —` when it is missing. A bare issue is one "No sections yet".
+fn facts(issue: &Issue, sections: &[String]) -> Vec<(String, bool)> {
+    let missing = sheet::missing_sections(&issue.markdown, sections);
+    if sections
+        .iter()
+        .all(|section| missing.contains(&section.as_str()))
+    {
+        return vec![("No sections yet".to_string(), false)];
+    }
+    let (done, total) = sheet::checklist(&issue.markdown);
+    sections
+        .iter()
+        .map(|section| {
+            let present = !missing.contains(&section.as_str());
+            if !present {
+                (format!("{section} —"), false)
+            } else if section.eq_ignore_ascii_case("Acceptance criteria") {
+                (format!("Criteria {done}/{total}"), true)
+            } else {
+                (section.clone(), true)
+            }
+        })
+        .collect()
+}
+
+/// A wide card's facts row: the written sections checked in `status-done`, the
+/// missing ones as `Out of scope —` in `ink-muted`.
+fn fact_row(ui: &mut egui::Ui, issue: &Issue, sections: &[String]) {
+    let p = theme::palette(ui);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::new(10.0, 4.0);
+        for (text, checked) in facts(issue, sections) {
+            let color = if checked { p.status_done } else { p.ink_muted };
+            fact(ui, &text, color, checked);
+        }
+    });
+}
+
+/// A card's modified date, friendly: "today 18:02", "yesterday", "2 Oct".
+fn card_date(time: std::time::SystemTime) -> String {
+    let at = chrono::DateTime::<chrono::Local>::from(time);
+    let date = at.date_naive();
+    let today = chrono::Local::now().date_naive();
+    if date == today {
+        format!("today {}", at.format("%H:%M"))
+    } else if Some(date) == today.pred_opt() {
+        "yesterday".to_string()
+    } else {
+        at.format("%-d %b").to_string()
+    }
+}
+
 /// The visual body of a card, shared by the card in the board and the ghost
 /// that follows the pointer while dragging: title, summary clamped to three
 /// lines, file name. A `highlighted` card (new or selected) is `accent-soft`.
@@ -4483,9 +5747,15 @@ fn card_body(
     highlighted: bool,
     actions: Option<bool>,
     labels: &Labels,
+    extras: CardExtras,
 ) -> CardBody {
     let p = theme::palette(ui);
-    let padding = Margin::symmetric(theme::SPACE_4 as i8, 10);
+    // Wide cards (ColumnFocus) get more room: 12×14 padding and 6pt gaps.
+    let padding = if extras.wide {
+        Margin::symmetric(14, 12)
+    } else {
+        Margin::symmetric(theme::SPACE_4 as i8, 10)
+    };
     let border = 1.0;
     // The frame's border is drawn outside the padding, so take it off too.
     let inner = width - f32::from(padding.left) - f32::from(padding.right) - 2.0 * border;
@@ -4500,15 +5770,19 @@ fn card_body(
         .inner_margin(padding)
         .show(ui, |ui| {
             ui.set_width(inner);
-            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+            ui.spacing_mut().item_spacing.y = if extras.wide { 6.0 } else { theme::SPACE_2 };
             // The label rides at the right of the title's first line; the
             // title wraps in what is left, so a long one never shifts it.
+            let mut label_click: Option<(String, Rect, bool)> = None;
             match &issue.label {
                 Some(label) => {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = theme::SPACE_2;
                         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                            widgets::label_pill(ui, label, labels.color(label));
+                            let pill = widgets::label_pill(ui, label, labels.color(label))
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .on_hover_text(format!("Filter by {}", label.to_lowercase()));
+                            label_click = Some((label.clone(), pill.rect, pill.clicked()));
                             ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
                                 ui.add(
                                     egui::Label::new(
@@ -4536,10 +5810,14 @@ fn card_body(
             if !issue.summary.is_empty() {
                 let mut job =
                     LayoutJob::simple(issue.summary.clone(), theme::ui_small(), p.ink_muted, inner);
-                job.wrap.max_rows = 3;
+                // Wider cards show twice the summary: six lines, not three.
+                job.wrap.max_rows = if extras.wide { 6 } else { 3 };
                 ui.add(egui::Label::new(job));
             }
-            ui.horizontal(|ui| {
+            if extras.wide {
+                fact_row(ui, issue, extras.sections);
+            }
+            let meta = ui.horizontal(|ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let mut action = None;
                     let mut action_rects = Vec::new();
@@ -4563,7 +5841,7 @@ fn card_body(
                             Icon::Trash,
                             egui::Id::new(("card_delete", &issue.path)),
                             "Delete  Del",
-                            true,
+                            widgets::Tone::Danger,
                         );
                         action_rects.push(delete.rect);
                         if delete.clicked() {
@@ -4575,16 +5853,52 @@ fn card_body(
                                 Icon::Archive,
                                 egui::Id::new(("card_archive", &issue.path)),
                                 "Archive  A",
-                                false,
+                                widgets::Tone::Plain,
                             );
                             action_rects.push(archive.rect);
                             if archive.clicked() {
                                 action = Some(CardAction::Archive);
                             }
                         }
+                        // The selected Todo card can be reviewed from here.
+                        if extras.review_button {
+                            let review = widgets::icon_button(
+                                ui,
+                                Icon::Review,
+                                egui::Id::new(("card_review", &issue.path)),
+                                "Review  ⌘⇧R",
+                                widgets::Tone::Review,
+                            );
+                            action_rects.push(review.rect);
+                            if review.clicked() {
+                                action = Some(CardAction::Review);
+                            }
+                        }
                     });
-                    // Done issues: the day on the right, the exact time on hover.
-                    if let Some(done_at) = issue.done_at {
+                    // The last review's verdict: a click reopens it.
+                    if let Some((word, color)) = extras.review_pill {
+                        let pill = widgets::pill(ui, word, color)
+                            .interact(Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text("Show the last review");
+                        action_rects.push(pill.rect);
+                        if pill.clicked() {
+                            action = Some(CardAction::ShowReview);
+                        }
+                    }
+                    // Wide cards always show the modified date, as on the
+                    // board's Done cards: "today 18:02", "yesterday", "2 Oct".
+                    if extras.wide {
+                        if let Some(modified) = issue.modified {
+                            ui.add(egui::Label::new(
+                                RichText::new(card_date(modified))
+                                    .font(theme::meta())
+                                    .color(p.ink_muted),
+                            ))
+                            .on_hover_text(relative_time(modified));
+                        }
+                    } else if let Some(done_at) = issue.done_at {
+                        // Done issues: the day on the right, the exact time on hover.
                         ui.add(egui::Label::new(
                             RichText::new(done_at.format("%Y-%m-%d").to_string())
                                 .font(theme::meta())
@@ -4605,8 +5919,16 @@ fn card_body(
                     (action, action_rects)
                 })
                 .inner
-            })
-            .inner
+            });
+            let (mut action, mut action_rects) = meta.inner;
+            // The label is its own click target: it filters the board.
+            if let Some((label, rect, clicked)) = label_click {
+                action_rects.push(rect);
+                if clicked {
+                    action = Some(CardAction::FilterLabel(label));
+                }
+            }
+            (action, action_rects)
         });
     CardBody {
         action: shown.inner.0,
@@ -4634,6 +5956,130 @@ fn page_column<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) ->
         .inner;
     ui.add_space(gutter);
     result
+}
+
+/// Narrowest a double-clicked column gets, even on a small window.
+const WIDE_COLUMN_MIN: f32 = 640.0;
+
+/// Height of a ghost tile in the "Not written yet" block.
+const GHOST_TILE_H: f32 = 72.0;
+
+/// What the "Not written yet" block asked for.
+enum NotWritten {
+    Section(String),
+    Review,
+}
+
+/// The "Not written yet" block under the reader sheet: its own `surface`
+/// card. With nothing written, a head row (label, Draft with Review) over a
+/// grid of ghost tiles; once some sections exist, one line of chips.
+fn not_written_block(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    missing: &[String],
+    none_written: bool,
+    across: usize,
+    review_ready: bool,
+) -> Option<NotWritten> {
+    let p = theme::palette(ui);
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(theme::RADIUS_MD),
+        p.surface,
+        Stroke::new(1.0, p.line),
+        StrokeKind::Inside,
+    );
+    let inner = rect.shrink2(Vec2::new(theme::SPACE_5, theme::SPACE_4));
+    let mut ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    let mut picked = None;
+    let label = |ui: &mut egui::Ui| {
+        ui.label(
+            RichText::new("NOT WRITTEN YET")
+                .font(theme::ui_label())
+                .extra_letter_spacing(theme::LABEL_TRACKING)
+                .color(p.ink_muted),
+        );
+    };
+    if !none_written {
+        // One 40pt line: the label, then a chip per missing section.
+        ui.horizontal_centered(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+            label(ui);
+            for section in missing {
+                if widgets::chip(ui, &format!("+ {section}"), false)
+                    .on_hover_text(format!("Add ## {section} in the editor"))
+                    .clicked()
+                {
+                    picked = Some(NotWritten::Section(section.clone()));
+                }
+            }
+        });
+        return picked;
+    }
+
+    ui.allocate_ui_with_layout(
+        Vec2::new(inner.width(), theme::CONTROL_H),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            label(ui);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let kind = if review_ready {
+                    ButtonKind::Review
+                } else {
+                    ButtonKind::Disabled
+                };
+                let response = widgets::button(
+                    ui,
+                    kind,
+                    Some(Icon::Review),
+                    "Draft with Review",
+                    Some("⌘⇧R"),
+                );
+                if review_ready {
+                    if response
+                        .on_hover_text("Ask the review agent to propose these sections")
+                        .clicked()
+                    {
+                        picked = Some(NotWritten::Review);
+                    }
+                } else {
+                    response.on_hover_text(
+                        "No agent is set up yet: choose one in Settings › AI review (⌘,)",
+                    );
+                }
+            });
+        },
+    );
+    ui.add_space(theme::SPACE_3);
+    let gap = theme::SPACE_3;
+    let tile_w = (inner.width() - gap * (across as f32 - 1.0)) / across as f32;
+    let top = ui.cursor().min.y;
+    for (index, section) in missing.iter().enumerate() {
+        let (row, col) = (index / across, index % across);
+        let tile = Rect::from_min_size(
+            Pos2::new(
+                inner.min.x + col as f32 * (tile_w + gap),
+                top + row as f32 * (GHOST_TILE_H + gap),
+            ),
+            Vec2::new(tile_w, GHOST_TILE_H),
+        );
+        let mut cell = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(tile)
+                .layout(Layout::top_down(Align::Min)),
+        );
+        if widgets::ghost_section(&mut cell, section, sheet::section_hint(section))
+            .on_hover_text(format!("Add ## {section} in the editor"))
+            .clicked()
+        {
+            picked = Some(NotWritten::Section(section.clone()));
+        }
+    }
+    picked
 }
 
 /// The reader's `surface` page: `reader-max` wide, centred, 24×32 padding.
@@ -4874,7 +6320,7 @@ fn atomic_write_bytes(path: &Path, contents: &[u8]) -> std::io::Result<()> {
 const DELETE_CONSEQUENCE: &str =
     "The file is moved to the macOS Trash. You can restore it from there.";
 #[cfg(not(target_os = "macos"))]
-const DELETE_CONSEQUENCE: &str = "The file is deleted from disk. This cannot be undone.";
+const DELETE_CONSEQUENCE: &str = "The file is moved to the Trash. You can restore it from there.";
 
 /// Deletes a file the way `DELETE_CONSEQUENCE` says: to the Trash on macOS,
 /// for good elsewhere. Tests delete for good, so they never fill the Trash.
@@ -4894,7 +6340,71 @@ fn trash(path: &Path) -> std::io::Result<Option<PathBuf>> {
             .and_then(|url| url.path())
             .map(|path| PathBuf::from(path.to_string())));
     }
+    #[cfg(not(target_os = "macos"))]
+    if !cfg!(test) {
+        return freedesktop_trash(path).map(Some);
+    }
     std::fs::remove_file(path).map(|()| None)
+}
+
+/// Moves `path` to the freedesktop Trash (`$XDG_DATA_HOME/Trash`, by default
+/// `~/.local/share/Trash`): the file under `files/`, and a `.trashinfo` under
+/// `info/` so file managers can restore it. Returns where the file went.
+#[cfg(not(target_os = "macos"))]
+fn freedesktop_trash(path: &Path) -> std::io::Result<PathBuf> {
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
+        .ok_or_else(|| std::io::Error::other("no home folder for the Trash"))?;
+    trash_into(path, &data.join("Trash"))
+}
+
+/// [`freedesktop_trash`] into a given Trash folder. Built on every OS so it is
+/// tested everywhere; only Linux and the BSDs call it.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn trash_into(path: &Path, trash: &Path) -> std::io::Result<PathBuf> {
+    let (files, info) = (trash.join("files"), trash.join("info"));
+    std::fs::create_dir_all(&files)?;
+    std::fs::create_dir_all(&info)?;
+    let original = std::fs::canonicalize(path)?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "issue.md".to_string());
+    // A free name: `issue.md`, then `issue.2.md`, `issue.3.md`...
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((stem, ext)) => (stem.to_string(), format!(".{ext}")),
+        None => (name.clone(), String::new()),
+    };
+    let mut candidate = name.clone();
+    let mut n = 2;
+    while files.join(&candidate).exists() || info.join(format!("{candidate}.trashinfo")).exists() {
+        candidate = format!("{stem}.{n}{ext}");
+        n += 1;
+    }
+    let encoded: String = original
+        .to_string_lossy()
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect();
+    let date = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S");
+    std::fs::write(
+        info.join(format!("{candidate}.trashinfo")),
+        format!("[Trash Info]\nPath={encoded}\nDeletionDate={date}\n"),
+    )?;
+    let target = files.join(&candidate);
+    // Another file system: copy, then remove.
+    if std::fs::rename(path, &target).is_err() {
+        std::fs::copy(path, &target)?;
+        std::fs::remove_file(path)?;
+    }
+    Ok(target)
 }
 
 /// Shortens absolute paths under the home directory to `~/...`.
@@ -6436,6 +7946,181 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// Bug: opening another issue dropped the composer and what was typed.
+    #[test]
+    fn opening_an_issue_keeps_an_unsaved_composer() {
+        let dir = scratch_dir("compose-keep");
+        let todo = dir.join("issues/todo");
+        std::fs::create_dir_all(&todo).unwrap();
+        let other = todo.join("other.md");
+        std::fs::write(&other, "# Other\n").unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+
+        app.open_composer();
+        app.composer.as_mut().unwrap().description = "Half a thought".into();
+        app.open_issue(other.clone());
+        app.back_to_board();
+        assert_eq!(
+            app.composer.as_ref().map(|c| c.description.as_str()),
+            Some("Half a thought"),
+            "the draft waits on the board"
+        );
+
+        app.composer.as_mut().unwrap().description.clear();
+        app.open_issue(other);
+        assert!(app.composer.is_none(), "an empty composer still closes");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Reviewing and "Not written yet" are for issues still in Todo.
+    #[test]
+    fn only_todo_issues_are_reviewed() {
+        let dir = scratch_dir("review-todo-only");
+        let ready = dir.join("issues/ready");
+        std::fs::create_dir_all(&ready).unwrap();
+        std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+        let file = ready.join("001-queued.md");
+        std::fs::write(&file, "# Queued\n").unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+        app.agent.configured = true;
+        assert!(!app.is_todo_issue(&file));
+        app.start_review(&file, false);
+        assert!(app.review.is_none(), "a Ready issue is not reviewed");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Bug: `⌘S` in the editor did not save.
+    #[test]
+    fn command_s_saves_the_editor() {
+        let dir = scratch_dir("command-s");
+        let todo = dir.join("issues/todo");
+        std::fs::create_dir_all(&todo).unwrap();
+        let file = todo.join("demo.md");
+        std::fs::write(&file, "# Demo\n").unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+        app.auto = false;
+        app.start_editing(&file);
+        app.editor.as_mut().unwrap().text = "# Demo\n\nMore.\n".into();
+
+        let ctx = themed_ctx();
+        let pass = |app: &mut IboardApp, events: Vec<egui::Event>, _modifiers: egui::Modifiers| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1280.0, 800.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| {
+                eframe::App::logic(app, ui.ctx(), &mut eframe::Frame::_new_kittest());
+                app.draw(ui);
+            })
+            .textures_delta
+            .clear();
+        };
+        pass(&mut app, vec![], egui::Modifiers::NONE);
+        pass(&mut app, vec![], egui::Modifiers::NONE);
+        let s = egui::Event::Key {
+            key: Key::S,
+            physical_key: Some(Key::S),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        pass(
+            &mut app,
+            vec![egui::Event::ModifiersChanged(egui::Modifiers::COMMAND), s],
+            egui::Modifiers::COMMAND,
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Demo\n\nMore.\n");
+        assert_eq!(
+            app.detail_mode,
+            DetailMode::Preview,
+            "like the Save ⌘S button, it shows the saved issue"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_freedesktop_trash_keeps_a_restorable_copy() {
+        let dir = scratch_dir("xdg-trash");
+        let file = dir.join("my issue.md");
+        std::fs::write(&file, "# Mine\n").unwrap();
+        let trash = dir.join("Trash");
+        let first = trash_into(&file, &trash).unwrap();
+        assert!(!file.exists());
+        assert_eq!(first, trash.join("files/my issue.md"));
+        let info = std::fs::read_to_string(trash.join("info/my issue.md.trashinfo")).unwrap();
+        assert!(info.starts_with("[Trash Info]\nPath=/"), "{info}");
+        assert!(
+            info.contains("my%20issue.md"),
+            "the path is URL-encoded: {info}"
+        );
+        assert!(info.contains("DeletionDate="));
+
+        std::fs::write(&file, "# Again\n").unwrap();
+        let second = trash_into(&file, &trash).unwrap();
+        assert_eq!(
+            second,
+            trash.join("files/my issue.2.md"),
+            "never overwrites"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A dismissed review stays behind the card's verdict pill.
+    #[test]
+    fn a_dismissed_review_can_be_reopened_from_its_card() {
+        let (dir, file, mut app) = open_issue_with_review("past-review");
+        app.cancel_review();
+        assert!(app.review.is_none());
+        let past = app.past_reviews.get(&file).expect("kept for the session");
+        let p = &theme::LIGHT;
+        assert_eq!(past.pill(p).0, "Block", "the worst verdict names the pill");
+
+        app.back_to_board();
+        app.show_past_review(file.clone());
+        assert!(matches!(&app.screen, Screen::Detail(path) if *path == file));
+        let review = app.review.as_ref().expect("the panel is back");
+        assert!(matches!(review.status, ReviewStatus::Done { .. }));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn archive_all_clears_done_and_a_wide_column_draws() {
+        let dir = scratch_dir("archive-all");
+        let done = dir.join("issues/done");
+        std::fs::create_dir_all(&done).unwrap();
+        std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+        let a = done.join("a.md");
+        let b = done.join("b.md");
+        std::fs::write(&a, "# A\n").unwrap();
+        std::fs::write(&b, "# B\n").unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+
+        // The board draws with Done widened.
+        app.wide_column = Some(done.clone());
+        let ctx = themed_ctx();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1280.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        ctx.run_ui(input, |ui| app.draw(ui)).textures_delta.clear();
+
+        app.archive_all(&[a.clone(), b.clone()]);
+        assert!(!a.exists() && !b.exists());
+        assert!(dir.join("issues/.archive/a.md").exists());
+        assert_eq!(
+            app.notice.as_ref().map(|(text, _)| text.as_str()),
+            Some("Archived 2 issues")
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn only_the_todo_column_offers_new_issues() {
         let dir = scratch_dir("new-columns");
@@ -6922,6 +8607,247 @@ mod tests {
                 .clear();
         }
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A project with a Todo column of `(title, label)` issues, and the app.
+    fn focus_app(tag: &str, cards: &[(&str, Option<&str>)]) -> (PathBuf, PathBuf, IboardApp) {
+        let dir = scratch_dir(tag);
+        let todo = dir.join("issues/todo");
+        std::fs::create_dir_all(&todo).unwrap();
+        for (index, (title, label)) in cards.iter().enumerate() {
+            let body = match label {
+                Some(label) => format!("# [{label}] {title}\n\n## Context\n\nWhy.\n"),
+                None => format!("# {title}\n\n## Context\n\nWhy.\n\n- [ ] one\n- [x] two\n"),
+            };
+            std::fs::write(todo.join(format!("card-{index}.md")), body).unwrap();
+        }
+        let located = discovery::locate(&dir).unwrap();
+        (dir, todo, IboardApp::from_located(located))
+    }
+
+    /// Renders `app` twice and clears the texture deltas, as the other tests do.
+    fn render(app: &mut IboardApp, ctx: &egui::Context, width: f32) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 800.0),
+            )),
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            ctx.run_ui(input.clone(), |ui| app.draw(ui))
+                .textures_delta
+                .clear();
+        }
+    }
+
+    #[test]
+    fn focused_columns_open_with_their_own_default_sort() {
+        assert_eq!(default_sort(Path::new("/x/todo")), Sort::Modified);
+        assert_eq!(default_sort(Path::new("/x/ready")), Sort::Board);
+        assert_eq!(default_sort(Path::new("/x/doing")), Sort::Modified);
+        assert_eq!(default_sort(Path::new("/x/done")), Sort::Finished);
+    }
+
+    /// A focused Todo column lays the wide cards out four across at 1280pt,
+    /// with the fifth wrapping to a new row inside the gutters.
+    #[test]
+    fn column_focus_lays_wide_cards_in_a_grid() {
+        let (dir, todo, mut app) = focus_app(
+            "focus-grid",
+            &[
+                ("One", None),
+                ("Two", None),
+                ("Three", None),
+                ("Four", None),
+                ("Five", None),
+            ],
+        );
+        // Pin the file order so the grid is deterministic.
+        app.column_sorts.insert(todo.clone(), Sort::Board);
+        app.focus_column(todo.clone());
+        assert_eq!(app.focused_column.as_deref(), Some(todo.as_path()));
+
+        let ctx = themed_ctx();
+        render(&mut app, &ctx, 1280.0);
+
+        let paths: Vec<PathBuf> = app
+            .board
+            .columns
+            .iter()
+            .find(|column| column.dir == todo)
+            .unwrap()
+            .issues
+            .iter()
+            .map(|issue| issue.path.clone())
+            .collect();
+        let rects: Vec<Rect> = paths
+            .iter()
+            .map(|path| {
+                ctx.read_response(egui::Id::new(("issue_card", path)))
+                    .expect("every card is drawn")
+                    .rect
+            })
+            .collect();
+
+        assert!(
+            rects[0].width() >= 295.0,
+            "wide cards: {:?}",
+            rects[0].width()
+        );
+        assert!(
+            (rects[0].center().y - rects[3].center().y).abs() < 1.0,
+            "four cards share the first row: {rects:?}"
+        );
+        assert!(
+            rects[4].center().y > rects[0].center().y + 10.0,
+            "the fifth wraps to a new row"
+        );
+        assert!(rects[1].min.x > rects[0].min.x, "cards run left to right");
+        for rect in &rects {
+            assert!(
+                rect.min.x >= 16.0 - 0.5 && rect.max.x <= 1280.0 - 16.0 + 0.5,
+                "{} at {rect:?} is outside the gutters",
+                rect.center()
+            );
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn focus_sorts_order_the_cards() {
+        let (dir, todo, app) = focus_app(
+            "focus-sort",
+            &[("Zebra", None), ("Apple", None), ("Mango", None)],
+        );
+        let column = app
+            .board
+            .columns
+            .iter()
+            .find(|column| column.dir == todo)
+            .unwrap();
+        let titles = |sort| {
+            focus_issues(column, &Filter::default(), sort)
+                .into_iter()
+                .map(|issue| issue.title.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(titles(Sort::Board), ["Zebra", "Apple", "Mango"]);
+        assert_eq!(titles(Sort::Title), ["Apple", "Mango", "Zebra"]);
+        // Each issue has two checklist items, one open; most-to-do keeps them.
+        assert_eq!(titles(Sort::MostToDo).len(), 3);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn grouping_orders_labels_by_count_and_unlabelled_last() {
+        let (dir, todo, app) = focus_app(
+            "focus-group",
+            &[
+                ("A", Some("bug")),
+                ("B", Some("bug")),
+                ("C", Some("feature")),
+                ("D", None),
+            ],
+        );
+        let column = app
+            .board
+            .columns
+            .iter()
+            .find(|column| column.dir == todo)
+            .unwrap();
+        let groups = group_issues(focus_issues(column, &Filter::default(), Sort::Board));
+        let names: Vec<Option<&str>> = groups.iter().map(|(label, _)| label.as_deref()).collect();
+        assert_eq!(names, [Some("bug"), Some("feature"), None]);
+        assert_eq!(groups[0].1.len(), 2);
+        assert_eq!(groups[2].1.len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn facts_check_written_sections_and_mark_missing() {
+        let sections: Vec<String> = crate::sheet::DEFAULT_SECTIONS
+            .iter()
+            .map(|section| section.to_string())
+            .collect();
+        let dir = scratch_dir("facts");
+        let file = dir.join("x.md");
+        std::fs::write(
+            &file,
+            "# T\n\n## Context\n\nWhy.\n\n## Acceptance criteria\n\n- [x] a\n- [ ] b\n",
+        )
+        .unwrap();
+        let issue = Issue::load(&file).unwrap();
+        let row = facts(&issue, &sections);
+        assert!(row.iter().any(|(text, ok)| text == "Context" && *ok));
+        assert!(row.iter().any(|(text, ok)| text == "Criteria 1/2" && *ok));
+        assert!(
+            row.iter()
+                .any(|(text, ok)| text == "Out of scope —" && !*ok)
+        );
+
+        std::fs::write(&file, "# Bare\n").unwrap();
+        let issue = Issue::load(&file).unwrap();
+        assert_eq!(
+            facts(&issue, &sections),
+            vec![("No sections yet".to_string(), false)]
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Opening an issue from a focused column and going back returns to that
+    /// column, not the whole board.
+    #[test]
+    fn opening_an_issue_from_focus_returns_to_the_focused_column() {
+        let (dir, todo, mut app) = focus_app("focus-open", &[("One", None), ("Two", None)]);
+        app.focus_column(todo.clone());
+        let file = app
+            .board
+            .columns
+            .iter()
+            .find(|column| column.dir == todo)
+            .unwrap()
+            .issues[0]
+            .path
+            .clone();
+        app.open_issue(file.clone());
+        assert!(matches!(app.screen, Screen::Detail(_)));
+        app.back_to_board();
+        assert!(matches!(app.screen, Screen::Board));
+        assert_eq!(
+            app.focused_column.as_deref(),
+            Some(todo.as_path()),
+            "the focused column is kept"
+        );
+        assert_eq!(app.selected.as_deref(), Some(file.as_path()));
+
+        // The active column, and `esc`, leave ColumnFocus.
+        app.unfocus_column();
+        assert!(app.focused_column.is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A focused column still accepts a card dropped on another tab, moving the
+    /// file between folders without leaving ColumnFocus.
+    #[test]
+    fn a_card_can_be_moved_to_another_column_from_the_tabs() {
+        let dir = scratch_dir("focus-tab-drop");
+        for name in ["todo", "doing"] {
+            std::fs::create_dir_all(dir.join("issues").join(name)).unwrap();
+        }
+        let file = dir.join("issues/todo/card.md");
+        std::fs::write(&file, "# Card\n").unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+        let todo = dir.join("issues/todo");
+        let doing = dir.join("issues/doing");
+        app.focus_column(todo.clone());
+
+        // Simulate the tab drop the focus bar reports.
+        app.move_issue(&file, &doing);
+        assert!(doing.join("card.md").exists(), "moved into doing/");
+        assert!(!file.exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 }

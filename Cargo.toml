@@ -1,12 +1,12 @@
 [package]
-name = "roadmap-viewer"
+name = "iboard"
 version = "0.1.0"
 edition = "2024"
-description = "Fast, local kanban board and markdown reader for roadmap/ directories"
+description = "Fast, local kanban board and markdown reader for issues/ directories"
 autobins = false
 
 [[bin]]
-name = "roadmap"
+name = "iboard"
 path = "src/main.rs"
 
 [dependencies]
@@ -16,6 +16,7 @@ eframe = "0.36.2"
 egui = "0.36.2"
 egui_commonmark = "0.25.0"
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 toml = "1.1.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]

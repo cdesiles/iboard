@@ -28,6 +28,8 @@ pub enum ButtonKind {
     /// A secondary button with a leading chevron and its key in `ink-muted`:
     /// Board, at the far left of the Reader and Editor header.
     Back,
+    /// Keeps the shape but drops to a `line` edge and `ink-faint`.
+    Disabled,
 }
 
 fn galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<Galley> {
@@ -67,6 +69,7 @@ fn button_colors(p: &theme::Palette, kind: ButtonKind) -> (Color32, Color32, Col
         ButtonKind::Review => (p.surface, p.review_soft, p.review, p.review),
         ButtonKind::Danger => (p.danger, p.danger, p.danger, p.on_danger),
         ButtonKind::DangerOutline => (p.surface, p.danger_soft, p.danger, p.danger),
+        ButtonKind::Disabled => (p.surface, p.surface, p.line, p.ink_faint),
     }
 }
 
@@ -236,14 +239,23 @@ pub fn split_button(
     icon: Option<Icon>,
     label: &str,
     shortcut: Option<&str>,
+    main_enabled: bool,
 ) -> (Response, Response) {
-    let content = button_content(ui, kind, icon, label, shortcut);
+    let main_kind = if main_enabled {
+        kind
+    } else {
+        ButtonKind::Disabled
+    };
+    let content = button_content(ui, main_kind, icon, label, shortcut);
     let size = Vec2::new(content.width + SPLIT_CARET_W, theme::CONTROL_H);
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let (main_rect, caret_rect) = rect.split_left_right_at_x(rect.min.x + content.width);
-    let main = ui
-        .interact(main_rect, id.with("main"), Sense::click())
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let main = if main_enabled {
+        ui.interact(main_rect, id.with("main"), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        ui.interact(main_rect, id.with("main"), Sense::hover())
+    };
     let caret = ui
         .interact(caret_rect, id.with("caret"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -252,7 +264,7 @@ pub fn split_button(
         ui,
         main_rect,
         &main,
-        kind,
+        main_kind,
         content,
         CornerRadius {
             nw: r,
@@ -284,8 +296,21 @@ pub fn split_button(
 /// A full-width 24pt select: the chosen value, an optional `meta` hint and a
 /// chevron. `open` draws the focus ring while its menu is showing.
 pub fn select(ui: &mut Ui, id: egui::Id, value: &str, hint: Option<&str>, open: bool) -> Response {
-    let p = theme::palette(ui);
     let width = ui.available_width();
+    select_sized(ui, id, value, hint, open, width)
+}
+
+/// A select of a fixed `width`, for the ColumnFocus focus bar where the full
+/// available width is not wanted.
+pub fn select_sized(
+    ui: &mut Ui,
+    id: egui::Id,
+    value: &str,
+    hint: Option<&str>,
+    open: bool,
+    width: f32,
+) -> Response {
+    let p = theme::palette(ui);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, theme::CONTROL_H), Sense::hover());
     let response = ui
         .interact(rect, id, Sense::click())
@@ -428,10 +453,20 @@ pub fn menu_group(ui: &mut Ui, text: &str) {
 /// The size of a per-card action button.
 pub const CARD_ACTION: f32 = 22.0;
 
+/// What a card action turns to on its own hover.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    Plain,
+    /// Delete: `danger` on hover only.
+    Danger,
+    /// Review: drawn in the reserved `review` hue, rest and hover.
+    Review,
+}
+
 /// An icon-only 22×22 card action with a caller-chosen id, so tests can find
 /// it: no edge at rest, `surface-hover` and a `line-strong` edge on its own
-/// hover. A `danger` action (delete) turns `danger` only then.
-pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, danger: bool) -> Response {
+/// hover. A `Danger` action (delete) turns `danger` only then.
+pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Tone) -> Response {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(CARD_ACTION), Sense::hover());
     let response = ui
         .interact(rect, id, Sense::click())
@@ -440,17 +475,27 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, danger: b
     if ui.is_rect_visible(rect) {
         let p = theme::palette(ui);
         let hovered = response.hovered();
-        let ink = match (hovered, danger) {
-            (true, true) => p.danger,
-            (true, false) => p.ink,
+        let ink = match (hovered, tone) {
+            (_, Tone::Review) => p.review,
+            (true, Tone::Danger) => p.danger,
+            (true, Tone::Plain) => p.ink,
             _ => p.ink_muted,
         };
         if hovered {
+            let edge = match tone {
+                Tone::Danger => p.danger,
+                Tone::Review => p.review,
+                Tone::Plain => p.line_strong,
+            };
             ui.painter().rect(
                 rect,
                 CornerRadius::same(theme::RADIUS_SM),
-                p.surface_hover,
-                Stroke::new(1.0, if danger { p.danger } else { p.line_strong }),
+                if tone == Tone::Review {
+                    p.review_soft
+                } else {
+                    p.surface_hover
+                },
+                Stroke::new(1.0, edge),
                 StrokeKind::Inside,
             );
         }
@@ -504,6 +549,157 @@ pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
     response
 }
 
+/// One tab of the [`column_tabs`] segmented track.
+pub struct ColumnTab<'a> {
+    pub name: &'a str,
+    pub count: usize,
+    /// The column's status colour: its dot and the active underline.
+    pub color: Color32,
+    pub active: bool,
+}
+
+/// A galley with letter spacing, for the uppercase `ui-label` of a column tab.
+fn tracked_galley(ui: &Ui, text: &str, font: FontId, color: Color32, tracking: f32) -> Arc<Galley> {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        text,
+        0.0,
+        egui::TextFormat {
+            font_id: font,
+            color,
+            extra_letter_spacing: tracking,
+            ..Default::default()
+        },
+    );
+    ui.fonts_mut(|fonts| fonts.layout_job(job))
+}
+
+/// What [`column_tabs`] reported: the tab that was clicked, and where each tab
+/// was drawn (so the caller can make them drop targets).
+pub struct ColumnTabs {
+    pub clicked: Option<usize>,
+    pub tab_rects: Vec<Rect>,
+}
+
+/// The `surface-sunken` segmented track of ColumnFocus column tabs: each tab
+/// has a status dot, its uppercase `ui-label` name and its count. The active
+/// tab sits on `surface` with a 1pt `line-strong` ring and a 2pt status
+/// underline.
+pub fn column_tabs(ui: &mut Ui, tabs: &[ColumnTab]) -> ColumnTabs {
+    let p = theme::palette(ui);
+    let pad = 2.0;
+    let gap = 2.0;
+    let text_gap = 6.0;
+    let side = 8.0;
+    let dot = 8.0;
+    let tab_h = 22.0;
+
+    let names: Vec<Arc<Galley>> = tabs
+        .iter()
+        .map(|tab| {
+            tracked_galley(
+                ui,
+                &tab.name.to_uppercase(),
+                theme::ui_label(),
+                p.ink,
+                theme::LABEL_TRACKING,
+            )
+        })
+        .collect();
+    let counts: Vec<Arc<Galley>> = tabs
+        .iter()
+        .map(|tab| galley(ui, &tab.count.to_string(), theme::meta(), p.ink_muted))
+        .collect();
+    let widths: Vec<f32> = names
+        .iter()
+        .zip(&counts)
+        .map(|(name, count)| {
+            side + dot + text_gap + name.size().x + text_gap + count.size().x + side
+        })
+        .collect();
+    let total =
+        pad * 2.0 + widths.iter().sum::<f32>() + gap * (tabs.len().saturating_sub(1)) as f32;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(total, tab_h + pad * 2.0), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect(
+            rect,
+            CornerRadius::same(theme::RADIUS_SM),
+            p.surface_sunken,
+            Stroke::new(1.0, p.line_strong),
+            StrokeKind::Inside,
+        );
+    }
+
+    let mut clicked = None;
+    let mut tab_rects = Vec::with_capacity(tabs.len());
+    let mut x = rect.min.x + pad;
+    for (index, tab) in tabs.iter().enumerate() {
+        let tab_rect = Rect::from_min_size(
+            Pos2::new(x, rect.min.y + pad),
+            Vec2::new(widths[index], tab_h),
+        );
+        tab_rects.push(tab_rect);
+        let response = ui
+            .interact(
+                tab_rect,
+                egui::Id::new(("coltab", tab.name)),
+                Sense::click(),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if response.clicked() {
+            clicked = Some(index);
+        }
+        if ui.is_rect_visible(tab_rect) {
+            let painter = ui.painter();
+            if tab.active {
+                painter.rect(
+                    tab_rect,
+                    CornerRadius::same(3),
+                    p.surface,
+                    Stroke::new(1.0, p.line_strong),
+                    StrokeKind::Inside,
+                );
+                painter.line_segment(
+                    [
+                        Pos2::new(tab_rect.min.x + 1.0, tab_rect.max.y - 1.0),
+                        Pos2::new(tab_rect.max.x - 1.0, tab_rect.max.y - 1.0),
+                    ],
+                    Stroke::new(2.0, tab.color),
+                );
+            }
+            let ink = if tab.active || response.hovered() {
+                p.ink
+            } else {
+                p.ink_muted
+            };
+            let cy = tab_rect.center().y;
+            painter.circle_filled(
+                Pos2::new(tab_rect.min.x + side + dot / 2.0, cy),
+                dot / 2.0,
+                tab.color,
+            );
+            let name = &names[index];
+            let name_x = tab_rect.min.x + side + dot + text_gap;
+            painter.galley(
+                Pos2::new(name_x, cy - name.size().y / 2.0),
+                name.clone(),
+                ink,
+            );
+            let count = &counts[index];
+            painter.galley(
+                Pos2::new(
+                    tab_rect.max.x - side - count.size().x,
+                    cy - count.size().y / 2.0,
+                ),
+                count.clone(),
+                if tab.active { p.ink_muted } else { p.ink_faint },
+            );
+        }
+        x += widths[index] + gap;
+    }
+    ColumnTabs { clicked, tab_rects }
+}
+
 /// An 18pt pill with a dot and a word, outlined in its state color.
 pub fn pill(ui: &mut Ui, text: &str, color: Color32) -> Response {
     let p = theme::palette(ui);
@@ -552,7 +748,7 @@ pub fn label_pill(ui: &mut Ui, name: &str, color: Option<Color32>) -> Response {
     };
     let text = galley(ui, &name, FontId::new(11.0, theme::ui_button().family), ink);
     let size = Vec2::new(7.0 + text.size().x + 7.0, 18.0);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_PILL), fill);
@@ -790,8 +986,11 @@ pub fn tag(ui: &mut Ui, text: &str, inferred: bool) -> Response {
     response
 }
 
-/// A ghost block for a section the issue lacks: a dashed `line-strong` edge,
-/// `+` and the heading in `ui-title` `ink-muted`, then a `ui-small` hint. On
+/// Tallest a ghost tile stretches to fill its cell.
+const GHOST_MAX_H: f32 = 96.0;
+
+/// A ghost tile for a section the issue lacks: a dashed `line-strong` edge,
+/// `+` and the heading in `ui-strong` `ink-muted`, then a `ui-small` hint. On
 /// hover it turns solid `accent` on `accent-soft`.
 pub fn ghost_section(ui: &mut Ui, heading: &str, hint: Option<&str>) -> Response {
     let p = theme::palette(ui);
@@ -808,7 +1007,9 @@ pub fn ghost_section(ui: &mut Ui, heading: &str, hint: Option<&str>) -> Response
         ui.fonts_mut(|fonts| fonts.layout_job(job))
     });
     let head_h = 20.0;
-    let height = 2.0 * pad.y + head_h + hint.as_ref().map_or(0.0, |h| 2.0 + h.size().y);
+    // Fills a grid cell, so tiles in a row line up whatever their hint.
+    let height = (2.0 * pad.y + head_h + hint.as_ref().map_or(0.0, |h| 2.0 + h.size().y))
+        .max(ui.available_height().min(GHOST_MAX_H));
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     if ui.is_rect_visible(rect) {
@@ -847,7 +1048,7 @@ pub fn ghost_section(ui: &mut Ui, heading: &str, hint: Option<&str>) -> Response
             Vec2::splat(theme::ICON_SIZE),
         );
         theme::paint_icon(painter, Icon::Plus, icon, ink);
-        let title = galley(ui, heading, theme::ui_title(), ink);
+        let title = galley(ui, heading, theme::ui_strong(), ink);
         painter.galley(
             Pos2::new(icon.max.x + 6.0, head_center - title.size().y / 2.0),
             title,
@@ -882,25 +1083,6 @@ pub fn meter(ui: &mut Ui, done: usize, total: usize) {
         let filled = Rect::from_min_size(rect.min, Vec2::new(rect.width() * share, rect.height()));
         painter.rect_filled(filled, radius, p.status_done);
     }
-}
-
-/// An uppercase `ui-label` in `ink-muted` followed by a `line` rule that
-/// fills the row: "NOT WRITTEN YET ————".
-pub fn section_label(ui: &mut Ui, text: &str) {
-    let p = theme::palette(ui);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-        ui.label(
-            egui::RichText::new(text.to_uppercase())
-                .font(theme::ui_label())
-                .extra_letter_spacing(theme::LABEL_TRACKING)
-                .color(p.ink_muted),
-        );
-        let (rule, _) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
-        ui.painter()
-            .hline(rule.x_range(), rule.center().y, Stroke::new(1.0, p.line));
-    });
 }
 
 #[cfg(test)]

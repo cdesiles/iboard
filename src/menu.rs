@@ -1,7 +1,7 @@
 //! The macOS menu bar.
 //!
-//! winit installs a default menu named after the process (`roadmap`). This
-//! replaces it with one named after the app: `Roadmap Viewer` with About,
+//! winit installs a default menu named after the process (`iboard`). This
+//! replaces it with one named after the app: `iboard` with About,
 //! Hide and Quit, then File and Window menus. Call [`install`] once the event
 //! loop is running, from the main thread.
 
@@ -14,21 +14,65 @@ use objc2_app_kit::{
     NSMenu, NSMenuItem,
 };
 use objc2_foundation::{NSAttributedString, NSDictionary, NSString};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Matches `CFBundleName` in `macos/Info.plist`, which names the menu bar.
-const APP_NAME: &str = "Roadmap Viewer";
+const APP_NAME: &str = "iboard";
+
+/// Set by the Quit menu item and read once per frame by the app, so quitting
+/// goes through the app (save prompt, hard exit) instead of AppKit's
+/// `terminate:`, which tears the window down and can abort on Touch Bar Macs.
+static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Set by Window › Settings… and read once per frame by the app.
+static SETTINGS_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// The running app's context, so a menu action can wake its frame loop.
+static CONTEXT: OnceLock<eframe::egui::Context> = OnceLock::new();
+
+/// Remembers the context for menu actions. Call once, from [`install`]'s caller.
+pub fn set_context(ctx: eframe::egui::Context) {
+    let _ = CONTEXT.set(ctx);
+}
+
+/// Whether the Quit menu item was picked since the last call.
+pub fn take_quit_request() -> bool {
+    QUIT_REQUESTED.swap(false, Ordering::SeqCst)
+}
+
+/// Whether Window › Settings… was picked since the last call.
+pub fn take_settings_request() -> bool {
+    SETTINGS_REQUESTED.swap(false, Ordering::SeqCst)
+}
 
 define_class!(
     /// Receives the menu actions AppKit has no standard selector for.
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[name = "RoadmapViewerMenuTarget"]
+    #[name = "IboardMenuTarget"]
     struct MenuTarget;
 
     impl MenuTarget {
         #[unsafe(method(showAbout:))]
         fn show_about(&self, _sender: Option<&AnyObject>) {
             show_about_panel(MainThreadMarker::from(self));
+        }
+
+        #[unsafe(method(openSettings:))]
+        fn open_settings(&self, _sender: Option<&AnyObject>) {
+            SETTINGS_REQUESTED.store(true, Ordering::SeqCst);
+            if let Some(ctx) = CONTEXT.get() {
+                ctx.request_repaint();
+            }
+        }
+
+        #[unsafe(method(quitIboard:))]
+        fn quit(&self, _sender: Option<&AnyObject>) {
+            QUIT_REQUESTED.store(true, Ordering::SeqCst);
+            if let Some(ctx) = CONTEXT.get() {
+                ctx.request_repaint();
+            }
         }
     }
 );
@@ -84,12 +128,14 @@ pub fn install() {
         "",
     ));
     app_menu.addItem(&NSMenuItem::separatorItem(mtm));
-    app_menu.addItem(&item(
+    let quit = item(
         mtm,
         &format!("Quit {APP_NAME}"),
-        Some(sel!(terminate:)),
+        Some(sel!(quitIboard:)),
         "q",
-    ));
+    );
+    unsafe { quit.setTarget(Some(target)) };
+    app_menu.addItem(&quit);
 
     // File menu.
     let file_menu = submenu(mtm, &menubar, "File");
@@ -99,6 +145,11 @@ pub fn install() {
     let window_menu = submenu(mtm, &menubar, "Window");
     window_menu.addItem(&item(mtm, "Minimize", Some(sel!(performMiniaturize:)), "m"));
     window_menu.addItem(&item(mtm, "Zoom", Some(sel!(performZoom:)), ""));
+    window_menu.addItem(&NSMenuItem::separatorItem(mtm));
+    // No key equivalent: `⌘,` stays the app's own toggle, handled in egui.
+    let settings = item(mtm, "Settings…", Some(sel!(openSettings:)), "");
+    unsafe { settings.setTarget(Some(target)) };
+    window_menu.addItem(&settings);
     window_menu.addItem(&NSMenuItem::separatorItem(mtm));
     window_menu.addItem(&item(
         mtm,

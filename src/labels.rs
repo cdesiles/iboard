@@ -78,6 +78,68 @@ impl Labels {
     }
 }
 
+/// The built-in colour of `name`, as `#rrggbb`, when it has one.
+pub fn preset_hex(name: &str) -> Option<&'static str> {
+    PRESETS
+        .iter()
+        .find(|(preset, _)| *preset == name)
+        .map(|(_, hex)| *hex)
+}
+
+/// `#rrggbb` for a colour.
+pub fn to_hex(color: Color32) -> String {
+    format!("#{:02x}{:02x}{:02x}", color.r(), color.g(), color.b())
+}
+
+impl Labels {
+    /// Every label with a colour, by name, as `#rrggbb`.
+    pub fn entries(&self) -> Vec<(String, String)> {
+        self.colors
+            .iter()
+            .map(|(name, color)| (name.clone(), to_hex(*color)))
+            .collect()
+    }
+}
+
+/// Writes the `[labels]` table: only what differs from the presets, so a
+/// preset later improved by iboard still reaches labels left untouched.
+/// Keeps the file's other sections.
+pub fn save(file: &Path, entries: &[(String, String)]) -> Result<(), String> {
+    let mut table = toml::map::Map::new();
+    for (name, hex) in entries {
+        let name = name.trim().to_lowercase();
+        let Some(color) = parse_hex(hex) else {
+            continue;
+        };
+        let hex = to_hex(color);
+        if name.is_empty() || preset_hex(&name) == Some(hex.as_str()) {
+            continue;
+        }
+        table.insert(name, toml::Value::String(hex));
+    }
+    let parent = file
+        .parent()
+        .ok_or_else(|| "the configuration has no folder".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|err| format!("Couldn't create {}: {err}", parent.display()))?;
+    let mut document = std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+        .and_then(|value| value.as_table().cloned())
+        .unwrap_or_default();
+    if table.is_empty() {
+        document.remove("labels");
+    } else {
+        document.insert("labels".into(), toml::Value::Table(table));
+    }
+    let body =
+        toml::to_string(&document).map_err(|err| format!("Couldn't write the config: {err}"))?;
+    let temp = file.with_extension("tmp");
+    std::fs::write(&temp, body)
+        .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
+    std::fs::rename(&temp, file).map_err(|err| format!("Couldn't save {}: {err}", file.display()))
+}
+
 /// The `[labels]` section of the user configuration, as written on disk.
 #[derive(Debug, Default, Deserialize)]
 struct RawFile {
@@ -186,6 +248,34 @@ mod tests {
             "other presets stay"
         );
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn saving_keeps_only_what_differs_from_the_presets() {
+        let dir = std::env::temp_dir().join(format!("iboard-labels-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("iboard.toml");
+        std::fs::write(&file, "[delete]\nconfirm = false\n").unwrap();
+        let entries = vec![
+            ("bug".to_string(), "#B12F22".to_string()),
+            ("feature".to_string(), "#123456".to_string()),
+            ("Ops".to_string(), "abcdef".to_string()),
+            ("broken".to_string(), "nope".to_string()),
+        ];
+        save(&file, &entries).unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            !text.contains("bug"),
+            "a preset left as is is not written: {text}"
+        );
+        assert!(text.contains("feature = \"#123456\""), "{text}");
+        assert!(text.contains("ops = \"#abcdef\""), "{text}");
+        assert!(!text.contains("broken"));
+        assert!(text.contains("confirm = false"), "other sections stay");
+        let labels = Labels::load(Some(&file));
+        assert_eq!(labels.color("feature"), parse_hex("#123456"));
+        assert_eq!(labels.color("bug"), parse_hex("#b12f22"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

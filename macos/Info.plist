@@ -3,8 +3,8 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>Roadmap Viewer</string>
+	<string>iboard</string>
 	<key>CFBundleDisplayName</key>
-	<string>Roadmap Viewer</string>
+	<string>iboard</string>
 </dict>
 </plist>
