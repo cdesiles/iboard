@@ -53,7 +53,7 @@ const CRUMB_KEEP: f32 = 160.0;
 const FILTER_GAP: f32 = 6.0;
 /// Narrowest the filter text may get before the chips hide.
 const FILTER_TEXT_MIN: f32 = 48.0;
-/// "Try", before the suggestion chips.
+/// "Labels", before the suggestion chips.
 fn filter_try_font() -> egui::FontId {
     egui::FontId::proportional(11.0)
 }
@@ -585,8 +585,9 @@ pub struct IboardApp {
     new_card: Option<(PathBuf, Instant)>,
     filter: Filter,
     focus_filter: bool,
-    /// Keywords the filter offers as one-click tokens.
-    suggestions: Vec<String>,
+    /// The filter's one-click label tokens pinned in the config; `None` offers
+    /// the board's three most used labels.
+    suggestions: Option<Vec<String>>,
     /// What names the composer's new issues.
     title_engine: Engine,
     /// The Settings tab `⌘,` reopens.
@@ -2635,10 +2636,10 @@ impl IboardApp {
         }
 
         let chips: Vec<String> = if open {
-            self.suggestions
-                .iter()
+            let issues = self.board.columns.iter().flat_map(|column| &column.issues);
+            filter::suggestions(self.suggestions.as_deref(), issues)
+                .into_iter()
                 .filter(|word| !self.filter.tokens.contains(word))
-                .cloned()
                 .collect()
         } else {
             Vec::new()
@@ -2674,7 +2675,7 @@ impl IboardApp {
             .map(|word| widgets::text_width(&row, word, theme::meta()) + 14.0 + FILTER_GAP)
             .sum::<f32>()
             + if try_label {
-                widgets::text_width(&row, "Try", filter_try_font()) + FILTER_GAP
+                widgets::text_width(&row, "Labels", filter_try_font()) + FILTER_GAP
             } else {
                 0.0
             };
@@ -2706,7 +2707,7 @@ impl IboardApp {
             }
             if !chips.is_empty() && try_label {
                 ui.label(
-                    RichText::new("Try")
+                    RichText::new("Labels")
                         .font(filter_try_font())
                         .color(p.ink_muted),
                 );
@@ -4451,7 +4452,7 @@ fn column_ui(
                                 format!("No issues in {folder}")
                             }
                         } else {
-                            format!("No issues match {}", filter.describe())
+                            filter.empty_message()
                         };
                         empty_well(ui, &message, width);
                     }
@@ -4930,7 +4931,7 @@ fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> FocusGridActions {
                                 format!("No issues in {folder}")
                             }
                         } else {
-                            format!("No issues match {}", view.filter.describe())
+                            view.filter.empty_message()
                         };
                         empty_well(ui, &message, available);
                         return;
@@ -7100,8 +7101,8 @@ mod tests {
         let dir = scratch_dir("filter-keys");
         let todo = dir.join("issues/todo");
         std::fs::create_dir_all(&todo).unwrap();
-        std::fs::write(todo.join("login.md"), "# Fix login\n\nA bug.\n").unwrap();
-        std::fs::write(todo.join("export.md"), "# Export\n\nA feature.\n").unwrap();
+        std::fs::write(todo.join("login.md"), "# [Bug] Fix login\n\nA bug.\n").unwrap();
+        std::fs::write(todo.join("export.md"), "# [Feature] Export\n\nA feature.\n").unwrap();
         let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
         let ctx = themed_ctx();
