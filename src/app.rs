@@ -197,7 +197,8 @@ struct ColumnActions {
     archive: Option<PathBuf>,
     /// The "+" button was pressed: open the composer.
     compose: bool,
-    /// The composer asked to add its issue; `true` also opens the editor.
+    /// The composer asked to add its issue; `true` also closes it (a click
+    /// elsewhere on the board).
     submit: Option<bool>,
     /// The composer lost focus while empty.
     close_composer: bool,
@@ -249,8 +250,8 @@ enum TitleStage {
 struct NamingRun {
     answer: Receiver<Result<String, String>>,
     started: Instant,
-    /// `⌘↩`: write and open the Editor as soon as the title is in.
-    then_edit: bool,
+    /// Clicked away: write and close as soon as the title is in.
+    then_close: bool,
 }
 
 /// The in-progress edit of one issue.
@@ -1411,15 +1412,19 @@ impl IboardApp {
         }
     }
 
-    /// `↩` in the composer. With no title yet and an engine ready, it names
-    /// the issue first and stops on the suggestion; otherwise it writes the
-    /// issue and clears the composer for the next one. `⌘↩` (`open_editor`)
-    /// never stops: it names if needed, writes, and opens the Editor.
-    fn submit_composer(&mut self, open_editor: bool) {
+    /// `↩` or `⌘S` in the composer. With no title yet and an engine ready,
+    /// it names the issue first and stops on the suggestion; otherwise it
+    /// writes the issue and clears the composer for the next one. A click
+    /// elsewhere (`close`) never stops: it names if needed, writes, and
+    /// closes the composer.
+    fn submit_composer(&mut self, close: bool) {
         let Some(composer) = self.composer.as_mut() else {
             return;
         };
         if composer.stage == TitleStage::Naming {
+            if close && let Some(run) = composer.naming.as_mut() {
+                run.then_close = true;
+            }
             return;
         }
         let typed = composer.title.trim().to_string();
@@ -1435,7 +1440,7 @@ impl IboardApp {
             composer.naming = Some(NamingRun {
                 answer: titles::start(engine, &self.agent, &description),
                 started: Instant::now(),
-                then_edit: open_editor,
+                then_close: close,
             });
             composer.stage = TitleStage::Naming;
             composer.error = None;
@@ -1443,30 +1448,28 @@ impl IboardApp {
         } else {
             titles::first_line_title(&description)
         };
-        self.write_composed(&title, &description, open_editor);
+        self.write_composed(&title, &description, close);
     }
 
     /// Writes the composed issue to Todo; on success the composer clears (or
-    /// closes for the Editor), on failure it keeps everything and says why.
-    fn write_composed(&mut self, title: &str, description: &str, open_editor: bool) {
+    /// closes), on failure it keeps everything and says why.
+    fn write_composed(&mut self, title: &str, description: &str, close: bool) {
         let Some(dir) = self.todo_column().map(|c| c.dir.clone()) else {
             return;
         };
         match self.create_issue(&dir, title, description) {
             Ok(path) => {
-                if open_editor {
+                if close {
                     self.composer = None;
-                    self.start_editing(&path);
-                    self.focus_editor = true;
                 } else if let Some(composer) = self.composer.as_mut() {
                     *composer = Composer {
                         engine: composer.engine,
                         focus: Some(ComposerField::Description),
                         ..Composer::default()
                     };
-                    self.selected = Some(path.clone());
-                    self.new_card = Some((path, Instant::now()));
                 }
+                self.selected = Some(path.clone());
+                self.new_card = Some((path, Instant::now()));
             }
             Err(err) => {
                 if let Some(composer) = self.composer.as_mut() {
@@ -1495,18 +1498,18 @@ impl IboardApp {
         let Some(composer) = self.composer.as_mut() else {
             return;
         };
-        let then_edit = composer.naming.take().is_some_and(|run| run.then_edit);
+        let then_close = composer.naming.take().is_some_and(|run| run.then_close);
         let description = composer.description.clone();
         match result {
-            Ok(title) if then_edit => self.write_composed(&title, &description, true),
+            Ok(title) if then_close => self.write_composed(&title, &description, true),
             Ok(title) => {
                 composer.title = title;
                 composer.stage = TitleStage::Inferred;
                 composer.select_title = true;
                 composer.focus = Some(ComposerField::Title);
             }
-            // `⌘↩` never stops: the first line names it.
-            Err(_) if then_edit => {
+            // A click elsewhere never stops: the first line names it.
+            Err(_) if then_close => {
                 let title = titles::first_line_title(&description);
                 self.write_composed(&title, &description, true);
             }
@@ -2969,8 +2972,8 @@ impl IboardApp {
         if compose {
             self.open_composer();
         }
-        if let Some(open_editor) = submit {
-            self.submit_composer(open_editor);
+        if let Some(close) = submit {
+            self.submit_composer(close);
         } else if close_composer {
             self.composer = None;
         }
@@ -3527,9 +3530,14 @@ impl eframe::App for IboardApp {
             }
         }
 
-        // Cmd/Ctrl+S forces a save (and overwrites a conflict).
+        // Cmd/Ctrl+S forces a save (and overwrites a conflict). On the board
+        // it adds the composer's issue, as `↩` does.
         if command(Key::S) {
-            self.flush_autosave(true);
+            if matches!(self.screen, Screen::Board) && self.composer.is_some() {
+                self.submit_composer(false);
+            } else {
+                self.flush_autosave(true);
+            }
         }
         // Saved some other way while the prompt was up: carry on leaving.
         if let Some(to) = self.leave_prompt
@@ -3828,13 +3836,17 @@ fn column_ui(
         },
     );
 
-    // Highlight the column while a card from elsewhere hovers over it.
+    // Highlight the column while a card from elsewhere hovers over it: the
+    // cards' area, under the header and its status rule.
     let hovering_foreign = drop_response
         .dnd_hover_payload::<IssueDrag>()
         .filter(|drag| drag.path.parent() != Some(column.dir.as_path()))
         .is_some();
     if hovering_foreign {
-        let rect = drop_rect.expand(theme::SPACE_2);
+        let rect = drop_rect
+            .with_min_y(drop_rect.min.y + theme::CONTROL_H + theme::SPACE_3 / 2.0)
+            .expand2(Vec2::new(theme::SPACE_2, 0.0))
+            .with_max_y(drop_rect.max.y + theme::SPACE_2);
         ui.painter().rect_filled(
             rect,
             CornerRadius::same(theme::RADIUS_MD),
@@ -3996,18 +4008,45 @@ fn composer_ui(
     let description_id = egui::Id::new("composer-description");
     let naming = composer.stage == TitleStage::Naming;
 
-    // `↩` adds and `⌘↩` adds and edits, from either field; `⇧↩` stays a new
-    // line in the description. Taken before the fields see the key.
-    let focused = ui.memory(|m| m.has_focus(title_id) || m.has_focus(description_id));
-    if focused {
-        let edit = ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter));
-        let add = ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Enter));
-        if !naming && (edit || add) {
-            actions.submit = Some(edit);
+    // `↩` adds, from either field. `⇧↩` and `⌘↩` are a new line: the
+    // description's own return key (as `⇧↩`), or a step down from the title.
+    // Taken before the fields see the key.
+    let in_title = ui.memory(|m| m.has_focus(title_id));
+    let in_description = ui.memory(|m| m.has_focus(description_id));
+    if in_title || in_description {
+        let (mut add, mut new_line) = (false, false);
+        ui.input_mut(|i| {
+            i.events.retain_mut(|event| match event {
+                egui::Event::Key {
+                    key: Key::Enter,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if modifiers.shift || modifiers.command => {
+                    new_line = true;
+                    *modifiers = egui::Modifiers::SHIFT;
+                    in_description
+                }
+                egui::Event::Key {
+                    key: Key::Enter,
+                    pressed: true,
+                    ..
+                } => {
+                    add = true;
+                    false
+                }
+                _ => true,
+            })
+        });
+        if !naming && add {
+            actions.submit = Some(false);
+        }
+        if in_title && new_line && !naming {
+            composer.focus = Some(ComposerField::Description);
         }
     }
 
-    Frame::new()
+    let frame = Frame::new()
         .fill(p.surface)
         .stroke(Stroke::new(2.0, p.accent))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
@@ -4171,6 +4210,24 @@ fn composer_ui(
 
             composer_meta(ui, composer, column, folder);
         });
+
+    // A click anywhere else on the board (another card, blank space) adds
+    // what was typed and closes the composer.
+    let pressed = ui.input(|i| {
+        i.pointer
+            .press_origin()
+            .filter(|_| i.pointer.primary_pressed())
+    });
+    let clicked_away = pressed.is_some_and(|pos| {
+        !frame.response.rect.contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id())
+    });
+    if clicked_away {
+        if composer.is_empty() {
+            actions.close_composer = true;
+        } else {
+            actions.submit = Some(true);
+        }
+    }
 }
 
 /// The composer's last line: the file it will write (or why it can't name
@@ -4208,7 +4265,7 @@ fn composer_meta(ui: &mut egui::Ui, composer: &Composer, column: &Column, folder
                     p.ink_muted
                 };
                 (
-                    &[("↩", "add"), ("⌘↩", "edit")],
+                    &[("↩", "add"), ("⇧↩", "new line")],
                     vec![meta(&format!("{folder}{name}"), color)],
                 )
             }
@@ -6079,8 +6136,8 @@ mod tests {
     }
 
     #[test]
-    fn command_enter_creates_and_opens_the_editor() {
-        let dir = scratch_dir("compose-edit");
+    fn clicking_away_adds_the_issue_and_closes_the_composer() {
+        let dir = scratch_dir("compose-away");
         let todo = dir.join("issues/todo");
         std::fs::create_dir_all(&todo).unwrap();
 
@@ -6093,14 +6150,114 @@ mod tests {
 
         let created = todo.join("export-board.md");
         assert!(created.exists(), "the new issue is written to Todo");
-        assert!(
-            matches!(&app.screen, Screen::Detail(path) if path == &created),
-            "the new issue is opened"
-        );
-        assert_eq!(app.detail_mode, DetailMode::Edit, "it opens in the editor");
-        assert!(app.focus_editor, "the editor is focused for typing");
         assert!(app.composer.is_none(), "the composer closes");
+        assert!(matches!(app.screen, Screen::Board), "the board stays");
+        assert_eq!(app.selected.as_deref(), Some(created.as_path()));
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The composer's keys, as typed: `⇧↩` and `⌘↩` are new lines, `↩` and
+    /// `⌘S` add, and a click on another card adds and closes it.
+    #[test]
+    fn composer_keys_and_clicking_away() {
+        let dir = scratch_dir("compose-keys");
+        let todo = dir.join("issues/todo");
+        std::fs::create_dir_all(&todo).unwrap();
+        let other = todo.join("other.md");
+        std::fs::write(&other, "# Other\n").unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+        app.open_composer();
+
+        let ctx = themed_ctx();
+        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1280.0, 800.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| {
+                eframe::App::logic(app, ui.ctx(), &mut eframe::Frame::_new_kittest());
+                app.draw(ui);
+            })
+            .textures_delta
+            .clear();
+        };
+        let key = |key: Key, modifiers: egui::Modifiers| {
+            vec![
+                egui::Event::ModifiersChanged(modifiers),
+                egui::Event::Key {
+                    key,
+                    physical_key: Some(key),
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                },
+            ]
+        };
+        let text = |text: &str| vec![egui::Event::Text(text.into())];
+        let files = || std::fs::read_dir(&todo).unwrap().count();
+
+        pass(&mut app, vec![]);
+        pass(&mut app, vec![]);
+        pass(&mut app, text("First line"));
+        pass(&mut app, key(Key::Enter, egui::Modifiers::SHIFT));
+        pass(&mut app, text("second"));
+        pass(&mut app, key(Key::Enter, egui::Modifiers::COMMAND));
+        pass(&mut app, text("third"));
+        assert_eq!(
+            app.composer.as_ref().unwrap().description,
+            "First line\nsecond\nthird"
+        );
+        assert_eq!(files(), 1, "new lines never add");
+
+        pass(&mut app, key(Key::Enter, egui::Modifiers::NONE));
+        assert_eq!(
+            std::fs::read_to_string(todo.join("first-line.md")).unwrap(),
+            "# First line\n\nFirst line\nsecond\nthird\n"
+        );
+        assert!(app.composer.is_some(), "↩ keeps it open for the next one");
+
+        pass(
+            &mut app,
+            vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)],
+        );
+        pass(&mut app, text("Saved with command S"));
+        pass(&mut app, key(Key::S, egui::Modifiers::COMMAND));
+        assert!(todo.join("saved-with-command-s.md").exists(), "⌘S adds");
+        assert!(app.composer.is_some());
+
+        pass(
+            &mut app,
+            vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)],
+        );
+        pass(&mut app, text("Clicked away"));
+        let card = ctx
+            .read_response(egui::Id::new(("issue_card", &other)))
+            .unwrap()
+            .rect
+            .center();
+        let button = |pressed| egui::Event::PointerButton {
+            pos: card,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        pass(&mut app, vec![egui::Event::PointerMoved(card)]);
+        pass(
+            &mut app,
+            vec![egui::Event::PointerMoved(card), button(true)],
+        );
+        pass(&mut app, vec![button(false)]);
+        assert!(todo.join("clicked-away.md").exists(), "the click adds it");
+        assert!(app.composer.is_none(), "and closes the composer");
+        assert!(
+            matches!(&app.screen, Screen::Detail(path) if path == &other),
+            "the clicked card still opens"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -6188,17 +6345,20 @@ mod tests {
     }
 
     #[test]
-    fn command_enter_names_writes_and_opens_the_editor() {
-        let (dir, todo, mut app) = composer_with_engine("compose-name-edit");
+    fn clicking_away_while_naming_writes_once_named() {
+        let (dir, todo, mut app) = composer_with_engine("compose-name-away");
         let ctx = egui::Context::default();
 
+        app.submit_composer(false);
         app.submit_composer(true);
         answer_with(&mut app, Ok("Export checklists".into()));
         app.poll_naming(&ctx);
         let created = todo.join("export-checklists.md");
-        assert!(created.exists(), "⌘↩ never stops on the suggestion");
-        assert!(matches!(&app.screen, Screen::Detail(path) if path == &created));
-        assert_eq!(app.detail_mode, DetailMode::Edit);
+        assert!(
+            created.exists(),
+            "a click away never stops on the suggestion"
+        );
+        assert!(app.composer.is_none(), "and closes the composer");
         std::fs::remove_dir_all(&dir).ok();
     }
 
