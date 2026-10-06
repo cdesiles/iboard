@@ -19,6 +19,7 @@ use crate::discovery::{self, Board, Column, Located};
 use crate::filter::{self, Filter};
 use crate::general;
 use crate::issue::Issue;
+use crate::label_picker::{self, LabelPicker};
 use crate::labels::{self, Labels};
 use crate::review_settings::{self, Catalog};
 use crate::theme::{self, Icon, Palette};
@@ -169,6 +170,8 @@ enum CardAction {
     Review,
     /// Reopen the last review, from the card's verdict pill.
     ShowReview,
+    /// Open (or close) the LabelPicker on this card.
+    AddLabel,
 }
 
 /// What a card shows beyond its file: the last review's verdict pill, and
@@ -327,6 +330,8 @@ struct ColumnActions {
     review: Option<PathBuf>,
     /// A card's verdict pill was clicked.
     show_review: Option<PathBuf>,
+    /// A card's Add label was clicked.
+    add_label: Option<PathBuf>,
     /// The column title was clicked, or the column double-clicked: expand it
     /// to the whole window.
     focus_column: Option<PathBuf>,
@@ -599,6 +604,8 @@ pub struct IboardApp {
     error: Option<String>,
     /// A destructive action waiting for the user to confirm it.
     confirm: Option<Confirm>,
+    /// The LabelPicker, open on one issue.
+    label_picker: Option<LabelPicker>,
     /// A short outcome for the status bar ("Archived x.md"), and when it came.
     notice: Option<(String, Instant)>,
     /// Settings › General: deleting an issue asks first.
@@ -715,6 +722,7 @@ impl IboardApp {
             filter_open: false,
             error,
             confirm: None,
+            label_picker: None,
             notice: None,
             confirm_delete: true,
             undo: None,
@@ -1309,6 +1317,90 @@ impl IboardApp {
             Err(err) => {
                 self.error = Some(format!("Couldn't delete {}: {err}", self.relative(path)));
                 None
+            }
+        }
+    }
+
+    /// Opens the LabelPicker on `path`, or closes it when it is already open
+    /// there (the trigger again).
+    fn toggle_label_picker(&mut self, path: PathBuf) {
+        if self
+            .label_picker
+            .as_ref()
+            .is_some_and(|picker| picker.path == path)
+        {
+            self.label_picker = None;
+        } else {
+            self.label_picker = Some(LabelPicker::new(path));
+        }
+    }
+
+    /// Draws the open LabelPicker and writes what it adds. It closes when its
+    /// issue is gone or no longer on screen (the Editor edits labels in the
+    /// title instead).
+    fn label_picker_ui(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let on_screen = self.label_picker.as_ref().is_some_and(|picker| {
+            self.board.find(&picker.path).is_some()
+                && match &self.screen {
+                    Screen::Board => true,
+                    Screen::Detail(path) => {
+                        *path == picker.path && self.detail_mode == DetailMode::Preview
+                    }
+                }
+        });
+        if !on_screen {
+            self.label_picker = None;
+        }
+        label_picker::set_open(
+            &ctx,
+            self.label_picker
+                .as_ref()
+                .map(|picker| picker.path.as_path()),
+        );
+        let Some(picker) = self.label_picker.as_mut() else {
+            return;
+        };
+        let has = self
+            .board
+            .find(&picker.path)
+            .map(|issue| issue.labels.clone())
+            .unwrap_or_default();
+        let board = filter::top_labels(
+            self.board.columns.iter().flat_map(|column| &column.issues),
+            usize::MAX,
+        );
+        match label_picker::show(ui, picker, &has, &board, &self.labels) {
+            Some(label_picker::Outcome::Close) => self.label_picker = None,
+            Some(label_picker::Outcome::Add(label)) => {
+                self.add_label(&label, ctx.input(|i| i.time));
+            }
+            None => {}
+        }
+    }
+
+    /// Writes `label` into the picker's issue, then reloads so the pill shows
+    /// on the card and in the Reader.
+    fn add_label(&mut self, label: &str, now: f64) {
+        let Some(path) = self.label_picker.as_ref().map(|picker| picker.path.clone()) else {
+            return;
+        };
+        let shown = path
+            .strip_prefix(&self.board.root)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        match labels::add_label_to_file(&path, label) {
+            Ok(_) => {
+                self.refresh();
+                if let Some(picker) = self.label_picker.as_mut() {
+                    picker.added(label.to_string(), shown, now);
+                }
+            }
+            Err(message) => {
+                if let Some(picker) = self.label_picker.as_mut() {
+                    picker.failed(message);
+                }
             }
         }
     }
@@ -1962,6 +2054,7 @@ impl IboardApp {
                     Screen::Detail(path) => self.detail_ui(ui, &path),
                 }
             });
+        self.label_picker_ui(ui);
         if let Some(Confirm::Delete(path)) = self.confirm.clone() {
             self.confirm_dialog(ui, &path);
         }
@@ -2442,6 +2535,29 @@ impl IboardApp {
                     .clicked()
                 {
                     self.request_delete(path.clone());
+                }
+                // Add label sits first in the right group, before Delete.
+                if exists && self.detail_mode == DetailMode::Preview {
+                    let open = self
+                        .label_picker
+                        .as_ref()
+                        .is_some_and(|picker| picker.path == path);
+                    let add = widgets::button(
+                        ui,
+                        if open {
+                            ButtonKind::Open
+                        } else {
+                            ButtonKind::Secondary
+                        },
+                        Some(Icon::TagPlus),
+                        "Add label",
+                        Some("L"),
+                    )
+                    .on_hover_text("Add a label to this issue");
+                    set_label_anchor(ui.ctx(), &path, add.rect);
+                    if add.clicked() {
+                        self.toggle_label_picker(path.clone());
+                    }
                 }
                 if exists
                     && done
@@ -3311,6 +3427,7 @@ impl IboardApp {
         let mut filter_label: Option<String> = None;
         let mut review: Option<PathBuf> = None;
         let mut show_review: Option<PathBuf> = None;
+        let mut add_label: Option<PathBuf> = None;
         let mut focus_column: Option<PathBuf> = None;
         let mut archive_all: Vec<PathBuf> = Vec::new();
 
@@ -3370,6 +3487,9 @@ impl IboardApp {
                         if show_review.is_none() {
                             show_review = actions.show_review;
                         }
+                        if add_label.is_none() {
+                            add_label = actions.add_label;
+                        }
                         if focus_column.is_none() {
                             focus_column = actions.focus_column;
                         }
@@ -3390,6 +3510,9 @@ impl IboardApp {
         }
         if let Some(path) = archive {
             self.archive_issue(&path);
+        }
+        if let Some(path) = add_label {
+            self.toggle_label_picker(path);
         }
         if compose {
             self.open_composer();
@@ -3513,6 +3636,9 @@ impl IboardApp {
 
         if let Some(path) = actions.delete {
             self.request_delete(path);
+        }
+        if let Some(path) = actions.add_label {
+            self.toggle_label_picker(path);
         }
         if let Some(path) = actions.archive {
             self.archive_issue(&path);
@@ -4022,6 +4148,25 @@ impl eframe::App for IboardApp {
             return;
         }
 
+        // The LabelPicker closes first; what is left in its field is dropped.
+        if !confirming
+            && self.label_picker.is_some()
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape))
+        {
+            self.label_picker = None;
+        }
+        // `L` adds a label to the issue the Reader shows (not in the Editor,
+        // where labels are edited in the title).
+        if !confirming
+            && !typing
+            && self.detail_mode == DetailMode::Preview
+            && let Screen::Detail(path) = self.screen.clone()
+            && self.board.find(&path).is_some()
+            && ctx.input(|i| i.key_pressed(Key::L) && i.modifiers.is_none())
+        {
+            self.toggle_label_picker(path);
+        }
+
         // In the filter, `esc` leaves the chips, then clears, then leaves the
         // field. egui drops focus on `esc` before we see it, so the field
         // asks for it back unless this is the last step.
@@ -4163,6 +4308,8 @@ impl eframe::App for IboardApp {
                     self.start_editing(&path);
                 } else if done && no_modifiers && ctx.input(|i| i.key_pressed(Key::A)) {
                     self.archive_issue(&path);
+                } else if no_modifiers && ctx.input(|i| i.key_pressed(Key::L)) {
+                    self.toggle_label_picker(path);
                 }
             }
         }
@@ -4459,6 +4606,9 @@ fn column_ui(
                             Some(CardAction::ShowReview) => {
                                 actions.show_review = Some(issue.path.clone());
                             }
+                            Some(CardAction::AddLabel) => {
+                                actions.add_label = Some(issue.path.clone());
+                            }
                             Some(CardAction::Open) => {
                                 actions.clicked = Some(issue.path.clone());
                             }
@@ -4746,6 +4896,7 @@ struct FocusGridActions {
     filter_label: Option<String>,
     review: Option<PathBuf>,
     show_review: Option<PathBuf>,
+    add_label: Option<PathBuf>,
     /// A card dropped in a Board-order column: it and the card to land in
     /// front of.
     reorder: Option<(PathBuf, Option<PathBuf>)>,
@@ -4965,6 +5116,9 @@ fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> FocusGridActions {
                                         }
                                         Some(CardAction::ShowReview) => {
                                             actions.show_review = Some(issue.path.clone());
+                                        }
+                                        Some(CardAction::AddLabel) => {
+                                            actions.add_label = Some(issue.path.clone());
                                         }
                                         Some(CardAction::Open) => {
                                             actions.clicked = Some(issue.path.clone());
@@ -5542,7 +5696,10 @@ fn issue_card(
         .ctx()
         .data(|d| d.get_temp::<Rect>(rect_id))
         .is_some_and(|rect| ui.rect_contains_pointer(rect));
-    let show_actions = drag.is_none() && (hovered || matches!(look, CardLook::Selected { .. }));
+    // An open LabelPicker keeps its card's actions, and so its trigger, shown.
+    let picking = label_picker_open(ui.ctx()).as_deref() == Some(issue.path.as_path());
+    let show_actions =
+        drag.is_none() && (hovered || picking || matches!(look, CardLook::Selected { .. }));
 
     let scope = ui.scope_builder(
         egui::UiBuilder::new()
@@ -5730,6 +5887,16 @@ fn card_date(time: std::time::SystemTime) -> String {
     }
 }
 
+/// The issue whose LabelPicker is open, for its card.
+fn label_picker_open(ctx: &egui::Context) -> Option<PathBuf> {
+    label_picker::open_path(ctx)
+}
+
+/// Where a LabelPicker trigger sits, so the popup opens under it.
+fn set_label_anchor(ctx: &egui::Context, path: &Path, rect: Rect) {
+    label_picker::set_anchor(ctx, path, rect);
+}
+
 /// The visual body of a card, shared by the card in the board and the ghost
 /// that follows the pointer while dragging: title, summary clamped to three
 /// lines, file name. A `highlighted` card (new or selected) is `accent-soft`.
@@ -5804,8 +5971,11 @@ fn card_body(
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let mut action = None;
                     let mut action_rects = Vec::new();
+                    // Add label, Review and Delete, plus Archive on Done:
+                    // 70pt, or 94pt on Done.
+                    let slots = if issue.done_at.is_some() { 4.0 } else { 3.0 };
                     let slot = Vec2::new(
-                        2.0 * widgets::CARD_ACTION + theme::SPACE_1,
+                        slots * widgets::CARD_ACTION + (slots - 1.0) * theme::SPACE_1,
                         widgets::CARD_ACTION,
                     );
                     ui.allocate_ui_with_layout(slot, Layout::right_to_left(Align::Center), |ui| {
@@ -5856,6 +6026,25 @@ fn card_body(
                             if review.clicked() {
                                 action = Some(CardAction::Review);
                             }
+                        }
+                        // First of the cluster: Add label, which opens the
+                        // LabelPicker under it.
+                        let picking = label_picker_open(ui.ctx()).as_deref() == Some(&issue.path);
+                        let add_label = widgets::icon_button(
+                            ui,
+                            Icon::TagPlus,
+                            egui::Id::new(("card_add_label", &issue.path)),
+                            "Add label  L",
+                            if picking {
+                                widgets::Tone::Open
+                            } else {
+                                widgets::Tone::Plain
+                            },
+                        );
+                        action_rects.push(add_label.rect);
+                        set_label_anchor(ui.ctx(), &issue.path, add_label.rect);
+                        if add_label.clicked() {
+                            action = Some(CardAction::AddLabel);
                         }
                     });
                     // The last review's verdict: a click reopens it.
@@ -5940,7 +6129,6 @@ fn page_column<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) ->
     ui.add_space(gutter);
     result
 }
-
 
 /// Height of a ghost tile in the "Not written yet" block.
 const GHOST_TILE_H: f32 = 72.0;
@@ -7129,6 +7317,84 @@ mod tests {
         assert!(focused(&ctx));
         pass(&mut app, vec![key(Key::Escape, egui::Modifiers::NONE)]);
         assert!(!focused(&ctx), "the second esc leaves the field");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `L` opens the LabelPicker on the selected card; `↩` writes the typed
+    /// label and keeps the picker open, `↓ ↩` adds a board label, and `esc`
+    /// closes without writing what is left in the field.
+    #[test]
+    fn the_label_picker_adds_labels_from_the_keyboard() {
+        let dir = scratch_dir("label-picker");
+        let todo = dir.join("issues/todo");
+        std::fs::create_dir_all(&todo).unwrap();
+        let login = todo.join("login.md");
+        std::fs::write(&login, "# [Bug] Fix login\n\nA bug.\n").unwrap();
+        std::fs::write(todo.join("export.md"), "# [Feature] Export\n").unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+        app.selected = Some(login.clone());
+
+        let ctx = themed_ctx();
+        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1280.0, 800.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| {
+                eframe::App::logic(app, ui.ctx(), &mut eframe::Frame::_new_kittest());
+                app.draw(ui);
+            })
+            .textures_delta
+            .clear();
+        };
+        let key = |key: Key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let field = egui::Id::new("label_picker_field");
+
+        pass(&mut app, vec![]);
+        pass(&mut app, vec![key(Key::L)]);
+        assert!(app.label_picker.is_some(), "L opens the picker");
+        pass(&mut app, vec![]);
+        assert!(ctx.memory(|m| m.has_focus(field)), "the field takes focus");
+
+        pass(&mut app, vec![egui::Event::Text("Tech debt".into())]);
+        pass(&mut app, vec![key(Key::Enter)]);
+        assert_eq!(
+            std::fs::read_to_string(&login).unwrap(),
+            "# [Bug] [tech-debt] Fix login\n\nA bug.\n"
+        );
+        let picker = app.label_picker.as_ref().expect("the picker stays open");
+        assert!(picker.text.is_empty(), "the field is cleared");
+        pass(&mut app, vec![]);
+        assert!(
+            ctx.memory(|m| m.has_focus(field)),
+            "focus stays in the field"
+        );
+
+        // The board's labels, most used first, minus the two it has: feature.
+        pass(&mut app, vec![key(Key::ArrowDown)]);
+        pass(&mut app, vec![key(Key::Enter)]);
+        pass(&mut app, vec![]);
+        assert_eq!(
+            app.board.find(&login).unwrap().labels,
+            ["bug", "tech-debt", "feature"]
+        );
+
+        pass(&mut app, vec![]);
+        pass(&mut app, vec![egui::Event::Text("left over".into())]);
+        pass(&mut app, vec![key(Key::Escape)]);
+        assert!(app.label_picker.is_none(), "esc closes the picker");
+        assert!(!std::fs::read_to_string(&login).unwrap().contains("left"));
+        assert!(login.exists(), "the file name never changes");
         std::fs::remove_dir_all(&dir).ok();
     }
 

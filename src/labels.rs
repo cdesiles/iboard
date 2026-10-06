@@ -5,9 +5,9 @@
 //! The name is display data and is lowercased (`discovery`). Its colour is a
 //! user preference: iboard ships a built-in preset, and the `[labels]` table of
 //! the user configuration (`~/.config/iboard/iboard.toml`) overrides or adds a
-//! `name = "#rrggbb"` mapping. The raw issue file is never rewritten for a
-//! label; only the derived display title drops it. An empty value
-//! (`bug = ""`) removes a preset.
+//! `name = "#rrggbb"` mapping. An empty value (`bug = ""`) removes a preset.
+//! The display title drops the labels; the file keeps them, and the
+//! LabelPicker adds one by rewriting that single line (see [`add_label`]).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -258,6 +258,153 @@ pub fn front_matter_labels(markdown: &str) -> Vec<String> {
     labels
 }
 
+/// Adds `label` (already normalized) to an issue's markdown, where its labels
+/// already live: the front matter's `labels:` list when it has one, else the
+/// `# H1`, after its leading `[label]` groups. Only that one line changes (or,
+/// for a block list, one line is added). `Ok(None)` when the issue already
+/// has the label; `Err` when there is no `# ` heading to put it on.
+pub fn add_label(markdown: &str, label: &str) -> Result<Option<String>, String> {
+    let lines: Vec<&str> = markdown.split_inclusive('\n').collect();
+    if let Some((title_labels, _)) = h1(&lines).map(|i| split_leading_labels(heading(lines[i])))
+        && title_labels.iter().any(|name| name == label)
+    {
+        return Ok(None);
+    }
+    if front_matter_labels(markdown)
+        .iter()
+        .any(|name| name == label)
+    {
+        return Ok(None);
+    }
+    let mut out: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
+    if let Some(at) = front_matter_list(&lines) {
+        match at {
+            List::Inline(i) => {
+                let (body, end) = split_eol(lines[i]);
+                let (key, value) = body.split_once("labels:").unwrap_or((body, ""));
+                let items = value
+                    .trim()
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .trim();
+                let items = if items.is_empty() {
+                    label.to_string()
+                } else {
+                    format!("{items}, {label}")
+                };
+                out[i] = format!("{key}labels: [{items}]{end}");
+            }
+            List::Block { last, indent } => {
+                let (_, end) = split_eol(lines[last]);
+                let end = if end.is_empty() { "\n" } else { end };
+                if !out[last].ends_with('\n') {
+                    out[last].push('\n');
+                }
+                out.insert(last + 1, format!("{indent}- {label}{end}"));
+            }
+        }
+        return Ok(Some(out.concat()));
+    }
+    let Some(i) = h1(&lines) else {
+        return Err("it has no `# ` title line".to_string());
+    };
+    let (body, end) = split_eol(lines[i]);
+    let indent = &body[..body.len() - body.trim_start().len()];
+    let rest = heading(lines[i]);
+    // Skip the leading bracket groups exactly as `split_leading_labels` reads them.
+    let mut tail = rest.trim_start();
+    while let Some(inner) = tail.strip_prefix('[')
+        && let Some(close) = inner.find(']')
+        && !inner[close + 1..].starts_with('(')
+    {
+        tail = inner[close + 1..].trim_start();
+    }
+    let groups = rest[..rest.len() - tail.len()].trim_end();
+    let line = if groups.is_empty() {
+        format!("{indent}# [{label}] {tail}")
+    } else {
+        format!("{indent}# {groups} [{label}] {tail}")
+    };
+    out[i] = format!("{}{end}", line.trim_end());
+    Ok(Some(out.concat()))
+}
+
+/// Adds `label` to the issue at `path`, re-reading it first so an edit made
+/// since the last refresh is kept. `Ok(false)` when it was already there.
+pub fn add_label_to_file(path: &Path, label: &str) -> Result<bool, String> {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let markdown =
+        std::fs::read_to_string(path).map_err(|err| format!("Couldn't read {name}: {err}"))?;
+    match add_label(&markdown, label).map_err(|why| format!("Couldn't label {name}: {why}"))? {
+        None => Ok(false),
+        Some(updated) => {
+            std::fs::write(path, updated).map_err(|err| format!("Couldn't save {name}: {err}"))?;
+            Ok(true)
+        }
+    }
+}
+
+/// Where a front matter keeps its `labels:` list.
+enum List {
+    /// `labels: [a, b]` on this line.
+    Inline(usize),
+    /// `labels:` then `- item` lines; the last item (or the key) and the
+    /// items' indent.
+    Block { last: usize, indent: String },
+}
+
+fn front_matter_list(lines: &[&str]) -> Option<List> {
+    if lines.first().map(|line| line.trim()) != Some("---") {
+        return None;
+    }
+    let mut i = 1;
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+        if trimmed == "---" {
+            return None;
+        }
+        if let Some(value) = trimmed.strip_prefix("labels:") {
+            if !value.trim().is_empty() {
+                return Some(List::Inline(i));
+            }
+            let mut last = i;
+            let mut indent = "  ".to_string();
+            while let Some(line) = lines.get(last + 1)
+                && line.trim().starts_with("- ")
+            {
+                last += 1;
+                indent = line[..line.len() - line.trim_start().len()].to_string();
+            }
+            return Some(List::Block { last, indent });
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The index of the first `# ` heading line.
+fn h1(lines: &[&str]) -> Option<usize> {
+    lines.iter().position(|line| line.trim().starts_with("# "))
+}
+
+/// The text of a `# ` heading line, after the marker.
+fn heading(line: &str) -> &str {
+    let (body, _) = split_eol(line);
+    body.trim_start()
+        .strip_prefix("# ")
+        .unwrap_or("")
+        .trim_end()
+}
+
+/// A line without its line ending, and the ending.
+fn split_eol(line: &str) -> (&str, &str) {
+    let body = line.trim_end_matches(['\n', '\r']);
+    (body, &line[body.len()..])
+}
+
 /// The display title of a heading: without its leading `[label]` groups.
 pub fn display_title(heading: &str) -> String {
     split_leading_labels(heading).1
@@ -407,6 +554,65 @@ mod tests {
         assert!(text.contains("chore = \"\""), "{text}");
         assert_eq!(labels.color("chore"), None);
         assert_eq!(labels.color("discovery"), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+    #[test]
+    fn a_label_goes_after_the_heading_groups() {
+        let add = |md: &str, label: &str| add_label(md, label).unwrap().unwrap();
+        assert_eq!(
+            add("# [Discovery] Offline mode\n\nBody [x]\n", "bug"),
+            "# [Discovery] [bug] Offline mode\n\nBody [x]\n"
+        );
+        assert_eq!(add("# Fix login\n", "bug"), "# [bug] Fix login\n");
+        assert_eq!(add("# [A][B] T", "c"), "# [A][B] [c] T");
+        assert_eq!(
+            add("intro\n# [home](https://x) page\r\nrest", "ux"),
+            "intro\n# [ux] [home](https://x) page\r\nrest"
+        );
+    }
+
+    #[test]
+    fn a_front_matter_list_takes_the_label_and_the_title_stays() {
+        let add = |md: &str| add_label(md, "bug").unwrap().unwrap();
+        assert_eq!(
+            add("---\nlabels: [ux]\n---\n# T\n"),
+            "---\nlabels: [ux, bug]\n---\n# T\n"
+        );
+        assert_eq!(
+            add("---\nlabels: []\n---\n# T\n"),
+            "---\nlabels: [bug]\n---\n# T\n"
+        );
+        assert_eq!(
+            add("---\nlabels:\n    - ux\nowner: me\n---\n# T\n"),
+            "---\nlabels:\n    - ux\n    - bug\nowner: me\n---\n# T\n"
+        );
+        // Front matter without `labels:` leaves it alone; the title takes it.
+        assert_eq!(
+            add("---\nowner: me\n---\n# T\n"),
+            "---\nowner: me\n---\n# [bug] T\n"
+        );
+    }
+
+    #[test]
+    fn adding_a_label_twice_changes_nothing() {
+        assert_eq!(add_label("# [BUG] T\n", "bug"), Ok(None));
+        assert_eq!(add_label("---\nlabels: [bug]\n---\n# T\n", "bug"), Ok(None));
+        assert!(add_label("no heading\n", "bug").is_err());
+    }
+
+    #[test]
+    fn labelling_a_file_rewrites_only_the_title_line() {
+        let dir = std::env::temp_dir().join(format!("iboard-add-label-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("fix-login.md");
+        std::fs::write(&file, "# Fix login\n\n## Context\n\n- [ ] x\n").unwrap();
+        assert_eq!(add_label_to_file(&file, "bug"), Ok(true));
+        assert_eq!(add_label_to_file(&file, "bug"), Ok(false));
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "# [bug] Fix login\n\n## Context\n\n- [ ] x\n"
+        );
+        assert!(file.exists(), "the file name never changes");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

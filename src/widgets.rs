@@ -30,6 +30,9 @@ pub enum ButtonKind {
     Back,
     /// Keeps the shape but drops to a `line` edge and `ink-faint`.
     Disabled,
+    /// A secondary button whose popup is open (Add label): `accent` edge and
+    /// text on `accent-soft`.
+    Open,
 }
 
 fn galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<Galley> {
@@ -70,6 +73,7 @@ fn button_colors(p: &theme::Palette, kind: ButtonKind) -> (Color32, Color32, Col
         ButtonKind::Danger => (p.danger, p.danger, p.danger, p.on_danger),
         ButtonKind::DangerOutline => (p.surface, p.danger_soft, p.danger, p.danger),
         ButtonKind::Disabled => (p.surface, p.surface, p.line, p.ink_faint),
+        ButtonKind::Open => (p.accent_soft, p.accent_soft, p.accent, p.accent),
     }
 }
 
@@ -461,6 +465,9 @@ pub enum Tone {
     Danger,
     /// Review: drawn in the reserved `review` hue, rest and hover.
     Review,
+    /// The trigger of an open popup (Add label): `accent` edge and icon on
+    /// `accent-soft`, hovered or not.
+    Open,
 }
 
 /// An icon-only 22×22 card action with a caller-chosen id, so tests can find
@@ -474,9 +481,10 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
         .on_hover_text(hover);
     if ui.is_rect_visible(rect) {
         let p = theme::palette(ui);
-        let hovered = response.hovered();
+        let hovered = response.hovered() || tone == Tone::Open;
         let ink = match (hovered, tone) {
             (_, Tone::Review) => p.review,
+            (_, Tone::Open) => p.accent,
             (true, Tone::Danger) => p.danger,
             (true, Tone::Plain) => p.ink,
             _ => p.ink_muted,
@@ -485,15 +493,16 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
             let edge = match tone {
                 Tone::Danger => p.danger,
                 Tone::Review => p.review,
+                Tone::Open => p.accent,
                 Tone::Plain => p.line_strong,
             };
             ui.painter().rect(
                 rect,
                 CornerRadius::same(theme::RADIUS_SM),
-                if tone == Tone::Review {
-                    p.review_soft
-                } else {
-                    p.surface_hover
+                match tone {
+                    Tone::Review => p.review_soft,
+                    Tone::Open => p.accent_soft,
+                    _ => p.surface_hover,
                 },
                 Stroke::new(1.0, edge),
                 StrokeKind::Inside,

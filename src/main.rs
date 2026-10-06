@@ -10,6 +10,7 @@ mod filter;
 mod general;
 mod history;
 mod issue;
+mod label_picker;
 mod labels;
 #[cfg(target_os = "macos")]
 mod menu;

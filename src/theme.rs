@@ -393,6 +393,8 @@ pub enum Icon {
     Expand,
     /// Two arrows pointing inwards: leave ColumnFocus for the board.
     Collapse,
+    /// A tag with a small plus at the lower right: add a label.
+    TagPlus,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -502,6 +504,23 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             painter.line(vec![at(20.0, 10.0), at(14.0, 10.0), at(14.0, 4.0)], stroke);
             painter.line_segment([at(14.0, 10.0), at(21.0, 3.0)], stroke);
             painter.line_segment([at(3.0, 21.0), at(10.0, 14.0)], stroke);
+        }
+        Icon::TagPlus => {
+            // Lucide's tag, shrunk to leave the lower right to a small plus.
+            painter.line(
+                vec![
+                    at(2.5, 2.5),
+                    at(11.0, 2.5),
+                    at(19.0, 10.5),
+                    at(10.5, 19.0),
+                    at(2.5, 11.0),
+                    at(2.5, 2.5),
+                ],
+                stroke,
+            );
+            painter.circle_filled(at(7.0, 7.0), 1.3 * s, color);
+            painter.line_segment([at(19.0, 15.0), at(19.0, 23.0)], stroke);
+            painter.line_segment([at(15.0, 19.0), at(23.0, 19.0)], stroke);
         }
         Icon::Review => {
             // A speech bubble (Lucide's message-circle-question): a circle
