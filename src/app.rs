@@ -2556,7 +2556,12 @@ impl IboardApp {
         }
     }
 
+    /// Only offered when Auto is off: with Auto on the board already reloads
+    /// itself. `⌘R` keeps working either way.
     fn refresh_button(&mut self, ui: &mut egui::Ui) {
+        if self.auto {
+            return;
+        }
         if widgets::button(
             ui,
             ButtonKind::Secondary,
