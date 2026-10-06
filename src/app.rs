@@ -25,7 +25,8 @@ use crate::review_settings::{self, Catalog};
 use crate::theme::{self, Icon, Palette};
 use crate::titles::{self, Engine};
 use crate::widgets::{self, ButtonKind};
-use crate::{dialog, recents, sheet};
+use crate::{design_ui, dialog, recents, sheet};
+use iboard::design::{self, DesignSystem};
 
 /// How long after the last keystroke an edit is written to disk.
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(800);
@@ -664,6 +665,12 @@ pub struct IboardApp {
     /// The label colours: the built-in preset, overridden by `[labels]` in the
     /// user configuration.
     labels: Labels,
+    /// The Design panel, while it is open.
+    design: Option<design_ui::Panel>,
+    /// The project's design system, loaded when the panel first opens.
+    design_system: Option<DesignSystem>,
+    /// Why the design system could not be loaded, when it could not.
+    design_error: Option<String>,
 }
 
 impl IboardApp {
@@ -749,6 +756,9 @@ impl IboardApp {
             settings: None,
             catalog: Catalog::default(),
             labels: Labels::presets(),
+            design: None,
+            design_system: None,
+            design_error: None,
         }
     }
 
@@ -2059,6 +2069,7 @@ impl IboardApp {
             self.confirm_dialog(ui, &path);
         }
         self.config_window(ui);
+        self.design_window(ui);
     }
 
     /// A dismissible `danger` line naming what failed.
@@ -2474,6 +2485,12 @@ impl IboardApp {
                     self.open_composer();
                 }
                 self.refresh_button(ui);
+                if widgets::button(ui, ButtonKind::Secondary, None, "Design", None)
+                    .on_hover_text("Browse the project's design system")
+                    .clicked()
+                {
+                    self.open_design();
+                }
                 widgets::checkbox(ui, &mut self.auto, "Auto")
                     .on_hover_text("Reload when files change on disk, and save edits as you type");
                 self.filter_field(ui);
@@ -3345,6 +3362,75 @@ impl IboardApp {
 
     /// The work each frame does whatever the keyboard said: autosave, the
     /// periodic refresh, and waking up for a running review.
+    /// Opens the Design panel, loading the project's design system once.
+    fn open_design(&mut self) {
+        match DesignSystem::discover(&self.located.project_dir) {
+            Ok(system) => {
+                self.design_system = Some(system);
+                self.design_error = None;
+            }
+            Err(err) => {
+                self.design_system = None;
+                self.design_error = Some(err);
+            }
+        }
+        self.design = Some(design_ui::Panel::default());
+    }
+
+    /// The Design panel, and the actions it asks for: scaffold a component, or
+    /// render a preview on a background thread. Taking the panel out for the
+    /// frame keeps the borrows simple and lets a `Close` drop it.
+    fn design_window(&mut self, ui: &mut egui::Ui) {
+        let Some(mut panel) = self.design.take() else {
+            return;
+        };
+        let action = panel.show(
+            ui.ctx(),
+            self.design_system.as_ref(),
+            self.design_error.as_deref(),
+            design::render::available(),
+        );
+        let keep = self.handle_design_action(&mut panel, action);
+        if keep {
+            self.design = Some(panel);
+        }
+    }
+
+    /// Applies what the panel asked for. Returns whether the panel stays open.
+    /// Factored out of `design_window` so a test can drive it without a click.
+    fn handle_design_action(
+        &mut self,
+        panel: &mut design_ui::Panel,
+        action: design_ui::Action,
+    ) -> bool {
+        match action {
+            design_ui::Action::Keep => true,
+            design_ui::Action::Close => false,
+            design_ui::Action::Create {
+                name,
+                group,
+                intent,
+            } => {
+                if let Some(system) = self.design_system.as_mut() {
+                    match system.add_component(&name, &group, Some(intent.as_str())) {
+                        Ok(dir) => panel.status = Some(format!("Created {}", dir.display())),
+                        Err(err) => panel.status = Some(err),
+                    }
+                }
+                true
+            }
+            design_ui::Action::Render(name) => {
+                if let Some(system) = self.design_system.as_ref() {
+                    match start_preview_render(system, &name) {
+                        Ok(receiver) => panel.start_render(receiver),
+                        Err(err) => panel.status = Some(err),
+                    }
+                }
+                true
+            }
+        }
+    }
+
     fn background(&mut self, ctx: &egui::Context) {
         // Debounced autosave, while Auto is on.
         let due = self.auto
@@ -4089,6 +4175,33 @@ impl IboardApp {
             self.answer_leave(choice);
         }
     }
+}
+
+/// Compose a component's preview and render it to a PNG on a background
+/// thread, so the panel stays responsive while WebKit runs.
+fn start_preview_render(
+    system: &DesignSystem,
+    name: &str,
+) -> Result<Receiver<Result<PathBuf, String>>, String> {
+    let Some(component) = system.components.iter().find(|c| c.name == name) else {
+        return Err(format!("no component named `{name}`"));
+    };
+    let html = design::css::preview_html(system, component, "light")?;
+    let html_path = std::env::temp_dir().join(format!("iboard-preview-{name}.html"));
+    std::fs::write(&html_path, html)
+        .map_err(|err| format!("Couldn't write {}: {err}", html_path.display()))?;
+    let png = std::env::temp_dir().join(format!("iboard-preview-{name}.png"));
+    let png_for_thread = png.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(design::render::snapshot(
+            &html_path,
+            &png_for_thread,
+            900,
+            640,
+        ));
+    });
+    Ok(receiver)
 }
 
 impl eframe::App for IboardApp {
@@ -9083,5 +9196,127 @@ mod tests {
         assert!(doing.join("card.md").exists(), "moved into doing/");
         assert!(!file.exists());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A tiny `design/` so the panel tests need no display and no repo data.
+    fn write_min_design(root: &Path) {
+        let design = root.join("design");
+        std::fs::create_dir_all(design.join("components/Button")).unwrap();
+        std::fs::write(
+            design.join("design-system.json"),
+            r#"{ "v": 1, "title": "Fixture", "namespace": "fixture" }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            design.join("tokens.json"),
+            r##"{
+                "name": "Fixture", "version": 1,
+                "color": {
+                    "themes": [ {"id":"light","name":"Light"}, {"id":"dark","name":"Dark"} ],
+                    "tokens": [ {"name":"bg","value":{"light":"#ffffff","dark":"#000000"},"usage":"ground"} ]
+                },
+                "type": { "families": {"sans":"-apple-system"}, "groups": [] },
+                "spacing": {"tokens":[]}, "radius": {"tokens":[]},
+                "size": {"tokens":[]}, "shadow": {"tokens":[]}
+            }"##,
+        )
+        .unwrap();
+        std::fs::write(
+            design.join("components/Button/README.md"),
+            "# Button\n\nA button.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            design.join("components/Button/preview.html"),
+            "<!doctype html><html><head></head><body><button>Go</button></body></html>",
+        )
+        .unwrap();
+    }
+
+    fn panel_ctx() -> (egui::Context, egui::RawInput) {
+        (
+            themed_ctx(),
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                ..Default::default()
+            },
+        )
+    }
+
+    #[test]
+    fn design_panel_loads_and_creates_a_component() {
+        let dir = scratch_dir("design-panel");
+        std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+        write_min_design(&dir);
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+
+        app.open_design();
+        assert!(
+            app.design_system.is_some(),
+            "loaded: {:?}",
+            app.design_error
+        );
+        assert!(app.design.is_some());
+
+        let (ctx, raw) = panel_ctx();
+        let mut output = ctx.run_ui(raw.clone(), |ui| app.draw(ui));
+        output.textures_delta.clear();
+
+        // The same path the Create button drives.
+        let mut panel = app.design.take().expect("panel open");
+        let keep = app.handle_design_action(
+            &mut panel,
+            design_ui::Action::Create {
+                name: "Toast".to_string(),
+                group: "Controls".to_string(),
+                intent: "Transient confirmation.".to_string(),
+            },
+        );
+        assert!(keep);
+        assert!(dir.join("design/components/Toast/README.md").is_file());
+        assert!(
+            app.design_system
+                .as_ref()
+                .unwrap()
+                .components
+                .iter()
+                .any(|c| c.name == "Toast")
+        );
+
+        app.design = Some(panel);
+        let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
+        output.textures_delta.clear();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn design_panel_reports_a_missing_system() {
+        let dir = scratch_dir("design-missing");
+        std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+
+        app.open_design();
+        assert!(app.design_system.is_none());
+        assert!(app.design.is_some(), "the panel opens even with no system");
+
+        let (ctx, raw) = panel_ctx();
+        let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
+        output.textures_delta.clear();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn preview_render_helper_composes_and_renders() {
+        if !iboard::design::render::available() {
+            return;
+        }
+        let design = Path::new(env!("CARGO_MANIFEST_DIR")).join("design");
+        let system = DesignSystem::load(&design).expect("repo design");
+        let receiver = start_preview_render(&system, "Button").expect("spawn render");
+        match receiver.recv_timeout(Duration::from_secs(60)) {
+            Ok(Ok(path)) => assert!(path.is_file(), "PNG written"),
+            Ok(Err(err)) => panic!("render failed: {err}"),
+            Err(err) => panic!("render timed out: {err}"),
+        }
     }
 }

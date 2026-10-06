@@ -1,25 +1,20 @@
 //! iboard: a fast, local kanban board + markdown reader for the
 //! `issues/` directories used across projects.
 
-mod agent;
 mod app;
-mod config;
+mod design_ui;
 mod dialog;
-mod discovery;
-mod filter;
-mod general;
-mod history;
-mod issue;
 mod label_picker;
-mod labels;
 #[cfg(target_os = "macos")]
 mod menu;
 mod recents;
 mod review_settings;
-mod sheet;
 mod theme;
-mod titles;
 mod widgets;
+
+// The shared modules live in the `iboard` library. Re-export them at this crate
+// root so the view modules keep addressing them as `crate::…`.
+use iboard::{agent, discovery, filter, general, issue, labels, sheet, titles};
 
 use std::path::PathBuf;
 

@@ -1,0 +1,32 @@
+iboard
+Copyright 2026 Clément (and contributors)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+## Inspiration and credits
+
+The design-system toolchain (`idesign`, `src/design.rs`, the `design/` format
+and the component-preview renderer) is inspired by and adapts ideas from:
+
+- Open Design — https://github.com/nexu-io/open-design (Apache-2.0).
+  In particular the layered design-system package (a prose `DESIGN.md` plus a
+  machine `tokens.css` contract), a component inventory, and the idea of
+  composing a design-aware agent prompt. No Open Design source is copied; the
+  Rust model and the on-disk `design/` shape are our own.
+
+Design-system reference material bundled or referenced by Open Design, credited
+there and reused here only as format inspiration:
+
+- VoltAgent/awesome-design-md — https://github.com/VoltAgent/awesome-design-md (MIT)
+- bergside/awesome-design-skills — https://github.com/bergside/awesome-design-skills
+- tw93/kami — https://github.com/tw93/kami (MIT)
+- Tom-Opencart/tom-modern-html-style-rule — https://github.com/Tom-Opencart/tom-modern-html-style-rule (MIT)
+
+Design-system packages that reference a brand are aesthetic inspirations, not
+official assets of the brands they name.
+
+## On-device naming
+
+`macos/titles.swift` uses Apple's Foundation Models framework, weak-linked so the
+app still starts on Macs without it. The macOS component-preview renderer
+(`macos/render.swift`) uses system WebKit through a short-lived helper process.

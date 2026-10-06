@@ -1,8 +1,9 @@
 # iboard
 
 A fast, local kanban board and markdown reader for the `issues/` folders used
-across projects. One Rust binary, no external service, no browser — it reads the
-markdown you already keep in git.
+across projects. Two small local binaries (`iboard` and `idesign`), no external
+service, and no browser in the app's own process — it reads the markdown you
+already keep in git.
 
 Point it at any project that has an `issues/` directory:
 
@@ -21,9 +22,32 @@ iboard --list              # print the board to stdout, no window
 
 The look follows the design system in [`design/`](design/README.md): tokens in
 `design/tokens.json`, the brand book in `design/README.md`, one guideline and
-HTML preview per component under `design/components/`. The source of truth is
-the [iboard design system on Claude Design](https://claude.ai/artifact/G22kpooZcDnB7Dd64xsJit);
-`design/` is a local copy of it.
+HTML preview per component under `design/components/`.
+
+### The design-system toolchain
+
+`idesign` creates, browses, imports and renders a project's design system; the
+board's **Design** button opens the same system in a panel. A component preview
+is turned into a PNG by a short-lived WebKit helper (`macos/render.swift`, built
+by `build.rs`), so the board never loads a browser itself: startup stays instant
+and a broken preview cannot take the window down.
+
+```sh
+idesign show                    # summary of the current project's system
+idesign list                    # one line per component
+idesign validate                # token references, missing previews, missing docs
+idesign add-component Toast --group Controls --intent "Transient confirmation"
+idesign import ~/packages/acme  # an Open Design package -> design/
+idesign preview Button --out /tmp/button.png
+idesign render page.html phone.png
+```
+
+`design/` is the canonical store; an Open Design package is an import source,
+never a second format. The source of truth for iboard's own system is the
+[iboard design system on Claude Design](https://claude.ai/artifact/G22kpooZcDnB7Dd64xsJit);
+`design/` is a local copy of it. The toolchain takes inspiration from
+[Open Design](https://github.com/nexu-io/open-design) (Apache-2.0); see
+[`NOTICE`](NOTICE).
 
 ## Building and installing
 

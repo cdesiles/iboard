@@ -559,14 +559,19 @@ pub fn start(config: &AgentConfig, prompt: &str, issue: &Path) -> Running {
         model => model.to_string(),
     };
     // A custom command reads the prompt from a file: it may be too long for
-    // an argument, and `{prompt}` can then go anywhere in the command.
+    // an argument, and `{prompt}` can then go anywhere in the command. The
+    // sequence keeps two runs in the same process (or two tests) from sharing
+    // a path when the clock reads the same instant.
+    static REVIEW_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = REVIEW_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let prompt_file = std::env::temp_dir().join(format!(
-        "iboard-review-{}-{}.md",
+        "iboard-review-{}-{}-{}.md",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or_default()
+            .unwrap_or_default(),
+        sequence,
     ));
     let custom = config.tool == Tool::Custom;
     if custom && let Err(err) = std::fs::write(&prompt_file, prompt) {
