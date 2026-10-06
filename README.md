@@ -15,7 +15,7 @@ iboard --list              # print the board to stdout, no window
 
 ## What for?
 
-iboard is suitable for every small projects that does not require a complex integration workflow with 
+`iboard` is suitable for every small projects that does not require a complex integration workflow with Gitlab, github or what not. It make ticketing fast: creation, follow up... Its a matter of reading and writing local files, for humans an AI agents.
 
 ## Design
 
@@ -23,26 +23,29 @@ The look follows the design system in [`design/`](design/README.md): tokens in
 `design/tokens.json`, the brand book in `design/README.md`, one guideline and
 HTML preview per component under `design/components/`. The source of truth is
 the [iboard design system on Claude Design](https://claude.ai/artifact/G22kpooZcDnB7Dd64xsJit);
-`design/` is a local copy of it. `src/theme.rs` maps the
-tokens onto egui (light and dark, following the system appearance) and
-`src/widgets.rs` draws the controls egui renders differently. On macOS the
-header bar doubles as the window's title bar. IBM Plex Sans and
-Mono are bundled from `assets/fonts/` (SIL Open Font License, see
-`assets/fonts/LICENSE.txt`).
+`design/` is a local copy of it.
 
-## Install
+## Building and installing
 
 From this repository:
 
 ```sh
-cargo install --path .
+$ make help                                                                                                  
+  build      Build the binary (debug)
+  release    Build the binary (optimized)
+  test       Run all tests
+  lint       Check formatting and run clippy (fails on warnings)
+  fmt        Format code in place
+  run        Launch the board as a GUI, e.g. make run ARGS="~/code/moon-cull"
+  list       Print the board to stdout, e.g. make list ARGS="~/code/moon-cull"
+  install    Install the `iboard` binary into the Cargo bin directory
+  clean      Remove build artifacts
+  help       Show this help
 ```
 
-This installs a single binary named `iboard`. Requires a recent Rust toolchain.
+## Issues format 
 
-## How the issues are discovered
-
-Discovery is intentionally lenient, because the format is intentionally free.
+The format is intentionally free.
 
 1. Starting from the given path (or the current directory), it looks for a
    `issues/` directory, walking up through parent folders. A config file below
@@ -74,10 +77,10 @@ Drop an `iboard.toml` at the project root to override
 discovery:
 
 ```toml
-root = "issues"                        # where the issues live
+root = "issues"                         # where the issues live
 columns = ["backlog", "doing", "done"]  # explicit order; omit to auto-detect
 root_column_name = "Backlog"            # name for the root-level files column
-title = "Moon Cull"                     # window title
+title = "My foo project"                # window title
 ```
 
 ### AI review
@@ -94,7 +97,7 @@ model = "default"   # or a model ID from the tool's list
 command = ""        # custom only, e.g. "llm -m {model} < {prompt}"
 
 [titles]
-engine = "apple"    # "apple" (on-device), "agent" or "manual"
+engine = "apple"    # "apple" (on-device), "agent" or "off"
 
 [delete]
 confirm = true      # false: delete without asking, with ⌘Z undo
@@ -107,30 +110,3 @@ non-interactively (`opencode run`, `claude -p`); a custom command runs through
 instructions), `{model}` and `{issue}` (the issue path) filled in, and the
 review is read from its stdout. An older `tool = "<any command>"` keeps working
 as a custom command.
-
-## Development
-
-```sh
-cargo run -- --list ~/code/moon-cull   # exercise discovery without a GUI
-cargo test
-cargo clippy --all-targets -- -D warnings
-cargo fmt
-```
-
-Layout:
-
-| File | Responsibility |
-| --- | --- |
-| `src/main.rs` | CLI entry point and `--list` output |
-| `src/discovery.rs` | Locate the issues, build columns, order issues |
-| `src/issue.rs` | Load a markdown file, derive title and summary |
-| `src/config.rs` | Optional `iboard.toml` |
-| `src/agent.rs` | The configured AI tool, the review prompt and its answer |
-| `src/titles.rs` | Names a new issue from its description (on-device, agent or off) |
-| `macos/titles.swift` | Swift shim over Foundation Models, built and weak-linked by `build.rs` |
-| `src/filter.rs` | The board filter: suggestion tokens and free text |
-| `src/recents.rs` | The recent-projects cache behind the header menu |
-| `src/dialog.rs` | The OS folder picker (macOS `NSOpenPanel`) |
-| `src/app.rs` | egui board, quick-add composer, reader and editor |
-| `src/theme.rs` | Design tokens, fonts and line icons mapped onto egui |
-| `src/widgets.rs` | Buttons, checkbox, pills, key hints, breadcrumbs |

@@ -1,0 +1,24 @@
+<!-- @dsCard group="Board" height=470 subtitle="Shown while a card is dragged" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>DropZones</title></head>
+<body>
+<div class="ib-stack" style="gap:0">
+<div style="position:relative;height:150px;background:var(--bg);padding:16px;box-sizing:border-box;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;align-items:start">
+<div class="ib-col is-todo"><header class="ib-col__head"><span class="ib-dot"></span><span class="ib-col__title">Todo</span><span class="ib-col__count">3</span></header></div>
+<div class="ib-col is-ready"><header class="ib-col__head"><span class="ib-dot"></span><span class="ib-col__title">Ready</span><span class="ib-col__count">2</span></header></div>
+<div class="ib-col is-doing"><header class="ib-col__head"><span class="ib-dot"></span><span class="ib-col__title">Doing</span><span class="ib-col__count">0</span></header></div>
+<div class="ib-col is-done"><header class="ib-col__head"><span class="ib-dot"></span><span class="ib-col__title">Done</span><span class="ib-col__count">4</span></header><article class="ib-card is-dragging" tabindex="0"><div class="ib-card__title">Sidebar collapse toggle</div><div class="ib-card__summary">Target: add a simple toggle that collapses the side menu in the owner dashboard and the backoffice, giving the main area more room.</div><div class="ib-card__meta"><span class="ib-card__file">sidebar-collapse-toggle.md</span><span class="ib-card__date">2026-10-01</span><span class="ib-card__actions"></span></div></article></div>
+<div style="position:absolute;right:120px;bottom:-24px;z-index:3"><article class="ib-card is-ghost" tabindex="0"><div class="ib-card__title">Sidebar collapse toggle</div><div class="ib-card__summary">Target: add a simple toggle that collapses the side menu in the owner dashboard and the backoffice, giving the main area more room.</div><div class="ib-card__meta"><span class="ib-card__file">sidebar-collapse-toggle.md</span><span class="ib-card__date">2026-10-01</span><span class="ib-card__actions"></span></div></article></div>
+</div>
+<div class="ib-dock" role="group" aria-label="Drop to archive or delete">
+<div class="ib-zone ib-zone--archive"><svg class="ib-ico ib-ico--lg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>Archive<span class="ib-zone__hint">moves to .archive/</span></div>
+<div class="ib-zone ib-zone--delete is-over"><svg class="ib-ico ib-ico--lg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/></svg>Delete<span class="ib-zone__hint">asks to confirm</span></div>
+</div>
+<div class="ib-statusbar"><span>done/sidebar-collapse-toggle.md</span><span class="ib-hints"><span><span class="ib-kbd">esc</span> cancel drag</span></span></div>
+<div style="height:16px"></div><span class="ib-cap" style="padding:0 16px">Other states: archive under the pointer, and the Delete-only dock for a card outside Done</span><div style="height:8px"></div>
+<div class="ib-dock"><div class="ib-zone ib-zone--archive is-over"><svg class="ib-ico ib-ico--lg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>Archive<span class="ib-zone__hint">moves to .archive/</span></div><div class="ib-zone ib-zone--delete"><svg class="ib-ico ib-ico--lg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/></svg>Delete<span class="ib-zone__hint">asks to confirm</span></div></div>
+<div class="ib-dock" style="grid-template-columns:1fr"><div class="ib-zone ib-zone--delete"><svg class="ib-ico ib-ico--lg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/></svg>Delete<span class="ib-zone__hint">asks to confirm</span></div></div>
+</div>
+</body>
+</html>
