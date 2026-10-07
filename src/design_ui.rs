@@ -181,11 +181,35 @@ impl Panel {
         if selected != self.selected {
             self.selected = selected;
             self.render = Render::Idle;
+            if matches!(action, Action::Keep) {
+                action = self.render_selected(system, render_available);
+            }
         }
 
         ui.separator();
-        self.selected_ui(ui, system, render_available, &mut action);
+        self.selected_ui(ui, system);
         action
+    }
+
+    /// The render to spawn for the current selection: the picked component, when
+    /// a renderer is available and the component ships a preview. Selecting a
+    /// component renders it, so there is no separate button.
+    fn render_selected(&self, system: &DesignSystem, render_available: bool) -> Action {
+        if !render_available {
+            return Action::Keep;
+        }
+        let Some(name) = self.selected.clone() else {
+            return Action::Keep;
+        };
+        let has_preview = system
+            .components
+            .iter()
+            .any(|component| component.name == name && component.has_preview);
+        if has_preview {
+            Action::Render(name)
+        } else {
+            Action::Keep
+        }
     }
 
     fn new_component_ui(&mut self, ui: &mut egui::Ui, action: &mut Action, agent_ready: bool) {
@@ -248,13 +272,7 @@ impl Panel {
         }
     }
 
-    fn selected_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        system: &DesignSystem,
-        render_available: bool,
-        action: &mut Action,
-    ) {
+    fn selected_ui(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
         let p = theme::palette(ui);
         let Some(name) = self.selected.clone() else {
             ui.label(
@@ -268,27 +286,7 @@ impl Panel {
             return;
         };
 
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(&component.name).color(p.ink).strong());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let enabled = render_available && component.has_preview;
-                let hint = if !component.has_preview {
-                    "This component ships no preview.html"
-                } else if !render_available {
-                    "No HTML renderer on this machine"
-                } else {
-                    "Render preview"
-                };
-                if ui
-                    .add_enabled(enabled, egui::Button::new("Render preview"))
-                    .on_hover_text(hint)
-                    .on_disabled_hover_text(hint)
-                    .clicked()
-                {
-                    *action = Action::Render(name.clone());
-                }
-            });
-        });
+        ui.label(egui::RichText::new(&component.name).color(p.ink).strong());
 
         if let Some(summary) = design::css::component_summary(component) {
             ui.label(egui::RichText::new(summary).color(p.ink_muted).size(12.0));
@@ -352,4 +350,42 @@ pub fn load_texture(ctx: &egui::Context, path: &Path) -> Result<egui::TextureHan
     let size = [image.width() as usize, image.height() as usize];
     let color = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
     Ok(ctx.load_texture(path.to_string_lossy(), color, egui::TextureOptions::LINEAR))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo() -> DesignSystem {
+        DesignSystem::discover(Path::new(env!("CARGO_MANIFEST_DIR"))).expect("repo design")
+    }
+
+    #[test]
+    fn selecting_a_component_asks_for_a_render() {
+        let system = repo();
+        let panel = Panel {
+            selected: Some("Button".to_string()),
+            ..Panel::default()
+        };
+        match panel.render_selected(&system, true) {
+            Action::Render(name) => assert_eq!(name, "Button"),
+            _ => panic!("selecting a component should ask for a render"),
+        }
+    }
+
+    #[test]
+    fn no_render_without_a_renderer_or_a_preview() {
+        let system = repo();
+        let mut panel = Panel {
+            selected: Some("Button".to_string()),
+            ..Panel::default()
+        };
+        assert!(matches!(
+            panel.render_selected(&system, false),
+            Action::Keep
+        ));
+
+        panel.selected = None;
+        assert!(matches!(panel.render_selected(&system, true), Action::Keep));
+    }
 }
