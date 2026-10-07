@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
-use iboard::design::{self, DesignSystem};
+use crate::design::{self, DesignSystem};
 
 use crate::theme;
 use crate::widgets::{self, ButtonKind};
@@ -82,98 +82,109 @@ impl Panel {
         render_available: bool,
         agent_ready: bool,
     ) -> Action {
-        self.poll(ctx);
         let mut action = Action::Keep;
-
         egui::Window::new("Design system")
             .collapsible(false)
             .resizable(true)
             .default_width(760.0)
             .default_height(560.0)
             .show(ctx, |ui| {
-                let p = theme::palette(ui);
-                ui.horizontal(|ui| {
-                    let title = system
-                        .map(|system| system.meta.title.clone())
-                        .unwrap_or_else(|| "No design system".to_string());
-                    ui.label(egui::RichText::new(title).color(p.ink).strong());
-                    if let Some(system) = system {
-                        ui.label(
-                            egui::RichText::new(format!("· {}", system.meta.namespace))
-                                .color(p.ink_muted),
-                        );
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if widgets::button(ui, ButtonKind::Secondary, None, "Close", None).clicked()
-                        {
-                            action = Action::Close;
-                        }
-                    });
-                });
-
-                let Some(system) = system else {
-                    ui.separator();
-                    ui.label(
-                        egui::RichText::new(error.unwrap_or("No design system in this project."))
-                            .color(p.ink_muted),
-                    );
-                    ui.label(
-                        egui::RichText::new(
-                            "Add design/design-system.json, or `idesign import <package>`.",
-                        )
-                        .color(p.ink_faint)
-                        .size(11.0),
-                    );
-                    return;
-                };
-
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{} · {} components · {} color tokens",
-                        system.tokens.themes.len().max(1),
-                        system.components.len(),
-                        system.tokens.color.len(),
-                    ))
-                    .color(p.ink_muted)
-                    .size(11.0),
-                );
-                ui.separator();
-
-                if let Some(status) = &self.status {
-                    ui.label(egui::RichText::new(status).color(p.ink_muted).size(11.0));
-                }
-
-                self.new_component_ui(ui, &mut action, agent_ready);
-                ui.separator();
-
-                let mut selected = self.selected.clone();
-                egui::ScrollArea::vertical()
-                    .id_salt("design-components")
-                    .max_height(160.0)
-                    .show(ui, |ui| {
-                        if system.components.is_empty() {
-                            ui.label(
-                                egui::RichText::new("No components yet.")
-                                    .color(p.ink_faint)
-                                    .size(11.0),
-                            );
-                        }
-                        for component in &system.components {
-                            let is_selected = selected.as_deref() == Some(&component.name);
-                            if ui.selectable_label(is_selected, &component.name).clicked() {
-                                selected = Some(component.name.clone());
-                            }
-                        }
-                    });
-                if selected != self.selected {
-                    self.selected = selected;
-                    self.render = Render::Idle;
-                }
-
-                ui.separator();
-                self.selected_ui(ui, system, render_available, &mut action);
+                action = self.body(ui, system, error, render_available, agent_ready);
             });
+        action
+    }
 
+    /// The panel's content, without window chrome, so a host can frame it either
+    /// way: the board shows it in a window, `idesign` fills its whole app.
+    pub fn body(
+        &mut self,
+        ui: &mut egui::Ui,
+        system: Option<&DesignSystem>,
+        error: Option<&str>,
+        render_available: bool,
+        agent_ready: bool,
+    ) -> Action {
+        self.poll(ui.ctx());
+        let mut action = Action::Keep;
+        let p = theme::palette(ui);
+        ui.horizontal(|ui| {
+            let title = system
+                .map(|system| system.meta.title.clone())
+                .unwrap_or_else(|| "No design system".to_string());
+            ui.label(egui::RichText::new(title).color(p.ink).strong());
+            if let Some(system) = system {
+                ui.label(
+                    egui::RichText::new(format!("· {}", system.meta.namespace)).color(p.ink_muted),
+                );
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if widgets::button(ui, ButtonKind::Secondary, None, "Close", None).clicked() {
+                    action = Action::Close;
+                }
+            });
+        });
+
+        let Some(system) = system else {
+            ui.separator();
+            ui.label(
+                egui::RichText::new(error.unwrap_or("No design system in this project."))
+                    .color(p.ink_muted),
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Add design/design-system.json, or `idesign import <package>`.",
+                )
+                .color(p.ink_faint)
+                .size(11.0),
+            );
+            return action;
+        };
+
+        ui.label(
+            egui::RichText::new(format!(
+                "{} · {} components · {} color tokens",
+                system.tokens.themes.len().max(1),
+                system.components.len(),
+                system.tokens.color.len(),
+            ))
+            .color(p.ink_muted)
+            .size(11.0),
+        );
+        ui.separator();
+
+        if let Some(status) = &self.status {
+            ui.label(egui::RichText::new(status).color(p.ink_muted).size(11.0));
+        }
+
+        self.new_component_ui(ui, &mut action, agent_ready);
+        ui.separator();
+
+        let mut selected = self.selected.clone();
+        egui::ScrollArea::vertical()
+            .id_salt("design-components")
+            .max_height(160.0)
+            .show(ui, |ui| {
+                if system.components.is_empty() {
+                    ui.label(
+                        egui::RichText::new("No components yet.")
+                            .color(p.ink_faint)
+                            .size(11.0),
+                    );
+                }
+                for component in &system.components {
+                    let is_selected = selected.as_deref() == Some(&component.name);
+                    if ui.selectable_label(is_selected, &component.name).clicked() {
+                        selected = Some(component.name.clone());
+                    }
+                }
+            });
+        if selected != self.selected {
+            self.selected = selected;
+            self.render = Render::Idle;
+        }
+
+        ui.separator();
+        self.selected_ui(ui, system, render_available, &mut action);
         action
     }
 
@@ -332,10 +343,7 @@ impl Panel {
 }
 
 /// Decode a PNG into an egui texture.
-pub(crate) fn load_texture(
-    ctx: &egui::Context,
-    path: &Path,
-) -> Result<egui::TextureHandle, String> {
+pub fn load_texture(ctx: &egui::Context, path: &Path) -> Result<egui::TextureHandle, String> {
     let bytes =
         std::fs::read(path).map_err(|err| format!("Couldn't read {}: {err}", path.display()))?;
     let image = image::load_from_memory(&bytes)

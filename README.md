@@ -27,12 +27,14 @@ HTML preview per component under `design/components/`.
 ### The design-system toolchain
 
 `idesign` creates, browses, imports and renders a project's design system; the
-board's **Design** button opens the same system in a panel. A component preview
-is turned into a PNG by a short-lived WebKit helper (`macos/render.swift`, built
-by `build.rs`), so the board never loads a browser itself: startup stays instant
-and a broken preview cannot take the window down.
+board's **Design** button opens the same system in a panel, and running `idesign`
+alone in a terminal opens that same browser in its own window. A component
+preview is turned into a PNG by a short-lived WebKit helper (`macos/render.swift`,
+built by `build.rs`), so the board never loads a browser itself: startup stays
+instant and a broken preview cannot take the window down.
 
 ```sh
+idesign                         # open the browser (in a terminal)
 idesign show                    # summary of the current project's system
 idesign list                    # one line per component
 idesign validate                # token references, missing previews, missing docs

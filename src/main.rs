@@ -2,19 +2,18 @@
 //! `issues/` directories used across projects.
 
 mod app;
-mod design_ui;
 mod dialog;
 mod label_picker;
 #[cfg(target_os = "macos")]
 mod menu;
 mod recents;
 mod review_settings;
-mod theme;
-mod widgets;
 
 // The shared modules live in the `iboard` library. Re-export them at this crate
 // root so the view modules keep addressing them as `crate::…`.
-use iboard::{agent, discovery, filter, general, issue, labels, sheet, titles};
+use iboard::{
+    agent, design_ui, discovery, filter, general, issue, labels, sheet, theme, titles, widgets,
+};
 
 use std::path::PathBuf;
 

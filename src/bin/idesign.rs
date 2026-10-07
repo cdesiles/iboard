@@ -16,10 +16,12 @@
 //! idesign render HTML PNG               # render any HTML file to a PNG
 //! ```
 
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use iboard::design::{self, DesignSystem, Token, TokenValue};
+use iboard::design_ui;
 
 const DEFAULT_WIDTH: u32 = 1200;
 const DEFAULT_HEIGHT: u32 = 900;
@@ -94,6 +96,20 @@ fn main() -> ExitCode {
         .to_string();
     // No command is the default `show`; the rest is empty, not a panic.
     let rest: &[String] = positionals.get(1..).unwrap_or(&[]);
+
+    // No command in a terminal: browse the system in a window. Piped output, or
+    // any command or flag, stays a CLI so scripts keep working.
+    let flags_set = flags.group.is_some()
+        || flags.intent.is_some()
+        || flags.into.is_some()
+        || flags.out.is_some()
+        || flags.theme.is_some()
+        || flags.width.is_some()
+        || flags.height.is_some();
+    if wants_gui(&positionals, flags_set, std::io::stdout().is_terminal()) {
+        let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        return run_gui(start);
+    }
 
     match command.as_str() {
         "render" => {
@@ -373,6 +389,7 @@ fn print_help() {
         "{name} {version}\n\
          \n\
          Create, browse, import and render a design system at design/.\n\
+         Run with no command in a terminal to browse it in a window.\n\
          \n\
          USAGE:\n    {name} [COMMAND] [PATH]\n    {name} add-component NAME [PATH] [--group G] [--intent \"...\"]\n    {name} import PACKAGE [PATH] [--into DIR]\n    {name} preview NAME [PATH] [--out FILE] [--theme light|dark] [--width N] [--height N]\n    {name} render INPUT.html OUTPUT.png [--width N] [--height N]\n\
          \n\
@@ -387,4 +404,151 @@ fn print_help() {
         width = DEFAULT_WIDTH,
         height = DEFAULT_HEIGHT
     );
+}
+
+/// The standalone browser: the same design panel the board shows, in its own
+/// window. Opened by a bare `idesign` in a terminal.
+struct IDesignApp {
+    system: Option<DesignSystem>,
+    error: Option<String>,
+    panel: design_ui::Panel,
+}
+
+impl IDesignApp {
+    /// Draw the browser into `ui`. Split from the eframe entry point so a test
+    /// can drive it headlessly.
+    fn draw(&mut self, ui: &mut egui::Ui) {
+        egui::CentralPanel::default().show(ui, |ui| {
+            let action = self.panel.body(
+                ui,
+                self.system.as_ref(),
+                self.error.as_deref(),
+                design::render::available(),
+                false,
+            );
+            match action {
+                design_ui::Action::Create {
+                    name,
+                    group,
+                    intent,
+                    ..
+                } => {
+                    if let Some(system) = self.system.as_mut() {
+                        self.panel.status = Some(
+                            match system.add_component(&name, &group, Some(intent.as_str())) {
+                                Ok(dir) => format!("Created {}", dir.display()),
+                                Err(err) => err,
+                            },
+                        );
+                    }
+                }
+                design_ui::Action::Render(name) => {
+                    if let Some(system) = self.system.as_ref() {
+                        match design::render::component_preview(system, &name) {
+                            Ok(receiver) => self.panel.start_render(receiver),
+                            Err(err) => self.panel.status = Some(err),
+                        }
+                    }
+                }
+                design_ui::Action::Close => {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                design_ui::Action::Keep => {}
+            }
+        });
+    }
+}
+
+impl eframe::App for IDesignApp {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.draw(ui);
+    }
+}
+
+/// Whether a bare `idesign` should open the browser: no command, no flags, and a
+/// terminal to draw on. Piped output stays a CLI so scripts keep working.
+fn wants_gui(positionals: &[String], flags_set: bool, stdout_is_terminal: bool) -> bool {
+    positionals.is_empty() && !flags_set && stdout_is_terminal
+}
+
+/// Open the browser on the design system found from `start`, falling back to the
+/// text summary when no window can be opened.
+fn run_gui(start: PathBuf) -> ExitCode {
+    let (system, error) = match DesignSystem::discover(&start) {
+        Ok(system) => (Some(system), None),
+        Err(err) => (None, Some(err)),
+    };
+    let app = IDesignApp {
+        system,
+        error,
+        panel: design_ui::Panel::default(),
+    };
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([900.0, 640.0])
+            .with_min_inner_size([640.0, 420.0])
+            .with_title("idesign"),
+        ..Default::default()
+    };
+    match eframe::run_native(
+        "idesign",
+        options,
+        Box::new(move |cc| {
+            iboard::theme::install(&cc.egui_ctx);
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            Ok(Box::new(app))
+        }),
+    ) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("idesign: couldn't open a window ({err}); showing the summary");
+            match DesignSystem::discover(&start) {
+                Ok(system) => {
+                    print!("{}", system.describe());
+                    ExitCode::SUCCESS
+                }
+                Err(_) => ExitCode::FAILURE,
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_browser_opens_only_for_a_bare_run_in_a_terminal() {
+        let none: Vec<String> = Vec::new();
+        assert!(wants_gui(&none, false, true));
+        // Piped output (a script, or a test) stays a CLI.
+        assert!(!wants_gui(&none, false, false));
+        // A command is a CLI.
+        assert!(!wants_gui(&["show".to_string()], false, true));
+        // A flag is a CLI.
+        assert!(!wants_gui(&none, true, true));
+    }
+
+    #[test]
+    fn the_browser_renders_a_design_system() {
+        let system = DesignSystem::discover(Path::new(env!("CARGO_MANIFEST_DIR"))).ok();
+        assert!(system.is_some(), "the repo has a design system");
+        let mut app = IDesignApp {
+            system,
+            error: None,
+            panel: design_ui::Panel::default(),
+        };
+
+        let ctx = egui::Context::default();
+        iboard::theme::install(&ctx);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(900.0, 640.0),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| app.draw(ui));
+        output.textures_delta.clear();
+    }
 }

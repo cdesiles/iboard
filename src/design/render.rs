@@ -8,6 +8,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc::Receiver;
+
+use super::DesignSystem;
 
 /// The renderer helper's path: the `IBOARD_RENDER` override when it points at
 /// a file, else the helper `build.rs` compiled.
@@ -63,6 +66,33 @@ pub fn snapshot(html: &Path, png: &Path, width: u32, height: u32) -> Result<Path
         });
     }
     Ok(png.to_path_buf())
+}
+
+/// Compose a component's preview and render it on a background thread, so a
+/// caller's UI stays responsive while WebKit runs. The receiver yields the PNG
+/// path, or why the render failed.
+pub fn component_preview(
+    system: &DesignSystem,
+    name: &str,
+) -> Result<Receiver<Result<PathBuf, String>>, String> {
+    let Some(component) = system
+        .components
+        .iter()
+        .find(|component| component.name == name)
+    else {
+        return Err(format!("no component named `{name}`"));
+    };
+    let html = super::css::preview_html(system, component, "light")?;
+    let html_path = std::env::temp_dir().join(format!("iboard-preview-{name}.html"));
+    std::fs::write(&html_path, html)
+        .map_err(|err| format!("Couldn't write {}: {err}", html_path.display()))?;
+    let png = std::env::temp_dir().join(format!("iboard-preview-{name}.png"));
+    let png_for_thread = png.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(snapshot(&html_path, &png_for_thread, 900, 640));
+    });
+    Ok(receiver)
 }
 
 #[cfg(test)]

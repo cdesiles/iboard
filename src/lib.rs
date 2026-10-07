@@ -10,6 +10,7 @@
 pub mod agent;
 pub mod config;
 pub mod design;
+pub mod design_ui;
 pub mod discovery;
 pub mod filter;
 pub mod general;
@@ -18,4 +19,6 @@ pub mod issue;
 pub mod labels;
 pub mod prompts;
 pub mod sheet;
+pub mod theme;
 pub mod titles;
+pub mod widgets;

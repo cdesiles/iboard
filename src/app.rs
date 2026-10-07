@@ -3488,7 +3488,7 @@ impl IboardApp {
             }
             design_ui::Action::Render(name) => {
                 if let Some(system) = self.design_system.as_ref() {
-                    match start_preview_render(system, &name) {
+                    match design::render::component_preview(system, &name) {
                         Ok(receiver) => panel.start_render(receiver),
                         Err(err) => panel.status = Some(err),
                     }
@@ -4534,33 +4534,6 @@ impl IboardApp {
             self.answer_leave(choice);
         }
     }
-}
-
-/// Compose a component's preview and render it to a PNG on a background
-/// thread, so the panel stays responsive while WebKit runs.
-fn start_preview_render(
-    system: &DesignSystem,
-    name: &str,
-) -> Result<Receiver<Result<PathBuf, String>>, String> {
-    let Some(component) = system.components.iter().find(|c| c.name == name) else {
-        return Err(format!("no component named `{name}`"));
-    };
-    let html = design::css::preview_html(system, component, "light")?;
-    let html_path = std::env::temp_dir().join(format!("iboard-preview-{name}.html"));
-    std::fs::write(&html_path, html)
-        .map_err(|err| format!("Couldn't write {}: {err}", html_path.display()))?;
-    let png = std::env::temp_dir().join(format!("iboard-preview-{name}.png"));
-    let png_for_thread = png.clone();
-    let (sender, receiver) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = sender.send(design::render::snapshot(
-            &html_path,
-            &png_for_thread,
-            900,
-            640,
-        ));
-    });
-    Ok(receiver)
 }
 
 /// The `file://` base a relative image link in `issue` resolves against: the
@@ -9722,7 +9695,7 @@ mod tests {
         }
         let design = Path::new(env!("CARGO_MANIFEST_DIR")).join("design");
         let system = DesignSystem::load(&design).expect("repo design");
-        let receiver = start_preview_render(&system, "Button").expect("spawn render");
+        let receiver = design::render::component_preview(&system, "Button").expect("spawn render");
         match receiver.recv_timeout(Duration::from_secs(60)) {
             Ok(Ok(path)) => assert!(path.is_file(), "PNG written"),
             Ok(Err(err)) => panic!("render failed: {err}"),
