@@ -16,6 +16,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
 use egui::{Align2, Color32, CornerRadius, Rect, Stroke, StrokeKind, pos2};
+use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 use crate::design::{self, Component, DesignSystem, Token};
 
@@ -122,6 +123,8 @@ pub struct Panel {
     previews: BTreeMap<String, Preview>,
     /// The one render in flight, and the component it belongs to.
     running: Option<(String, Receiver<Result<PathBuf, String>>)>,
+    /// Layout cache for the Overview brief's markdown.
+    brief_cache: CommonMarkCache,
 }
 
 impl Default for Panel {
@@ -137,6 +140,7 @@ impl Default for Panel {
             status: None,
             previews: BTreeMap::new(),
             running: None,
+            brief_cache: CommonMarkCache::default(),
         }
     }
 }
@@ -303,7 +307,7 @@ impl Panel {
     ) {
         ui.add_space(theme::SPACE_4);
         match self.category {
-            Category::Overview => overview(ui, system),
+            Category::Overview => overview(ui, system, &mut self.brief_cache),
             Category::Colors => colors(ui, system),
             Category::Typography => typography(ui, system),
             Category::Spacing => spacing(ui, system),
@@ -630,7 +634,7 @@ fn centred(ui: &egui::Ui, rect: Rect, text: &str, color: Color32) {
 }
 
 /// The Overview landing: identity, counts, the last change and the brief.
-fn overview(ui: &mut egui::Ui, system: &DesignSystem) {
+fn overview(ui: &mut egui::Ui, system: &DesignSystem, cache: &mut CommonMarkCache) {
     let p = theme::palette(ui);
     ui.label(
         egui::RichText::new(&system.meta.title)
@@ -673,18 +677,22 @@ fn overview(ui: &mut egui::Ui, system: &DesignSystem) {
     }
 
     ui.separator();
-    match system.brief() {
-        Some(brief) => {
-            ui.label(egui::RichText::new(brief).color(p.ink_muted).size(12.0));
-        }
-        None => {
-            ui.label(
-                egui::RichText::new("No design/README.md brief yet.")
-                    .color(p.ink_faint)
-                    .size(11.0),
-            );
-        }
-    }
+    let Some(brief) = system.brief() else {
+        ui.label(
+            egui::RichText::new("No design/README.md brief yet.")
+                .color(p.ink_faint)
+                .size(11.0),
+        );
+        return;
+    };
+    // Render the brief as markdown, at reading sizes a touch smaller than the
+    // Reader's so it fits the panel.
+    let styles = &mut ui.style_mut().text_styles;
+    styles.insert(egui::TextStyle::Body, egui::FontId::proportional(13.0));
+    styles.insert(egui::TextStyle::Heading, theme::ui_title());
+    styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.0));
+    ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+    CommonMarkViewer::new().show(ui, cache, &brief);
 }
 
 /// Colors: one row per color token, a swatch per theme, copy on click.
