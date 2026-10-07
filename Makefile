@@ -1,4 +1,7 @@
-.PHONY: build release test lint fmt run list install clean help
+.PHONY: build release test lint fmt run iboard idesign list install clean help
+
+# `make run` launches iboard; `make run idesign` switches to the design tool.
+BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
 
 ## Build the binary (debug)
 build:
@@ -21,15 +24,27 @@ lint:
 fmt:
 	cargo fmt
 
-## Launch the board as a GUI, e.g. make run ARGS="~/code/moon-cull"
+## Launch a binary, iboard by default: make run, make run iboard, make run idesign
 run:
-	cargo run -- $(ARGS)
+	cargo run --bin $(BIN) -- $(ARGS)
+
+## Launch the board directly, e.g. make iboard ARGS="~/code/moon-cull"
+iboard:
+	@if [ -z "$(filter run,$(MAKECMDGOALS))" ]; then \
+		cargo run --bin iboard -- $(ARGS); \
+	fi
+
+## Launch the design tool directly, e.g. make idesign ARGS="show"
+idesign:
+	@if [ -z "$(filter run,$(MAKECMDGOALS))" ]; then \
+		cargo run --bin idesign -- $(ARGS); \
+	fi
 
 ## Print the board to stdout, e.g. make list ARGS="~/code/moon-cull"
 list:
-	cargo run -- --list $(ARGS)
+	cargo run --bin iboard -- --list $(ARGS)
 
-## Install the `iboard` binary into the Cargo bin directory
+## Install the binaries into the Cargo bin directory
 install:
 	cargo install --path .
 

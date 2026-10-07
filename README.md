@@ -63,9 +63,11 @@ $ make help                                                                     
   test       Run all tests
   lint       Check formatting and run clippy (fails on warnings)
   fmt        Format code in place
-  run        Launch the board as a GUI, e.g. make run ARGS="~/code/moon-cull"
+  run        Launch a binary, iboard by default: make run, make run iboard, make run idesign
+  iboard     Launch the board directly, e.g. make iboard ARGS="~/code/moon-cull"
+  idesign    Launch the design tool directly, e.g. make idesign ARGS="show"
   list       Print the board to stdout, e.g. make list ARGS="~/code/moon-cull"
-  install    Install the `iboard` binary into the Cargo bin directory
+  install    Install the binaries into the Cargo bin directory
   clean      Remove build artifacts
   help       Show this help
 ```
