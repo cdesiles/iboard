@@ -20,6 +20,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock", "s
 eframe = "0.36.2"
 egui = "0.36.2"
 egui_commonmark = "0.25.0"
+egui_extras = { version = "0.36.2", default-features = false, features = ["image", "file"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.6"

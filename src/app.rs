@@ -721,6 +721,9 @@ impl IboardApp {
     /// see `main.rs` for why it is set here rather than at startup.
     pub fn new(cc: &eframe::CreationContext<'_>, located: Located, window_title: String) -> Self {
         theme::install(&cc.egui_ctx);
+        // Images in a ticket's markdown (`![shot](assets/<stem>/ui.png)`) load
+        // from disk through egui's file loader.
+        egui_extras::install_image_loaders(&cc.egui_ctx);
         cc.egui_ctx
             .send_viewport_cmd(egui::ViewportCommand::Title(window_title));
         // After winit's default menu is up, so this one replaces it.
@@ -4271,6 +4274,7 @@ impl IboardApp {
                                 .insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.5));
                             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
                             CommonMarkViewer::new()
+                                .default_implicit_uri_scheme(image_base_uri(path))
                                 .show_mut(ui, cache, &mut text)
                                 .response
                                 .changed()
@@ -4557,6 +4561,14 @@ fn start_preview_render(
         ));
     });
     Ok(receiver)
+}
+
+/// The `file://` base a relative image link in `issue` resolves against: the
+/// issue's own folder, so `assets/<stem>/ui.png` finds the mockup written beside
+/// it. Passed to the markdown viewer as its implicit URI scheme.
+fn image_base_uri(issue: &Path) -> String {
+    let dir = issue.parent().unwrap_or(Path::new("."));
+    format!("file://{}/", dir.display())
 }
 
 /// Where a ticket's drafted artifacts live: `assets/<stem>/` beside the issue
@@ -7118,6 +7130,7 @@ mod tests {
     fn themed_ctx() -> egui::Context {
         let ctx = egui::Context::default();
         theme::install(&ctx);
+        egui_extras::install_image_loaders(&ctx);
         ctx.run_ui(egui::RawInput::default(), |_| {})
             .textures_delta
             .clear();
@@ -9832,6 +9845,54 @@ mod tests {
         app.start_enrichment(&file);
         assert!(app.enrichment.is_none(), "nothing started");
         assert!(app.settings.is_some(), "the settings dialog opened");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn image_links_resolve_against_the_issue_folder() {
+        let issue = Path::new("/p/issues/todo/01-demo.md");
+        assert_eq!(image_base_uri(issue), "file:///p/issues/todo/");
+    }
+
+    #[test]
+    fn a_ticket_can_show_an_image_from_its_asset_folder() {
+        let dir = scratch_dir("image");
+        let todo = dir.join("issues/todo");
+        let assets = todo.join("assets/01-demo");
+        std::fs::create_dir_all(&assets).unwrap();
+        let png = assets.join("ui.png");
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 40, 40, 255]))
+            .save(&png)
+            .unwrap();
+        let file = todo.join("01-demo.md");
+        std::fs::write(&file, "# Demo\n\n![mockup](assets/01-demo/ui.png)\n").unwrap();
+
+        // The reader renders the markdown's image link without a display.
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+        app.open_issue(file.clone());
+        let (ctx, raw) = panel_ctx();
+        let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
+        output.textures_delta.clear();
+
+        // And the loader resolves and decodes it.
+        let uri = format!("file://{}", png.display());
+        let mut decoded = false;
+        for _ in 0..100 {
+            match ctx.try_load_image(&uri, egui::load::SizeHint::default()) {
+                Ok(egui::load::ImagePoll::Ready { .. }) => {
+                    decoded = true;
+                    break;
+                }
+                Ok(egui::load::ImagePoll::Pending { .. }) => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(err) => panic!("decode failed: {err:?}"),
+            }
+        }
+        assert!(
+            decoded,
+            "the ticket's image decodes through the file loader"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

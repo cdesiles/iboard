@@ -58,8 +58,10 @@ Opening an issue offers **Draft design**: the configured agent drafts a static
 HTML mockup of the change, bound to the project's design system when there is
 one (read-only), and iboard renders it beside the issue with a field to refine
 it. The artifact is written to `assets/<issue-stem>/ui.html` (and `ui.png`), so
-it stays with the ticket and can be linked from its markdown. It works with no
-design system too, falling back to restrained defaults.
+it stays with the ticket and can be linked from its markdown. Relative image
+links — `![mockup](assets/<stem>/ui.png)` — render in the Reader, resolved
+against the issue's folder. It works with no design system too, falling back to
+restrained defaults.
 
 ## Building and installing
 
