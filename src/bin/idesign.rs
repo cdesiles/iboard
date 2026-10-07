@@ -12,6 +12,7 @@
 //! idesign validate                      # fatal errors and warnings
 //! idesign add-component NAME [PATH]     # scaffold components/NAME
 //! idesign import PACKAGE [PATH]         # Open Design package -> design/
+//! idesign catalog [PATH] [--view]       # write the live catalog, optionally show it
 //! idesign preview NAME [PATH]           # render a component preview to a PNG
 //! idesign render HTML PNG               # render any HTML file to a PNG
 //! ```
@@ -35,6 +36,8 @@ struct Flags {
     theme: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
+    view: bool,
+    browser: bool,
 }
 
 fn main() -> ExitCode {
@@ -80,6 +83,8 @@ fn main() -> ExitCode {
                 Ok(value) => flags.height = Some(value),
                 Err(code) => return code,
             },
+            "--view" => flags.view = true,
+            "--browser" => flags.browser = true,
             other if other.starts_with('-') => {
                 eprintln!("idesign: unknown option `{other}`\n");
                 print_help();
@@ -105,9 +110,31 @@ fn main() -> ExitCode {
         || flags.out.is_some()
         || flags.theme.is_some()
         || flags.width.is_some()
-        || flags.height.is_some();
+        || flags.height.is_some()
+        || flags.view;
+    // `--browser` always opens the egui panel, even where a live catalog exists.
+    if flags.browser {
+        let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        return run_gui(start);
+    }
+    // A bare run in a terminal opens the live catalog when the webview helper
+    // was built, and the egui browser otherwise (or with no system).
     if wants_gui(&positionals, flags_set, std::io::stdout().is_terminal()) {
         let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        if design::catalog::available()
+            && let Ok(system) = DesignSystem::discover(&start)
+        {
+            return match design::catalog::show(&system, "light") {
+                Ok(path) => {
+                    println!("{}", path.display());
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("idesign: {err}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
         return run_gui(start);
     }
 
@@ -149,6 +176,7 @@ fn main() -> ExitCode {
         "list" => list(&system),
         "tokens" => tokens(&system),
         "validate" => return validate(&system),
+        "catalog" => return catalog(&system, &flags),
         "add-component" => {
             let Some(name) = name else {
                 eprintln!("idesign: add-component needs a NAME");
@@ -362,6 +390,28 @@ fn format_value(value: &TokenValue, themes: &[&str]) -> String {
     }
 }
 
+/// Write the live catalog page, and optionally show it.
+fn catalog(system: &DesignSystem, flags: &Flags) -> ExitCode {
+    let theme = flags.theme.as_deref().unwrap_or("light");
+    let out = flags.out.as_deref().map(Path::new);
+    let path = match design::catalog::write(system, theme, out) {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("idesign: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if flags.view {
+        let title = format!("{} — design catalog", system.meta.title);
+        if let Err(err) = design::catalog::open(&path, &title) {
+            eprintln!("idesign: {err}");
+            return ExitCode::FAILURE;
+        }
+    }
+    println!("{}", path.display());
+    ExitCode::SUCCESS
+}
+
 /// Fatal errors first, then warnings; exit 1 when anything is fatal.
 fn validate(system: &DesignSystem) -> ExitCode {
     let errors = system.errors();
@@ -389,16 +439,16 @@ fn print_help() {
         "{name} {version}\n\
          \n\
          Create, browse, import and render a design system at design/.\n\
-         Run with no command in a terminal to browse it in a window.\n\
+         Run with no command in a terminal to open the live catalog (or the\n         egui browser with --browser).\n\
          \n\
-         USAGE:\n    {name} [COMMAND] [PATH]\n    {name} add-component NAME [PATH] [--group G] [--intent \"...\"]\n    {name} import PACKAGE [PATH] [--into DIR]\n    {name} preview NAME [PATH] [--out FILE] [--theme light|dark] [--width N] [--height N]\n    {name} render INPUT.html OUTPUT.png [--width N] [--height N]\n\
+         USAGE:\n    {name} [COMMAND] [PATH]\n    {name} add-component NAME [PATH] [--group G] [--intent \"...\"]\n    {name} import PACKAGE [PATH] [--into DIR]\n    {name} preview NAME [PATH] [--out FILE] [--theme light|dark] [--width N] [--height N]\n    {name} catalog [PATH] [--out FILE] [--theme light|dark] [--view]\n    {name} render INPUT.html OUTPUT.png [--width N] [--height N]\n\
          \n\
          PATH defaults to the current directory; parent folders are searched for\n\
          a design/ or design-system.json. COMMAND defaults to show.\n\
          \n\
-         COMMANDS:\n    show             Summary of the system (default)\n    list             One line per component\n    tokens           Every token, per section\n    validate         Fatal errors and warnings (exit 1 on error)\n    add-component    Scaffold components/NAME with a README and a preview\n    import           Turn an Open Design package into design/\n    preview          Render a component preview to a PNG\n    render           Render any HTML file to a PNG\n\
+         COMMANDS:\n    show             Summary of the system (default)\n    list             One line per component\n    tokens           Every token, per section\n    validate         Fatal errors and warnings (exit 1 on error)\n    add-component    Scaffold components/NAME with a README and a preview\n    import           Turn an Open Design package into design/\n    catalog          Write a live, interactive catalog page of the system\n    preview          Render a component preview to a PNG\n    render           Render any HTML file to a PNG\n\
          \n\
-         OPTIONS:\n    --group G        The component group for add-component (default Components)\n    --intent TEXT    One line of intent for the README\n    --into DIR       Where import writes the design system (default PATH/design)\n    --out FILE       Where preview writes the PNG\n    --theme NAME     The token theme to apply (default light)\n    --width N        Render width in points (default {width})\n    --height N       Render height in points (default {height})\n    -h, --help       Print this help\n    -V, --version    Print the version",
+         OPTIONS:\n    --group G        The component group for add-component (default Components)\n    --intent TEXT    One line of intent for the README\n    --into DIR       Where import writes the design system (default PATH/design)\n    --out FILE       Where preview writes the PNG, or catalog the page\n    --theme NAME     The token theme to apply (default light)\n    --view           Open the catalog in a webview window (catalog only)\n    --browser        Open the egui panel instead of the live catalog\n    --width N        Render width in points (default {width})\n    --height N       Render height in points (default {height})\n    -h, --help       Print this help\n    -V, --version    Print the version",
         name = env!("CARGO_BIN_NAME"),
         version = env!("CARGO_PKG_VERSION"),
         width = DEFAULT_WIDTH,
@@ -452,6 +502,14 @@ impl IDesignApp {
                 }
                 design_ui::Action::Close => {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                design_ui::Action::OpenCatalog => {
+                    if let Some(system) = self.system.as_ref() {
+                        self.panel.status = Some(match design::catalog::show(system, "light") {
+                            Ok(path) => format!("Opened {}", path.display()),
+                            Err(err) => err,
+                        });
+                    }
                 }
                 design_ui::Action::Keep => {}
             }

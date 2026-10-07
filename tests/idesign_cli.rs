@@ -69,6 +69,24 @@ fn an_unknown_option_is_a_usage_error() {
 }
 
 #[test]
+fn catalog_writes_a_live_page() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    let out = std::env::temp_dir().join(format!("idesign-catalog-{unique}.html"));
+
+    let output = idesign(&["catalog", "--out", out.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let html = std::fs::read_to_string(&out).expect("catalog written");
+    assert!(html.contains("--bg:"), "tokens inlined");
+    assert!(html.contains("ds-search"), "search box present");
+    assert!(html.contains("Button"), "a component is shown");
+
+    std::fs::remove_file(&out).ok();
+}
+
+#[test]
 fn add_component_scaffolds_a_component() {
     // A throwaway copy of the design system, so the repo is untouched.
     let unique = std::time::SystemTime::now()

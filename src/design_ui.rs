@@ -26,9 +26,6 @@ use crate::widgets::{self, ButtonKind};
 /// Width of the browser's category sidebar.
 const SIDEBAR_W: f32 = 200.0;
 
-/// Aspect ratio of a rendered preview (the helper snapshots 900×640).
-const PREVIEW_RATIO: f32 = 900.0 / 640.0;
-
 /// What the panel asks the app to do after a frame.
 pub enum Action {
     Keep,
@@ -43,6 +40,8 @@ pub enum Action {
     },
     /// Render a component's preview to a PNG, lazily, when its card is in view.
     Render(String),
+    /// Write the catalog page and show it in a live webview.
+    OpenCatalog,
 }
 
 /// One section of the browser, mirroring Claude Design's sidebar.
@@ -203,6 +202,18 @@ impl Panel {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if widgets::button(ui, ButtonKind::Secondary, None, "Close", None).clicked() {
                     action = Action::Close;
+                }
+                if system.is_some()
+                    && widgets::button(
+                        ui,
+                        ButtonKind::Secondary,
+                        Some(theme::Icon::Expand),
+                        "Live catalog",
+                        None,
+                    )
+                    .clicked()
+                {
+                    action = Action::OpenCatalog;
                 }
             });
         });
@@ -399,7 +410,10 @@ impl Panel {
         ui.add_space(theme::SPACE_2);
 
         let width = ui.available_width().clamp(200.0, 680.0);
-        let height = (width / PREVIEW_RATIO).clamp(150.0, 520.0);
+        // Reserve the height the card declares (a 56pt checkbox is a 56pt
+        // card), rather than a fixed 16:9 frame that leaves dead space.
+        let reference = component.card.height.unwrap_or(640) as f32;
+        let height = (width * reference / 900.0).clamp(48.0, 720.0);
         let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
         frame_placeholder(ui, rect, p);
 

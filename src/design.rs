@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+pub mod catalog;
 pub mod css;
 pub mod open_design;
 pub mod render;
@@ -113,6 +114,19 @@ pub struct Component {
     pub dir: PathBuf,
     pub readme: Option<String>,
     pub has_preview: bool,
+    /// What the preview's `<!-- @dsCard … -->` line declares.
+    pub card: CardMeta,
+}
+
+/// The card contract a preview fragment declares on its first line:
+/// `<!-- @dsCard group="Controls" height=110 [subtitle="…"] [page] -->`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CardMeta {
+    pub group: Option<String>,
+    pub height: Option<u32>,
+    pub subtitle: Option<String>,
+    /// A whole screen rather than a single card; shown larger.
+    pub page: bool,
 }
 
 /// One file that makes up the system on disk, for the browser's Files view.
@@ -430,6 +444,12 @@ impl DesignSystem {
             dir: dir.clone(),
             readme: Some(readme),
             has_preview: true,
+            card: CardMeta {
+                group: Some(group.to_string()),
+                height: Some(120),
+                subtitle: None,
+                page: false,
+            },
         });
         self.components.sort_by(|a, b| a.name.cmp(&b.name));
         self.save_meta(&self.root)?;
@@ -600,11 +620,19 @@ fn load_components(root: &Path, warnings: &mut Vec<String>) -> Result<Vec<Compon
         if !has_preview {
             warnings.push(format!("components/{name}/ has no preview.html"));
         }
+        let card = if has_preview {
+            std::fs::read_to_string(path.join("preview.html"))
+                .map(|text| parse_card_meta(&text))
+                .unwrap_or_default()
+        } else {
+            CardMeta::default()
+        };
         components.push(Component {
             name,
             dir: path,
             readme,
             has_preview,
+            card,
         });
     }
     components.sort_by(|a, b| a.name.cmp(&b.name));
@@ -621,8 +649,12 @@ fn asset_names(value: &serde_json::Value) -> Vec<String> {
     }
 }
 
-/// The `Group:` named in a component's README, defaulting to `Components`.
+/// The `Group:` a component belongs to: the preview's `@dsCard` group first,
+/// then the README's `Group:` line, defaulting to `Components`.
 fn component_group(component: &Component) -> String {
+    if let Some(group) = component.card.group.as_deref().filter(|g| !g.is_empty()) {
+        return group.to_string();
+    }
     component
         .readme
         .as_deref()
@@ -637,6 +669,68 @@ fn component_group(component: &Component) -> String {
             })
         })
         .unwrap_or_else(|| "Components".to_string())
+}
+
+/// Parse the `<!-- @dsCard group="…" height=N [subtitle="…"] [page] -->` line
+/// a preview fragment leads with. Unknown or malformed keys are ignored.
+pub fn parse_card_meta(text: &str) -> CardMeta {
+    let mut meta = CardMeta::default();
+    let Some(at) = text.find("@dsCard") else {
+        return meta;
+    };
+    let rest = &text[at + "@dsCard".len()..];
+    let body = match rest.find("-->") {
+        Some(end) => &rest[..end],
+        None => rest,
+    };
+    let chars: Vec<char> = body.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        while i < chars.len() && chars[i].is_whitespace() {
+            i += 1;
+        }
+        let start = i;
+        while i < chars.len() && !chars[i].is_whitespace() && chars[i] != '=' {
+            i += 1;
+        }
+        let key: String = chars[start..i].iter().collect();
+        while i < chars.len() && chars[i].is_whitespace() {
+            i += 1;
+        }
+        let mut value = None;
+        if i < chars.len() && chars[i] == '=' {
+            i += 1;
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
+            }
+            let quoted = i < chars.len() && chars[i] == '"';
+            if quoted {
+                i += 1;
+            }
+            let value_start = i;
+            while i < chars.len()
+                && if quoted {
+                    chars[i] != '"'
+                } else {
+                    !chars[i].is_whitespace()
+                }
+            {
+                i += 1;
+            }
+            value = Some(chars[value_start..i].iter().collect::<String>());
+            if quoted && i < chars.len() {
+                i += 1;
+            }
+        }
+        match key.as_str() {
+            "group" => meta.group = value.filter(|v| !v.is_empty()),
+            "subtitle" => meta.subtitle = value.filter(|v| !v.is_empty()),
+            "height" => meta.height = value.and_then(|v| v.parse::<u32>().ok()),
+            "page" => meta.page = true,
+            _ => {}
+        }
+    }
+    meta
 }
 
 /// Recursively collect the files under `dir`, relative to `root`, skipping

@@ -10,6 +10,7 @@ fn main() {
     println!("cargo:rerun-if-changed=macos/Info.plist");
     println!("cargo::rustc-check-cfg=cfg(apple_titles)");
     println!("cargo::rustc-check-cfg=cfg(apple_render)");
+    println!("cargo::rustc-check-cfg=cfg(apple_catalog)");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
     }
@@ -38,6 +39,51 @@ fn main() {
              design previews stay unavailable and iboard opens the HTML instead"
         ),
     }
+
+    match build_catalog_helper(&manifest) {
+        Ok(path) => {
+            println!("cargo:rustc-cfg=apple_catalog");
+            println!("cargo:rustc-env=IBOARD_CATALOG_HELPER={}", path.display());
+        }
+        Err(why) => println!(
+            "cargo:warning=building without the live catalog window ({why}); \
+             the design catalog opens in the browser instead"
+        ),
+    }
+}
+
+/// Compiles `macos/catalog.swift` into a small executable that opens a window
+/// with a live `WKWebView` on the design catalog. Like the renderer, it runs
+/// out of process: the catalog is interactive and WebKit never loads into the
+/// board's own process.
+fn build_catalog_helper(manifest: &Path) -> Result<PathBuf, String> {
+    let source = manifest.join("macos/catalog.swift");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let binary = out.join("iboard-catalog");
+    let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+        Ok("aarch64") => "arm64",
+        Ok("x86_64") => "x86_64",
+        other => return Err(format!("unsupported architecture {other:?}")),
+    };
+
+    let swiftc = xcrun(&["--find", "swiftc"]).ok_or("swiftc not found")?;
+    let sdk = xcrun(&["--sdk", "macosx", "--show-sdk-path"]).ok_or("macOS SDK not found")?;
+    let status = Command::new(&swiftc)
+        .env_remove("SDKROOT")
+        .env_remove("MACOSX_DEPLOYMENT_TARGET")
+        .args(["-sdk", &sdk])
+        .args(["-O"])
+        .args(["-target", &format!("{arch}-apple-macos12.0")])
+        .arg("-o")
+        .arg(&binary)
+        .arg(&source)
+        .status()
+        .map_err(|err| format!("couldn't run swiftc: {err}"))?;
+    if !status.success() {
+        return Err(format!("swiftc exited with {status}"));
+    }
+    Ok(binary)
 }
 
 /// Compiles `macos/render.swift` into a small executable the app runs as a

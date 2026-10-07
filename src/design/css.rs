@@ -16,13 +16,20 @@ use super::{Component, DesignSystem, Token, TokenValue};
 /// Every token becomes a custom property, the families become `--font-<key>`,
 /// and a themed token falls back to its first value when the theme is missing.
 pub fn tokens_css(system: &DesignSystem, theme: &str) -> String {
-    let mut out = String::from(":root {\n");
+    tokens_block(system, theme, ":root")
+}
+
+/// The same block under any selector, e.g. `[data-theme="dark"]`, so a page can
+/// carry both themes and switch between them.
+pub fn tokens_block(system: &DesignSystem, theme: &str, selector: &str) -> String {
+    let mut out = String::from(selector);
+    out.push_str(" {\n");
     for token in system.tokens.all() {
         if let Some(value) = token_value_for(token, theme) {
             out.push_str("  --");
             out.push_str(&token.name);
             out.push_str(": ");
-            out.push_str(&value);
+            out.push_str(&resolve_refs(system, theme, &value));
             out.push_str(";\n");
         }
     }
@@ -34,6 +41,42 @@ pub fn tokens_css(system: &DesignSystem, theme: &str) -> String {
         out.push_str(";\n");
     }
     out.push_str("}\n");
+    out
+}
+
+/// Replace `{name}` references in a token value with the referenced token's
+/// value for the same theme, so the emitted CSS is valid (`--focus: {accent}`
+/// would otherwise be ignored by the browser).
+fn resolve_refs(system: &DesignSystem, theme: &str, value: &str) -> String {
+    let mut out = String::new();
+    let mut rest = value;
+    let mut guard = 0;
+    while let Some(start) = rest.find('{') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('}') else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let name = after[..end].trim();
+        match system
+            .token(name)
+            .and_then(|token| token_value_for(token, theme))
+        {
+            Some(value) => out.push_str(&value),
+            None => {
+                out.push('{');
+                out.push_str(name);
+                out.push('}');
+            }
+        }
+        rest = &after[end + 1..];
+        guard += 1;
+        if guard > 32 {
+            break;
+        }
+    }
+    out.push_str(rest);
     out
 }
 
@@ -155,6 +198,14 @@ mod tests {
         assert!(html.contains(".ib-btn"), "bundle styles spliced in");
         assert!(html.contains("ib-btn--primary"), "fragment kept");
         assert!(!html.contains("@import"), "external imports stripped");
+    }
+
+    #[test]
+    fn token_references_are_resolved_in_the_css() {
+        let css = tokens_css(&repo(), "light");
+        // `focus` is declared as `{accent}`; the browser needs the value.
+        assert!(css.contains("--focus: #2b54c4;"), "{css}");
+        assert!(!css.contains("{accent}"), "no raw references left");
     }
 
     #[test]

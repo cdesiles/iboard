@@ -3495,6 +3495,15 @@ impl IboardApp {
                 }
                 true
             }
+            design_ui::Action::OpenCatalog => {
+                if let Some(system) = self.design_system.as_ref() {
+                    match design::catalog::show(system, "light") {
+                        Ok(path) => panel.status = Some(format!("Opened {}", path.display())),
+                        Err(err) => panel.status = Some(err),
+                    }
+                }
+                true
+            }
         }
     }
 

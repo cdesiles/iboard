@@ -12,6 +12,10 @@ use std::sync::mpsc::Receiver;
 
 use super::DesignSystem;
 
+/// The default snapshot size when a component's card declares no height.
+const DEFAULT_WIDTH: u32 = 900;
+const DEFAULT_HEIGHT: u32 = 640;
+
 /// The renderer helper's path: the `IBOARD_RENDER` override when it points at
 /// a file, else the helper `build.rs` compiled.
 pub fn helper() -> Option<PathBuf> {
@@ -88,9 +92,16 @@ pub fn component_preview(
         .map_err(|err| format!("Couldn't write {}: {err}", html_path.display()))?;
     let png = std::env::temp_dir().join(format!("iboard-preview-{name}.png"));
     let png_for_thread = png.clone();
+    // Snapshot at the height the card declares, so a 56pt checkbox is not a
+    // full 640pt frame of empty space.
+    let height = component
+        .card
+        .height
+        .unwrap_or(DEFAULT_HEIGHT)
+        .clamp(56, 2400);
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = sender.send(snapshot(&html_path, &png_for_thread, 900, 640));
+        let _ = sender.send(snapshot(&html_path, &png_for_thread, DEFAULT_WIDTH, height));
     });
     Ok(receiver)
 }
