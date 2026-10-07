@@ -63,6 +63,84 @@ pub fn component_prompt(
     out
 }
 
+/// The instruction sent to the agent for a review. It carries only the issue,
+/// by design: if that is not enough context, the issue is the problem. It lives
+/// here so every agent call is composed in one place, and stays issue-only on
+/// purpose — unlike the design-aware prompts below.
+pub fn review_prompt(content: &str) -> String {
+    format!(
+        "You review software issues before they are implemented. Judge the issue \
+         below on three axes and answer with nothing but this exact format:\n\
+         \n\
+         RELEVANCE: Pass|Challenge|Block\n\
+         <one or two sentences: is it still worth doing, does it duplicate another issue, \
+         and is it tied to a clear user-facing outcome (its product impact)>\n\
+         SIZE: Pass|Challenge|Block\n\
+         <one or two sentences: can one person or agent finish it in one sitting, and if not, \
+         the split; an issue over about 80 lines should be cut into smaller ones>\n\
+         CLARITY: Pass|Challenge|Block\n\
+         <one or two sentences: could a human or an agent implement it without a follow-up \
+         question; is there enough guidance on the user experience; list what is missing, \
+         contradictory or assumed>\n\
+         PROPOSAL:\n\
+         <a full improved issue in markdown, or the single word NONE>\n\
+         \n\
+         ---\n\
+         {content}"
+    )
+}
+
+/// A prompt asking an agent to draft a static HTML mockup of a ticket.
+///
+/// With a design system it binds to the system's tokens (read-only); without
+/// one it asks for restrained defaults. `previous` carries the last artifact and
+/// the user's refinement, so a follow-up edits instead of restarting.
+pub fn enrichment_prompt(
+    issue: &str,
+    system: Option<&DesignSystem>,
+    previous: Option<(&str, &str)>,
+    theme: &str,
+) -> String {
+    let mut out = String::new();
+    out.push_str(
+        "You are a product designer. Produce a single static HTML mockup of the \
+         change described by the ticket below — a visual answer, not prose. Return \
+         only the HTML of one self-contained page. No <script>. No Markdown fence.\n\n",
+    );
+
+    out.push_str("## Ticket\n\n");
+    out.push_str(issue.trim());
+    out.push_str("\n\n");
+
+    match system {
+        Some(system) => {
+            out.push_str(
+                "Use the active design system below. Paste its `:root` block verbatim \
+                 into the first <style>, reference every colour and size through \
+                 var(--name), and never write raw hex outside that block. The system \
+                 is read-only: do not change it.\n\n",
+            );
+            out.push_str(&design_context(system, theme));
+        }
+        None => {
+            out.push_str(
+                "This project has no design system; choose a clean, restrained set of \
+                 colours, type and spacing and keep it consistent.\n\n",
+            );
+        }
+    }
+
+    if let Some((previous, instruction)) = previous {
+        out.push_str("## Previous artifact\n\n```html\n");
+        out.push_str(previous.trim());
+        out.push_str("\n```\n\n## Refinement\n\n");
+        out.push_str(instruction.trim());
+        out.push_str("\n\nReturn the full updated HTML, not a diff.\n");
+    }
+
+    out
+}
+
 /// The readable brief: the file `design-system.json` points at, else README.md.
 fn brief(system: &DesignSystem) -> Option<String> {
     let mut candidates = Vec::new();
@@ -151,5 +229,44 @@ mod tests {
         assert_eq!(clean_html_reply(prose), "<span class=\"ib-kbd\">esc</span>");
 
         assert_eq!(clean_html_reply("no markup here"), "no markup here");
+    }
+
+    #[test]
+    fn review_prompt_stays_issue_only() {
+        let prompt = review_prompt("# Fix the filter\n\nIt forgets the chips.");
+        assert!(prompt.contains("RELEVANCE: Pass|Challenge|Block"));
+        assert!(prompt.contains("PROPOSAL:"));
+        assert!(prompt.contains("# Fix the filter"));
+        // The review deliberately carries no design system.
+        assert!(!prompt.contains("Active design system"));
+    }
+
+    #[test]
+    fn enrichment_prompt_binds_to_a_system_when_present() {
+        let issue = "# Column focus\n\nThe board expands one column.";
+        let with = enrichment_prompt(issue, Some(&repo()), None, "light");
+        assert!(with.contains("## Ticket"));
+        assert!(with.contains("Column focus"));
+        assert!(with.contains("Active design system"));
+        assert!(with.contains("--bg: #f4f5f7;"));
+        assert!(with.contains("read-only"));
+
+        let without = enrichment_prompt(issue, None, None, "light");
+        assert!(without.contains("no design system"));
+        assert!(!without.contains("Active design system"));
+    }
+
+    #[test]
+    fn enrichment_prompt_carries_a_refinement() {
+        let prompt = enrichment_prompt(
+            "# Toast",
+            None,
+            Some(("<div>old</div>", "Make it bigger.")),
+            "light",
+        );
+        assert!(prompt.contains("## Previous artifact"));
+        assert!(prompt.contains("<div>old</div>"));
+        assert!(prompt.contains("## Refinement"));
+        assert!(prompt.contains("Make it bigger."));
     }
 }

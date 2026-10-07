@@ -681,31 +681,6 @@ pub struct Report {
     pub proposal: Option<String>,
 }
 
-/// The instruction sent to the agent. It carries only the issue, per the
-/// design: if that is not enough context, the issue is the problem.
-pub fn review_prompt(content: &str) -> String {
-    format!(
-        "You review software issues before they are implemented. Judge the issue \
-         below on three axes and answer with nothing but this exact format:\n\
-         \n\
-         RELEVANCE: Pass|Challenge|Block\n\
-         <one or two sentences: is it still worth doing, does it duplicate another issue, \
-         and is it tied to a clear user-facing outcome (its product impact)>\n\
-         SIZE: Pass|Challenge|Block\n\
-         <one or two sentences: can one person or agent finish it in one sitting, and if not, \
-         the split; an issue over about 80 lines should be cut into smaller ones>\n\
-         CLARITY: Pass|Challenge|Block\n\
-         <one or two sentences: could a human or an agent implement it without a follow-up \
-         question; is there enough guidance on the user experience; list what is missing, \
-         contradictory or assumed>\n\
-         PROPOSAL:\n\
-         <a full improved issue in markdown, or the single word NONE>\n\
-         \n\
-         ---\n\
-         {content}"
-    )
-}
-
 /// Parses the agent's answer. Returns `None` when the answer does not carry the
 /// three findings, so the UI can show it verbatim instead.
 pub fn parse(text: &str) -> Option<Report> {

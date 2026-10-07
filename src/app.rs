@@ -674,12 +674,46 @@ pub struct IboardApp {
     design_error: Option<String>,
     /// The component preview an agent is drafting, if one is running.
     design_draft: Option<DraftJob>,
+    /// A UX enrichment: an agent drafting a static mockup of an issue.
+    enrichment: Option<Enrichment>,
 }
 
 /// A component whose preview an agent is drafting.
 struct DraftJob {
     name: String,
     running: agent::Running,
+}
+
+/// A UX enrichment of one issue: the agent's mockup, its preview, and the
+/// refinement the user is typing.
+struct Enrichment {
+    path: PathBuf,
+    /// The drafted artifact HTML, once the agent answered.
+    html: Option<String>,
+    /// The rendered preview PNG, when the renderer could make one.
+    png: Option<PathBuf>,
+    status: EnrichStatus,
+    /// The refinement instruction being typed.
+    refine: String,
+    /// The decoded preview, loaded once per render.
+    texture: Option<egui::TextureHandle>,
+    /// A short note under the artifact (where it was saved, a render warning).
+    note: Option<String>,
+}
+
+enum EnrichStatus {
+    /// The agent is writing the mockup.
+    Running(Receiver<Result<String, String>>),
+    /// The mockup is in; the renderer is turning it into a PNG.
+    Rendering(Receiver<Result<PathBuf, String>>),
+    Done,
+    Failed(String),
+}
+
+/// One finished background step of an enrichment.
+enum EnrichOutcome {
+    Agent(Result<String, String>),
+    Png(Result<PathBuf, String>),
 }
 
 impl IboardApp {
@@ -769,6 +803,7 @@ impl IboardApp {
             design_system: None,
             design_error: None,
             design_draft: None,
+            enrichment: None,
         }
     }
 
@@ -1545,7 +1580,7 @@ impl IboardApp {
         let Some(content) = self.review_content(path, draft) else {
             return;
         };
-        self.run_review(path.to_path_buf(), draft, agent::review_prompt(&content));
+        self.run_review(path.to_path_buf(), draft, prompts::review_prompt(&content));
     }
 
     /// Sends a follow-up ("make it smaller") with the previous answer attached.
@@ -1569,12 +1604,12 @@ impl IboardApp {
         let prompt = if previous.is_empty() {
             format!(
                 "{}\n\nFollow-up: {follow_up}",
-                agent::review_prompt(&content)
+                prompts::review_prompt(&content)
             )
         } else {
             format!(
                 "{}\n\nA previous review said:\n{previous}\n\nFollow-up: {follow_up}",
-                agent::review_prompt(&content)
+                prompts::review_prompt(&content)
             )
         };
         self.run_review(path, draft, prompt);
@@ -2080,6 +2115,7 @@ impl IboardApp {
         }
         self.config_window(ui);
         self.design_window(ui);
+        self.enrichment_window(ui);
     }
 
     /// A dismissible `danger` line naming what failed.
@@ -2541,6 +2577,14 @@ impl IboardApp {
                     .clicked()
                 {
                     self.start_editing(&path);
+                }
+                if self.detail_mode == DetailMode::Preview
+                    && exists
+                    && widgets::button(ui, ButtonKind::Secondary, None, "Draft design", None)
+                        .on_hover_text("Ask the agent for a static mockup of this change")
+                        .clicked()
+                {
+                    self.start_enrichment(&path);
                 }
                 self.refresh_button(ui);
                 // Labelled, and the one control drawn in `danger` at rest. In
@@ -3523,6 +3567,225 @@ impl IboardApp {
         format!("Drafted {name}.")
     }
 
+    /// Start a UX enrichment: an agent drafts a static mockup of the issue,
+    /// binding to the project's design system when there is one.
+    fn start_enrichment(&mut self, path: &Path) {
+        if !self.agent.configured() {
+            self.open_config();
+            return;
+        }
+        let Some(issue) = self.board.find(path).map(|issue| issue.markdown.clone()) else {
+            return;
+        };
+        let system = self
+            .design_system
+            .clone()
+            .or_else(|| DesignSystem::discover(&self.located.project_dir).ok());
+        let prompt = prompts::enrichment_prompt(&issue, system.as_ref(), None, "light");
+        let running = agent::start(&self.agent, &prompt, path);
+        self.enrichment = Some(Enrichment {
+            path: path.to_path_buf(),
+            html: None,
+            png: None,
+            status: EnrichStatus::Running(running.answer),
+            refine: String::new(),
+            texture: None,
+            note: None,
+        });
+    }
+
+    /// Re-draft the artifact with the typed refinement attached.
+    fn refine_enrichment(&mut self) {
+        let Some(enrichment) = self.enrichment.as_ref() else {
+            return;
+        };
+        let instruction = enrichment.refine.trim().to_string();
+        let Some(html) = enrichment.html.clone() else {
+            return;
+        };
+        if instruction.is_empty() {
+            return;
+        }
+        let path = enrichment.path.clone();
+        let Some(issue) = self.board.find(&path).map(|issue| issue.markdown.clone()) else {
+            return;
+        };
+        let system = self
+            .design_system
+            .clone()
+            .or_else(|| DesignSystem::discover(&self.located.project_dir).ok());
+        let prompt = prompts::enrichment_prompt(
+            &issue,
+            system.as_ref(),
+            Some((&html, &instruction)),
+            "light",
+        );
+        let running = agent::start(&self.agent, &prompt, &path);
+        if let Some(enrichment) = self.enrichment.as_mut() {
+            enrichment.status = EnrichStatus::Running(running.answer);
+            enrichment.refine.clear();
+            enrichment.note = None;
+        }
+    }
+
+    /// Adopt the agent's mockup, then its render, as they land.
+    fn poll_enrichment(&mut self, ctx: &egui::Context) {
+        let Some(enrichment) = self.enrichment.as_mut() else {
+            return;
+        };
+        let outcome = match &enrichment.status {
+            EnrichStatus::Running(receiver) => match receiver.try_recv() {
+                Ok(result) => EnrichOutcome::Agent(result),
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(150));
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    EnrichOutcome::Agent(Err("the agent stopped".to_string()))
+                }
+            },
+            EnrichStatus::Rendering(receiver) => match receiver.try_recv() {
+                Ok(result) => EnrichOutcome::Png(result),
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(120));
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    EnrichOutcome::Png(Err("the render stopped".to_string()))
+                }
+            },
+            EnrichStatus::Done | EnrichStatus::Failed(_) => return,
+        };
+
+        match outcome {
+            EnrichOutcome::Agent(Ok(reply)) => {
+                let html = prompts::clean_html_reply(&reply);
+                if !html.contains('<') {
+                    enrichment.status =
+                        EnrichStatus::Failed("the agent returned no HTML".to_string());
+                    return;
+                }
+                match write_enrichment_artifact(&enrichment.path, &html) {
+                    Ok(file) => {
+                        let png = enrichment_dir(&enrichment.path).join("ui.png");
+                        enrichment.html = Some(html);
+                        enrichment.note = Some(format!("Saved {}", file.display()));
+                        enrichment.status = match start_enrichment_render(&file, &png) {
+                            Ok(receiver) => EnrichStatus::Rendering(receiver),
+                            Err(_) => EnrichStatus::Done,
+                        };
+                    }
+                    Err(err) => enrichment.status = EnrichStatus::Failed(err),
+                }
+            }
+            EnrichOutcome::Agent(Err(err)) => enrichment.status = EnrichStatus::Failed(err),
+            EnrichOutcome::Png(Ok(png)) => {
+                enrichment.png = Some(png);
+                // The file was rewritten; decode it again.
+                enrichment.texture = None;
+                enrichment.status = EnrichStatus::Done;
+            }
+            EnrichOutcome::Png(Err(err)) => {
+                enrichment.note = Some(format!("preview: {err}"));
+                enrichment.status = EnrichStatus::Done;
+            }
+        }
+    }
+
+    /// The enrichment window: the loader, the rendered mockup, and the refine
+    /// field. Taking the job out for the frame keeps the borrows simple.
+    fn enrichment_window(&mut self, ui: &mut egui::Ui) {
+        let Some(mut enrichment) = self.enrichment.take() else {
+            return;
+        };
+        let ctx = ui.ctx().clone();
+
+        if matches!(enrichment.status, EnrichStatus::Done)
+            && enrichment.texture.is_none()
+            && let Some(png) = enrichment.png.clone()
+        {
+            enrichment.texture = design_ui::load_texture(&ctx, &png).ok();
+        }
+
+        let name = enrichment
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("issue")
+            .to_string();
+        let drafting = matches!(enrichment.status, EnrichStatus::Running(_));
+        let mut close = false;
+        let mut refine = false;
+
+        egui::Window::new(format!("Design draft — {name}"))
+            .collapsible(false)
+            .resizable(true)
+            .default_width(760.0)
+            .default_height(620.0)
+            .show(&ctx, |ui| {
+                let p = theme::palette(ui);
+                ui.horizontal(|ui| {
+                    match &enrichment.status {
+                        EnrichStatus::Running(_) => {
+                            ui.spinner();
+                            ui.label(RichText::new("Drafting the mockup…").color(p.ink_muted));
+                        }
+                        EnrichStatus::Rendering(_) => {
+                            ui.spinner();
+                            ui.label(RichText::new("Rendering the preview…").color(p.ink_muted));
+                        }
+                        EnrichStatus::Failed(error) => {
+                            ui.label(RichText::new(error).color(p.danger));
+                        }
+                        EnrichStatus::Done => {
+                            ui.label(RichText::new("Mockup").color(p.ink).strong());
+                        }
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if widgets::button(ui, ButtonKind::Secondary, None, "Close", None).clicked()
+                        {
+                            close = true;
+                        }
+                    });
+                });
+
+                if let Some(texture) = &enrichment.texture {
+                    let size = texture.size_vec2();
+                    let max = ui.available_width().min(680.0);
+                    let scale = if size.x > max { max / size.x } else { 1.0 };
+                    ui.add_space(4.0);
+                    ui.image((texture.id(), size * scale));
+                } else if let Some(note) = &enrichment.note {
+                    ui.label(RichText::new(note).color(p.ink_faint).size(11.0));
+                }
+
+                if enrichment.html.is_some() && !drafting {
+                    ui.separator();
+                    ui.label(RichText::new("Refine").color(p.ink_muted).size(11.0));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut enrichment.refine)
+                            .hint_text("Make the header taller, use the accent for the CTA…")
+                            .desired_width(f32::INFINITY),
+                    );
+                    let ready = !enrichment.refine.trim().is_empty();
+                    if ui
+                        .add_enabled(ready, egui::Button::new("Refine"))
+                        .on_disabled_hover_text("Describe what to change")
+                        .clicked()
+                    {
+                        refine = true;
+                    }
+                }
+            });
+
+        if refine {
+            self.enrichment = Some(enrichment);
+            self.refine_enrichment();
+        } else if !close {
+            self.enrichment = Some(enrichment);
+        }
+    }
+
     fn background(&mut self, ctx: &egui::Context) {
         // Debounced autosave, while Auto is on.
         let due = self.auto
@@ -4296,6 +4559,45 @@ fn start_preview_render(
     Ok(receiver)
 }
 
+/// Where a ticket's drafted artifacts live: `assets/<stem>/` beside the issue
+/// (the layout issue 004 settled on).
+fn enrichment_dir(issue: &Path) -> PathBuf {
+    let parent = issue.parent().unwrap_or(Path::new("."));
+    let stem = issue
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("issue");
+    parent.join("assets").join(stem)
+}
+
+/// Write a drafted mockup to `assets/<stem>/ui.html`.
+fn write_enrichment_artifact(issue: &Path, html: &str) -> Result<PathBuf, String> {
+    let dir = enrichment_dir(issue);
+    std::fs::create_dir_all(&dir)
+        .map_err(|err| format!("Couldn't create {}: {err}", dir.display()))?;
+    let file = dir.join("ui.html");
+    std::fs::write(&file, html)
+        .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
+    Ok(file)
+}
+
+/// Render a mockup to `png` on a background thread.
+fn start_enrichment_render(
+    html: &Path,
+    png: &Path,
+) -> Result<Receiver<Result<PathBuf, String>>, String> {
+    if !design::render::available() {
+        return Err("no renderer".to_string());
+    }
+    let html = html.to_path_buf();
+    let png = png.to_path_buf();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(design::render::snapshot(&html, &png, 1100, 800));
+    });
+    Ok(receiver)
+}
+
 impl eframe::App for IboardApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // A project switch sets the title; apply it now that we have a context.
@@ -4306,6 +4608,7 @@ impl eframe::App for IboardApp {
         self.poll_review();
         self.poll_naming(ctx);
         self.poll_design_draft(ctx);
+        self.poll_enrichment(ctx);
         let typing = ctx.memory(|m| m.focused().is_some());
         let command = |key: Key| ctx.input(|i| i.modifiers.command && i.key_pressed(key));
 
@@ -9465,6 +9768,70 @@ mod tests {
         );
         assert!(!written.contains("```"), "code fences stripped: {written}");
         assert!(app.design_draft.is_none(), "the draft finished");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn enrichment_artifact_path_is_per_issue() {
+        let path = Path::new("/p/issues/todo/01-demo.md");
+        assert_eq!(
+            enrichment_dir(path),
+            Path::new("/p/issues/todo/assets/01-demo")
+        );
+    }
+
+    #[test]
+    fn enrichment_drafts_an_artifact_for_an_issue() {
+        let dir = scratch_dir("enrich");
+        let todo = dir.join("issues/todo");
+        std::fs::create_dir_all(&todo).unwrap();
+        let file = todo.join("01-demo.md");
+        std::fs::write(&file, "# Demo\n\nMake the header taller.\n").unwrap();
+
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+        // A fake agent: prints a whole HTML page, ignores the prompt.
+        app.agent = AgentConfig {
+            tool: agent::Tool::Custom,
+            model: String::new(),
+            command: "printf '<!doctype html><html><body><h1>Demo</h1></body></html>' # {prompt}"
+                .to_string(),
+            configured: true,
+        };
+
+        app.start_enrichment(&file);
+        assert!(app.enrichment.is_some(), "an enrichment started");
+
+        let (ctx, raw) = panel_ctx();
+        let artifact = todo.join("assets/01-demo/ui.html");
+        for _ in 0..300 {
+            app.poll_enrichment(&ctx);
+            if artifact.is_file() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        let html = std::fs::read_to_string(&artifact).expect("artifact written");
+        assert!(html.contains("<h1>Demo</h1>"), "mockup saved: {html}");
+
+        // The window renders without a display, loader and all.
+        let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
+        output.textures_delta.clear();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn enrichment_without_an_agent_opens_the_settings_instead() {
+        let dir = scratch_dir("enrich-noagent");
+        let todo = dir.join("issues/todo");
+        std::fs::create_dir_all(&todo).unwrap();
+        let file = todo.join("01-demo.md");
+        std::fs::write(&file, "# Demo\n").unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+
+        app.start_enrichment(&file);
+        assert!(app.enrichment.is_none(), "nothing started");
+        assert!(app.settings.is_some(), "the settings dialog opened");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

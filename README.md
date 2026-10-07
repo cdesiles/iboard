@@ -52,6 +52,15 @@ of truth for iboard's own system is the
 [Open Design](https://github.com/nexu-io/open-design) (Apache-2.0); see
 [`NOTICE`](NOTICE).
 
+## UX enrichment
+
+Opening an issue offers **Draft design**: the configured agent drafts a static
+HTML mockup of the change, bound to the project's design system when there is
+one (read-only), and iboard renders it beside the issue with a field to refine
+it. The artifact is written to `assets/<issue-stem>/ui.html` (and `ui.png`), so
+it stays with the ticket and can be linked from its markdown. It works with no
+design system too, falling back to restrained defaults.
+
 ## Building and installing
 
 From this repository:

@@ -332,7 +332,10 @@ impl Panel {
 }
 
 /// Decode a PNG into an egui texture.
-fn load_texture(ctx: &egui::Context, path: &Path) -> Result<egui::TextureHandle, String> {
+pub(crate) fn load_texture(
+    ctx: &egui::Context,
+    path: &Path,
+) -> Result<egui::TextureHandle, String> {
     let bytes =
         std::fs::read(path).map_err(|err| format!("Couldn't read {}: {err}", path.display()))?;
     let image = image::load_from_memory(&bytes)
