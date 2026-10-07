@@ -27,6 +27,7 @@ use crate::titles::{self, Engine};
 use crate::widgets::{self, ButtonKind};
 use crate::{design_ui, dialog, recents, sheet};
 use iboard::design::{self, DesignSystem};
+use iboard::prompts;
 
 /// How long after the last keystroke an edit is written to disk.
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(800);
@@ -671,6 +672,14 @@ pub struct IboardApp {
     design_system: Option<DesignSystem>,
     /// Why the design system could not be loaded, when it could not.
     design_error: Option<String>,
+    /// The component preview an agent is drafting, if one is running.
+    design_draft: Option<DraftJob>,
+}
+
+/// A component whose preview an agent is drafting.
+struct DraftJob {
+    name: String,
+    running: agent::Running,
 }
 
 impl IboardApp {
@@ -759,6 +768,7 @@ impl IboardApp {
             design: None,
             design_system: None,
             design_error: None,
+            design_draft: None,
         }
     }
 
@@ -3389,6 +3399,7 @@ impl IboardApp {
             self.design_system.as_ref(),
             self.design_error.as_deref(),
             design::render::available(),
+            self.agent.configured(),
         );
         let keep = self.handle_design_action(&mut panel, action);
         if keep {
@@ -3410,12 +3421,21 @@ impl IboardApp {
                 name,
                 group,
                 intent,
+                draft,
             } => {
+                let mut created = false;
                 if let Some(system) = self.design_system.as_mut() {
                     match system.add_component(&name, &group, Some(intent.as_str())) {
-                        Ok(dir) => panel.status = Some(format!("Created {}", dir.display())),
+                        Ok(dir) => {
+                            panel.status = Some(format!("Created {}", dir.display()));
+                            created = true;
+                        }
                         Err(err) => panel.status = Some(err),
                     }
+                }
+                if created && draft && self.agent.configured() {
+                    self.start_design_draft(&name, &group, &intent);
+                    panel.status = Some(format!("Drafting {name}…"));
                 }
                 true
             }
@@ -3429,6 +3449,78 @@ impl IboardApp {
                 true
             }
         }
+    }
+
+    /// Ask the configured agent to draft a component's preview fragment. The
+    /// prompt is built from the just-scaffolded component and the system.
+    fn start_design_draft(&mut self, name: &str, group: &str, intent: &str) {
+        let Some(system) = self.design_system.as_ref() else {
+            return;
+        };
+        let prompt = prompts::component_prompt(system, name, group, intent, "light");
+        let preview = system
+            .root
+            .join("components")
+            .join(name)
+            .join("preview.html");
+        let running = agent::start(&self.agent, &prompt, &preview);
+        self.design_draft = Some(DraftJob {
+            name: name.to_string(),
+            running,
+        });
+    }
+
+    /// Adopt a drafted component as soon as the agent answers. Runs every frame,
+    /// so a draft started before the panel closed still lands.
+    fn poll_design_draft(&mut self, ctx: &egui::Context) {
+        let received = match self.design_draft.as_ref() {
+            Some(job) => match job.running.answer.try_recv() {
+                Ok(result) => Some((job.name.clone(), result)),
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(150));
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    Some((job.name.clone(), Err("the agent stopped".to_string())))
+                }
+            },
+            None => None,
+        };
+        let Some((name, result)) = received else {
+            return;
+        };
+        self.design_draft = None;
+
+        let message = match result {
+            Ok(reply) => {
+                let html = prompts::clean_html_reply(&reply);
+                if html.contains('<') {
+                    self.write_drafted_component(&name, &html)
+                } else {
+                    format!("{name}: the agent returned no HTML")
+                }
+            }
+            Err(err) => format!("{name}: {err}"),
+        };
+        if let Some(panel) = self.design.as_mut() {
+            panel.status = Some(message);
+        }
+    }
+
+    /// Write a drafted fragment into the component and reload the system.
+    fn write_drafted_component(&mut self, name: &str, html: &str) -> String {
+        let Some(system) = self.design_system.as_ref() else {
+            return format!("{name}: no design system");
+        };
+        let root = system.root.clone();
+        let path = root.join("components").join(name).join("preview.html");
+        if let Err(err) = std::fs::write(&path, html) {
+            return format!("Couldn't write {}: {err}", path.display());
+        }
+        if let Ok(reloaded) = DesignSystem::load(&root) {
+            self.design_system = Some(reloaded);
+        }
+        format!("Drafted {name}.")
     }
 
     fn background(&mut self, ctx: &egui::Context) {
@@ -4213,6 +4305,7 @@ impl eframe::App for IboardApp {
         // Adopt an agent's answer as soon as it lands.
         self.poll_review();
         self.poll_naming(ctx);
+        self.poll_design_draft(ctx);
         let typing = ctx.memory(|m| m.focused().is_some());
         let command = |key: Key| ctx.input(|i| i.modifiers.command && i.key_pressed(key));
 
@@ -9270,6 +9363,7 @@ mod tests {
                 name: "Toast".to_string(),
                 group: "Controls".to_string(),
                 intent: "Transient confirmation.".to_string(),
+                draft: false,
             },
         );
         assert!(keep);
@@ -9318,5 +9412,59 @@ mod tests {
             Ok(Err(err)) => panic!("render failed: {err}"),
             Err(err) => panic!("render timed out: {err}"),
         }
+    }
+
+    #[test]
+    fn design_panel_drafts_a_component_with_the_agent() {
+        let dir = scratch_dir("design-draft");
+        std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+        write_min_design(&dir);
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+        app.open_design();
+
+        // A fake agent: prints a fenced HTML fragment, ignores the prompt.
+        app.agent = AgentConfig {
+            tool: agent::Tool::Custom,
+            model: String::new(),
+            command: "printf '```html\\n<button class=\"ib-btn\">Hi</button>\\n```' # {prompt}"
+                .to_string(),
+            configured: true,
+        };
+
+        let mut panel = app.design.take().expect("panel open");
+        let keep = app.handle_design_action(
+            &mut panel,
+            design_ui::Action::Create {
+                name: "Toast".to_string(),
+                group: "Controls".to_string(),
+                intent: "Transient confirmation.".to_string(),
+                draft: true,
+            },
+        );
+        assert!(keep);
+        app.design = Some(panel);
+        assert!(app.design_draft.is_some(), "a draft was started");
+
+        let (ctx, _raw) = panel_ctx();
+        let preview = dir.join("design/components/Toast/preview.html");
+        for _ in 0..300 {
+            app.poll_design_draft(&ctx);
+            if std::fs::read_to_string(&preview)
+                .unwrap_or_default()
+                .contains("ib-btn")
+            {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        let written = std::fs::read_to_string(&preview).unwrap();
+        assert!(
+            written.contains("ib-btn"),
+            "drafted fragment written: {written}"
+        );
+        assert!(!written.contains("```"), "code fences stripped: {written}");
+        assert!(app.design_draft.is_none(), "the draft finished");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

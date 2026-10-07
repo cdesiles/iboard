@@ -76,6 +76,31 @@ fn brief(system: &DesignSystem) -> Option<String> {
         .filter(|text| !text.trim().is_empty())
 }
 
+/// Keep the markup from an agent's answer: it is asked for an HTML fragment but
+/// often wraps it in a fenced block or a sentence. Prefer a fenced block, else
+/// everything from the first tag.
+pub fn clean_html_reply(reply: &str) -> String {
+    let text = reply.trim();
+    if let Some(start) = text.find("```") {
+        let after = &text[start + 3..];
+        let after = after
+            .strip_prefix("html")
+            .or_else(|| after.strip_prefix("HTML"))
+            .unwrap_or(after);
+        let after = after.trim_start_matches(['\n', '\r']);
+        if let Some(end) = after.find("```") {
+            let body = after[..end].trim();
+            if body.contains('<') {
+                return body.to_string();
+            }
+        }
+    }
+    if let Some(at) = text.find('<') {
+        return text[at..].trim().to_string();
+    }
+    text.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +131,25 @@ mod tests {
         assert!(prompt.contains("Component: Toast"));
         assert!(prompt.contains(":root"));
         assert!(prompt.contains("binding contract"));
+    }
+
+    #[test]
+    fn clean_html_reply_keeps_the_markup() {
+        let fenced = "Here you go:\n```html\n<button class=\"ib-btn\">Hi</button>\n```\n";
+        assert_eq!(
+            clean_html_reply(fenced),
+            "<button class=\"ib-btn\">Hi</button>"
+        );
+
+        let plain = "  <div class=\"ib-pill\">Saved</div>  ";
+        assert_eq!(
+            clean_html_reply(plain),
+            "<div class=\"ib-pill\">Saved</div>"
+        );
+
+        let prose = "Sure, try this:\n<span class=\"ib-kbd\">esc</span>";
+        assert_eq!(clean_html_reply(prose), "<span class=\"ib-kbd\">esc</span>");
+
+        assert_eq!(clean_html_reply("no markup here"), "no markup here");
     }
 }

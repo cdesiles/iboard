@@ -43,7 +43,10 @@ idesign render page.html phone.png
 ```
 
 `design/` is the canonical store; an Open Design package is an import source,
-never a second format. The source of truth for iboard's own system is the
+never a second format. The **New component** form can scaffold a component, and
+optionally ask the configured agent to draft its preview fragment (the same
+`idesign`/opencode tooling; the answer is written to `preview.html`). The source
+of truth for iboard's own system is the
 [iboard design system on Claude Design](https://claude.ai/artifact/G22kpooZcDnB7Dd64xsJit);
 `design/` is a local copy of it. The toolchain takes inspiration from
 [Open Design](https://github.com/nexu-io/open-design) (Apache-2.0); see

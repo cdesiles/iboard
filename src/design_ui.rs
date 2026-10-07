@@ -25,6 +25,8 @@ pub enum Action {
         name: String,
         group: String,
         intent: String,
+        /// Ask the configured agent to draft the preview fragment too.
+        draft: bool,
     },
     /// Render a component's preview to a PNG.
     Render(String),
@@ -37,6 +39,8 @@ pub struct Panel {
     name: String,
     group: String,
     intent: String,
+    /// The "Draft with the agent" choice in the new-component form.
+    draft: bool,
     /// The last outcome ("Created …"), shown under the form.
     pub status: Option<String>,
     render: Render,
@@ -57,6 +61,7 @@ impl Default for Panel {
             name: String::new(),
             group: "Components".to_string(),
             intent: String::new(),
+            draft: false,
             status: None,
             render: Render::Idle,
         }
@@ -75,6 +80,7 @@ impl Panel {
         system: Option<&DesignSystem>,
         error: Option<&str>,
         render_available: bool,
+        agent_ready: bool,
     ) -> Action {
         self.poll(ctx);
         let mut action = Action::Keep;
@@ -137,7 +143,7 @@ impl Panel {
                     ui.label(egui::RichText::new(status).color(p.ink_muted).size(11.0));
                 }
 
-                self.new_component_ui(ui, &mut action);
+                self.new_component_ui(ui, &mut action, agent_ready);
                 ui.separator();
 
                 let mut selected = self.selected.clone();
@@ -171,7 +177,7 @@ impl Panel {
         action
     }
 
-    fn new_component_ui(&mut self, ui: &mut egui::Ui, action: &mut Action) {
+    fn new_component_ui(&mut self, ui: &mut egui::Ui, action: &mut Action, agent_ready: bool) {
         let p = theme::palette(ui);
         let label = if self.form_open {
             "Cancel new component"
@@ -208,6 +214,11 @@ impl Panel {
                 );
                 ui.end_row();
             });
+        if agent_ready {
+            ui.checkbox(&mut self.draft, "Draft the preview with the agent");
+        } else {
+            self.draft = false;
+        }
         let ready = !self.name.trim().is_empty();
         if ui
             .add_enabled(ready, egui::Button::new("Create component"))
@@ -218,6 +229,7 @@ impl Panel {
                 name: self.name.trim().to_string(),
                 group: self.group.trim().to_string(),
                 intent: self.intent.trim().to_string(),
+                draft: self.draft && agent_ready,
             };
             self.name.clear();
             self.intent.clear();
