@@ -50,6 +50,7 @@ impl Package {
             },
             tokens: self.tokens,
             components: Vec::new(),
+            asset_groups: std::collections::BTreeMap::new(),
             warnings: self.warnings,
         }
     }

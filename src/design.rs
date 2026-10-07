@@ -115,6 +115,26 @@ pub struct Component {
     pub has_preview: bool,
 }
 
+/// One file that makes up the system on disk, for the browser's Files view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignFile {
+    /// Path relative to the design root, with `/` separators.
+    pub rel: String,
+    pub bytes: u64,
+}
+
+/// One asset the system ships or declares: a font, an image or a name from
+/// `design-system.json`'s `assetGroups`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asset {
+    pub name: String,
+    /// The folder the asset was found in (`fonts`, a declared group name).
+    pub group: String,
+    /// The file on disk, when there is one.
+    pub path: Option<PathBuf>,
+    pub bytes: u64,
+}
+
 /// The token sections of `tokens.json`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Tokens {
@@ -159,6 +179,8 @@ pub struct DesignSystem {
     pub meta: Meta,
     pub tokens: Tokens,
     pub components: Vec<Component>,
+    /// Names grouped in `design-system.json`'s `assetGroups`; usually empty.
+    pub asset_groups: BTreeMap<String, Vec<String>>,
     /// Non-fatal problems found while loading, such as a component with no
     /// preview. `errors()` reports the fatal ones.
     pub warnings: Vec<String>,
@@ -188,12 +210,18 @@ impl DesignSystem {
         let mut warnings = Vec::new();
         let tokens = convert_tokens(tokens_raw);
         let components = load_components(&root, &mut warnings)?;
+        let asset_groups = meta_raw
+            .asset_groups
+            .iter()
+            .map(|(group, value)| (group.clone(), asset_names(value)))
+            .collect();
 
         Ok(Self {
             root,
             meta,
             tokens,
             components,
+            asset_groups,
             warnings,
         })
     }
@@ -296,6 +324,63 @@ impl DesignSystem {
         ));
         out.push_str(&format!("  components {}\n", self.components.len()));
         out
+    }
+
+    /// The system's brief: `design/README.md`, the prose the browser shows on
+    /// its Overview page.
+    pub fn brief(&self) -> Option<String> {
+        std::fs::read_to_string(self.root.join("README.md")).ok()
+    }
+
+    /// Every file under `design/`, `rel`ative to the root, sorted by path.
+    pub fn files(&self) -> Vec<DesignFile> {
+        let mut out = Vec::new();
+        collect_files(&self.root, &self.root, &mut out);
+        out.sort_by(|a, b| a.rel.cmp(&b.rel));
+        out
+    }
+
+    /// The assets the system ships or declares: files under the project's
+    /// `assets/` and the design's own `assets/`, plus the names in
+    /// `design-system.json`'s `assetGroups` that are not files.
+    pub fn assets(&self) -> Vec<Asset> {
+        let mut out = Vec::new();
+        if let Some(parent) = self.root.parent() {
+            collect_assets(&parent.join("assets"), "project", &mut out);
+        }
+        collect_assets(&self.root.join("assets"), "design", &mut out);
+        for (group, names) in &self.asset_groups {
+            for name in names {
+                if !out.iter().any(|asset| &asset.name == name) {
+                    out.push(Asset {
+                        name: name.clone(),
+                        group: group.clone(),
+                        path: None,
+                        bytes: 0,
+                    });
+                }
+            }
+        }
+        out.sort_by(|a, b| {
+            (a.group.as_str(), a.name.as_str()).cmp(&(b.group.as_str(), b.name.as_str()))
+        });
+        out
+    }
+
+    /// Components by their README `Group:`, in group then name order.
+    pub fn component_groups(&self) -> Vec<(String, Vec<&Component>)> {
+        let mut map: BTreeMap<String, Vec<&Component>> = BTreeMap::new();
+        for component in &self.components {
+            map.entry(component_group(component))
+                .or_default()
+                .push(component);
+        }
+        map.into_iter()
+            .map(|(group, mut list)| {
+                list.sort_by(|a, b| a.name.cmp(&b.name));
+                (group, list)
+            })
+            .collect()
     }
 
     /// Write the system back to `design/`. Fields the model does not carry
@@ -524,6 +609,112 @@ fn load_components(root: &Path, warnings: &mut Vec<String>) -> Result<Vec<Compon
     }
     components.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(components)
+}
+
+/// Every string leaf of an `assetGroups` value, whatever shape it takes.
+fn asset_names(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::Array(items) => items.iter().flat_map(asset_names).collect(),
+        serde_json::Value::Object(map) => map.values().flat_map(asset_names).collect(),
+        serde_json::Value::String(name) => vec![name.clone()],
+        _ => Vec::new(),
+    }
+}
+
+/// The `Group:` named in a component's README, defaulting to `Components`.
+fn component_group(component: &Component) -> String {
+    component
+        .readme
+        .as_deref()
+        .and_then(|readme| {
+            readme.lines().find_map(|line| {
+                let line = line.trim_start_matches(['-', '*', ' ']);
+                let rest = line
+                    .strip_prefix("Group:")
+                    .or_else(|| line.strip_prefix("**Group**:"))?;
+                let name = rest.trim().trim_matches('*').trim();
+                (!name.is_empty()).then(|| name.to_string())
+            })
+        })
+        .unwrap_or_else(|| "Components".to_string())
+}
+
+/// Recursively collect the files under `dir`, relative to `root`, skipping
+/// hidden entries.
+fn collect_files(root: &Path, dir: &Path, out: &mut Vec<DesignFile>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            collect_files(root, &path, out);
+        } else if let Ok(rel) = path.strip_prefix(root) {
+            out.push(DesignFile {
+                rel: rel.to_string_lossy().replace('\\', "/"),
+                bytes: entry.metadata().map(|meta| meta.len()).unwrap_or(0),
+            });
+        }
+    }
+}
+
+/// Recursively collect the files under an `assets/` folder, grouped by the
+/// first folder below it (`fonts`, `images`).
+fn collect_assets(dir: &Path, source: &str, out: &mut Vec<Asset>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            let group = format!("{source}/{name}");
+            collect_grouped(&path, &group, out);
+        } else {
+            out.push(Asset {
+                name: name.to_string(),
+                group: source.to_string(),
+                path: Some(path.clone()),
+                bytes: entry.metadata().map(|meta| meta.len()).unwrap_or(0),
+            });
+        }
+    }
+}
+
+fn collect_grouped(dir: &Path, group: &str, out: &mut Vec<Asset>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            collect_grouped(&path, group, out);
+        } else {
+            out.push(Asset {
+                name: name.to_string(),
+                group: group.to_string(),
+                path: Some(path.clone()),
+                bytes: entry.metadata().map(|meta| meta.len()).unwrap_or(0),
+            });
+        }
+    }
 }
 
 /// Every `{name}` reference inside a token's values.
@@ -807,6 +998,8 @@ struct RawMeta {
     namespace: String,
     #[serde(default)]
     docs: RawDocs,
+    #[serde(default, rename = "assetGroups")]
+    asset_groups: BTreeMap<String, serde_json::Value>,
     #[serde(default, rename = "lastChange")]
     last_change: Option<RawLastChange>,
 }
@@ -958,6 +1151,41 @@ mod tests {
         let system = DesignSystem::discover(Path::new(env!("CARGO_MANIFEST_DIR")))
             .expect("discover finds design/");
         assert_eq!(system.meta.title, "iboard");
+    }
+
+    #[test]
+    fn the_browser_can_read_files_assets_the_brief_and_groups() {
+        let system = repo();
+        let files = system.files();
+        assert!(files.iter().any(|file| file.rel == "tokens.json"));
+        assert!(files.iter().any(|file| file.rel == "design-system.json"));
+        assert!(
+            files
+                .iter()
+                .any(|file| file.rel == "components/Button/preview.html")
+        );
+        assert!(files.iter().all(|file| !file.rel.contains('\\')));
+        assert!(system.brief().is_some(), "design/README.md is the brief");
+
+        // The project's bundled fonts are exposed as assets.
+        assert!(
+            system
+                .assets()
+                .iter()
+                .any(|asset| asset.name.starts_with("IBMPlexSans"))
+        );
+    }
+
+    #[test]
+    fn components_group_by_their_readme_group() {
+        let system = repo();
+        // Button ships no `Group:` line, so it lands in the default group.
+        let groups = system.component_groups();
+        assert!(
+            groups
+                .iter()
+                .any(|(group, list)| list.iter().any(|c| c.name == "Button") && !group.is_empty())
+        );
     }
 
     #[test]
