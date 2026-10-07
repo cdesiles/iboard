@@ -5,24 +5,28 @@
 //! like Claude Design: a category sidebar — Overview, Colors, Typography,
 //! Spacing, Corner radius, Shadows, Size, Components, Assets, Files — and a
 //! pane for the selected category. It reads the system the shared `design`
-//! module loaded and renders a component's preview through the out-of-process
+//! module loaded and renders component previews through the out-of-process
 //! helper, so the board itself never loads WebKit: startup stays instant and a
-//! broken preview cannot take the window down. When no helper is available the
-//! panel simply says so.
+//! broken preview cannot take the window down. Preview only loads the cards
+//! that are in view, one at a time, so opening the browser costs nothing.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
-use egui::{Align2, Color32, CornerRadius, Stroke, StrokeKind};
+use egui::{Align2, Color32, CornerRadius, Rect, Stroke, StrokeKind, pos2};
 
-use crate::design::{self, DesignSystem, Token};
+use crate::design::{self, Component, DesignSystem, Token};
 
 use crate::theme;
 use crate::widgets::{self, ButtonKind};
 
 /// Width of the browser's category sidebar.
 const SIDEBAR_W: f32 = 200.0;
+
+/// Aspect ratio of a rendered preview (the helper snapshots 900×640).
+const PREVIEW_RATIO: f32 = 900.0 / 640.0;
 
 /// What the panel asks the app to do after a frame.
 pub enum Action {
@@ -36,7 +40,7 @@ pub enum Action {
         /// Ask the configured agent to draft the preview fragment too.
         draft: bool,
     },
-    /// Render a component's preview to a PNG.
+    /// Render a component's preview to a PNG, lazily, when its card is in view.
     Render(String),
 }
 
@@ -91,30 +95,33 @@ struct Hit {
     category: Category,
     label: String,
     detail: String,
-    select: Option<String>,
+}
+
+/// The state of one component's preview.
+enum Preview {
+    /// Requested, waiting for the renderer.
+    Pending,
+    Ready(egui::TextureHandle),
+    Failed(String),
 }
 
 /// The Design panel's session state.
 pub struct Panel {
     category: Category,
     search: String,
-    selected: Option<String>,
     form_open: bool,
     name: String,
     group: String,
     intent: String,
     /// The "Draft with the agent" choice in the new-component form.
     draft: bool,
-    /// The last outcome ("Created …"), shown under the form.
+    /// The last outcome ("Created …"), shown under the toolbar.
     pub status: Option<String>,
-    render: Render,
-}
-
-enum Render {
-    Idle,
-    Running(Receiver<Result<PathBuf, String>>),
-    Ready(egui::TextureHandle),
-    Failed(String),
+    /// Previews already asked for, by component name. Loading is lazy: a card
+    /// only appears here once it has scrolled into view.
+    previews: BTreeMap<String, Preview>,
+    /// The one render in flight, and the component it belongs to.
+    running: Option<(String, Receiver<Result<PathBuf, String>>)>,
 }
 
 impl Default for Panel {
@@ -122,22 +129,28 @@ impl Default for Panel {
         Self {
             category: Category::Overview,
             search: String::new(),
-            selected: None,
             form_open: false,
             name: String::new(),
             group: "Components".to_string(),
             intent: String::new(),
             draft: false,
             status: None,
-            render: Render::Idle,
+            previews: BTreeMap::new(),
+            running: None,
         }
     }
 }
 
 impl Panel {
-    /// Adopt a render that is running on a background thread.
-    pub fn start_render(&mut self, receiver: Receiver<Result<PathBuf, String>>) {
-        self.render = Render::Running(receiver);
+    /// Adopt a render the host started for `name`.
+    pub fn start_render(&mut self, name: String, receiver: Receiver<Result<PathBuf, String>>) {
+        self.running = Some((name, receiver));
+    }
+
+    /// Record that a render could not even be started.
+    pub fn fail_render(&mut self, name: &str, error: String) {
+        self.previews
+            .insert(name.to_string(), Preview::Failed(error));
     }
 
     pub fn show(
@@ -207,6 +220,10 @@ impl Panel {
         };
 
         ui.separator();
+        // A horizontal row: the sidebar, then a *vertical* pane. The explicit
+        // vertical layout matters — a scroll area inherits its parent's
+        // direction, so without it the whole content pane would lay out in a
+        // line.
         ui.horizontal_top(|ui| {
             ui.allocate_ui_with_layout(
                 egui::vec2(SIDEBAR_W, ui.available_height()),
@@ -214,12 +231,14 @@ impl Panel {
                 |ui| self.sidebar(ui, system),
             );
             ui.separator();
-            egui::ScrollArea::vertical()
-                .id_salt("design-content")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    self.content(ui, system, render_available, agent_ready, &mut action);
-                });
+            ui.vertical(|ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("design-content")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        self.content(ui, system, render_available, agent_ready, &mut action);
+                    });
+            });
         });
         action
     }
@@ -248,10 +267,6 @@ impl Panel {
             for hit in hits {
                 if nav_row(ui, &hit.label, Some(&hit.detail), false).clicked() {
                     self.category = hit.category;
-                    if hit.select.is_some() {
-                        self.selected = hit.select;
-                        self.render = Render::Idle;
-                    }
                     self.search.clear();
                 }
             }
@@ -303,27 +318,8 @@ impl Panel {
         }
     }
 
-    /// The render to spawn for the current selection: the picked component, when
-    /// a renderer is available and the component ships a preview. Selecting a
-    /// component renders it, so there is no separate button.
-    fn render_selected(&self, system: &DesignSystem, render_available: bool) -> Action {
-        if !render_available {
-            return Action::Keep;
-        }
-        let Some(name) = self.selected.clone() else {
-            return Action::Keep;
-        };
-        let has_preview = system
-            .components
-            .iter()
-            .any(|component| component.name == name && component.has_preview);
-        if has_preview {
-            Action::Render(name)
-        } else {
-            Action::Keep
-        }
-    }
-
+    /// Components: a scrollable gallery, one titled card per component, with a
+    /// lazily loaded preview.
     fn components(
         &mut self,
         ui: &mut egui::Ui,
@@ -333,59 +329,140 @@ impl Panel {
         action: &mut Action,
     ) {
         let p = theme::palette(ui);
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Components")
+                    .font(theme::ui_strong())
+                    .color(p.ink),
+            );
+            ui.label(
+                egui::RichText::new(system.components.len().to_string())
+                    .font(theme::meta())
+                    .color(p.ink_faint),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.new_component_button(ui);
+            });
+        });
         if let Some(status) = &self.status {
-            ui.label(egui::RichText::new(status).color(p.ink_muted).size(11.0));
+            muted(ui, status);
         }
-        self.new_component_ui(ui, action, agent_ready);
-        ui.add_space(theme::SPACE_3);
+        if self.form_open {
+            self.new_component_form(ui, action, agent_ready);
+        }
+        ui.separator();
 
-        let mut selected = self.selected.clone();
         if system.components.is_empty() {
             ui.label(
                 egui::RichText::new("No components yet.")
                     .color(p.ink_faint)
                     .size(11.0),
             );
+            return;
         }
-        for (group, list) in system.component_groups() {
-            ui.label(
-                egui::RichText::new(group.to_uppercase())
-                    .font(theme::ui_label())
-                    .color(p.ink_faint),
-            );
+        let groups = system.component_groups();
+        let show_groups = groups.len() > 1;
+        for (group, list) in groups {
+            if show_groups {
+                heading(ui, &group.to_uppercase());
+            }
             for component in list {
-                let is_selected = selected.as_deref() == Some(&component.name);
-                if ui.selectable_label(is_selected, &component.name).clicked() {
-                    selected = Some(component.name.clone());
-                }
-            }
-            ui.add_space(theme::SPACE_3);
-        }
-        if selected != self.selected {
-            self.selected = selected;
-            self.render = Render::Idle;
-            if matches!(action, Action::Keep) {
-                *action = self.render_selected(system, render_available);
+                self.component_card(ui, component, render_available, action);
             }
         }
-
-        ui.separator();
-        self.selected_ui(ui, system);
     }
 
-    fn new_component_ui(&mut self, ui: &mut egui::Ui, action: &mut Action, agent_ready: bool) {
+    /// One card of the gallery: the component's name, its notes, then its
+    /// preview. The preview is requested only once the card scrolls into view,
+    /// and only one render runs at a time.
+    fn component_card(
+        &mut self,
+        ui: &mut egui::Ui,
+        component: &Component,
+        render_available: bool,
+        action: &mut Action,
+    ) {
         let p = theme::palette(ui);
+        ui.add_space(theme::SPACE_5);
+        ui.label(
+            egui::RichText::new(&component.name)
+                .font(theme::ui_strong())
+                .color(p.ink),
+        );
+        if let Some(summary) = design::css::component_summary(component) {
+            muted(ui, &summary);
+        }
+        ui.add_space(theme::SPACE_2);
+
+        let width = ui.available_width().clamp(200.0, 680.0);
+        let height = (width / PREVIEW_RATIO).clamp(150.0, 520.0);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        frame_placeholder(ui, rect, p);
+
+        if !component.has_preview {
+            centred(ui, rect, "No preview.html", p.ink_faint);
+            return;
+        }
+        if !render_available {
+            centred(ui, rect, "No preview renderer on this machine", p.ink_faint);
+            return;
+        }
+
+        let name = component.name.clone();
+        if ui.is_rect_visible(rect)
+            && !self.previews.contains_key(&name)
+            && self.running.is_none()
+            && matches!(action, Action::Keep)
+        {
+            self.previews.insert(name.clone(), Preview::Pending);
+            *action = Action::Render(name.clone());
+        }
+
+        match self.previews.get(&name) {
+            Some(Preview::Ready(texture)) => {
+                let size = texture.size_vec2();
+                let inner = rect.shrink(theme::SPACE_3);
+                let scale = (inner.width() / size.x)
+                    .min(inner.height() / size.y)
+                    .min(1.0);
+                let draw = Rect::from_center_size(inner.center(), size * scale);
+                ui.painter().image(
+                    texture.id(),
+                    draw,
+                    Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            }
+            Some(Preview::Pending) => centred(ui, rect, "Rendering…", p.ink_muted),
+            Some(Preview::Failed(err)) => {
+                let first = err.lines().next().unwrap_or("Preview failed");
+                centred(ui, rect, first, p.danger);
+            }
+            None => centred(ui, rect, "Loading…", p.ink_faint),
+        }
+    }
+
+    fn new_component_button(&mut self, ui: &mut egui::Ui) {
         let label = if self.form_open {
-            "Cancel new component"
+            "Cancel"
         } else {
             "New component…"
         };
-        if widgets::button(ui, ButtonKind::Secondary, None, label, None).clicked() {
+        if widgets::button(
+            ui,
+            ButtonKind::Secondary,
+            Some(theme::Icon::Plus),
+            label,
+            None,
+        )
+        .clicked()
+        {
             self.form_open = !self.form_open;
         }
-        if !self.form_open {
-            return;
-        }
+    }
+
+    fn new_component_form(&mut self, ui: &mut egui::Ui, action: &mut Action, agent_ready: bool) {
+        let p = theme::palette(ui);
         egui::Grid::new("design-new-component")
             .num_columns(2)
             .spacing([8.0, 6.0])
@@ -433,68 +510,43 @@ impl Panel {
         }
     }
 
-    fn selected_ui(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
-        let p = theme::palette(ui);
-        let Some(name) = self.selected.clone() else {
-            ui.label(
-                egui::RichText::new("Pick a component to see its notes and preview.")
-                    .color(p.ink_faint)
-                    .size(11.0),
-            );
-            return;
-        };
-        let Some(component) = system.components.iter().find(|c| c.name == name) else {
-            return;
-        };
-
-        ui.label(egui::RichText::new(&component.name).color(p.ink).strong());
-
-        if let Some(readme) = design::css::component_readme(component) {
-            ui.label(egui::RichText::new(readme).color(p.ink_muted).size(12.0));
-        }
-
-        match &self.render {
-            Render::Idle => {}
-            Render::Running(_) => {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(
-                        egui::RichText::new("Rendering…")
-                            .color(p.ink_muted)
-                            .size(11.0),
-                    );
-                });
-            }
-            Render::Failed(err) => {
-                ui.label(egui::RichText::new(err).color(p.danger).size(11.0));
-            }
-            Render::Ready(texture) => {
-                let size = texture.size_vec2();
-                let max = ui.available_width().min(620.0);
-                let scale = if size.x > max { max / size.x } else { 1.0 };
-                ui.add_space(4.0);
-                ui.image((texture.id(), size * scale));
-            }
-        }
-    }
-
-    /// Poll a running render and, when it lands, decode it into a texture.
+    /// Poll the running render and, when it lands, decode it into a texture.
     fn poll(&mut self, ctx: &egui::Context) {
-        let received = match &self.render {
-            Render::Running(receiver) => Some(receiver.try_recv()),
-            _ => None,
-        };
+        let received = self
+            .running
+            .as_ref()
+            .map(|(_, receiver)| receiver.try_recv());
         match received {
-            Some(Ok(Ok(path))) => match load_texture(ctx, &path) {
-                Ok(texture) => self.render = Render::Ready(texture),
-                Err(err) => self.render = Render::Failed(err),
-            },
-            Some(Ok(Err(err))) => self.render = Render::Failed(err),
+            Some(Ok(Ok(path))) => {
+                let Some((name, _)) = self.running.take() else {
+                    return;
+                };
+                match load_texture(ctx, &path) {
+                    Ok(texture) => {
+                        self.previews.insert(name, Preview::Ready(texture));
+                    }
+                    Err(err) => {
+                        self.previews.insert(name, Preview::Failed(err));
+                    }
+                }
+                // Let the next card in view load without waiting for input.
+                ctx.request_repaint();
+            }
+            Some(Ok(Err(err))) => {
+                if let Some((name, _)) = self.running.take() {
+                    self.previews.insert(name, Preview::Failed(err));
+                }
+                ctx.request_repaint();
+            }
             Some(Err(TryRecvError::Empty)) => {
                 ctx.request_repaint_after(Duration::from_millis(120));
             }
             Some(Err(TryRecvError::Disconnected)) => {
-                self.render = Render::Failed("the renderer stopped".to_string());
+                if let Some((name, _)) = self.running.take() {
+                    self.previews
+                        .insert(name, Preview::Failed("the renderer stopped".to_string()));
+                }
+                ctx.request_repaint();
             }
             None => {}
         }
@@ -541,11 +593,11 @@ fn nav_row(ui: &mut egui::Ui, label: &str, meta: Option<&str>, selected: bool) -
 /// A category heading inside the content pane.
 fn heading(ui: &mut egui::Ui, text: &str) {
     let p = theme::palette(ui);
-    ui.add_space(theme::SPACE_2);
+    ui.add_space(theme::SPACE_4);
     ui.label(
         egui::RichText::new(text)
-            .font(theme::ui_strong())
-            .color(p.ink),
+            .font(theme::ui_label())
+            .color(p.ink_faint),
     );
 }
 
@@ -553,6 +605,28 @@ fn heading(ui: &mut egui::Ui, text: &str) {
 fn muted(ui: &mut egui::Ui, text: &str) {
     let p = theme::palette(ui);
     ui.label(egui::RichText::new(text).color(p.ink_muted).size(11.0));
+}
+
+/// The background of a preview card.
+fn frame_placeholder(ui: &egui::Ui, rect: Rect, p: &theme::Palette) {
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(theme::RADIUS_MD),
+        p.surface_sunken,
+        Stroke::new(1.0, p.line),
+        StrokeKind::Inside,
+    );
+}
+
+/// A line of text, centred in a preview card.
+fn centred(ui: &egui::Ui, rect: Rect, text: &str, color: Color32) {
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        text,
+        theme::ui_body(),
+        color,
+    );
 }
 
 /// The Overview landing: identity, counts, the last change and the brief.
@@ -981,13 +1055,10 @@ fn parse_color(text: &str) -> Option<Color32> {
     let r = channel(parts.first()?)?;
     let g = channel(parts.get(1)?)?;
     let b = channel(parts.get(2)?)?;
-    let a = match parts.get(3) {
-        Some(part) => {
-            let alpha = part.parse::<f32>().ok()?;
-            (alpha * 255.0).round().clamp(0.0, 255.0) as u8
-        }
-        None => 255,
-    };
+    let a = parts
+        .get(3)
+        .and_then(|part| part.parse::<f32>().ok())
+        .map_or(255, |alpha| (alpha * 255.0).round().clamp(0.0, 255.0) as u8);
     Some(Color32::from_rgba_unmultiplied(r, g, b, a))
 }
 
@@ -1045,7 +1116,6 @@ fn search(system: &DesignSystem, query: &str) -> Vec<Hit> {
                     category,
                     label: token.name.clone(),
                     detail: detail.to_string(),
-                    select: None,
                 });
             }
         }
@@ -1055,13 +1125,12 @@ fn search(system: &DesignSystem, query: &str) -> Vec<Hit> {
     token_hits(Category::Radius, "radius", &system.tokens.radius);
     token_hits(Category::Shadows, "shadow", &system.tokens.shadow);
     token_hits(Category::Size, "size", &system.tokens.size);
-    for token in &system.components {
-        if matches(&token.name) {
+    for component in &system.components {
+        if matches(&component.name) {
             hits.push(Hit {
                 category: Category::Components,
-                label: token.name.clone(),
+                label: component.name.clone(),
                 detail: "component".to_string(),
-                select: Some(token.name.clone()),
             });
         }
     }
@@ -1072,7 +1141,6 @@ fn search(system: &DesignSystem, query: &str) -> Vec<Hit> {
                     category: Category::Typography,
                     label: style.name.clone(),
                     detail: group.name.clone(),
-                    select: None,
                 });
             }
         }
@@ -1114,48 +1182,67 @@ mod tests {
         (ctx, input)
     }
 
-    #[test]
-    fn selecting_a_component_asks_for_a_render() {
-        let system = repo();
-        let panel = Panel {
-            selected: Some("Button".to_string()),
-            ..Panel::default()
-        };
-        match panel.render_selected(&system, true) {
-            Action::Render(name) => assert_eq!(name, "Button"),
-            _ => panic!("selecting a component should ask for a render"),
-        }
+    /// Drive one frame of the panel and return what it asked for.
+    fn frame(panel: &mut Panel, system: &DesignSystem, render_available: bool) -> Action {
+        let (ctx, raw) = panel_ctx();
+        let mut action = Action::Keep;
+        let mut output = ctx.run_ui(raw, |ui| {
+            action = panel.body(ui, Some(system), None, render_available, false);
+        });
+        output.textures_delta.clear();
+        action
     }
 
     #[test]
-    fn no_render_without_a_renderer_or_a_preview() {
+    fn the_visible_component_requests_one_lazy_render() {
         let system = repo();
         let mut panel = Panel {
-            selected: Some("Button".to_string()),
+            category: Category::Components,
             ..Panel::default()
         };
-        assert!(matches!(
-            panel.render_selected(&system, false),
-            Action::Keep
-        ));
+        match frame(&mut panel, &system, true) {
+            Action::Render(name) => assert!(!name.is_empty()),
+            _ => panic!("the first visible component card should load lazily"),
+        }
+        // Only one card is asked for per frame, and it is marked pending.
+        assert_eq!(panel.previews.len(), 1);
+        assert!(panel.running.is_none(), "the host has not started it yet");
+    }
 
-        panel.selected = None;
-        assert!(matches!(panel.render_selected(&system, true), Action::Keep));
+    #[test]
+    fn no_render_without_a_renderer() {
+        let system = repo();
+        let mut panel = Panel {
+            category: Category::Components,
+            ..Panel::default()
+        };
+        assert!(matches!(frame(&mut panel, &system, false), Action::Keep));
+        assert!(panel.previews.is_empty());
+    }
+
+    #[test]
+    fn a_second_frame_asks_for_the_next_card_once_the_first_runs() {
+        let system = repo();
+        let mut panel = Panel {
+            category: Category::Components,
+            ..Panel::default()
+        };
+        let _ = frame(&mut panel, &system, true);
+        // Pretend the host started the first render and it is still running.
+        let (_tx, rx) = std::sync::mpsc::channel();
+        panel.start_render("Button".to_string(), rx);
+        assert!(matches!(frame(&mut panel, &system, true), Action::Keep));
     }
 
     #[test]
     fn every_category_renders_without_panicking() {
         let system = repo();
-        let (ctx, raw) = panel_ctx();
         for category in Category::ALL {
             let mut panel = Panel {
                 category,
                 ..Panel::default()
             };
-            let mut output = ctx.run_ui(raw.clone(), |ui| {
-                panel.body(ui, Some(&system), None, false, false);
-            });
-            output.textures_delta.clear();
+            frame(&mut panel, &system, false);
         }
     }
 

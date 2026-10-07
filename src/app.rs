@@ -3489,8 +3489,8 @@ impl IboardApp {
             design_ui::Action::Render(name) => {
                 if let Some(system) = self.design_system.as_ref() {
                     match design::render::component_preview(system, &name) {
-                        Ok(receiver) => panel.start_render(receiver),
-                        Err(err) => panel.status = Some(err),
+                        Ok(receiver) => panel.start_render(name, receiver),
+                        Err(err) => panel.fail_render(&name, err),
                     }
                 }
                 true

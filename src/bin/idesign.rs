@@ -445,8 +445,8 @@ impl IDesignApp {
                 design_ui::Action::Render(name) => {
                     if let Some(system) = self.system.as_ref() {
                         match design::render::component_preview(system, &name) {
-                            Ok(receiver) => self.panel.start_render(receiver),
-                            Err(err) => self.panel.status = Some(err),
+                            Ok(receiver) => self.panel.start_render(name, receiver),
+                            Err(err) => self.panel.fail_render(&name, err),
                         }
                     }
                 }
