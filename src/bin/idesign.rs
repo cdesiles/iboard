@@ -460,6 +460,20 @@ impl IDesignApp {
 }
 
 impl eframe::App for IDesignApp {
+    /// On macOS, exit from Rust instead of letting AppKit tear the window down.
+    ///
+    /// Both the red close button (a viewport close) and the File menu's Close
+    /// Window land here first, and the Quit menu item arrives as a flag. Dropping
+    /// the `NSWindow` lets the Touch Bar finder race the teardown and abort the
+    /// process on Touch Bar Macs; exiting here leaves the window in place, which
+    /// avoids it. Nothing is buffered — component writes are atomic.
+    #[cfg(target_os = "macos")]
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if iboard::menu::take_quit_request() || ctx.input(|i| i.viewport().close_requested()) {
+            std::process::exit(0);
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
     }
@@ -496,6 +510,17 @@ fn run_gui(start: PathBuf) -> ExitCode {
         Box::new(move |cc| {
             iboard::theme::install(&cc.egui_ctx);
             egui_extras::install_image_loaders(&cc.egui_ctx);
+            #[cfg(target_os = "macos")]
+            {
+                // The same Touch Bar-safe menu the board installs; its Quit item
+                // routes back through `IDesignApp::logic`.
+                iboard::menu::set_context(cc.egui_ctx.clone());
+                iboard::menu::install(
+                    "idesign",
+                    "Browse, create and render a project's design system",
+                    false,
+                );
+            }
             Ok(Box::new(app))
         }),
     ) {

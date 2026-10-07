@@ -4,8 +4,6 @@
 mod app;
 mod dialog;
 mod label_picker;
-#[cfg(target_os = "macos")]
-mod menu;
 mod recents;
 mod review_settings;
 

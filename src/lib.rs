@@ -17,6 +17,8 @@ pub mod general;
 pub mod history;
 pub mod issue;
 pub mod labels;
+#[cfg(target_os = "macos")]
+pub mod menu;
 pub mod prompts;
 pub mod sheet;
 pub mod theme;

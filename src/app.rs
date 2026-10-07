@@ -729,8 +729,8 @@ impl IboardApp {
         // After winit's default menu is up, so this one replaces it.
         #[cfg(target_os = "macos")]
         {
-            crate::menu::set_context(cc.egui_ctx.clone());
-            crate::menu::install();
+            iboard::menu::set_context(cc.egui_ctx.clone());
+            iboard::menu::install("iboard", env!("CARGO_PKG_DESCRIPTION"), true);
         }
         let mut app = Self::from_located(located);
         // The user's real cache: only the running app records here, never a
@@ -4600,11 +4600,11 @@ impl eframe::App for IboardApp {
         // A quit picked from the macOS menu arrives as a flag rather than a
         // window close, so it can run the save prompt before we exit.
         #[cfg(target_os = "macos")]
-        if crate::menu::take_quit_request() {
+        if iboard::menu::take_quit_request() {
             self.leave(Leave::Quit);
         }
         #[cfg(target_os = "macos")]
-        if crate::menu::take_settings_request() && self.settings.is_none() {
+        if iboard::menu::take_settings_request() && self.settings.is_none() {
             self.open_settings(self.settings_tab);
         }
 

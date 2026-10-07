@@ -1,9 +1,16 @@
 //! The macOS menu bar.
 //!
 //! winit installs a default menu named after the process (`iboard`). This
-//! replaces it with one named after the app: `iboard` with About,
-//! Hide and Quit, then File and Window menus. Call [`install`] once the event
-//! loop is running, from the main thread.
+//! replaces it with one owned by the app: About, Hide and Quit, then File and
+//! Window menus. Call [`install`] once the event loop is running, from the main
+//! thread.
+//!
+//! The Quit item deliberately does *not* send AppKit's `terminate:`. That tears
+//! the `NSWindow` down, and the Touch Bar finder then races the teardown and
+//! aborts the process on Touch Bar Macs (a double `removeObserver` in
+//! `_NSTouchBarFinderObservation`). Instead it sets a flag the app reads each
+//! frame and exits from Rust, leaving the window in place. Both binaries install
+//! the menu, so neither can regress into the AppKit path.
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, Sel};
@@ -17,9 +24,6 @@ use objc2_foundation::{NSAttributedString, NSDictionary, NSString};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Matches `CFBundleName` in `macos/Info.plist`, which names the menu bar.
-const APP_NAME: &str = "iboard";
-
 /// Set by the Quit menu item and read once per frame by the app, so quitting
 /// goes through the app (save prompt, hard exit) instead of AppKit's
 /// `terminate:`, which tears the window down and can abort on Touch Bar Macs.
@@ -30,6 +34,15 @@ static SETTINGS_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// The running app's context, so a menu action can wake its frame loop.
 static CONTEXT: OnceLock<eframe::egui::Context> = OnceLock::new();
+
+/// The app name and About-panel credits, remembered at [`install`] time so the
+/// menu target's `showAbout:` can reach them.
+static ABOUT: OnceLock<AboutInfo> = OnceLock::new();
+
+struct AboutInfo {
+    name: String,
+    credits: String,
+}
 
 /// Remembers the context for menu actions. Call once, from [`install`]'s caller.
 pub fn set_context(ctx: eframe::egui::Context) {
@@ -85,10 +98,18 @@ impl MenuTarget {
 }
 
 /// Replaces winit's default menu bar. Does nothing off the main thread.
-pub fn install() {
+///
+/// `app_name` titles the application menu and the About panel; `credits` is the
+/// line under the version there. `settings` adds Window › Settings…, which the
+/// caller watches with [`take_settings_request`].
+pub fn install(app_name: &str, credits: &str, settings: bool) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
+    let _ = ABOUT.set(AboutInfo {
+        name: app_name.to_string(),
+        credits: credits.to_string(),
+    });
     let app = NSApplication::sharedApplication(mtm);
     // Menu items hold their target weakly; the target lives as long as the app.
     let target = Box::leak(Box::new(MenuTarget::new(mtm)));
@@ -96,10 +117,10 @@ pub fn install() {
     let menubar = NSMenu::new(mtm);
 
     // Application menu.
-    let app_menu = submenu(mtm, &menubar, APP_NAME);
+    let app_menu = submenu(mtm, &menubar, app_name);
     let about = item(
         mtm,
-        &format!("About {APP_NAME}"),
+        &format!("About {app_name}"),
         Some(sel!(showAbout:)),
         "",
     );
@@ -113,7 +134,7 @@ pub fn install() {
     app_menu.addItem(&NSMenuItem::separatorItem(mtm));
     app_menu.addItem(&item(
         mtm,
-        &format!("Hide {APP_NAME}"),
+        &format!("Hide {app_name}"),
         Some(sel!(hide:)),
         "h",
     ));
@@ -130,7 +151,7 @@ pub fn install() {
     app_menu.addItem(&NSMenuItem::separatorItem(mtm));
     let quit = item(
         mtm,
-        &format!("Quit {APP_NAME}"),
+        &format!("Quit {app_name}"),
         Some(sel!(quitIboard:)),
         "q",
     );
@@ -145,11 +166,13 @@ pub fn install() {
     let window_menu = submenu(mtm, &menubar, "Window");
     window_menu.addItem(&item(mtm, "Minimize", Some(sel!(performMiniaturize:)), "m"));
     window_menu.addItem(&item(mtm, "Zoom", Some(sel!(performZoom:)), ""));
-    window_menu.addItem(&NSMenuItem::separatorItem(mtm));
-    // No key equivalent: `⌘,` stays the app's own toggle, handled in egui.
-    let settings = item(mtm, "Settings…", Some(sel!(openSettings:)), "");
-    unsafe { settings.setTarget(Some(target)) };
-    window_menu.addItem(&settings);
+    if settings {
+        window_menu.addItem(&NSMenuItem::separatorItem(mtm));
+        // No key equivalent: `⌘,` stays the app's own toggle, handled in egui.
+        let settings_item = item(mtm, "Settings…", Some(sel!(openSettings:)), "");
+        unsafe { settings_item.setTarget(Some(target)) };
+        window_menu.addItem(&settings_item);
+    }
     window_menu.addItem(&NSMenuItem::separatorItem(mtm));
     window_menu.addItem(&item(
         mtm,
@@ -165,11 +188,13 @@ pub fn install() {
 
 /// The standard About panel, with the app name, version and description.
 fn show_about_panel(mtm: MainThreadMarker) {
-    let name = NSString::from_str(APP_NAME);
+    let about = ABOUT.get();
+    let name = NSString::from_str(about.map(|a| a.name.as_str()).unwrap_or("iboard"));
     let version = NSString::from_str(env!("CARGO_PKG_VERSION"));
     let empty = NSString::from_str("");
-    let credits =
-        NSAttributedString::from_nsstring(&NSString::from_str(env!("CARGO_PKG_DESCRIPTION")));
+    let credits = NSAttributedString::from_nsstring(&NSString::from_str(
+        about.map(|a| a.credits.as_str()).unwrap_or_default(),
+    ));
     let options = unsafe {
         NSDictionary::<NSString, AnyObject>::from_slices(
             &[
