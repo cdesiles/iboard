@@ -92,7 +92,8 @@ fn main() -> ExitCode {
         .map(String::as_str)
         .unwrap_or("show")
         .to_string();
-    let rest = &positionals[1..];
+    // No command is the default `show`; the rest is empty, not a panic.
+    let rest: &[String] = positionals.get(1..).unwrap_or(&[]);
 
     match command.as_str() {
         "render" => {
