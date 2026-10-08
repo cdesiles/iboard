@@ -4,11 +4,12 @@
 //! Opened from the board header, or as `idesign`'s whole window. It is laid out
 //! like Claude Design: a category sidebar — Overview, Colors, Typography,
 //! Spacing, Corner radius, Shadows, Size, Components, Assets, Files — and a
-//! pane for the selected category. It reads the system the shared `design`
-//! module loaded and renders component previews through the out-of-process
-//! helper, so the board itself never loads WebKit: startup stays instant and a
-//! broken preview cannot take the window down. Preview only loads the cards
-//! that are in view, one at a time, so opening the browser costs nothing.
+//! pane for the selected category. Components drills into a second level: the
+//! rail slides sideways to a searchable component list and the pane shows the
+//! chosen component. It reads the system the shared `design` module loaded and
+//! renders component previews through the out-of-process helper, so the board
+//! itself never loads WebKit: startup stays instant and a broken preview cannot
+//! take the window down. Preview only loads the one component in view.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -25,6 +26,9 @@ use crate::widgets::{self, ButtonKind};
 
 /// Width of the browser's category sidebar.
 const SIDEBAR_W: f32 = 200.0;
+
+/// How long the rail slides between its two levels, in seconds.
+const RAIL_SLIDE_SECS: f32 = 0.22;
 
 /// What the panel asks the app to do after a frame.
 pub enum Action {
@@ -45,7 +49,7 @@ pub enum Action {
 }
 
 /// One section of the browser, mirroring Claude Design's sidebar.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Category {
     Overview,
     Colors,
@@ -108,6 +112,8 @@ enum Preview {
 /// The Design panel's session state.
 pub struct Panel {
     category: Category,
+    components_open: bool,
+    selected: Option<String>,
     search: String,
     form_open: bool,
     name: String,
@@ -130,6 +136,8 @@ impl Default for Panel {
     fn default() -> Self {
         Self {
             category: Category::Overview,
+            components_open: false,
+            selected: None,
             search: String::new(),
             form_open: false,
             name: String::new(),
@@ -258,9 +266,9 @@ impl Panel {
         action
     }
 
-    /// The left rail: search, then the categories (or search results).
+    /// The left rail: the fixed search bar over two levels that slide past each
+    /// other — the categories, and the Components list.
     fn sidebar(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
-        let p = theme::palette(ui);
         ui.add_space(theme::SPACE_2);
         ui.add(
             egui::TextEdit::singleline(&mut self.search)
@@ -269,6 +277,53 @@ impl Panel {
         );
         ui.add_space(theme::SPACE_3);
 
+        // 0 = categories, 1 = the component list; the pages stay a width apart.
+        let target = if self.components_open { 1.0 } else { 0.0 };
+        let progress =
+            ui.ctx()
+                .animate_value_with_time(ui.id().with("rail-slide"), target, RAIL_SLIDE_SECS);
+        let slide = egui::emath::ease_in_ease_out(progress);
+
+        let area = ui.available_rect_before_wrap();
+        let width = area.width();
+        ui.allocate_rect(area, egui::Sense::hover());
+        let page = |ui: &mut egui::Ui, id: &'static str, offset: f32| {
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(area.translate(egui::vec2(offset, 0.0)))
+                    .layout(egui::Layout::top_down(egui::Align::Min))
+                    .id_salt(id),
+            );
+            child.set_clip_rect(area);
+            child
+        };
+
+        // Only the open level reacts, so just one list scrolls or is clicked.
+        let mut main = page(ui, "rail-main", -slide * width);
+        if self.components_open {
+            main.disable();
+        }
+        egui::ScrollArea::vertical()
+            .id_salt("rail-main-scroll")
+            .auto_shrink([false, false])
+            .show(&mut main, |ui| self.categories(ui, system));
+
+        let mut components = page(ui, "rail-components", (1.0 - slide) * width);
+        if !self.components_open {
+            components.disable();
+        }
+        if back_row(&mut components, "Components").clicked() {
+            self.components_open = false;
+        }
+        components.add_space(theme::SPACE_2);
+        egui::ScrollArea::vertical()
+            .id_salt("rail-components-scroll")
+            .auto_shrink([false, false])
+            .show(&mut components, |ui| self.component_rows(ui, system));
+    }
+
+    fn categories(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
+        let p = theme::palette(ui);
         let query = self.search.trim().to_lowercase();
         if !query.is_empty() {
             let hits = search(system, &query);
@@ -281,7 +336,11 @@ impl Panel {
             }
             for hit in hits {
                 if nav_row(ui, &hit.label, Some(&hit.detail), false).clicked() {
-                    self.category = hit.category;
+                    if hit.category == Category::Components {
+                        self.open_components(system, Some(hit.label));
+                    } else {
+                        self.category = hit.category;
+                    }
                     self.search.clear();
                 }
             }
@@ -302,8 +361,59 @@ impl Panel {
             )
             .clicked()
             {
-                self.category = category;
+                if category == Category::Components {
+                    self.open_components(system, None);
+                } else {
+                    self.category = category;
+                }
             }
+        }
+    }
+
+    fn component_rows(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
+        let p = theme::palette(ui);
+        let query = self.search.trim().to_lowercase();
+        let mut list: Vec<&Component> = system
+            .components
+            .iter()
+            .filter(|c| query.is_empty() || c.name.to_lowercase().contains(&query))
+            .collect();
+        list.sort_by(|a, b| a.name.cmp(&b.name));
+
+        if list.is_empty() {
+            ui.label(
+                egui::RichText::new(if system.components.is_empty() {
+                    "No components yet"
+                } else {
+                    "No matches"
+                })
+                .color(p.ink_faint)
+                .size(11.0),
+            );
+            return;
+        }
+        for component in list {
+            let selected = self.selected.as_deref() == Some(component.name.as_str());
+            if nav_row(ui, &component.name, None, selected).clicked() {
+                self.selected = Some(component.name.clone());
+            }
+        }
+    }
+
+    /// Open the Components level, choosing: the named component when it exists,
+    /// else the one already selected, else the first.
+    fn open_components(&mut self, system: &DesignSystem, name: Option<String>) {
+        self.category = Category::Components;
+        self.components_open = true;
+        let exists = |name: &str| system.components.iter().any(|c| c.name == name);
+        if let Some(name) = name
+            && exists(&name)
+        {
+            self.selected = Some(name);
+            return;
+        }
+        if !self.selected.as_deref().is_some_and(exists) {
+            self.selected = system.components.first().map(|c| c.name.clone());
         }
     }
 
@@ -333,8 +443,7 @@ impl Panel {
         }
     }
 
-    /// Components: a scrollable gallery, one titled card per component, with a
-    /// lazily loaded preview.
+    /// The Components pane: one component at a time.
     fn components(
         &mut self,
         ui: &mut egui::Ui,
@@ -344,9 +453,15 @@ impl Panel {
         action: &mut Action,
     ) {
         let p = theme::palette(ui);
+        let selected = self.selected.clone();
+        let component = selected
+            .as_deref()
+            .and_then(|name| system.components.iter().find(|c| c.name == name));
+
         ui.horizontal(|ui| {
+            let title = component.map(|c| c.name.as_str()).unwrap_or("Components");
             ui.label(
-                egui::RichText::new("Components")
+                egui::RichText::new(title)
                     .font(theme::ui_strong())
                     .color(p.ink),
             );
@@ -367,30 +482,45 @@ impl Panel {
         }
         ui.separator();
 
-        if system.components.is_empty() {
+        let Some(component) = component else {
             ui.label(
-                egui::RichText::new("No components yet.")
-                    .color(p.ink_faint)
-                    .size(11.0),
+                egui::RichText::new(if system.components.is_empty() {
+                    "No components yet."
+                } else {
+                    "Pick a component in the list."
+                })
+                .color(p.ink_faint)
+                .size(11.0),
             );
             return;
+        };
+
+        if let Some(summary) = design::css::component_summary(component) {
+            muted(ui, &summary);
         }
-        let groups = system.component_groups();
-        let show_groups = groups.len() > 1;
-        for (group, list) in groups {
-            if show_groups {
-                heading(ui, &group.to_uppercase());
-            }
-            for component in list {
-                self.component_card(ui, component, render_available, action);
-            }
+        ui.add_space(theme::SPACE_3);
+        self.preview_card(ui, component, render_available, action);
+
+        let Some(readme) = design::css::component_readme(component) else {
+            return;
+        };
+        let notes = without_heading(&readme);
+        if notes.is_empty() {
+            return;
         }
+        ui.add_space(theme::SPACE_4);
+        ui.separator();
+        ui.add_space(theme::SPACE_3);
+        let styles = &mut ui.style_mut().text_styles;
+        styles.insert(egui::TextStyle::Body, egui::FontId::proportional(13.0));
+        styles.insert(egui::TextStyle::Heading, theme::ui_title());
+        styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.0));
+        ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+        CommonMarkViewer::new().show(ui, &mut self.brief_cache, notes);
     }
 
-    /// One card of the gallery: the component's name, its notes, then its
-    /// preview. The preview is requested only once the card scrolls into view,
-    /// and only one render runs at a time.
-    fn component_card(
+    /// The selected component's preview frame, rendered lazily once in view.
+    fn preview_card(
         &mut self,
         ui: &mut egui::Ui,
         component: &Component,
@@ -398,17 +528,6 @@ impl Panel {
         action: &mut Action,
     ) {
         let p = theme::palette(ui);
-        ui.add_space(theme::SPACE_5);
-        ui.label(
-            egui::RichText::new(&component.name)
-                .font(theme::ui_strong())
-                .color(p.ink),
-        );
-        if let Some(summary) = design::css::component_summary(component) {
-            muted(ui, &summary);
-        }
-        ui.add_space(theme::SPACE_2);
-
         let width = ui.available_width().clamp(200.0, 680.0);
         // Reserve the height the card declares (a 56pt checkbox is a 56pt
         // card), rather than a fixed 16:9 frame that leaves dead space.
@@ -571,6 +690,36 @@ impl Panel {
     }
 }
 
+/// The second level's header: a back chevron and the level's name.
+fn back_row(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    let p = theme::palette(ui);
+    let width = ui.available_width();
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 26.0), egui::Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        if response.hovered() {
+            painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_hover);
+        }
+        let icon = Rect::from_center_size(
+            egui::Pos2::new(
+                rect.min.x + theme::SPACE_3 + theme::ICON_SIZE / 2.0,
+                rect.center().y,
+            ),
+            egui::Vec2::splat(theme::ICON_SIZE),
+        );
+        theme::paint_icon(painter, theme::Icon::Back, icon, p.ink_muted);
+        painter.text(
+            egui::Pos2::new(icon.max.x + theme::SPACE_2, rect.center().y),
+            Align2::LEFT_CENTER,
+            label,
+            theme::ui_strong(),
+            p.ink,
+        );
+    }
+    response
+}
+
 /// A sidebar row: the category name, an optional `meta` count, and the
 /// `accent-soft` fill when it is the open one.
 fn nav_row(ui: &mut egui::Ui, label: &str, meta: Option<&str>, selected: bool) -> egui::Response {
@@ -606,6 +755,16 @@ fn nav_row(ui: &mut egui::Ui, label: &str, meta: Option<&str>, selected: bool) -
         );
     }
     response
+}
+
+/// A component README without its leading `# Name` heading, whose text the
+/// pane already shows as its title.
+fn without_heading(readme: &str) -> &str {
+    let readme = readme.trim();
+    match readme.strip_prefix("# ") {
+        Some(rest) => rest.find('\n').map_or("", |at| rest[at + 1..].trim()),
+        None => readme,
+    }
 }
 
 /// A category heading inside the content pane.
@@ -1216,15 +1375,17 @@ mod tests {
     }
 
     #[test]
-    fn the_visible_component_requests_one_lazy_render() {
+    fn the_selected_component_requests_one_lazy_render() {
         let system = repo();
         let mut panel = Panel {
             category: Category::Components,
+            components_open: true,
+            selected: Some("Button".to_string()),
             ..Panel::default()
         };
         match frame(&mut panel, &system, true) {
-            Action::Render(name) => assert!(!name.is_empty()),
-            _ => panic!("the first visible component card should load lazily"),
+            Action::Render(name) => assert_eq!(name, "Button"),
+            _ => panic!("the selected component should load its preview lazily"),
         }
         // Only one card is asked for per frame, and it is marked pending.
         assert_eq!(panel.previews.len(), 1);
@@ -1236,6 +1397,8 @@ mod tests {
         let system = repo();
         let mut panel = Panel {
             category: Category::Components,
+            components_open: true,
+            selected: Some("Button".to_string()),
             ..Panel::default()
         };
         assert!(matches!(frame(&mut panel, &system, false), Action::Keep));
@@ -1243,17 +1406,36 @@ mod tests {
     }
 
     #[test]
-    fn a_second_frame_asks_for_the_next_card_once_the_first_runs() {
+    fn a_second_frame_waits_while_a_render_runs() {
         let system = repo();
         let mut panel = Panel {
             category: Category::Components,
+            components_open: true,
+            selected: Some("Button".to_string()),
             ..Panel::default()
         };
         let _ = frame(&mut panel, &system, true);
-        // Pretend the host started the first render and it is still running.
+        // Pretend the host started the render and it is still running.
         let (_tx, rx) = std::sync::mpsc::channel();
         panel.start_render("Button".to_string(), rx);
         assert!(matches!(frame(&mut panel, &system, true), Action::Keep));
+    }
+
+    #[test]
+    fn opening_components_picks_one_and_back_leaves_the_pane() {
+        let system = repo();
+        let mut panel = Panel::default();
+        panel.open_components(&system, None);
+        assert!(panel.components_open);
+        assert_eq!(panel.category, Category::Components);
+        assert!(panel.selected.is_some(), "the first component is picked");
+
+        panel.open_components(&system, Some("Button".to_string()));
+        assert_eq!(panel.selected.as_deref(), Some("Button"));
+
+        // Back only closes the rail; the pane keeps the chosen component.
+        panel.components_open = false;
+        assert_eq!(panel.selected.as_deref(), Some("Button"));
     }
 
     #[test]
@@ -1266,6 +1448,13 @@ mod tests {
             };
             frame(&mut panel, &system, false);
         }
+    }
+
+    #[test]
+    fn a_component_readme_drops_its_title_heading() {
+        assert_eq!(without_heading("# Button\n\nA verb.\n"), "A verb.");
+        assert_eq!(without_heading("No heading here"), "No heading here");
+        assert_eq!(without_heading("# Only a title"), "");
     }
 
     #[test]
