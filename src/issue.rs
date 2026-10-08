@@ -22,7 +22,8 @@ pub struct Issue {
     /// The display title, without its leading `[label]` groups.
     pub title: String,
     /// The labels: the `# H1`'s leading `[Brackets]`, then the front matter's
-    /// `labels:`, normalized and merged. Empty when there is none.
+    /// `labels:`, normalized, merged and sorted alphabetically. Empty when
+    /// there is none.
     pub labels: Vec<String>,
     pub summary: String,
     /// Full raw markdown, rendered in the detail view.
@@ -44,6 +45,8 @@ impl Issue {
                 labels.push(name);
             }
         }
+        // Show a ticket's labels in a stable, alphabetical order.
+        labels.sort();
         let summary = extract_summary(&markdown, title_line);
         let metadata = fs::metadata(path).ok();
         let modified = metadata.as_ref().and_then(|m| m.modified().ok());
@@ -379,6 +382,17 @@ mod tests {
 
     fn summary_for(content: &str, line: Option<usize>) -> String {
         extract_summary(content, line)
+    }
+
+    #[test]
+    fn labels_merge_and_sort_alphabetically() {
+        let dir = std::env::temp_dir().join(format!("iboard-issue-labels-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.md");
+        std::fs::write(&file, "---\nlabels: [zebra, apple]\n---\n# [mango] T\n").unwrap();
+        let issue = Issue::load(&file).unwrap();
+        assert_eq!(issue.labels, ["apple", "mango", "zebra"]);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -25,6 +25,10 @@ use crate::widgets::{self, ButtonKind, MenuOption};
 /// Width of the dialog, in points.
 const DIALOG_WIDTH: f32 = 440.0;
 
+/// Height of the tab body. Fixed, so the panel stands still when the tab
+/// changes; taller content scrolls inside it.
+const DIALOG_BODY_H: f32 = 420.0;
+
 /// Tallest the model menu's list grows before it scrolls.
 const MODEL_LIST_MAX_H: f32 = 240.0;
 
@@ -329,18 +333,23 @@ impl Dialog {
                     .inner_margin(Margin::same(theme::SPACE_5 as i8))
                     .show(ui, |ui| {
                         ui.set_width(DIALOG_WIDTH - 2.0 * theme::SPACE_5);
-                        match self.tab {
-                            Tab::General => self.general_body(ui),
-                            Tab::Review => {
-                                self.review_seen = true;
-                                self.body(ui, catalog);
-                            }
-                            Tab::Titles => self.titles_body(ui),
-                            Tab::Labels => {
-                                self.labels_seen = true;
-                                self.labels_body(ui);
-                            }
-                        }
+                        egui::ScrollArea::vertical()
+                            .id_salt("settings-body")
+                            .min_scrolled_height(DIALOG_BODY_H)
+                            .max_height(DIALOG_BODY_H)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| match self.tab {
+                                Tab::General => self.general_body(ui),
+                                Tab::Review => {
+                                    self.review_seen = true;
+                                    self.body(ui, catalog);
+                                }
+                                Tab::Titles => self.titles_body(ui),
+                                Tab::Labels => {
+                                    self.labels_seen = true;
+                                    self.labels_body(ui);
+                                }
+                            });
                     });
                 rule(ui);
                 match self.footer(ui, saved_to) {

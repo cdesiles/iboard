@@ -5,8 +5,11 @@
 //! the message is robust to file moves and needs no rename detection, and the
 //! `[DISCOVERY]` ticket chose it over walking `git mv`s.
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// One commit whose message names an issue's file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,11 +29,38 @@ impl Commit {
     }
 }
 
+/// Per `(folder, file)`: its commits, and when they were read.
+type Cached = HashMap<(PathBuf, String), (Vec<Commit>, Instant)>;
+static CACHE: Mutex<Option<Cached>> = Mutex::new(None);
+
+/// How long a lookup is trusted. The header asks every frame, so without this
+/// each frame would spawn `git`; the board refreshes well within it.
+const TTL: Duration = Duration::from_secs(2);
+
 /// The commits whose message names `file_name`, newest first. Runs in `dir`,
 /// so pass the issue's column folder (git finds the repository above it). An
 /// empty list when git is missing, `dir` is not a repository, or no commit
 /// mentions the file.
 pub fn for_file(dir: &Path, file_name: &str) -> Vec<Commit> {
+    let key = (dir.to_path_buf(), file_name.to_string());
+    {
+        let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((list, at)) = cache.as_ref().and_then(|cache| cache.get(&key))
+            && at.elapsed() < TTL
+        {
+            return list.clone();
+        }
+    }
+    let list = run(dir, file_name);
+    CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(key, (list.clone(), Instant::now()));
+    list
+}
+
+fn run(dir: &Path, file_name: &str) -> Vec<Commit> {
     let output = Command::new("git")
         .arg("-C")
         .arg(dir)

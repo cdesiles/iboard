@@ -1043,6 +1043,14 @@ impl IboardApp {
         self.detail_mode = DetailMode::Edit;
     }
 
+    /// The short hash of the newest commit naming `path`'s file, if any.
+    fn latest_commit(&self, path: &Path) -> Option<String> {
+        let dir = path.parent().unwrap_or(&self.board.root);
+        commits::for_file(dir, &file_name(path))
+            .first()
+            .map(|commit| commit.hash.clone())
+    }
+
     /// Opens the commits popup for `path`: the git log entries whose message
     /// names its file (the `closes <file>.md` line a commit carries).
     fn open_commits(&mut self, path: &Path) {
@@ -2877,20 +2885,35 @@ impl IboardApp {
                 {
                     self.start_editing(&path);
                 }
-                if self.detail_mode == DetailMode::Preview
-                    && exists
-                    && done
-                    && widgets::button(
+                if self.detail_mode == DetailMode::Preview && exists && done {
+                    let open = self
+                        .commits
+                        .as_ref()
+                        .is_some_and(|panel| panel.path == path);
+                    let button = widgets::button(
                         ui,
-                        ButtonKind::Secondary,
+                        if open {
+                            ButtonKind::Open
+                        } else {
+                            ButtonKind::Secondary
+                        },
                         Some(Icon::Commit),
                         "Commits",
                         None,
                     )
-                    .on_hover_text("The git commits that name this ticket")
-                    .clicked()
-                {
-                    self.open_commits(&path);
+                    .on_hover_text("The git commits that name this ticket");
+                    if let Some(hash) = self.latest_commit(&path) {
+                        let p = theme::palette(ui);
+                        ui.label(
+                            RichText::new(hash)
+                                .font(egui::FontId::monospace(11.0))
+                                .color(p.ink_muted),
+                        )
+                        .on_hover_text("Newest commit naming this ticket");
+                    }
+                    if button.clicked() {
+                        self.open_commits(&path);
+                    }
                 }
                 if self.detail_mode == DetailMode::Preview
                     && exists
@@ -8226,7 +8249,8 @@ mod tests {
         pass(&mut app, vec![]);
         assert_eq!(
             app.board.find(&login).unwrap().labels,
-            ["bug", "tech-debt", "feature"]
+            ["bug", "feature", "tech-debt"],
+            "labels are shown alphabetically"
         );
 
         pass(&mut app, vec![]);

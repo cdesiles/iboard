@@ -67,7 +67,7 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 - **The engine** (On-device Apple by default, Review agent, or Off) is chosen in Settings › Titles (`⌘,`).
 - New issues always land in Todo. Creating directly in Doing or Done is not offered; move the card afterwards.
 - **A new Todo issue lands at position 1**, right under the composer: the column is file-name ordered, so the files are renumbered (`001-…`) once the click that created it has settled.
-- **Editing is open in Todo and Ready only.** Doing and Done tickets open read-only: no Edit button, no `E`, no click-to-edit. A Done ticket's Reader header instead offers **Commits**.
+- **Editing is open in Todo and Ready only.** Doing and Done tickets open read-only: no Edit button, no `E`, no click-to-edit. A Done ticket's Reader header instead offers **Commits**, with the newest hash shown beside it.
 
 | Key | Board | Reader | Editor |
 | --- | --- | --- | --- |
