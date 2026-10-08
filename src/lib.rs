@@ -8,6 +8,7 @@
 //! (the CLI) creates, browses and validates a project's design system.
 
 pub mod agent;
+pub mod commits;
 pub mod config;
 pub mod design;
 pub mod design_ui;

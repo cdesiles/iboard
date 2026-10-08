@@ -15,6 +15,7 @@ use egui::{
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 use crate::agent::{self, AgentConfig, Report};
+use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
 use crate::filter::{self, Filter};
 use crate::general;
@@ -292,6 +293,14 @@ const DOCK_SLIDE: f32 = 0.14;
 const NOTICE_FOR: Duration = Duration::from_secs(4);
 /// How long `⌘Z` can bring back an issue deleted without asking.
 const UNDO_FOR: Duration = Duration::from_secs(10);
+
+/// The commits popup: the hashes whose message names a ticket's file, read
+/// from git when its button is pressed.
+struct CommitsPanel {
+    path: PathBuf,
+    title: String,
+    list: Vec<commits::Commit>,
+}
 
 /// An issue deleted without asking, kept so `⌘Z` can put it back.
 struct Deleted {
@@ -608,6 +617,11 @@ pub struct IboardApp {
     confirm: Option<Confirm>,
     /// The LabelPicker, open on one issue.
     label_picker: Option<LabelPicker>,
+    /// The commits popup, open on one issue.
+    commits: Option<CommitsPanel>,
+    /// A just-composed ticket to move to position 1 once the pointer is up:
+    /// the Todo folder and the new file.
+    pending_front: Option<(PathBuf, PathBuf)>,
     /// A short outcome for the status bar ("Archived x.md"), and when it came.
     notice: Option<(String, Instant)>,
     /// Settings › General: deleting an issue asks first.
@@ -776,6 +790,8 @@ impl IboardApp {
             error,
             confirm: None,
             label_picker: None,
+            commits: None,
+            pending_front: None,
             notice: None,
             confirm_delete: true,
             undo: None,
@@ -1003,6 +1019,9 @@ impl IboardApp {
     }
 
     fn start_editing(&mut self, path: &Path) {
+        if !self.can_edit(path) {
+            return;
+        }
         if self
             .editor
             .as_ref()
@@ -1022,6 +1041,24 @@ impl IboardApp {
         self.editor = Some(EditorState::new(path.to_path_buf(), content));
         self.screen = Screen::Detail(path.to_path_buf());
         self.detail_mode = DetailMode::Edit;
+    }
+
+    /// Opens the commits popup for `path`: the git log entries whose message
+    /// names its file (the `closes <file>.md` line a commit carries).
+    fn open_commits(&mut self, path: &Path) {
+        let file = file_name(path);
+        let dir = path.parent().unwrap_or(&self.board.root).to_path_buf();
+        let list = commits::for_file(&dir, &file);
+        let title = self
+            .board
+            .find(path)
+            .map(|issue| issue.title.clone())
+            .unwrap_or_else(|| file.clone());
+        self.commits = Some(CommitsPanel {
+            path: path.to_path_buf(),
+            title,
+            list,
+        });
     }
 
     /// Saves unsaved edits unless they conflict with the file on disk.
@@ -1191,32 +1228,71 @@ impl IboardApp {
         }
     }
 
-    /// Renumbers an ordered column so `moved` sits in front of `anchor`, keeping
-    /// every other issue in its current order.
-    fn reorder_column(&mut self, dir: &Path, moved: &Path, anchor: Option<&Path>) {
-        if anchor == Some(moved) {
+    /// `⌘↩` on the board: moves the selected ticket to the next column, left
+    /// to right. A ticket in the last column stays put.
+    fn move_selection_to_next(&mut self) {
+        let Some(path) = self.selected_issue() else {
             return;
-        }
-        self.refresh();
-        let mut order: Vec<PathBuf> = match self
+        };
+        let Some(index) = self
             .board
             .columns
             .iter()
-            .find(|column| column.dir.as_path() == dir)
-        {
-            Some(column) => column.issues.iter().map(|t| t.path.clone()).collect(),
-            None => return,
+            .position(|column| column.issues.iter().any(|issue| issue.path == path))
+        else {
+            return;
         };
+        let Some(target) = self
+            .board
+            .columns
+            .get(index + 1)
+            .map(|column| column.dir.clone())
+        else {
+            return;
+        };
+        self.place_issue(&path, &target, None);
+    }
+
+    /// Renumbers an ordered column so `moved` sits in front of `anchor`, keeping
+    /// every other issue in its current order. Returns `moved`'s path after the
+    /// renumbering, which may have changed its prefix.
+    fn reorder_column(
+        &mut self,
+        dir: &Path,
+        moved: &Path,
+        anchor: Option<&Path>,
+    ) -> Option<PathBuf> {
+        if anchor == Some(moved) {
+            return Some(moved.to_path_buf());
+        }
+        self.refresh();
+        let column = self
+            .board
+            .columns
+            .iter()
+            .find(|column| column.dir.as_path() == dir)?;
+        let mut order: Vec<PathBuf> = column.issues.iter().map(|t| t.path.clone()).collect();
         order.retain(|path| path != moved);
         match anchor.and_then(|anchor| order.iter().position(|path| path == anchor)) {
             Some(index) => order.insert(index, moved.to_path_buf()),
             None => order.push(moved.to_path_buf()),
         }
-        match renumber(dir, &order) {
-            Ok(renames) => self.apply_renames(&renames),
-            Err(err) => self.error = Some(err),
-        }
+        let result = match renumber(dir, &order) {
+            Ok(renames) => {
+                let renamed = renames
+                    .iter()
+                    .find(|(old, _)| old == moved)
+                    .map(|(_, new)| new.clone());
+                self.apply_renames(&renames);
+                renamed
+            }
+            Err(err) => {
+                self.error = Some(err);
+                None
+            }
+        };
         self.refresh();
+        Some(result.unwrap_or_else(|| moved.to_path_buf()))
     }
 
     /// Follows renamed files in the selection, the reader and the editor.
@@ -1433,6 +1509,9 @@ impl IboardApp {
             Some(label_picker::Outcome::Add(label)) => {
                 self.add_label(&label, ctx.input(|i| i.time));
             }
+            Some(label_picker::Outcome::Remove(label)) => {
+                self.remove_label(&label, ctx.input(|i| i.time));
+            }
             None => {}
         }
     }
@@ -1460,6 +1539,61 @@ impl IboardApp {
                     picker.failed(message);
                 }
             }
+        }
+    }
+
+    /// Takes `label` off the picker's issue, then reloads so the pill goes
+    /// from the card and the Reader.
+    fn remove_label(&mut self, label: &str, now: f64) {
+        let Some(path) = self.label_picker.as_ref().map(|picker| picker.path.clone()) else {
+            return;
+        };
+        let shown = path
+            .strip_prefix(&self.board.root)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        match labels::remove_label_to_file(&path, label) {
+            Ok(_) => {
+                self.refresh();
+                if let Some(picker) = self.label_picker.as_mut() {
+                    picker.removed(label.to_string(), shown, now);
+                }
+            }
+            Err(message) => {
+                if let Some(picker) = self.label_picker.as_mut() {
+                    picker.failed(message);
+                }
+            }
+        }
+    }
+
+    /// Rewrites every issue that carries a renamed label, in the order the
+    /// renames were made so chained renames resolve.
+    fn rename_labels(&mut self, renames: &[(String, String)]) {
+        if renames.is_empty() {
+            return;
+        }
+        let paths: Vec<PathBuf> = self
+            .board
+            .columns
+            .iter()
+            .flat_map(|column| column.issues.iter().map(|issue| issue.path.clone()))
+            .collect();
+        let mut changed = false;
+        for path in paths {
+            for (from, to) in renames {
+                match labels::rename_label_to_file(&path, from, to) {
+                    Ok(did) => changed |= did,
+                    Err(message) => {
+                        self.error = Some(message);
+                        return;
+                    }
+                }
+            }
+        }
+        if changed {
+            self.refresh();
         }
     }
 
@@ -1541,6 +1675,13 @@ impl IboardApp {
     fn is_todo_issue(&self, path: &Path) -> bool {
         self.column_of(path)
             .is_some_and(|column| column.accepts_new_issues())
+    }
+
+    /// Whether `path` can be edited: Doing and Done tickets are the agent's
+    /// and the finished ones, so they open read-only.
+    fn can_edit(&self, path: &Path) -> bool {
+        self.column_of(path)
+            .is_some_and(|column| discovery::is_editable_column(&column.dir))
     }
 
     /// The text an agent should read: the saved file, or the editor draft when
@@ -1855,6 +1996,12 @@ impl IboardApp {
         };
         match self.create_issue(&dir, title, description) {
             Ok(path) => {
+                // A new ticket lands at position 1, right after the composer.
+                // The renumbering is deferred to the end of the frame so a
+                // click that added the ticket still reaches the card under it.
+                if self.board.find(&path).is_some() {
+                    self.pending_front = Some((dir.clone(), path.clone()));
+                }
                 if close {
                     self.composer = None;
                 } else if let Some(composer) = self.composer.as_mut() {
@@ -2119,6 +2266,41 @@ impl IboardApp {
         self.config_window(ui);
         self.design_window(ui);
         self.enrichment_window(ui);
+        self.commits_window(ui);
+        self.flush_pending_front(ui.ctx());
+    }
+
+    /// Moves a just-composed ticket to position 1, once the pointer has settled.
+    /// Renumbering changes the cards' ids, so doing it while a click is still
+    /// down would steal that click from the card underneath it.
+    fn flush_pending_front(&mut self, ctx: &egui::Context) {
+        let Some((dir, path)) = self.pending_front.clone() else {
+            return;
+        };
+        if ctx.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        self.pending_front = None;
+        if self.board.find(&path).is_none() {
+            return;
+        }
+        let anchor = self
+            .todo_column()
+            .and_then(|column| column.issues.first().map(|issue| issue.path.clone()))
+            .filter(|first| first != &path);
+        let Some(anchor) = anchor else {
+            return;
+        };
+        let Some(new_path) = self.reorder_column(&dir, &path, Some(&anchor)) else {
+            return;
+        };
+        if self
+            .new_card
+            .as_ref()
+            .is_some_and(|(card, _)| card == &path)
+        {
+            self.new_card = Some((new_path, Instant::now()));
+        }
     }
 
     /// A dismissible `danger` line naming what failed.
@@ -2236,6 +2418,119 @@ impl IboardApp {
             self.delete_issue(path);
         } else if cancelled || modal.should_close() {
             self.confirm = None;
+        }
+    }
+
+    /// The commits popup: the hashes whose message names the ticket's file,
+    /// read from git when its node button was pressed. `esc` or the scrim
+    /// closes it.
+    fn commits_window(&mut self, ui: &egui::Ui) {
+        let p = theme::palette(ui);
+        let Some(panel) = self.commits.as_ref() else {
+            return;
+        };
+        let width = 460.0;
+        let pad = 20.0;
+        let mut close = false;
+        let frame = Frame::new()
+            .fill(p.surface)
+            .stroke(Stroke::new(1.0, p.line_strong))
+            .corner_radius(CornerRadius::same(theme::RADIUS_MD))
+            .shadow(ui.visuals().popup_shadow)
+            .inner_margin(Margin {
+                left: pad as i8,
+                right: pad as i8,
+                top: pad as i8,
+                bottom: theme::SPACE_5 as i8,
+            });
+        let modal = egui::Modal::new(egui::Id::new("commits"))
+            .frame(frame)
+            .backdrop_color(p.scrim)
+            .show(ui.ctx(), |ui| {
+                let inner = width - 2.0 * pad;
+                ui.set_width(inner);
+                ui.style_mut().interaction.selectable_labels = false;
+                ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+                ui.label(
+                    RichText::new("Commits")
+                        .font(theme::ui_title())
+                        .color(p.ink),
+                );
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(&panel.title)
+                            .font(theme::ui_strong())
+                            .color(p.ink),
+                    )
+                    .truncate(),
+                );
+                ui.label(
+                    RichText::new(format!(
+                        "{} · {}",
+                        self.relative(&panel.path),
+                        file_name(&panel.path)
+                    ))
+                    .font(theme::meta())
+                    .color(p.ink_muted),
+                );
+                ui.add_space(theme::SPACE_2);
+                if panel.list.is_empty() {
+                    ui.label(
+                        RichText::new("No commit names this ticket.")
+                            .font(theme::ui_small())
+                            .color(p.ink_muted),
+                    );
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt("commits-list")
+                        .max_height(260.0)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+                            for commit in &panel.list {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                                    ui.label(
+                                        RichText::new(&commit.hash)
+                                            .font(egui::FontId::monospace(12.0))
+                                            .color(p.accent),
+                                    );
+                                    ui.label(
+                                        RichText::new(commit.day())
+                                            .font(theme::meta())
+                                            .color(p.ink_muted),
+                                    );
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(&commit.subject)
+                                                .font(theme::ui_small())
+                                                .color(p.ink),
+                                        )
+                                        .truncate(),
+                                    );
+                                });
+                            }
+                        });
+                }
+                ui.add_space(theme::SPACE_2);
+                ui.label(
+                    RichText::new(
+                        "Read from the commit messages that name this file (`closes <file>.md`).",
+                    )
+                    .font(theme::ui_small())
+                    .color(p.ink_muted),
+                );
+                ui.add_space(theme::SPACE_3);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if widgets::button(ui, ButtonKind::Secondary, None, "Close", Some("esc"))
+                        .clicked()
+                    {
+                        close = true;
+                    }
+                });
+            });
+        if close || modal.should_close() {
+            self.commits = None;
         }
     }
 
@@ -2570,6 +2865,7 @@ impl IboardApp {
                 }
                 if self.detail_mode == DetailMode::Preview
                     && exists
+                    && self.can_edit(&path)
                     && widgets::button(
                         ui,
                         ButtonKind::Secondary,
@@ -2580,6 +2876,21 @@ impl IboardApp {
                     .clicked()
                 {
                     self.start_editing(&path);
+                }
+                if self.detail_mode == DetailMode::Preview
+                    && exists
+                    && done
+                    && widgets::button(
+                        ui,
+                        ButtonKind::Secondary,
+                        Some(Icon::Commit),
+                        "Commits",
+                        None,
+                    )
+                    .on_hover_text("The git commits that name this ticket")
+                    .clicked()
+                {
+                    self.open_commits(&path);
                 }
                 if self.detail_mode == DetailMode::Preview
                     && exists
@@ -3053,10 +3364,17 @@ impl IboardApp {
                             .board
                             .find(&selected)
                             .is_some_and(|issue| issue.done_at.is_some());
-                        hints = if done {
+                        hints = if self.can_edit(&selected) {
+                            vec![
+                                ("↩", "open"),
+                                ("E", "edit"),
+                                ("⌘↩", "move"),
+                                ("Del", "delete"),
+                            ]
+                        } else if done {
                             vec![("↩", "open"), ("A", "archive"), ("Del", "delete")]
                         } else {
-                            vec![("↩", "open"), ("E", "edit"), ("Del", "delete")]
+                            vec![("↩", "open"), ("Del", "delete")]
                         };
                     } else {
                         hints = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
@@ -3088,7 +3406,11 @@ impl IboardApp {
                         if let Some(modified) = self.board.find(&path).and_then(|t| t.modified) {
                             ui.label(meta(format!("modified {}", relative_time(modified))));
                         }
-                        hints = vec![("E", "edit"), ("Del", "delete"), ("esc", "back")];
+                        hints = if self.can_edit(&path) {
+                            vec![("E", "edit"), ("Del", "delete"), ("esc", "back")]
+                        } else {
+                            vec![("Del", "delete"), ("esc", "back")]
+                        };
                     }
                 }
             }
@@ -3377,6 +3699,7 @@ impl IboardApp {
                 let confirm_delete = dialog.confirm_delete;
                 // `[labels]` is rewritten only once its tab was looked at.
                 let label_rows = dialog.labels_seen.then(|| dialog.label_rows.clone());
+                let renames = dialog.renames.clone();
                 let result = match &self.agent_file {
                     Some(file) => (if save_review {
                         agent::save(file, &config)
@@ -3403,6 +3726,7 @@ impl IboardApp {
                         self.title_engine = engine;
                         self.confirm_delete = confirm_delete;
                         if label_rows.is_some() {
+                            self.rename_labels(&renames);
                             self.labels = Labels::load(self.agent_file.as_deref());
                         }
                         self.settings = None;
@@ -4176,6 +4500,8 @@ impl IboardApp {
             })
             .unwrap_or_else(|| (String::new(), p.status_todo, false));
         let review_ready = self.agent.configured();
+        // Doing and Done tickets open read-only: no click-to-edit affordance.
+        let editable = self.can_edit(path);
         let relative = self.relative(path);
         let (ticked, tasks) = sheet::checklist(&text);
         let words = sheet::word_count(&text);
@@ -4299,9 +4625,11 @@ impl IboardApp {
                             Vec2::new(ui.available_width(), rest_height),
                             Sense::click(),
                         );
-                        let response = response.on_hover_cursor(egui::CursorIcon::Text);
-                        edit_at_end = response.clicked();
-                        paint_rest_hint(ui, rest);
+                        if editable {
+                            let response = response.on_hover_cursor(egui::CursorIcon::Text);
+                            edit_at_end = response.clicked();
+                            paint_rest_hint(ui, rest);
+                        }
                     });
                 });
         }
@@ -4334,7 +4662,7 @@ impl IboardApp {
         // Hovering the text shows that it is one edit target: a `line-strong`
         // outline with the hint on its top edge.
         let outline = body_rect.expand(theme::SPACE_3);
-        if ui.rect_contains_pointer(outline) {
+        if editable && ui.rect_contains_pointer(outline) {
             let painter = ui.painter();
             painter.rect_stroke(
                 outline,
@@ -4805,8 +5133,12 @@ impl eframe::App for IboardApp {
                     .board
                     .find(&path)
                     .is_some_and(|issue| issue.done_at.is_some());
+                let command_enter = self.composer.is_none()
+                    && ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Enter));
                 if no_modifiers && ctx.input(|i| i.key_pressed(Key::Enter)) {
                     self.open_issue(path);
+                } else if command_enter {
+                    self.move_selection_to_next();
                 } else if no_modifiers && ctx.input(|i| i.key_pressed(Key::E)) {
                     self.start_editing(&path);
                 } else if done && no_modifiers && ctx.input(|i| i.key_pressed(Key::A)) {
@@ -4843,15 +5175,19 @@ impl eframe::App for IboardApp {
             && let Screen::Detail(path) = self.screen.clone()
         {
             // `E`, or a double-click on the page (not the header), edits.
-            let edit_key = !typing && ctx.input(|i| i.key_pressed(Key::E) && i.modifiers.is_none());
-            let double_clicked_page = ctx.input(|i| {
-                i.pointer
-                    .button_double_clicked(egui::PointerButton::Primary)
-                    && i.pointer
-                        .interact_pos()
-                        .map(|pos| self.preview_rect.contains(pos))
-                        .unwrap_or(false)
-            });
+            let editable = self.can_edit(&path);
+            let edit_key = editable
+                && !typing
+                && ctx.input(|i| i.key_pressed(Key::E) && i.modifiers.is_none());
+            let double_clicked_page = editable
+                && ctx.input(|i| {
+                    i.pointer
+                        .button_double_clicked(egui::PointerButton::Primary)
+                        && i.pointer
+                            .interact_pos()
+                            .map(|pos| self.preview_rect.contains(pos))
+                            .unwrap_or(false)
+                });
             if edit_key || double_clicked_page {
                 self.start_editing(&path);
             }
@@ -8487,8 +8823,11 @@ mod tests {
         );
         pass(&mut app, text("Saved with command S"));
         pass(&mut app, key(Key::S, egui::Modifiers::COMMAND));
-        assert!(todo.join("saved-with-command-s.md").exists(), "⌘S adds");
+        // Adding a ticket at the top renumbers Todo's files.
+        assert!(todo.join("001-saved-with-command-s.md").exists(), "⌘S adds");
         assert!(app.composer.is_some());
+        let other = todo.join("003-other.md");
+        assert!(other.exists(), "the older card was renumbered too");
 
         pass(
             &mut app,
@@ -8512,12 +8851,17 @@ mod tests {
             vec![egui::Event::PointerMoved(card), button(true)],
         );
         pass(&mut app, vec![button(false)]);
-        assert!(todo.join("clicked-away.md").exists(), "the click adds it");
-        assert!(app.composer.is_none(), "and closes the composer");
         assert!(
-            matches!(&app.screen, Screen::Detail(path) if path == &other),
-            "the clicked card still opens"
+            todo.join("001-clicked-away.md").exists(),
+            "the click adds it"
         );
+        assert!(app.composer.is_none(), "and closes the composer");
+        let opened = todo.join("004-other.md");
+        let got = match &app.screen {
+            Screen::Detail(path) => Some(path.clone()),
+            _ => None,
+        };
+        assert_eq!(got, Some(opened), "the clicked card still opens");
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -395,6 +395,8 @@ pub enum Icon {
     Collapse,
     /// A tag with a small plus at the lower right: add a label.
     TagPlus,
+    /// A node on a line: the git commits behind an issue.
+    Commit,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -521,6 +523,12 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             painter.circle_filled(at(7.0, 7.0), 1.3 * s, color);
             painter.line_segment([at(19.0, 15.0), at(19.0, 23.0)], stroke);
             painter.line_segment([at(15.0, 19.0), at(23.0, 19.0)], stroke);
+        }
+        Icon::Commit => {
+            // Lucide's git-commit: a node on a vertical line.
+            painter.line_segment([at(12.0, 2.5), at(12.0, 8.5)], stroke);
+            painter.line_segment([at(12.0, 15.5), at(12.0, 21.5)], stroke);
+            painter.circle_stroke(at(12.0, 12.0), 3.5 * s, stroke);
         }
         Icon::Review => {
             // A speech bubble (Lucide's message-circle-question): a circle

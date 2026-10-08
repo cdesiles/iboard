@@ -44,6 +44,11 @@ pub enum Note {
         label: String,
         file: String,
     },
+    /// "Removed ux from todo/ai-assist.md".
+    Removed {
+        label: String,
+        file: String,
+    },
     /// A write failed: the hint turns `danger`.
     Failed(String),
 }
@@ -69,6 +74,14 @@ impl LabelPicker {
         self.focus_field = true;
     }
 
+    /// After a label was taken off: keep the cursor in the field, flash the
+    /// label's pill and say what happened.
+    pub fn removed(&mut self, label: String, file: String, now: f64) {
+        self.flash = Some((label.clone(), now));
+        self.note = Note::Removed { label, file };
+        self.focus_field = true;
+    }
+
     pub fn failed(&mut self, message: String) {
         self.note = Note::Failed(message);
         self.focus_field = true;
@@ -79,6 +92,8 @@ impl LabelPicker {
 pub enum Outcome {
     /// Add this label (already normalized).
     Add(String),
+    /// Take this label (already normalized) off the issue.
+    Remove(String),
     /// A click outside: close, dropping the field's text.
     Close,
 }
@@ -234,7 +249,12 @@ pub fn show(
                                                 label == *name && now - at < FLASH_SECONDS
                                             });
                                         if has.contains(name) {
-                                            on_pill(ui, name, flashing);
+                                            let pill = on_pill(ui, name, flashing)
+                                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                                .on_hover_text(format!("Remove {name}"));
+                                            if pill.clicked() {
+                                                outcome = Some(Outcome::Remove((*name).clone()));
+                                            }
                                         } else {
                                             let pill =
                                                 widgets::label_pill(ui, name, colors.color(name))
@@ -350,6 +370,11 @@ fn hint_line(
             job.append(label, 0.0, bold(p.ink));
             job.append(&format!(" to {file}"), 0.0, plain(p.ink_muted));
         }
+        (Note::Removed { label, file }, None) => {
+            job.append("Removed ", 0.0, plain(p.ink_muted));
+            job.append(label, 0.0, bold(p.ink));
+            job.append(&format!(" from {file}"), 0.0, plain(p.ink_muted));
+        }
         (Note::None, None) => {
             job.append(
                 "Type a new label, or pick one below",
@@ -362,9 +387,9 @@ fn hint_line(
 }
 
 /// A label the issue already has: a `status-done` check, a `line` edge on
-/// `surface`, `ink-muted` text, not clickable. Just added, its edge flashes
-/// `status-done`.
-fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) {
+/// `surface`, `ink-muted` text. Clicking it takes the label off the issue.
+/// Just added, its edge flashes `status-done`.
+fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) -> Response {
     let p = theme::palette(ui);
     let text = ui.painter().layout_no_wrap(
         name.to_string(),
@@ -373,9 +398,9 @@ fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) {
     );
     let check = 10.0;
     let size = Vec2::new(6.0 + check + 4.0 + text.size().x + 7.0, 18.0);
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     if !ui.is_rect_visible(rect) {
-        return;
+        return response;
     }
     let painter = ui.painter();
     painter.rect(
@@ -395,6 +420,7 @@ fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) {
         text,
         p.ink_muted,
     );
+    response
 }
 
 /// The 2px `focus` ring around a pill reached with the keyboard.

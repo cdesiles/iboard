@@ -368,6 +368,12 @@ pub fn is_orderable_column(dir: &Path) -> bool {
     matches!(canonical_name(dir), Some("Todo" | "Ready"))
 }
 
+/// Whether a column's issues can be edited on the board. Todo and Ready are
+/// the working columns; Doing and Done are the agent's and the finished ones.
+pub fn is_editable_column(dir: &Path) -> bool {
+    !matches!(canonical_name(dir), Some("Doing" | "Review" | "Done"))
+}
+
 /// The width of the priority prefix in Ready: `001-make-colour-green.md`.
 const PRIORITY_DIGITS: usize = 3;
 

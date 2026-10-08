@@ -173,10 +173,10 @@ pub fn parse_hex(value: &str) -> Option<Color32> {
 }
 
 /// The longest label kept, in characters.
-const MAX_LABEL_CHARS: usize = 24;
+pub const MAX_LABEL_CHARS: usize = 25;
 
 /// A label as iboard shows it: trimmed, lowercased, spaces as hyphens, at most
-/// 24 characters (`[Tech debt]` gives `tech-debt`). `None` when empty.
+/// 25 characters (`[Tech debt]` gives `tech-debt`). `None` when empty.
 pub fn normalize(name: &str) -> Option<String> {
     let name = name
         .split_whitespace()
@@ -347,6 +347,127 @@ pub fn add_label_to_file(path: &Path, label: &str) -> Result<bool, String> {
     }
 }
 
+/// Removes `label` from an issue's markdown, wherever it carries it: the front
+/// matter's `labels:` list and the `# H1`'s leading `[label]` groups. `None`
+/// when the issue does not have the label.
+pub fn remove_label(markdown: &str, label: &str) -> Option<String> {
+    let lines: Vec<&str> = markdown.split_inclusive('\n').collect();
+    let mut out: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
+    let mut remove_lines: Vec<usize> = Vec::new();
+    let mut changed = false;
+
+    match front_matter_list(&lines) {
+        Some(List::Inline(i)) => {
+            let (body, end) = split_eol(lines[i]);
+            let (key, value) = body.split_once("labels:").unwrap_or((body, ""));
+            let items: Vec<String> = value
+                .trim()
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .filter_map(|raw| normalize(raw.trim().trim_matches(['"', '\''])))
+                .collect();
+            let kept: Vec<&str> = items
+                .iter()
+                .map(String::as_str)
+                .filter(|n| *n != label)
+                .collect();
+            if kept.len() != items.len() {
+                changed = true;
+                out[i] = format!("{key}labels: [{}]{end}", kept.join(", "));
+            }
+        }
+        Some(List::Block { last, .. }) => {
+            let key = (1..=last)
+                .find(|&j| lines[j].trim().starts_with("labels:"))
+                .unwrap_or(last);
+            for (j, line) in lines.iter().enumerate().take(last + 1).skip(key + 1) {
+                let item = line.trim().strip_prefix("- ").unwrap_or("");
+                if normalize(item.trim_matches(['"', '\''])).as_deref() == Some(label) {
+                    remove_lines.push(j);
+                    changed = true;
+                }
+            }
+        }
+        None => {}
+    }
+
+    if let Some(i) = h1(&lines) {
+        let (body, end) = split_eol(lines[i]);
+        let indent = &body[..body.len() - body.trim_start().len()];
+        let rest = heading(lines[i]);
+        // Keep each group's original text; only the removed one goes.
+        let mut groups: Vec<String> = Vec::new();
+        let mut tail = rest.trim_start();
+        while let Some(inner) = tail.strip_prefix('[')
+            && let Some(close) = inner.find(']')
+            && !inner[close + 1..].starts_with('(')
+        {
+            groups.push(inner[..close].to_string());
+            tail = inner[close + 1..].trim_start();
+        }
+        let is_label = |group: &String| normalize(group).as_deref() == Some(label);
+        if groups.iter().any(is_label) {
+            changed = true;
+            let kept: Vec<String> = groups
+                .into_iter()
+                .filter(|group| !is_label(group))
+                .map(|group| format!("[{group}]"))
+                .collect();
+            let prefix = if kept.is_empty() {
+                String::new()
+            } else {
+                format!("{} ", kept.join(" "))
+            };
+            out[i] = format!("{indent}# {prefix}{}{end}", tail.trim_end());
+        }
+    }
+
+    if !changed {
+        return None;
+    }
+    for index in remove_lines.into_iter().rev() {
+        out.remove(index);
+    }
+    Some(out.concat())
+}
+
+/// Removes `label` from the issue at `path`, re-reading it first so an edit
+/// made since the last refresh is kept. `Ok(false)` when it was not there.
+pub fn remove_label_to_file(path: &Path, label: &str) -> Result<bool, String> {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let markdown =
+        std::fs::read_to_string(path).map_err(|err| format!("Couldn't read {name}: {err}"))?;
+    match remove_label(&markdown, label) {
+        None => Ok(false),
+        Some(updated) => {
+            std::fs::write(path, updated).map_err(|err| format!("Couldn't save {name}: {err}"))?;
+            Ok(true)
+        }
+    }
+}
+
+/// Renames `from` to `to` on the issue at `path`, keeping where the label
+/// lived (front matter list or `# H1` groups). `Ok(false)` when the issue does
+/// not carry `from`.
+pub fn rename_label_to_file(path: &Path, from: &str, to: &str) -> Result<bool, String> {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let markdown =
+        std::fs::read_to_string(path).map_err(|err| format!("Couldn't read {name}: {err}"))?;
+    let Some(without) = remove_label(&markdown, from) else {
+        return Ok(false);
+    };
+    let updated = add_label(&without, to).unwrap_or(None).unwrap_or(without);
+    std::fs::write(path, updated).map_err(|err| format!("Couldn't save {name}: {err}"))?;
+    Ok(true)
+}
+
 /// Where a front matter keeps its `labels:` list.
 enum List {
     /// `labels: [a, b]` on this line.
@@ -453,7 +574,7 @@ mod tests {
     fn labels_are_hyphenated_and_capped() {
         assert_eq!(split_leading_labels("[Tech debt] x").0, ["tech-debt"]);
         let long = split_leading_labels("[abcdefghijklmnopqrstuvwxyz] x").0;
-        assert_eq!(long, ["abcdefghijklmnopqrstuvwx"]);
+        assert_eq!(long, ["abcdefghijklmnopqrstuvwxy"]);
     }
 
     #[test]
@@ -598,6 +719,63 @@ mod tests {
         assert_eq!(add_label("# [BUG] T\n", "bug"), Ok(None));
         assert_eq!(add_label("---\nlabels: [bug]\n---\n# T\n", "bug"), Ok(None));
         assert!(add_label("no heading\n", "bug").is_err());
+    }
+
+    #[test]
+    fn a_label_comes_off_the_heading_groups() {
+        let remove = |md: &str, label: &str| remove_label(md, label).unwrap();
+        assert_eq!(
+            remove("# [Discovery] [bug] Offline mode\n", "bug"),
+            "# [Discovery] Offline mode\n"
+        );
+        assert_eq!(remove("# [bug] Fix login\n", "bug"), "# Fix login\n");
+        assert_eq!(remove("# [A][B] T", "b"), "# [A] T");
+        assert!(remove_label("# Fix login\n", "bug").is_none());
+        assert!(remove_label("# [home](https://x) page\n", "home").is_none());
+    }
+
+    #[test]
+    fn a_label_comes_off_the_front_matter_list() {
+        assert_eq!(
+            remove_label("---\nlabels: [ux, bug]\n---\n# T\n", "bug").unwrap(),
+            "---\nlabels: [ux]\n---\n# T\n"
+        );
+        assert_eq!(
+            remove_label("---\nlabels: [bug]\n---\n# T\n", "bug").unwrap(),
+            "---\nlabels: []\n---\n# T\n"
+        );
+        assert_eq!(
+            remove_label(
+                "---\nlabels:\n  - ux\n  - bug\nowner: me\n---\n# T\n",
+                "bug"
+            )
+            .unwrap(),
+            "---\nlabels:\n  - ux\nowner: me\n---\n# T\n"
+        );
+        assert!(remove_label("---\nlabels: [ux]\n---\n# T\n", "bug").is_none());
+    }
+
+    #[test]
+    fn a_label_comes_off_both_places() {
+        assert_eq!(
+            remove_label("---\nlabels: [bug]\n---\n# [bug] T\n", "bug").unwrap(),
+            "---\nlabels: []\n---\n# T\n"
+        );
+    }
+
+    #[test]
+    fn renaming_a_label_keeps_where_it_lived() {
+        let dir = std::env::temp_dir().join(format!("iboard-rename-label-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.md");
+        std::fs::write(&file, "# [Discovery] [bug] T\n").unwrap();
+        assert_eq!(rename_label_to_file(&file, "bug", "defect"), Ok(true));
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "# [Discovery] [defect] T\n"
+        );
+        assert_eq!(rename_label_to_file(&file, "bug", "defect"), Ok(false));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

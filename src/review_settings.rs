@@ -183,6 +183,13 @@ pub struct Dialog {
     pub label_rows: Vec<(String, String)>,
     /// The Labels tab was shown, so Save writes `[labels]`.
     pub labels_seen: bool,
+    /// Renames made while editing the rows, as (old, new), in order. The app
+    /// rewrites the issues that carry them on Save.
+    pub renames: Vec<(String, String)>,
+    /// The row whose name is being edited, if any.
+    renaming: Option<usize>,
+    rename_text: String,
+    rename_focus: bool,
     new_label: String,
     new_hex: String,
     label_error: Option<String>,
@@ -225,6 +232,10 @@ impl Dialog {
             confirm_delete,
             label_rows: Vec::new(),
             labels_seen: false,
+            renames: Vec::new(),
+            renaming: None,
+            rename_text: String::new(),
+            rename_focus: false,
             new_label: String::new(),
             new_hex: String::new(),
             label_error: None,
@@ -797,7 +808,11 @@ impl Dialog {
         let p = theme::palette(ui);
         label(ui, "Label colours");
         let mut remove = None;
-        let rows_height = (self.label_rows.len() as f32 * 32.0).min(LABEL_LIST_MAX_H);
+        let mut rows = std::mem::take(&mut self.label_rows);
+        let renaming = self.renaming;
+        let mut start_rename: Option<(usize, String)> = None;
+        let mut commit_rename = false;
+        let rows_height = (rows.len() as f32 * 32.0).min(LABEL_LIST_MAX_H);
         Frame::new()
             .stroke(Stroke::new(1.0, p.line_strong))
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
@@ -812,11 +827,36 @@ impl Dialog {
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-                        for (index, (name, hex)) in self.label_rows.iter_mut().enumerate() {
+                        for (index, (name, hex)) in rows.iter_mut().enumerate() {
                             ui.horizontal(|ui| {
                                 ui.set_min_height(28.0);
                                 ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                                widgets::label_pill(ui, name, labels::parse_hex(hex));
+                                if renaming == Some(index) {
+                                    let field = ui.add(
+                                        egui::TextEdit::singleline(&mut self.rename_text)
+                                            .hint_text("name")
+                                            .font(FontId::monospace(12.0))
+                                            .margin(Margin::symmetric(theme::SPACE_2 as i8, 4))
+                                            .char_limit(labels::MAX_LABEL_CHARS)
+                                            .desired_width(140.0),
+                                    );
+                                    if std::mem::take(&mut self.rename_focus) {
+                                        field.request_focus();
+                                    }
+                                    if field.lost_focus() {
+                                        commit_rename = true;
+                                    }
+                                } else {
+                                    let pill = widgets::label_pill(
+                                        ui,
+                                        name.as_str(),
+                                        labels::parse_hex(hex),
+                                    )
+                                    .on_hover_text("Double-click to rename");
+                                    if pill.double_clicked() {
+                                        start_rename = Some((index, name.clone()));
+                                    }
+                                }
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     // Every label can go, the presets too.
                                     if widgets::icon_button(
@@ -850,8 +890,17 @@ impl Dialog {
                         }
                     });
             });
+        self.label_rows = rows;
         if let Some(index) = remove {
             self.label_rows.remove(index);
+        }
+        if let Some((index, text)) = start_rename {
+            self.renaming = Some(index);
+            self.rename_text = text;
+            self.rename_focus = true;
+        }
+        if commit_rename {
+            self.commit_rename();
         }
 
         ui.add_space(theme::SPACE_5);
@@ -907,6 +956,34 @@ impl Dialog {
         if let Some(error) = &self.save_error {
             ui.add_space(theme::SPACE_5);
             help(ui, error, p.danger);
+        }
+    }
+
+    /// Commits a double-click name edit: normalizes the typed name, updates
+    /// the row and remembers the rename so Save can rewrite the issues.
+    fn commit_rename(&mut self) {
+        let Some(index) = self.renaming.take() else {
+            return;
+        };
+        let Some(old) = self.label_rows.get(index).map(|(name, _)| name.clone()) else {
+            self.rename_text.clear();
+            return;
+        };
+        let Some(new) = labels::normalize(&self.rename_text) else {
+            self.rename_text.clear();
+            return;
+        };
+        self.rename_text.clear();
+        if new == old {
+            return;
+        }
+        if let Some(row) = self.label_rows.get_mut(index) {
+            row.0 = new.clone();
+        }
+        if let Some(rename) = self.renames.iter_mut().find(|(from, _)| *from == old) {
+            rename.1 = new;
+        } else {
+            self.renames.push((old, new));
         }
     }
 

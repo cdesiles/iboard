@@ -66,12 +66,15 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 - **File name** is the title without its labels, slugified (lowercase ASCII, hyphens, at most 60 characters). If the file exists, append `-2`, `-3`; the meta line shows the final name before the file is written.
 - **The engine** (On-device Apple by default, Review agent, or Off) is chosen in Settings › Titles (`⌘,`).
 - New issues always land in Todo. Creating directly in Doing or Done is not offered; move the card afterwards.
+- **A new Todo issue lands at position 1**, right under the composer: the column is file-name ordered, so the files are renumbered (`001-…`) once the click that created it has settled.
+- **Editing is open in Todo and Ready only.** Doing and Done tickets open read-only: no Edit button, no `E`, no click-to-edit. A Done ticket's Reader header instead offers **Commits**.
 
 | Key | Board | Reader | Editor |
 | --- | --- | --- | --- |
 | `↑ ↓ ← →` | Move selection between cards and columns | Scroll | Cursor |
 | `↩` | Open selected issue | Edit | New line |
-| `E` | Edit selected issue | Edit | |
+| `E` | Edit selected issue (Todo, Ready) | Edit (Todo, Ready) | |
+| `⌘↩` | Move selected issue to the next column (no composer open) | | |
 | `esc` | Clear filter | Back to board | Leave editor (asks if unsaved) |
 | `⌘S` | | | Save to file |
 | `⌘N` | New issue in Todo | New issue (returns to board) | New issue (asks if unsaved) |
@@ -105,6 +108,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Reader | Click a ghost section or an "Add a section" chip | SectionAddRequested → EditStarted | Editor with `## <Section>` appended, cursor under it |
 | Reader | Click the empty sheet below the text | EditStarted | Editor, cursor at the end of the file |
 | Reader | Draft them with Review | ReviewRequested → ReviewReceived | Review panel; proposed sections apply to the draft |
+| Reader (Done) | Click Commits | CommitsOpened | Popup lists the commits whose message names the file (`closes <file>.md`) |
 | Editor | Type | DraftChanged | Editor, Unsaved pill |
 | Editor | Save (`⌘S`, or auto on leave when Auto is on) | IssueSaved / SaveFailed | Reader / Editor with error |
 | Any | Refresh, or file watcher fires | IssuesReloaded | Same screen; open draft kept, conflict flagged |
@@ -132,7 +136,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 
 ## Iconography
 
-Line icons at 14pt, 1.6pt stroke, `currentColor`, drawn on the 24pt control grid: refresh, back chevron, edit pencil, plus, review, trash, archive. The repo has no icon set yet; use Lucide (MIT) glyphs of the same names, and keep any icon paired with a word (the back chevron comes with "Board") except the per-card actions (trash, archive), which carry a tooltip and only appear when the card is hovered, selected or focused.
+Line icons at 14pt, 1.6pt stroke, `currentColor`, drawn on the 24pt control grid: refresh, back chevron, edit pencil, plus, review, trash, archive, tag-plus, git node. The repo has no icon set yet; use Lucide (MIT) glyphs of the same names, and keep any icon paired with a word (the back chevron comes with "Board") except the per-card actions (trash, archive), which carry a tooltip and only appear when the card is hovered, selected or focused.
 
 ## AI review
 
