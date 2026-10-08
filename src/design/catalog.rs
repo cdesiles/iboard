@@ -15,6 +15,20 @@ use std::process::Command;
 
 use super::{Component, DesignSystem, css};
 
+/// The catalog's categories, in Claude Design's order: `(id, label)`.
+const CATEGORIES: [(&str, &str); 10] = [
+    ("overview", "Overview"),
+    ("colors", "Colors"),
+    ("typography", "Typography"),
+    ("spacing", "Spacing"),
+    ("radius", "Corner radius"),
+    ("shadows", "Shadows"),
+    ("size", "Size"),
+    ("components", "Components"),
+    ("assets", "Assets"),
+    ("files", "Files"),
+];
+
 /// The full catalog document for `theme` (`light`'s values become the default).
 pub fn html(system: &DesignSystem, _theme: &str) -> Result<String, String> {
     let has_dark = system.tokens.themes.iter().any(|t| t.id == "dark");
@@ -29,53 +43,6 @@ pub fn html(system: &DesignSystem, _theme: &str) -> Result<String, String> {
     }
     style.push_str(CATALOG_CSS);
 
-    let groups = system.component_groups();
-    let mut nav = String::new();
-    let mut main = String::new();
-    let mut index = 0;
-    for (group, list) in &groups {
-        nav.push_str(&format!(
-            "<div class=\"ds-groupblock\" data-group=\"{}\">\n<div class=\"ds-group\">{}</div>\n",
-            escape(group),
-            escape(&group.to_uppercase()),
-        ));
-        for component in list {
-            let id = format!("c-{index}");
-            let search = format!(
-                "{} {} {}",
-                component.name,
-                group,
-                component.card.subtitle.as_deref().unwrap_or("")
-            )
-            .to_lowercase();
-            nav.push_str(&format!(
-                "<a href=\"#{}\" data-name=\"{}\">{}</a>\n",
-                id,
-                escape(&search),
-                escape(&component.name),
-            ));
-            main.push_str(&section(component, &id, group));
-            index += 1;
-        }
-        nav.push_str("</div>\n");
-    }
-
-    let subtitle = if groups.len() == 1 {
-        format!("{} components", system.components.len())
-    } else {
-        format!(
-            "{} components · {} groups",
-            system.components.len(),
-            groups.len()
-        )
-    };
-    let change = system
-        .meta
-        .last_change
-        .as_ref()
-        .and_then(|change| change.note.clone())
-        .map(|note| format!("<p class=\"ds-note\">{}</p>", escape(&note)))
-        .unwrap_or_default();
     let toggle = if has_dark {
         "<label class=\"ds-theme\"><input type=\"checkbox\" id=\"ds-theme\"> Dark</label>"
     } else {
@@ -86,27 +53,362 @@ pub fn html(system: &DesignSystem, _theme: &str) -> Result<String, String> {
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <title>{title} — design catalog</title>\n<style>\n{style}</style>\n</head>\n\
-         <body>\n<div class=\"ds-shell\">\n\
-         <aside class=\"ds-side\">\n<h1>{title}</h1>\n<div class=\"ds-ns\">{ns}</div>\n\
-         <input id=\"ds-q\" class=\"ds-search\" type=\"search\" placeholder=\"Search\">\n\
-         <nav class=\"ds-nav\">\n{nav}</nav>\n{toggle}\n</aside>\n\
-         <main class=\"ds-main\">\n<header class=\"ds-head\"><h1>{title}</h1>\
-         <p>{subtitle}</p>{change}</header>\n{main}</main>\n</div>\n\
+         <body>\n<div class=\"ds-shell\">\n{side}\n\
+         <main class=\"ds-main\">\n{main}</main>\n</div>\n\
          <script>\n{script}</script>\n</body>\n</html>\n",
         title = escape(&system.meta.title),
-        ns = escape(&system.meta.namespace),
         style = style,
-        nav = nav,
-        toggle = toggle,
-        subtitle = subtitle,
-        change = change,
-        main = main,
+        side = sidebar(system, toggle),
+        main = main_panes(system),
         script = SCRIPT,
     ))
 }
 
+/// The fixed search over two rails: the categories, and the Components list
+/// that slides in over it.
+fn sidebar(system: &DesignSystem, toggle: &str) -> String {
+    let mut out = String::from("<aside class=\"ds-side\">\n");
+    out.push_str(&format!(
+        "<h1>{}</h1>\n<div class=\"ds-ns\">{}</div>\n",
+        escape(&system.meta.title),
+        escape(&system.meta.namespace),
+    ));
+    out.push_str(
+        "<input id=\"ds-q\" class=\"ds-search\" type=\"search\" placeholder=\"Search\">\n",
+    );
+    out.push_str("<div class=\"ds-rails\" id=\"ds-rails\">\n");
+
+    out.push_str("<nav class=\"ds-rail ds-rail--main\" id=\"ds-rail-main\">\n");
+    for (id, label) in CATEGORIES {
+        let count = match id {
+            "components" => Some(system.components.len()),
+            "files" => Some(system.files().len()),
+            _ => None,
+        }
+        .map(|n| format!("<span class=\"ds-count\">{n}</span>"))
+        .unwrap_or_default();
+        let drill = if id == "components" {
+            " data-drill=\"1\""
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "<button type=\"button\" class=\"ds-item\" data-cat=\"{id}\"{drill}>\
+             <span>{label}</span>{count}</button>\n",
+            label = escape(label),
+        ));
+    }
+    out.push_str("</nav>\n");
+
+    out.push_str("<nav class=\"ds-rail ds-rail--sub\" id=\"ds-rail-sub\">\n");
+    out.push_str(
+        "<button type=\"button\" class=\"ds-back\" data-back>\
+         <span class=\"ds-chevron\">\u{2039}</span>Components</button>\n",
+    );
+    for component in ordered_components(system) {
+        let search = format!(
+            "{} {} {}",
+            component.name,
+            component.card.group.as_deref().unwrap_or(""),
+            component.card.subtitle.as_deref().unwrap_or(""),
+        )
+        .to_lowercase();
+        out.push_str(&format!(
+            "<a class=\"ds-subitem\" data-name=\"{}\" href=\"#c-{}\">{}</a>\n",
+            escape(&search),
+            slug(&component.name),
+            escape(&component.name),
+        ));
+    }
+    out.push_str("</nav>\n</div>\n");
+    out.push_str(toggle);
+    out.push_str("\n</aside>\n");
+    out
+}
+
+/// One pane per category; only Overview starts visible, the script reveals the
+/// selected one.
+fn main_panes(system: &DesignSystem) -> String {
+    [
+        ("overview", overview(system), false),
+        ("colors", colors(system), true),
+        ("typography", typography(system), true),
+        ("spacing", spacing(system), true),
+        ("radius", radius(system), true),
+        ("shadows", shadows(system), true),
+        ("size", size(system), true),
+        ("components", components(system), true),
+        ("assets", assets(system), true),
+        ("files", files(system), true),
+    ]
+    .into_iter()
+    .map(|(id, inner, hidden)| {
+        format!(
+            "<section class=\"ds-cat\" data-cat=\"{id}\"{}>\n{inner}</section>\n",
+            if hidden { " hidden" } else { "" }
+        )
+    })
+    .collect()
+}
+
+/// The themed token ids, or `light` when the system declares no themes.
+fn theme_ids(system: &DesignSystem) -> Vec<&str> {
+    if system.tokens.themes.is_empty() {
+        vec!["light"]
+    } else {
+        system.tokens.themes.iter().map(|t| t.id.as_str()).collect()
+    }
+}
+
+fn head(title: &str, note: &str) -> String {
+    format!(
+        "<header class=\"ds-head\"><h1>{}</h1><p>{}</p></header>\n",
+        escape(title),
+        escape(note)
+    )
+}
+
+fn overview(system: &DesignSystem) -> String {
+    let themes = theme_ids(system);
+    let mut out = head(
+        &system.meta.title,
+        &format!("{} · v{}", system.meta.namespace, system.meta.version),
+    );
+    out.push_str(&format!(
+        "<p class=\"ds-note\">{} components · {} color, {} spacing, {} radius, {} size, \
+         {} shadow, {} type styles · themes {}</p>\n",
+        system.components.len(),
+        system.tokens.color.len(),
+        system.tokens.spacing.len(),
+        system.tokens.radius.len(),
+        system.tokens.size.len(),
+        system.tokens.shadow.len(),
+        system.tokens.type_style_count(),
+        themes.join(", "),
+    ));
+    if let Some(change) = &system.meta.last_change {
+        out.push_str(&format!(
+            "<p class=\"ds-note\">Last change {}, {} via {}</p>\n",
+            escape(change.by.as_deref().unwrap_or("unknown")),
+            escape(change.at.as_deref().unwrap_or("")),
+            escape(change.via.as_deref().unwrap_or("")),
+        ));
+    }
+    if let Some(brief) = system.brief() {
+        out.push_str("<div class=\"ds-brief\">\n");
+        out.push_str(&markdown(&brief));
+        out.push_str("</div>\n");
+    }
+    out
+}
+
+fn colors(system: &DesignSystem) -> String {
+    let themes = theme_ids(system);
+    let mut out = head("Colors", &format!("{} tokens", system.tokens.color.len()));
+    for token in &system.tokens.color {
+        out.push_str("<div class=\"ds-row\">");
+        out.push_str(&format!(
+            "<span class=\"ds-name\">{}</span>",
+            escape(&token.name)
+        ));
+        for theme in &themes {
+            let value = css::resolved_value(system, token, theme).unwrap_or_default();
+            out.push_str(&format!(
+                "<span class=\"ds-swatch\" style=\"background:{value}\"></span>\
+                 <code class=\"ds-val\">{value}</code>",
+                value = escape(&value),
+            ));
+        }
+        if let Some(usage) = &token.usage {
+            out.push_str(&format!(
+                "<span class=\"ds-usage\">{}</span>",
+                escape(usage)
+            ));
+        }
+        out.push_str("</div>\n");
+    }
+    out
+}
+
+fn typography(system: &DesignSystem) -> String {
+    let mut out = head(
+        "Typography",
+        &format!("{} styles", system.tokens.type_style_count()),
+    );
+    for group in &system.tokens.type_groups {
+        out.push_str(&format!(
+            "<h3 class=\"ds-sub\">{}</h3>\n",
+            escape(&group.name)
+        ));
+        let family = system
+            .tokens
+            .families
+            .get(&group.family)
+            .cloned()
+            .unwrap_or_default();
+        if !family.is_empty() {
+            out.push_str(&format!("<p class=\"ds-usage\">{}</p>\n", escape(&family)));
+        }
+        for style in &group.styles {
+            let size = style.font_size.clone().unwrap_or_else(|| "13px".into());
+            let weight = style
+                .weight
+                .map(|w| w.to_string())
+                .unwrap_or_else(|| "400".into());
+            let line = style.line_height.clone().unwrap_or_else(|| "normal".into());
+            let sample = style.sample.clone().unwrap_or_else(|| style.name.clone());
+            out.push_str(&format!(
+                "<div class=\"ds-type\">\
+                 <div class=\"ds-type__sample\" style=\"font-family:{family};font-size:{size};\
+                 font-weight:{weight};line-height:{line}\">{sample}</div>\
+                 <div class=\"ds-usage\">{name} · {size} · {weight} · line {line}</div></div>\n",
+                family = escape(&family),
+                size = escape(&size),
+                weight = weight,
+                line = escape(&line),
+                sample = escape(&sample),
+                name = escape(&style.name),
+            ));
+        }
+    }
+    out
+}
+
+fn spacing(system: &DesignSystem) -> String {
+    let mut out = head("Spacing", &format!("{} steps", system.tokens.spacing.len()));
+    for token in &system.tokens.spacing {
+        let value = css::resolved_value(system, token, "light").unwrap_or_default();
+        let px = parse_px(&value).unwrap_or(0.0);
+        out.push_str(&format!(
+            "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>\
+             <span class=\"ds-bar\" style=\"width:{px}px\"></span>\
+             <code class=\"ds-val\">{}</code></div>\n",
+            escape(&token.name),
+            escape(&value),
+        ));
+    }
+    out
+}
+
+fn radius(system: &DesignSystem) -> String {
+    let mut out = head(
+        "Corner radius",
+        &format!("{} tokens", system.tokens.radius.len()),
+    );
+    for token in &system.tokens.radius {
+        let value = css::resolved_value(system, token, "light").unwrap_or_default();
+        let px = parse_px(&value).unwrap_or(0.0).clamp(0.0, 28.0);
+        out.push_str(&format!(
+            "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>\
+             <span class=\"ds-box\" style=\"border-radius:{px}px\"></span>\
+             <code class=\"ds-val\">{}</code></div>\n",
+            escape(&token.name),
+            escape(&value),
+        ));
+    }
+    out
+}
+
+fn shadows(system: &DesignSystem) -> String {
+    let themes = theme_ids(system);
+    let mut out = head("Shadows", &format!("{} tokens", system.tokens.shadow.len()));
+    for token in &system.tokens.shadow {
+        let value = css::resolved_value(system, token, "light").unwrap_or_default();
+        out.push_str(&format!(
+            "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>\
+             <span class=\"ds-shadow\" style=\"box-shadow:{}\"></span>",
+            escape(&token.name),
+            escape(&value),
+        ));
+        for theme in &themes {
+            let value = css::resolved_value(system, token, theme).unwrap_or_default();
+            out.push_str(&format!("<code class=\"ds-val\">{}</code>", escape(&value)));
+        }
+        out.push_str("</div>\n");
+    }
+    out
+}
+
+fn size(system: &DesignSystem) -> String {
+    let mut out = head("Size", &format!("{} tokens", system.tokens.size.len()));
+    for token in &system.tokens.size {
+        let value = css::resolved_value(system, token, "light").unwrap_or_default();
+        let usage = token
+            .usage
+            .as_deref()
+            .map(|usage| format!("<span class=\"ds-usage\">{}</span>", escape(usage)))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>\
+             <code class=\"ds-val\">{}</code>{usage}</div>\n",
+            escape(&token.name),
+            escape(&value),
+        ));
+    }
+    if let Some(note) = &system.tokens.size_note {
+        out.push_str(&format!("<p class=\"ds-note\">{}</p>\n", escape(note)));
+    }
+    out
+}
+
+fn components(system: &DesignSystem) -> String {
+    let mut out = head(
+        "Components",
+        &format!("{} components", system.components.len()),
+    );
+    for component in ordered_components(system) {
+        out.push_str(&section(component, &format!("c-{}", slug(&component.name))));
+    }
+    out
+}
+
+fn assets(system: &DesignSystem) -> String {
+    let assets = system.assets();
+    let mut out = head("Assets", &format!("{} assets", assets.len()));
+    let mut group = String::new();
+    for asset in &assets {
+        if asset.group != group {
+            out.push_str(&format!(
+                "<h3 class=\"ds-sub\">{}</h3>\n",
+                escape(&asset.group)
+            ));
+            group = asset.group.clone();
+        }
+        let size = (asset.bytes > 0)
+            .then(|| format!("<span class=\"ds-val\">{}</span>", human_bytes(asset.bytes)))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>{size}</div>\n",
+            escape(&asset.name),
+        ));
+    }
+    out
+}
+
+fn files(system: &DesignSystem) -> String {
+    let files = system.files();
+    let mut out = head("Files", &format!("{} files", files.len()));
+    for file in &files {
+        out.push_str(&format!(
+            "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>\
+             <span class=\"ds-val\">{}</span></div>\n",
+            escape(&file.rel),
+            human_bytes(file.bytes),
+        ));
+    }
+    out
+}
+
+/// Every component by name, the order the rail and the pane list them in.
+fn ordered_components(system: &DesignSystem) -> Vec<&Component> {
+    let mut list: Vec<&Component> = system.components.iter().collect();
+    list.sort_by_key(|component| component.name.to_lowercase());
+    list
+}
+
 /// One component: its title, subtitle and live fragment in a bordered stage.
-fn section(component: &Component, id: &str, group: &str) -> String {
+fn section(component: &Component, id: &str) -> String {
+    let group = component.card.group.clone().unwrap_or_default();
     let subtitle = component
         .card
         .subtitle
@@ -126,8 +428,7 @@ fn section(component: &Component, id: &str, group: &str) -> String {
     format!(
         "<section class=\"ds-comp\" id=\"{id}\" data-name=\"{slug}\" data-group=\"{group}\">\n\
          <div class=\"ds-comp__head\"><h2>{name}</h2><p>{subtitle}</p>{meta}</div>\n\
-         <div class=\"ds-stage{page}\">{body}</div>\n</section>\n",
-        id = id,
+         <div class=\"ds-stage{page}\">{body}</div></section>\n",
         slug = escape(&component.name.to_lowercase()),
         group = escape(&group.to_lowercase()),
         name = escape(&component.name),
@@ -136,6 +437,105 @@ fn section(component: &Component, id: &str, group: &str) -> String {
         page = page,
         body = body,
     )
+}
+
+/// An element id from a component name: `BoardScreen` → `boardscreen`.
+fn slug(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+/// A number with an optional `px` suffix (`"4px"`, `"0"`, `"16"`).
+fn parse_px(value: &str) -> Option<f32> {
+    value.trim().trim_end_matches("px").trim().parse().ok()
+}
+
+fn human_bytes(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.0} kB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
+}
+
+/// A small markdown reader for the Overview brief: headings, lists, paragraphs
+/// and inline code or bold.
+fn markdown(text: &str) -> String {
+    let mut out = String::new();
+    let mut in_list = false;
+    for line in text.lines() {
+        let line = line.trim_end();
+        if line.trim().is_empty() {
+            if in_list {
+                out.push_str("</ul>\n");
+                in_list = false;
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("### ") {
+            out.push_str(&format!("<h3>{}</h3>\n", inline(rest)));
+        } else if let Some(rest) = line.strip_prefix("## ") {
+            out.push_str(&format!("<h2>{}</h2>\n", inline(rest)));
+        } else if let Some(rest) = line.strip_prefix("# ") {
+            out.push_str(&format!("<h1>{}</h1>\n", inline(rest)));
+        } else if let Some(rest) = line.strip_prefix("- ") {
+            if !in_list {
+                out.push_str("<ul>\n");
+                in_list = true;
+            }
+            out.push_str(&format!("<li>{}</li>\n", inline(rest)));
+        } else {
+            if in_list {
+                out.push_str("</ul>\n");
+                in_list = false;
+            }
+            out.push_str(&format!("<p>{}</p>\n", inline(line)));
+        }
+    }
+    if in_list {
+        out.push_str("</ul>\n");
+    }
+    out
+}
+
+/// Inline `code` and **bold** in an escaped line.
+fn inline(text: &str) -> String {
+    let escaped = escape(text);
+    let mut out = String::new();
+    let mut rest = escaped.as_str();
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix("**")
+            && let Some(end) = after.find("**")
+        {
+            out.push_str("<strong>");
+            out.push_str(&after[..end]);
+            out.push_str("</strong>");
+            rest = &after[end + 2..];
+            continue;
+        }
+        if let Some(after) = rest.strip_prefix('`')
+            && let Some(end) = after.find('`')
+        {
+            out.push_str("<code>");
+            out.push_str(&after[..end]);
+            out.push_str("</code>");
+            rest = &after[end + 1..];
+            continue;
+        }
+        let ch = rest.chars().next().unwrap_or(' ');
+        out.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+    out
 }
 
 /// The body of a component's fragment, with its `@dsCard` line dropped.
@@ -302,21 +702,53 @@ html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans);font-size:13px;line-height:18px;-webkit-font-smoothing:antialiased}
 *{box-sizing:border-box}
 .ds-shell{display:grid;grid-template-columns:236px minmax(0,1fr);height:100vh}
-.ds-side{border-right:1px solid var(--line);background:var(--surface);overflow:auto;padding:16px}
+.ds-side{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--surface);padding:16px;overflow:hidden}
 .ds-side h1{font:600 15px/20px var(--font-sans);margin:0}
 .ds-ns{font:11px/14px var(--font-mono);color:var(--ink-muted);margin:2px 0 12px}
-.ds-search{width:100%;height:28px;padding:0 8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:13px/18px var(--font-sans);margin-bottom:10px}
+.ds-search{width:100%;height:28px;padding:0 8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:13px/18px var(--font-sans);margin-bottom:10px;flex:0 0 auto}
 .ds-search:focus{outline:2px solid var(--focus);outline-offset:1px}
-.ds-nav a{display:block;padding:4px 6px;border-radius:var(--radius-sm);color:var(--ink-muted);text-decoration:none}
-.ds-nav a:hover{background:var(--surface-hover);color:var(--ink)}
-.ds-nav a[aria-current]{background:var(--accent-soft);color:var(--ink)}
-.ds-group{font:600 11px/14px var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:12px 0 4px}
-.ds-theme{display:flex;align-items:center;gap:6px;margin-top:16px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink-muted);font-size:12px;cursor:pointer}
+.ds-rails{position:relative;flex:1 1 auto;min-height:0;overflow:hidden}
+.ds-rail{position:absolute;inset:0;overflow:auto;transition:transform .22s ease}
+.ds-rail--main{transform:translateX(0)}
+.ds-rail--sub{transform:translateX(100%)}
+.ds-rails.ds-open .ds-rail--main{transform:translateX(-100%)}
+.ds-rails.ds-open .ds-rail--sub{transform:translateX(0)}
+.ds-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;background:none;border:0;padding:6px 8px;border-radius:var(--radius-sm);color:var(--ink-muted);font:13px/18px var(--font-sans);cursor:pointer}
+.ds-item:hover{background:var(--surface-hover);color:var(--ink)}
+.ds-item[aria-current]{background:var(--accent-soft);color:var(--ink)}
+.ds-count{font:11px/14px var(--font-mono);color:var(--ink-faint)}
+.ds-back{display:flex;align-items:center;gap:6px;width:100%;text-align:left;background:none;border:0;padding:6px 8px;border-radius:var(--radius-sm);color:var(--ink);font:600 13px/18px var(--font-sans);cursor:pointer}
+.ds-back:hover{background:var(--surface-hover)}
+.ds-chevron{font-size:15px;color:var(--ink-muted)}
+.ds-subitem{display:block;padding:4px 8px;border-radius:var(--radius-sm);color:var(--ink-muted);text-decoration:none}
+.ds-subitem:hover{background:var(--surface-hover);color:var(--ink)}
+.ds-subitem[aria-current]{background:var(--accent-soft);color:var(--ink)}
+.ds-theme{display:flex;align-items:center;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink-muted);font-size:12px;cursor:pointer;flex:0 0 auto}
 .ds-main{overflow:auto;padding:24px 32px 64px}
-.ds-head{max-width:760px;margin-bottom:24px}
+.ds-cat[hidden]{display:none}
+.ds-head{max-width:760px;margin-bottom:20px}
 .ds-head h1{font:600 20px/26px var(--font-sans);margin:0}
 .ds-head p{color:var(--ink-muted);margin:4px 0 0}
 .ds-note{color:var(--ink-faint);font:11px/16px var(--font-mono);margin:8px 0 0}
+.ds-sub{font:600 11px/14px var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:20px 0 6px}
+.ds-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);max-width:900px}
+.ds-name{flex:0 0 170px;font:11px/14px var(--font-mono);color:var(--ink);overflow-wrap:anywhere}
+.ds-val{font:11px/14px var(--font-mono);color:var(--ink-muted)}
+.ds-usage{font-size:11px;color:var(--ink-faint)}
+.ds-swatch{width:18px;height:18px;border-radius:var(--radius-sm);border:1px solid var(--line-strong);flex:0 0 auto}
+.ds-bar{height:12px;background:var(--accent);border-radius:2px;flex:0 0 auto;min-width:1px}
+.ds-box{width:40px;height:40px;background:var(--surface-sunken);border:1px solid var(--line-strong);flex:0 0 auto}
+.ds-shadow{width:64px;height:40px;background:var(--surface);border-radius:var(--radius-md);flex:0 0 auto}
+.ds-type{margin:0 0 14px}
+.ds-type__sample{color:var(--ink);overflow-wrap:anywhere}
+.ds-brief{max-width:720px}
+.ds-brief h1{font:600 18px/24px var(--font-sans)}
+.ds-brief h2{font:600 15px/20px var(--font-sans);margin:20px 0 6px}
+.ds-brief h3{font:600 13px/18px var(--font-sans);margin:16px 0 4px}
+.ds-brief p{margin:8px 0;color:var(--ink-muted)}
+.ds-brief ul{margin:8px 0;padding-left:20px;color:var(--ink-muted)}
+.ds-brief code{font-family:var(--font-mono);font-size:12px;background:var(--surface-sunken);padding:1px 4px;border-radius:var(--radius-sm)}
+.ds-brief strong{color:var(--ink)}
 .ds-comp{margin:0 0 40px;scroll-margin-top:16px;max-width:900px}
 .ds-comp__head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .ds-comp__head h2{font:600 15px/20px var(--font-sans);margin:0}
@@ -326,11 +758,43 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ds-stage--page{max-height:660px}
 "##;
 
-/// Search filtering and the active-section highlight. Inline and tiny: the
-/// catalog is one file with no network.
+/// Category switching, the rail slide, search filtering and the theme toggle.
+/// Inline and tiny: the catalog is one file with no network.
 const SCRIPT: &str = r##"
 (function () {
   var root = document.documentElement;
+  var rails = document.getElementById('ds-rails');
+  var items = Array.prototype.slice.call(document.querySelectorAll('.ds-item'));
+  var subs = Array.prototype.slice.call(document.querySelectorAll('.ds-subitem'));
+
+  function select(id) {
+    document.querySelectorAll('.ds-cat').forEach(function (s) {
+      s.hidden = s.dataset.cat !== id;
+    });
+    items.forEach(function (b) {
+      if (b.dataset.cat === id) { b.setAttribute('aria-current', 'page'); }
+      else { b.removeAttribute('aria-current'); }
+    });
+    document.querySelector('.ds-main').scrollTop = 0;
+  }
+  function open(drill) { rails.classList.toggle('ds-open', !!drill); }
+
+  items.forEach(function (b) {
+    b.addEventListener('click', function () { select(b.dataset.cat); open(b.dataset.drill === '1'); });
+  });
+  var back = document.querySelector('.ds-back');
+  if (back) { back.addEventListener('click', function () { open(false); }); }
+  subs.forEach(function (a) {
+    a.addEventListener('click', function () { select('components'); open(true); });
+  });
+
+  var q = document.getElementById('ds-q');
+  q.addEventListener('input', function () {
+    var v = q.value.trim().toLowerCase();
+    items.forEach(function (b) { b.hidden = v !== '' && b.textContent.toLowerCase().indexOf(v) < 0; });
+    subs.forEach(function (a) { a.hidden = v !== '' && (a.dataset.name || '').indexOf(v) < 0; });
+  });
+
   var toggle = document.getElementById('ds-theme');
   if (toggle) {
     try { if (localStorage.getItem('ds-theme') === 'dark') { root.dataset.theme = 'dark'; toggle.checked = true; } } catch (e) {}
@@ -339,29 +803,13 @@ const SCRIPT: &str = r##"
       try { localStorage.setItem('ds-theme', toggle.checked ? 'dark' : 'light'); } catch (e) {}
     });
   }
-  var q = document.getElementById('ds-q');
-  q.addEventListener('input', function () {
-    var v = q.value.trim().toLowerCase();
-    document.querySelectorAll('.ds-comp').forEach(function (s) {
-      s.hidden = v !== '' && s.dataset.name.indexOf(v) < 0 && s.dataset.group.indexOf(v) < 0;
-    });
-    document.querySelectorAll('.ds-groupblock').forEach(function (block) {
-      var any = false;
-      block.querySelectorAll('a').forEach(function (a) {
-        var show = v === '' || a.dataset.name.indexOf(v) >= 0;
-        a.hidden = !show;
-        if (show) any = true;
-      });
-      block.hidden = !any;
-    });
-  });
-  var links = Array.prototype.slice.call(document.querySelectorAll('.ds-nav a'));
+
   var observer = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
-      if (!entry.isIntersecting) return;
-      links.forEach(function (l) { l.removeAttribute('aria-current'); });
-      var active = document.querySelector('.ds-nav a[href="#' + entry.target.id + '"]');
-      if (active) active.setAttribute('aria-current', 'page');
+      if (!entry.isIntersecting) { return; }
+      subs.forEach(function (a) { a.removeAttribute('aria-current'); });
+      var active = document.querySelector('.ds-subitem[href="#' + entry.target.id + '"]');
+      if (active) { active.setAttribute('aria-current', 'page'); }
     });
   }, { rootMargin: '-10% 0px -80% 0px' });
   document.querySelectorAll('.ds-comp').forEach(function (s) { observer.observe(s); });
@@ -399,10 +847,31 @@ mod tests {
     fn the_catalog_uses_the_declared_group_and_subtitle() {
         let html = html(&repo(), "light").expect("compose");
         // Button's fragment says group="Controls"; BoardScreen is a page.
-        assert!(html.contains("CONTROLS"));
+        assert!(html.contains("data-group=\"controls\""));
         assert!(
             html.contains("ds-stage--page"),
             "page components get a stage"
+        );
+    }
+
+    #[test]
+    fn the_component_rail_is_alphabetical_and_drills_in() {
+        let system = repo();
+        let names: Vec<String> = ordered_components(&system)
+            .iter()
+            .map(|component| component.name.clone())
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort_by_key(|name| name.to_lowercase());
+        assert_eq!(names, sorted, "the rail lists components alphabetically");
+
+        let html = html(&system, "light").expect("compose");
+        assert!(html.contains("data-cat=\"components\""), "category item");
+        assert!(html.contains("data-drill=\"1\""), "components drills in");
+        assert!(html.contains("class=\"ds-back\""), "a back button");
+        assert!(
+            html.contains("href=\"#c-button\""),
+            "the second level links a component"
         );
     }
 

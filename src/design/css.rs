@@ -93,6 +93,12 @@ pub fn token_value_for(token: &Token, theme: &str) -> Option<String> {
     }
 }
 
+/// [`token_value_for`], with any `{name}` references resolved, for showing a
+/// token's real value outside the CSS `:root` block.
+pub fn resolved_value(system: &DesignSystem, token: &Token, theme: &str) -> Option<String> {
+    token_value_for(token, theme).map(|value| resolve_refs(system, theme, &value))
+}
+
 /// A full HTML document for `component`: its fragment with the token block and
 /// the bundle's stylesheet spliced in. The result is self-contained, so the
 /// renderer needs no network and no other file.
