@@ -372,13 +372,7 @@ impl Panel {
 
     fn component_rows(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
         let p = theme::palette(ui);
-        let query = self.search.trim().to_lowercase();
-        let mut list: Vec<&Component> = system
-            .components
-            .iter()
-            .filter(|c| query.is_empty() || c.name.to_lowercase().contains(&query))
-            .collect();
-        list.sort_by(|a, b| a.name.cmp(&b.name));
+        let list = ordered_components(system, self.search.trim());
 
         if list.is_empty() {
             ui.label(
@@ -1286,6 +1280,19 @@ fn human_bytes(bytes: u64) -> String {
     }
 }
 
+/// The components the rail lists, narrowed to those matching `query`, in the
+/// alphabetical order Components has in Claude Design.
+fn ordered_components<'a>(system: &'a DesignSystem, query: &str) -> Vec<&'a Component> {
+    let query = query.trim().to_lowercase();
+    let mut list: Vec<&Component> = system
+        .components
+        .iter()
+        .filter(|c| query.is_empty() || c.name.to_lowercase().contains(&query))
+        .collect();
+    list.sort_by_key(|c| c.name.to_lowercase());
+    list
+}
+
 /// Search every section for entries whose name matches `query`.
 fn search(system: &DesignSystem, query: &str) -> Vec<Hit> {
     let matches = |name: &str| name.to_lowercase().contains(query);
@@ -1436,6 +1443,23 @@ mod tests {
         // Back only closes the rail; the pane keeps the chosen component.
         panel.components_open = false;
         assert_eq!(panel.selected.as_deref(), Some("Button"));
+    }
+
+    #[test]
+    fn components_are_listed_alphabetically() {
+        let system = repo();
+        let names = |query: &str| {
+            ordered_components(&system, query)
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>()
+        };
+        let all = names("");
+        let mut sorted = all.clone();
+        sorted.sort_by_key(|name| name.to_lowercase());
+        assert_eq!(all, sorted, "the rail lists components alphabetically");
+        assert!(all.contains(&"Button"));
+        assert_eq!(names("button"), vec!["Button", "ReviewButton"]);
     }
 
     #[test]
