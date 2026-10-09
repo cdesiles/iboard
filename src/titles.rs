@@ -13,12 +13,12 @@
 //! `agent` asks the tool configured for AI review. Neither is ever required:
 //! without a title, [`first_line_title`] names the issue from the description.
 
-use std::path::Path;
 use std::sync::mpsc::{Receiver, channel};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::agent::{self, AgentConfig};
+use crate::settings::{Section, UserConfig};
 
 /// The longest title the composer accepts.
 pub const MAX_TITLE_CHARS: usize = 80;
@@ -245,45 +245,34 @@ fn cut(text: &str, max: usize) -> String {
     }
 }
 
-/// Reads `[titles] engine` from the user configuration; Apple by default.
-pub fn load_engine(file: Option<&Path>) -> Engine {
-    #[derive(Default, Deserialize)]
-    struct Raw {
-        engine: Option<String>,
-    }
-    #[derive(Default, Deserialize)]
-    struct FileConfig {
-        #[serde(default)]
-        titles: Raw,
-    }
-    file.and_then(|file| std::fs::read_to_string(file).ok())
-        .and_then(|text| toml::from_str::<FileConfig>(&text).ok())
-        .and_then(|config| config.titles.engine)
-        .and_then(|key| Engine::from_key(key.trim()))
-        .unwrap_or_default()
+/// The `[titles]` section of the user configuration.
+#[derive(Default, Deserialize, Serialize)]
+struct RawTitles {
+    engine: Option<String>,
 }
 
-/// Writes `[titles] engine`, keeping the file's other sections.
-pub fn save_engine(file: &Path, engine: Engine) -> Result<(), String> {
-    let parent = file
-        .parent()
-        .ok_or_else(|| "the configuration has no folder".to_string())?;
-    std::fs::create_dir_all(parent)
-        .map_err(|err| format!("Couldn't create {}: {err}", parent.display()))?;
-    let mut document = std::fs::read_to_string(file)
-        .ok()
-        .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
-        .and_then(|value| value.as_table().cloned())
-        .unwrap_or_default();
-    let mut titles = toml::map::Map::new();
-    titles.insert("engine".into(), toml::Value::String(engine.key().into()));
-    document.insert("titles".into(), toml::Value::Table(titles));
-    let body =
-        toml::to_string(&document).map_err(|err| format!("Couldn't write the config: {err}"))?;
-    let temp = file.with_extension("tmp");
-    std::fs::write(&temp, body)
-        .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
-    std::fs::rename(&temp, file).map_err(|err| format!("Couldn't save {}: {err}", file.display()))
+/// The engine `[titles]` names; Apple by default.
+pub fn load_engine(config: &mut UserConfig) -> Engine {
+    let raw: RawTitles = config.section("titles");
+    let Some(key) = raw.engine else {
+        return Engine::default();
+    };
+    Engine::from_key(key.trim()).unwrap_or_else(|| {
+        config.problem(format!(
+            "[titles]: engine \"{key}\" is not apple, agent or manual"
+        ));
+        Engine::default()
+    })
+}
+
+/// The `[titles]` section that stores `engine`.
+pub fn section(engine: Engine) -> Result<Section, String> {
+    Section::new(
+        "titles",
+        &RawTitles {
+            engine: Some(engine.key().to_string()),
+        },
+    )
 }
 
 #[cfg(apple_titles)]
@@ -477,10 +466,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("iboard-titles-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("iboard.toml");
+        let engine = || load_engine(&mut UserConfig::load(Some(&file)));
         std::fs::write(&file, "[ai]\ntool = \"claude\"\n").unwrap();
-        assert_eq!(load_engine(Some(&file)), Engine::Apple);
-        save_engine(&file, Engine::Manual).unwrap();
-        assert_eq!(load_engine(Some(&file)), Engine::Manual);
+        assert_eq!(engine(), Engine::Apple);
+        crate::settings::save(&file, &[section(Engine::Manual).unwrap()]).unwrap();
+        assert_eq!(engine(), Engine::Manual);
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(
             text.contains("tool = \"claude\""),
@@ -488,7 +478,11 @@ mod tests {
         );
         // The old name still reads as Manual.
         std::fs::write(&file, "[titles]\nengine = \"off\"\n").unwrap();
-        assert_eq!(load_engine(Some(&file)), Engine::Manual);
+        assert_eq!(engine(), Engine::Manual);
+        // An unknown one is reported.
+        let mut config = UserConfig::parse("[titles]\nengine = \"gpt\"\n", &file);
+        assert_eq!(load_engine(&mut config), Engine::Apple);
+        assert_eq!(config.problems.len(), 1);
         std::fs::remove_dir_all(&dir).ok();
     }
 

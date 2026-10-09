@@ -9,12 +9,11 @@
 //! suggestions = ["bug", "feature"]
 //! ```
 
-use std::path::Path;
-
 use serde::Deserialize;
 
 use crate::issue::Issue;
 use crate::labels;
+use crate::settings::UserConfig;
 
 /// How many labels the field suggests when nothing is pinned.
 const TOP_LABELS: usize = 3;
@@ -108,25 +107,17 @@ pub fn suggestions<'a>(
     }
 }
 
+/// The `[filter]` section of the user configuration.
 #[derive(Debug, Default, Deserialize)]
 struct RawFilter {
     suggestions: Option<Vec<String>>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct FileConfig {
-    #[serde(default)]
-    filter: RawFilter,
-}
-
-/// The suggestions pinned in the `[filter]` section of `file`; `None` when
-/// the file or the key is missing, so the board's labels are offered.
-pub fn load_suggestions(file: Option<&Path>) -> Option<Vec<String>> {
-    let configured = file
-        .and_then(|file| std::fs::read_to_string(file).ok())
-        .and_then(|text| toml::from_str::<FileConfig>(&text).ok())
-        .and_then(|config| config.filter.suggestions);
-    configured.map(|words| {
+/// The suggestions pinned in `[filter]`; `None` when the section or the key
+/// is missing, so the board's labels are offered.
+pub fn load_suggestions(config: &mut UserConfig) -> Option<Vec<String>> {
+    let raw: RawFilter = config.section("filter");
+    raw.suggestions.map(|words| {
         let mut picked: Vec<String> = Vec::new();
         for word in words {
             if let Some(word) = labels::normalize(&word)
@@ -212,19 +203,13 @@ mod tests {
 
     #[test]
     fn suggestions_are_pinned_only_by_the_config() {
-        assert_eq!(load_suggestions(None), None);
-        let dir = std::env::temp_dir().join(format!("iboard-suggest-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("iboard.toml");
-        std::fs::write(&file, "[ai]\ntool = \"claude\"\n").unwrap();
-        assert_eq!(load_suggestions(Some(&file)), None);
-        std::fs::write(
-            &file,
-            "[filter]\nsuggestions = [\"Chore\", \"bug\", \"\"]\n",
-        )
-        .unwrap();
+        let pinned = |text: &str| {
+            load_suggestions(&mut UserConfig::parse(text, std::path::Path::new("c.toml")))
+        };
+        assert_eq!(load_suggestions(&mut UserConfig::default()), None);
+        assert_eq!(pinned("[ai]\ntool = \"claude\"\n"), None);
         assert_eq!(
-            load_suggestions(Some(&file)),
+            pinned("[filter]\nsuggestions = [\"Chore\", \"bug\", \"\"]\n"),
             Some(vec!["chore".to_string(), "bug".to_string()])
         );
     }

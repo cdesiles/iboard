@@ -15,6 +15,7 @@ pub mod config;
 pub mod design;
 pub mod design_ui;
 pub mod discovery;
+pub mod files;
 pub mod filter;
 pub mod general;
 pub mod history;
@@ -23,6 +24,7 @@ pub mod labels;
 #[cfg(target_os = "macos")]
 pub mod menu;
 pub mod prompts;
+pub mod settings;
 pub mod sheet;
 pub mod theme;
 pub mod titles;

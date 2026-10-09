@@ -13,7 +13,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use egui::Color32;
-use serde::Deserialize;
+
+use crate::settings::{Section, UserConfig};
 
 /// The labels iboard ships with, applied with zero configuration. Mid tones,
 /// so the colour stays readable as chip text in both themes; the chip falls
@@ -44,34 +45,31 @@ impl Labels {
         labels
     }
 
-    /// The presets, overridden and extended by the `[labels]` table of `file`.
-    /// A missing or unreadable file leaves the presets untouched.
-    pub fn load(file: Option<&Path>) -> Self {
+    /// The presets, overridden and extended by the `[labels]` section. A value
+    /// that is not a colour is reported and skipped.
+    pub fn load(config: &mut UserConfig) -> Self {
+        let table: BTreeMap<String, String> = config.section("labels");
+        for (name, value) in &table {
+            if !value.trim().is_empty() && parse_hex(value).is_none() {
+                config.problem(format!("[labels]: {name} = \"{value}\" is not #rrggbb"));
+            }
+        }
+        Self::with(&table)
+    }
+
+    /// The presets with `table`'s changes: a colour sets a label, an empty
+    /// value removes one, presets included.
+    pub fn with(table: &BTreeMap<String, String>) -> Self {
         let mut labels = Self::presets();
-        let Some(file) = file else {
-            return labels;
-        };
-        let Ok(text) = std::fs::read_to_string(file) else {
-            return labels;
-        };
-        let Ok(raw) = toml::from_str::<RawFile>(&text) else {
-            return labels;
-        };
-        for (name, value) in raw.labels {
+        for (name, value) in table {
             let name = name.trim().to_lowercase();
             if name.is_empty() {
                 continue;
             }
-            // An empty colour removes the label, presets included.
             if value.trim().is_empty() {
                 labels.colors.remove(&name);
-                continue;
-            }
-            match parse_hex(&value) {
-                Some(color) => {
-                    labels.colors.insert(name, color);
-                }
-                None => eprintln!("warning: ignoring label {name:?}: `{value}` is not #rrggbb"),
+            } else if let Some(color) = parse_hex(value) {
+                labels.colors.insert(name, color);
             }
         }
         labels
@@ -107,12 +105,11 @@ impl Labels {
     }
 }
 
-/// Writes the `[labels]` table: only what differs from the presets, so a
-/// preset later improved by iboard still reaches labels left untouched. A
-/// preset missing from `entries` was removed and is written as `name = ""`.
-/// Keeps the file's other sections.
-pub fn save(file: &Path, entries: &[(String, String)]) -> Result<(), String> {
-    let mut table = toml::map::Map::new();
+/// What `[labels]` holds for `entries`: only what differs from the presets,
+/// so a preset later improved by iboard still reaches labels left untouched.
+/// A preset missing from `entries` was removed and is written as `name = ""`.
+pub fn table(entries: &[(String, String)]) -> BTreeMap<String, String> {
+    let mut table = BTreeMap::new();
     for (name, hex) in entries {
         let name = name.trim().to_lowercase();
         let Some(color) = parse_hex(hex) else {
@@ -122,44 +119,26 @@ pub fn save(file: &Path, entries: &[(String, String)]) -> Result<(), String> {
         if name.is_empty() || preset_hex(&name) == Some(hex.as_str()) {
             continue;
         }
-        table.insert(name, toml::Value::String(hex));
+        table.insert(name, hex);
     }
     for (preset, _) in PRESETS {
         let kept = entries.iter().any(|(name, hex)| {
             name.trim().eq_ignore_ascii_case(preset) && parse_hex(hex).is_some()
         });
         if !kept {
-            table.insert(preset.to_string(), toml::Value::String(String::new()));
+            table.insert(preset.to_string(), String::new());
         }
     }
-    let parent = file
-        .parent()
-        .ok_or_else(|| "the configuration has no folder".to_string())?;
-    std::fs::create_dir_all(parent)
-        .map_err(|err| format!("Couldn't create {}: {err}", parent.display()))?;
-    let mut document = std::fs::read_to_string(file)
-        .ok()
-        .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
-        .and_then(|value| value.as_table().cloned())
-        .unwrap_or_default();
-    if table.is_empty() {
-        document.remove("labels");
-    } else {
-        document.insert("labels".into(), toml::Value::Table(table));
-    }
-    let body =
-        toml::to_string(&document).map_err(|err| format!("Couldn't write the config: {err}"))?;
-    let temp = file.with_extension("tmp");
-    std::fs::write(&temp, body)
-        .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
-    std::fs::rename(&temp, file).map_err(|err| format!("Couldn't save {}: {err}", file.display()))
+    table
 }
 
-/// The `[labels]` section of the user configuration, as written on disk.
-#[derive(Debug, Default, Deserialize)]
-struct RawFile {
-    #[serde(default)]
-    labels: BTreeMap<String, String>,
+/// The `[labels]` section that stores `table`; none at all when it is empty.
+pub fn section(table: &BTreeMap<String, String>) -> Result<Section, String> {
+    if table.is_empty() {
+        Ok(Section::removed("labels"))
+    } else {
+        Section::new("labels", table)
+    }
 }
 
 /// Parses `#rrggbb` (or a bare `rrggbb`). `None` for anything else.
@@ -624,17 +603,17 @@ mod tests {
 
     #[test]
     fn the_config_overrides_and_extends_the_preset() {
-        let dir = std::env::temp_dir().join(format!("iboard-labels-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("iboard.toml");
+        let load = |text: &str| {
+            let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
+            (Labels::load(&mut config), config.problems)
+        };
 
         // Without `[labels]`, the preset stands.
-        std::fs::write(&file, "[ai]\ntool = \"opencode\"\n").unwrap();
-        assert_eq!(Labels::load(Some(&file)).color("bug"), parse_hex("#b12f22"));
+        let (labels, _) = load("[ai]\ntool = \"opencode\"\n");
+        assert_eq!(labels.color("bug"), parse_hex("#b12f22"));
 
         // With it, a preset is overridden and a name is added.
-        std::fs::write(&file, "[labels]\nbug = \"#ff0000\"\nspike = \"#123456\"\n").unwrap();
-        let labels = Labels::load(Some(&file));
+        let (labels, problems) = load("[labels]\nbug = \"#ff0000\"\nspike = \"#123456\"\n");
         assert_eq!(labels.color("bug"), Some(Color32::from_rgb(255, 0, 0)));
         assert_eq!(labels.color("spike"), Some(Color32::from_rgb(18, 52, 86)));
         assert_eq!(
@@ -642,8 +621,13 @@ mod tests {
             parse_hex("#1a6e42"),
             "other presets stay"
         );
+        assert!(problems.is_empty());
 
-        std::fs::remove_dir_all(&dir).ok();
+        // A value that is not a colour is skipped, and reported.
+        let (labels, problems) = load("[labels]\nbug = \"red\"\nops = \"#123456\"\n");
+        assert_eq!(labels.color("bug"), parse_hex("#b12f22"));
+        assert_eq!(labels.color("ops"), parse_hex("#123456"));
+        assert_eq!(problems.len(), 1);
     }
 
     #[test]
@@ -658,7 +642,7 @@ mod tests {
             ("Ops".to_string(), "abcdef".to_string()),
             ("broken".to_string(), "nope".to_string()),
         ];
-        save(&file, &entries).unwrap();
+        crate::settings::save(&file, &[section(&table(&entries)).unwrap()]).unwrap();
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(
             !text.contains("bug"),
@@ -668,7 +652,7 @@ mod tests {
         assert!(text.contains("ops = \"#abcdef\""), "{text}");
         assert!(!text.contains("broken"));
         assert!(text.contains("confirm = false"), "other sections stay");
-        let labels = Labels::load(Some(&file));
+        let labels = Labels::load(&mut UserConfig::load(Some(&file)));
         assert_eq!(labels.color("feature"), parse_hex("#123456"));
         assert_eq!(labels.color("bug"), parse_hex("#b12f22"));
         // The presets left out of `entries` were removed and stay removed.

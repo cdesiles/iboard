@@ -8,20 +8,17 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::{files, settings};
+
 /// How many projects are kept; older ones fall off the end.
 const MAX_RECENT: usize = 10;
 
-const CACHE_DIR: &str = "iboard";
 const CACHE_FILE: &str = "recent-projects";
 
 /// Where the list is stored, or `None` when neither `XDG_CACHE_HOME` nor
 /// `HOME` is set.
 pub fn cache_file() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_CACHE_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
-    Some(base.join(CACHE_DIR).join(CACHE_FILE))
+    settings::cache_dir().map(|dir| dir.join(CACHE_FILE))
 }
 
 /// The remembered projects that still exist, most recent first.
@@ -52,10 +49,7 @@ pub fn write(file: &Path, projects: &[PathBuf]) {
         .collect::<Vec<_>>()
         .join("\n");
     body.push('\n');
-    let temp = file.with_extension("tmp");
-    if std::fs::write(&temp, body).is_ok() {
-        let _ = std::fs::rename(&temp, file);
-    }
+    let _ = files::atomic_write(file, body);
 }
 
 /// Moves `project` to the front of `list`, removing any earlier copy, and

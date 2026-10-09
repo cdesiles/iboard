@@ -23,8 +23,7 @@ use std::sync::mpsc::{Receiver, channel};
 
 use serde::{Deserialize, Serialize};
 
-const CONFIG_DIR: &str = "iboard";
-const CONFIG_FILE: &str = "iboard.toml";
+use crate::settings::{self, Section, UserConfig};
 
 /// What a [`AgentConfig::model`] of "the tool's first favorite" is written as.
 const DEFAULT_MODEL: &str = "default";
@@ -199,66 +198,14 @@ struct RawAgent {
     command: String,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct FileConfig {
-    #[serde(default)]
-    ai: RawAgent,
+/// The agent in the `[ai]` section; unconfigured when there is none.
+pub fn load(config: &mut UserConfig) -> AgentConfig {
+    AgentConfig::from_raw(config.section("ai"))
 }
 
-/// Where the user configuration lives, or `None` when neither
-/// `XDG_CONFIG_HOME` nor `HOME` is set.
-pub fn config_file() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| home().map(|home| home.join(".config")))?;
-    Some(base.join(CONFIG_DIR).join(CONFIG_FILE))
-}
-
-fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-}
-
-/// Reads the `[ai]` configuration from `file`, defaulting to an unconfigured
-/// agent when the file is missing or unreadable.
-pub fn load_from(file: Option<&Path>) -> AgentConfig {
-    let Some(file) = file else {
-        return AgentConfig::default();
-    };
-    let Ok(text) = std::fs::read_to_string(file) else {
-        return AgentConfig::default();
-    };
-    toml::from_str::<FileConfig>(&text)
-        .map(|config| AgentConfig::from_raw(config.ai))
-        .unwrap_or_default()
-}
-
-/// Writes the `[ai]` configuration, creating the directory. Other sections of
-/// the file, if any, are preserved.
-pub fn save(file: &Path, config: &AgentConfig) -> Result<(), String> {
-    let parent = file
-        .parent()
-        .ok_or_else(|| "the configuration has no folder".to_string())?;
-    std::fs::create_dir_all(parent)
-        .map_err(|err| format!("Couldn't create {}: {err}", parent.display()))?;
-
-    let mut document = std::fs::read_to_string(file)
-        .ok()
-        .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
-        .and_then(|value| value.as_table().cloned())
-        .unwrap_or_default();
-    let ai = toml::Value::try_from(config.to_raw())
-        .map_err(|err| format!("Couldn't encode the config: {err}"))?;
-    document.insert("ai".to_string(), ai);
-    let body =
-        toml::to_string(&document).map_err(|err| format!("Couldn't write the config: {err}"))?;
-
-    let temp = file.with_extension("tmp");
-    std::fs::write(&temp, body)
-        .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
-    std::fs::rename(&temp, file).map_err(|err| format!("Couldn't save {}: {err}", file.display()))
+/// The `[ai]` section that stores `config`.
+pub fn section(config: &AgentConfig) -> Result<Section, String> {
+    Section::new("ai", &config.to_raw())
 }
 
 /// The folders searched for a tool: `PATH`, then where installers put them.
@@ -272,7 +219,7 @@ fn search_dirs() -> Vec<PathBuf> {
         PathBuf::from("/opt/homebrew/bin"),
         PathBuf::from("/usr/local/bin"),
     ];
-    if let Some(home) = home() {
+    if let Some(home) = settings::home() {
         for dir in [
             ".local/bin",
             ".opencode/bin",
@@ -452,11 +399,8 @@ fn parse_model_list(text: &str) -> Vec<String> {
 
 /// OpenCode keeps favorites in its state folder, in `model.json`.
 fn opencode_state_file() -> Option<PathBuf> {
-    let state = std::env::var_os("XDG_STATE_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| home().map(|home| home.join(".local/state")))?;
-    Some(state.join("opencode/model.json"))
+    settings::dir_from_env("XDG_STATE_HOME", ".local/state")
+        .map(|state| state.join("opencode/model.json"))
 }
 
 /// The `favorite` list of OpenCode's `model.json`, as `provider/model` IDs.
@@ -481,11 +425,7 @@ fn parse_opencode_favorites(text: &str) -> Vec<String> {
 
 /// Claude Code's user settings, where `model` is its chosen default.
 fn claude_settings_file() -> Option<PathBuf> {
-    let dir = std::env::var_os("CLAUDE_CONFIG_DIR")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| home().map(|home| home.join(".claude")))?;
-    Some(dir.join("settings.json"))
+    settings::dir_from_env("CLAUDE_CONFIG_DIR", ".claude").map(|dir| dir.join("settings.json"))
 }
 
 fn parse_claude_model(text: &str) -> Option<String> {
@@ -960,7 +900,8 @@ Some context.";
             std::thread::current().id()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join(CONFIG_FILE);
+        let file = dir.join("iboard.toml");
+        std::fs::write(&file, "[other]\nkey = 1\n").unwrap();
 
         let config = AgentConfig {
             tool: Tool::OpenCode,
@@ -968,41 +909,15 @@ Some context.";
             command: String::new(),
             configured: true,
         };
-        save(&file, &config).unwrap();
-        assert_eq!(load_from(Some(&file)), config);
-
-        // A missing file is simply an unconfigured agent.
-        assert!(!load_from(Some(&dir.join("absent.toml"))).configured());
-
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn saving_the_agent_keeps_other_sections() {
-        let dir = std::env::temp_dir().join(format!(
-            "iboard-agent-merge-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join(CONFIG_FILE);
-        std::fs::write(&file, "[other]\nkey = 1\n").unwrap();
-
-        save(
-            &file,
-            &AgentConfig {
-                tool: Tool::OpenCode,
-                configured: true,
-                ..AgentConfig::default()
-            },
-        )
-        .unwrap();
-
+        settings::save(&file, &[section(&config).unwrap()]).unwrap();
+        assert_eq!(load(&mut UserConfig::load(Some(&file))), config);
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(text.contains("[other]"), "the other section survives");
         assert!(text.contains("tool = \"opencode\""));
-        assert!(text.contains("model = \"default\""));
-        assert_eq!(load_from(Some(&file)).tool, Tool::OpenCode);
+
+        // A missing file is simply an unconfigured agent.
+        let absent = dir.join("absent.toml");
+        assert!(!load(&mut UserConfig::load(Some(&absent))).configured());
 
         std::fs::remove_dir_all(&dir).ok();
     }

@@ -17,12 +17,14 @@ use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use crate::agent::{self, AgentConfig, Report};
 use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
+use crate::files::atomic_write;
 use crate::filter::{self, Filter};
 use crate::general;
 use crate::issue::Issue;
 use crate::label_picker::{self, LabelPicker};
 use crate::labels::{self, Labels};
 use crate::review_settings::{self, Catalog};
+use crate::settings::{self, UserConfig};
 use crate::theme::{self, Icon, Palette};
 use crate::titles::{self, Engine};
 use crate::widgets::{self, ButtonKind};
@@ -657,9 +659,12 @@ pub struct IboardApp {
     pending_title: Option<String>,
     /// The user-configured AI tool and model.
     agent: AgentConfig,
-    /// Where `agent` is persisted; `None` in tests, so they never touch the
-    /// user's configuration.
-    agent_file: Option<PathBuf>,
+    /// The user configuration Settings saves to; `None` in tests, so they
+    /// never touch the user's file.
+    config_file: Option<PathBuf>,
+    /// What the user configuration holds that iboard could not use, shown in
+    /// Settings until the next save.
+    config_problem: Option<String>,
     /// The AI review of the open issue, if any.
     review: Option<ReviewState>,
     /// The ReviewSettings dialog, while it is open.
@@ -742,13 +747,19 @@ impl IboardApp {
         if let Some(file) = &app.recents_file {
             app.recents = recents::read(file);
         }
-        // Likewise for the AI configuration.
-        app.agent_file = agent::config_file();
-        app.agent = agent::load_from(app.agent_file.as_deref());
-        app.suggestions = filter::load_suggestions(app.agent_file.as_deref());
-        app.title_engine = titles::load_engine(app.agent_file.as_deref());
-        app.confirm_delete = general::load_confirm_delete(app.agent_file.as_deref());
-        app.labels = Labels::load(app.agent_file.as_deref());
+        // Likewise for the user configuration.
+        app.config_file = settings::config_file();
+        let mut config = UserConfig::load(app.config_file.as_deref());
+        app.agent = agent::load(&mut config);
+        app.suggestions = filter::load_suggestions(&mut config);
+        app.title_engine = titles::load_engine(&mut config);
+        app.confirm_delete = general::load_confirm_delete(&mut config);
+        app.labels = Labels::load(&mut config);
+        if !config.problems.is_empty() {
+            let problem = config.problems.join(" ");
+            app.error = Some(format!("Settings: {problem}"));
+            app.config_problem = Some(problem);
+        }
         app.catalog = Catalog::probing();
         let project = app.located.project_dir.clone();
         app.remember(&project);
@@ -771,7 +782,7 @@ impl IboardApp {
             new_card: None,
             filter: Filter::default(),
             focus_filter: false,
-            suggestions: filter::load_suggestions(None),
+            suggestions: None,
             title_engine: Engine::Manual,
             settings_tab: review_settings::Tab::General,
             chip_cursor: None,
@@ -802,7 +813,8 @@ impl IboardApp {
             recents_file: None,
             pending_title: None,
             agent: AgentConfig::default(),
-            agent_file: None,
+            config_file: None,
+            config_problem: None,
             review: None,
             settings: None,
             catalog: Catalog::default(),
@@ -1388,7 +1400,7 @@ impl IboardApp {
                 }
                 Ok(())
             }
-            _ => atomic_write_bytes(&deleted.path, &deleted.content),
+            _ => atomic_write(&deleted.path, &deleted.content),
         };
         match restored {
             Ok(()) => {
@@ -1878,10 +1890,11 @@ impl IboardApp {
             .flat_map(|column| column.issues.iter())
             .flat_map(|issue| issue.labels.iter().cloned())
             .collect();
-        self.settings = Some(
+        let mut dialog =
             review_settings::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
-                .with_labels(&self.labels, used),
-        );
+                .with_labels(&self.labels, used);
+        dialog.save_error = self.config_problem.clone();
+        self.settings = Some(dialog);
     }
 
     /// Opens the quick-add composer at the top of Todo, from any screen.
@@ -3687,7 +3700,7 @@ impl IboardApp {
         let Some(dialog) = self.settings.as_mut() else {
             return;
         };
-        let saved_to = match &self.agent_file {
+        let saved_to = match &self.config_file {
             Some(file) => format!("Saved to {}", display_path(file)),
             None => "Saved for this session".to_string(),
         };
@@ -3710,25 +3723,34 @@ impl IboardApp {
                 let engine = dialog.engine;
                 let confirm_delete = dialog.confirm_delete;
                 // `[labels]` is rewritten only once its tab was looked at.
-                let label_rows = dialog.labels_seen.then(|| dialog.label_rows.clone());
+                let label_table = dialog
+                    .labels_seen
+                    .then(|| labels::table(&dialog.label_rows));
                 let renames = dialog.renames.clone();
-                let result = match &self.agent_file {
-                    Some(file) => (if save_review {
-                        agent::save(file, &config)
-                    } else {
-                        Ok(())
-                    })
-                    .and_then(|()| titles::save_engine(file, engine))
-                    .and_then(|()| general::save_confirm_delete(file, confirm_delete))
-                    .and_then(|()| {
-                        if label_rows.is_some() {
-                            labels::save(file, label_rows.as_deref().unwrap_or_default())
-                        } else {
-                            Ok(())
-                        }
-                    }),
-                    None => Ok(()),
+                // Only what changed is written, so a setting another window
+                // saved in the meantime survives.
+                let changed = || -> Result<Vec<settings::Section>, String> {
+                    let mut sections = Vec::new();
+                    if save_review && config != self.agent {
+                        sections.push(agent::section(&config)?);
+                    }
+                    if engine != self.title_engine {
+                        sections.push(titles::section(engine)?);
+                    }
+                    if confirm_delete != self.confirm_delete {
+                        sections.push(general::section(confirm_delete)?);
+                    }
+                    if let Some(table) = &label_table
+                        && *table != labels::table(&self.labels.entries())
+                    {
+                        sections.push(labels::section(table)?);
+                    }
+                    Ok(sections)
                 };
+                let result = changed().and_then(|sections| match &self.config_file {
+                    Some(file) if !sections.is_empty() => settings::save(file, &sections),
+                    _ => Ok(()),
+                });
                 match result {
                     Ok(()) => {
                         self.settings_tab = dialog.tab;
@@ -3737,10 +3759,11 @@ impl IboardApp {
                         }
                         self.title_engine = engine;
                         self.confirm_delete = confirm_delete;
-                        if label_rows.is_some() {
+                        if let Some(table) = &label_table {
                             self.rename_labels(&renames);
-                            self.labels = Labels::load(self.agent_file.as_deref());
+                            self.labels = Labels::with(table);
                         }
+                        self.config_problem = None;
                         self.settings = None;
                         // The composer follows the new engine at once.
                         if self.composer.is_some() {
@@ -7298,33 +7321,6 @@ fn planned_issue_name(dir: &Path, title: &str) -> (String, bool) {
     (candidate, n > 2)
 }
 
-/// Writes via a hidden temp file and rename, so a crash cannot leave a
-/// half-written issue. The temp name starts with `.` and is ignored by discovery.
-fn atomic_write(path: &Path, contents: &str) -> std::io::Result<()> {
-    atomic_write_bytes(path, contents.as_bytes())
-}
-
-fn atomic_write_bytes(path: &Path, contents: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("issue.md");
-    let temp = parent.join(format!(".{name}.{}.tmp", std::process::id()));
-
-    {
-        let mut file = std::fs::File::create(&temp)?;
-        file.write_all(contents)?;
-        file.sync_all()?;
-    }
-    std::fs::rename(&temp, path)
-}
-
 /// Where a deleted issue goes, as the confirmation dialog tells the user.
 #[cfg(target_os = "macos")]
 const DELETE_CONSEQUENCE: &str =
@@ -7471,29 +7467,6 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
-    }
-
-    #[test]
-    fn atomic_write_replaces_content_without_leaving_temp_files() {
-        let dir = scratch_dir("atomic");
-        let file = dir.join("issue.md");
-        std::fs::write(&file, "old").unwrap();
-
-        atomic_write(&file, "new content").unwrap();
-
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), "new content");
-        let leftovers: Vec<String> = std::fs::read_dir(&dir)
-            .unwrap()
-            .filter_map(|entry| entry.ok())
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            .filter(|name| name.ends_with(".tmp"))
-            .collect();
-        assert!(
-            leftovers.is_empty(),
-            "temp files left behind: {leftovers:?}"
-        );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9667,6 +9640,66 @@ mod tests {
         frame(&mut app, vec![key(Key::Escape, egui::Modifiers::NONE)]);
         assert!(app.settings.is_none(), "esc closes the dialog");
         assert!(app.review.is_some(), "and leaves the review alone");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Save writes only the sections that changed, keeps the rest of the file
+    /// as written, and never writes over a file that does not parse.
+    #[test]
+    fn saving_settings_never_loses_the_users_file() {
+        let (dir, _file, mut app) = open_issue_with_review("settings-file");
+        let ctx = themed_ctx();
+        let save = |app: &mut IboardApp| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1280.0, 800.0),
+                )),
+                events: vec![egui::Event::Key {
+                    key: Key::Enter,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::COMMAND,
+                }],
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| app.draw(ui)).textures_delta.clear();
+        };
+        let config = dir.join("iboard.toml");
+        let mine = "# mine\n[delete]\nconfirm = true # keep asking\n";
+        std::fs::write(&config, mine).unwrap();
+        app.config_file = Some(config.clone());
+
+        app.open_title_settings();
+        save(&mut app);
+        assert!(app.settings.is_none());
+        assert_eq!(
+            std::fs::read_to_string(&config).unwrap(),
+            mine,
+            "nothing changed"
+        );
+
+        app.open_title_settings();
+        app.settings.as_mut().unwrap().engine = Engine::Agent;
+        save(&mut app);
+        assert_eq!(
+            std::fs::read_to_string(&config).unwrap(),
+            format!("{mine}\n[titles]\nengine = \"agent\"\n")
+        );
+
+        let broken = "[titles\nengine = \"agent\"\n";
+        std::fs::write(&config, broken).unwrap();
+        app.open_title_settings();
+        app.settings.as_mut().unwrap().engine = Engine::Manual;
+        save(&mut app);
+        let error = app
+            .settings
+            .as_ref()
+            .and_then(|dialog| dialog.save_error.clone());
+        assert!(error.is_some_and(|error| error.contains("line 1")));
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), broken);
 
         std::fs::remove_dir_all(&dir).ok();
     }
