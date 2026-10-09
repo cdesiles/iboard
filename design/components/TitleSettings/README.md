@@ -4,7 +4,7 @@ The **Titles** tab of the Settings dialog: which engine names new issues from th
 
 ## Where it lives
 
-The one dialog becomes **Settings** (`⌘,`), with three tabs in its header: *General* (GeneralSettings), *AI review* (ReviewSettings) and *Titles*. A second dialog would need its own shortcut and menu entry for a single radio choice. A tab keeps `⌘,` as the only door, and the Review agent choice can point straight at the tab next door. `⌘,` reopens the last tab used; the Review menu's "AI settings…" opens AI review, and clicking the engine tag in the composer opens Titles.
+The one dialog becomes **Settings** (`⌘,`), with four tabs in its header: *General* (GeneralSettings), *AI review* (ReviewSettings), *Titles* and *Labels*. A second dialog would need its own shortcut and menu entry for a single radio choice. A tab keeps `⌘,` as the only door, and the Review agent choice can point straight at the tab next door. `⌘,` reopens the last tab used; the Review menu's "AI settings…" opens AI review, and clicking the engine tag in the composer opens Titles.
 
 Tabs are a segmented control (`surface-sunken` track, active tab on `surface` with a `line-strong` edge), 24pt tall, right of the "Settings" title.
 

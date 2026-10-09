@@ -64,9 +64,8 @@ pub fn component_prompt(
 }
 
 /// The instruction sent to the agent for a review. It carries only the issue,
-/// by design: if that is not enough context, the issue is the problem. It lives
-/// here so every agent call is composed in one place, and stays issue-only on
-/// purpose — unlike the design-aware prompts below.
+/// by design: if that is not enough context, the issue is the problem. It stays
+/// issue-only on purpose, unlike the design-aware prompts below.
 pub fn review_prompt(content: &str) -> String {
     format!(
         "You review software issues before they are implemented. Judge the issue \

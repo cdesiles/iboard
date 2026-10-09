@@ -1,6 +1,6 @@
-//! The Settings dialog (`⌘,`), with three tabs: General (whether deleting
-//! asks first), AI review (which agent runs the review, and with which model)
-//! and Titles (which engine names new issues). See
+//! The Settings dialog (`⌘,`), with four tabs: General (whether deleting
+//! asks first), AI review (which agent runs the review, and with which model),
+//! Titles (which engine names new issues) and Labels (label colours). See
 //! `design/components/{GeneralSettings,ReviewSettings,TitleSettings}`.
 //!
 //! What the dialog shows about the tools (where each is installed, its

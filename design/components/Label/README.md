@@ -5,15 +5,16 @@ A short tag that groups issues, read straight from the title. `# [Discovery] Off
 ## Parsing
 
 - Only bracket groups at the **start** of the first `#` heading count: `[Bug] [UI] Title` and `[Bug][UI] Title` both give `bug` and `ui`. Brackets later in the title stay part of it (`Support [WIP] markers`).
-- A label is the bracket text trimmed and lowercased, with spaces as hyphens, at most 24 characters: `[Tech debt]` gives `tech-debt`. Empty `[]` is ignored and repeats are merged.
+- A label is the bracket text trimmed and lowercased, with spaces as hyphens, at most 25 characters: `[Tech debt]` gives `tech-debt`. Empty `[]` is ignored and repeats are merged.
 - A `labels:` list in front matter, if a file has one, is merged in after the title's labels.
 - Everywhere iboard shows the title (card, breadcrumb, Reader, ConfirmDialog, status bar), it shows it **without** the bracket prefix. The Editor shows the raw line, brackets included.
 - New file names are slugged from the title without its labels: `[Bug] Fix login redirect` is written to `todo/fix-login-redirect.md`. Existing files are never renamed.
 
 ## Look
 
-- 18pt tall, `radius-sm`, padding 0×6, `meta` mono 11pt in `ink-muted` on `surface-sunken`, with a `line-strong` edge because it is clickable.
-- All labels look the same. Colour stays reserved for state (column, selection, review, danger), so `bug` is not red.
+- 18pt tall, `radius-pill`, padding 0×7, lowercase, the `ui-strong` face at 11pt.
+- A label with a colour (the presets `discovery`, `bug`, `feature`, `chore` and `question`, or one set in Settings › Labels) is filled with a soft tint of it over `surface`, and written in the colour itself when that reads at 4.5:1, else in `ink`.
+- A label with no colour: `ink-muted` on `surface-sunken`.
 - Hover, or the label is the active filter: `accent` text and edge on `accent-soft`.
 
 ## Where it shows

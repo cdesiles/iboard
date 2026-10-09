@@ -4,7 +4,7 @@
 //! into a small helper that snapshots the page and exits, so the board's
 //! process stays a plain egui window: instant to start, and a broken preview
 //! cannot take it down. On a machine without the helper (or a non-macOS build)
-//! nothing renders, and callers fall back to opening the HTML in the browser.
+//! nothing renders, and the Design panel says so in place of each preview.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

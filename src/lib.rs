@@ -1,11 +1,13 @@
 //! Shared library behind the `iboard` board and the `idesign` toolchain.
 //!
 //! Both binaries sit on this crate so they can never disagree about an on-disk
-//! format. Everything that is not egui drawing lives here: the board
-//! discovery, the agent runner and its prompt, and the design system.
+//! format: the board discovery, the agent runner and its prompts, and the
+//! design system. The egui pieces both windows draw also live here: the theme,
+//! the widgets, the Design panel and the macOS menu.
 //!
-//! `iboard` (the window) keeps the egui views in its own binary; `idesign`
-//! (the CLI) creates, browses and validates a project's design system.
+//! `iboard` keeps its board, reader, editor and Settings views in its own
+//! binary; `idesign` creates, browses, validates and renders a project's
+//! design system, in a terminal or in its own window.
 
 pub mod agent;
 pub mod commits;

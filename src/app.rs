@@ -3753,9 +3753,7 @@ impl IboardApp {
         }
     }
 
-    /// The work each frame does whatever the keyboard said: autosave, the
-    /// periodic refresh, and waking up for a running review.
-    /// Opens the Design panel, loading the project's design system once.
+    /// Opens the Design panel on a fresh load of the project's design system.
     fn open_design(&mut self) {
         match DesignSystem::discover(&self.located.project_dir) {
             Ok(system) => {
@@ -4134,6 +4132,8 @@ impl IboardApp {
         }
     }
 
+    /// The work each frame does whatever the keyboard said: autosave, the
+    /// periodic refresh, and waking up for a running review.
     fn background(&mut self, ctx: &egui::Context) {
         // Debounced autosave, while Auto is on.
         let due = self.auto
@@ -4615,7 +4615,7 @@ impl IboardApp {
                             ui.set_min_width(ui.available_width());
                             // Reading sizes: `read-body` 14, `read-h1` 20.
                             let styles = &mut ui.style_mut().text_styles;
-                            styles.insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
+                            styles.insert(egui::TextStyle::Body, theme::read_body());
                             styles.insert(egui::TextStyle::Heading, theme::read_h1());
                             styles
                                 .insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.5));

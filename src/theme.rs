@@ -214,6 +214,10 @@ pub fn meta() -> FontId {
 pub fn read_h1() -> FontId {
     FontId::new(20.0, family(SANS_SEMIBOLD))
 }
+/// `read-body`: the issue's prose in the reader.
+pub fn read_body() -> FontId {
+    FontId::proportional(14.0)
+}
 /// `edit-body`: the plain-text editor.
 pub fn edit_body() -> FontId {
     FontId::monospace(13.0)
@@ -556,6 +560,227 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
                 stroke,
             );
             painter.circle_filled(at(11.7, 15.0), 1.0 * s, color);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::design::{DesignSystem, Token, Tokens};
+    use std::path::Path;
+
+    /// Colour tokens with no `Palette` field: `focus` is `{accent}`, and
+    /// nothing is drawn on a `review` fill.
+    const UNMAPPED_COLORS: [&str; 2] = ["focus", "on-review"];
+
+    /// Sizes the theme overrides on purpose; see [`COLUMN_MIN`].
+    const OVERRIDDEN_SIZES: [&str; 1] = ["column-min"];
+
+    fn tokens() -> Tokens {
+        DesignSystem::load(Path::new(env!("CARGO_MANIFEST_DIR")))
+            .unwrap()
+            .tokens
+    }
+
+    fn find<'a>(tokens: impl IntoIterator<Item = &'a Token>, name: &str) -> &'a Token {
+        tokens
+            .into_iter()
+            .find(|token| token.name == name)
+            .unwrap_or_else(|| panic!("tokens.json has no {name}"))
+    }
+
+    fn colors(p: &Palette) -> [(&'static str, Color32); 23] {
+        [
+            ("bg", p.bg),
+            ("surface", p.surface),
+            ("surface-hover", p.surface_hover),
+            ("surface-sunken", p.surface_sunken),
+            ("line", p.line),
+            ("line-strong", p.line_strong),
+            ("ink", p.ink),
+            ("ink-muted", p.ink_muted),
+            ("ink-faint", p.ink_faint),
+            ("accent", p.accent),
+            ("accent-soft", p.accent_soft),
+            ("on-accent", p.on_accent),
+            ("status-todo", p.status_todo),
+            ("status-ready", p.status_ready),
+            ("status-doing", p.status_doing),
+            ("status-done", p.status_done),
+            ("review", p.review),
+            ("review-soft", p.review_soft),
+            ("danger", p.danger),
+            ("danger-soft", p.danger_soft),
+            ("on-danger", p.on_danger),
+            ("scrim", p.scrim),
+            ("shadow-popover", p.popover_shadow),
+        ]
+    }
+
+    /// The colour in a token value: `#rrggbb`, or `rgba(…)` premultiplied
+    /// the way the palette is written. A shadow's colour is its last part.
+    fn color_of(value: &str) -> Color32 {
+        if let Some(at) = value.find("rgba(") {
+            let channels: Vec<f32> = value[at + 5..]
+                .trim_end_matches(')')
+                .split(',')
+                .map(|part| part.trim().parse().unwrap())
+                .collect();
+            let alpha = channels[3];
+            let premultiply = |c: f32| (c * alpha).round() as u8;
+            return Color32::from_rgba_premultiplied(
+                premultiply(channels[0]),
+                premultiply(channels[1]),
+                premultiply(channels[2]),
+                (alpha * 255.0).round() as u8,
+            );
+        }
+        let word = value.split_whitespace().last().unwrap();
+        hex(u32::from_str_radix(word.trim_start_matches('#'), 16).unwrap())
+    }
+
+    /// Opaque colours match exactly; translucent ones within the rounding of
+    /// a premultiplication.
+    fn same(a: Color32, b: Color32) -> bool {
+        if a.a() == 255 && b.a() == 255 {
+            return a == b;
+        }
+        a.to_array()
+            .iter()
+            .zip(b.to_array())
+            .all(|(x, y)| x.abs_diff(y) <= 1)
+    }
+
+    fn px(value: &str) -> f32 {
+        value.trim().trim_end_matches("px").parse().unwrap()
+    }
+
+    #[test]
+    fn the_palettes_match_the_colour_tokens() {
+        let tokens = tokens();
+        let all = || tokens.color.iter().chain(&tokens.shadow);
+        for (theme, palette) in [("light", &LIGHT), ("dark", &DARK)] {
+            for (name, color) in colors(palette) {
+                let value = find(all(), name)
+                    .value
+                    .theme(theme)
+                    .unwrap_or_else(|| panic!("{name} has no {theme} value"));
+                assert!(
+                    same(color_of(value), color),
+                    "{theme} {name}: tokens.json says {value}, theme.rs has {color:?}"
+                );
+            }
+        }
+        let mapped = colors(&LIGHT).map(|(name, _)| name);
+        for token in all() {
+            let name = token.name.as_str();
+            assert!(
+                mapped.contains(&name) || UNMAPPED_COLORS.contains(&name),
+                "{name} has no Palette field: add one, or list it in UNMAPPED_COLORS"
+            );
+        }
+    }
+
+    #[test]
+    fn the_popover_shadow_matches_its_token() {
+        let value = find(&tokens().shadow, "shadow-popover")
+            .value
+            .theme("light")
+            .unwrap()
+            .to_string();
+        let lengths: Vec<f32> = value.split_whitespace().take(3).map(px).collect();
+        let shadow = style(Theme::Light, &LIGHT).visuals.popup_shadow;
+        assert_eq!(
+            [f32::from(shadow.offset[0]), f32::from(shadow.offset[1])],
+            [lengths[0], lengths[1]]
+        );
+        assert_eq!(f32::from(shadow.blur), lengths[2]);
+    }
+
+    #[test]
+    fn spacing_radii_and_sizes_match_the_tokens() {
+        let tokens = tokens();
+        let all = || {
+            tokens
+                .spacing
+                .iter()
+                .chain(&tokens.radius)
+                .chain(&tokens.size)
+        };
+        let points = [
+            ("space-1", SPACE_1),
+            ("space-2", SPACE_2),
+            ("space-3", SPACE_3),
+            ("space-4", SPACE_4),
+            ("space-5", SPACE_5),
+            ("space-6", SPACE_6),
+            ("space-7", SPACE_7),
+            ("radius-sm", f32::from(RADIUS_SM)),
+            ("radius-md", f32::from(RADIUS_MD)),
+            ("radius-pill", f32::from(RADIUS_PILL)),
+            ("control-h", CONTROL_H),
+            ("bar-h", BAR_H),
+            ("statusbar-h", STATUSBAR_H),
+            ("column-max", COLUMN_MAX),
+            ("reader-max", READER_MAX),
+        ];
+        for (name, points) in points {
+            let value = find(all(), name).value.theme("light").unwrap();
+            assert_eq!(px(value), points, "{name}: tokens.json says {value}");
+        }
+        let mapped = points.map(|(name, _)| name);
+        for token in all() {
+            let name = token.name.as_str();
+            assert!(
+                mapped.contains(&name) || OVERRIDDEN_SIZES.contains(&name),
+                "{name} has no theme constant: add one, or list it in OVERRIDDEN_SIZES"
+            );
+        }
+    }
+
+    #[test]
+    fn type_styles_match_the_tokens() {
+        let fonts = [
+            ("ui-title", ui_title()),
+            ("ui-body", ui_body()),
+            ("ui-strong", ui_strong()),
+            ("ui-small", ui_small()),
+            ("ui-label", ui_label()),
+            ("read-h1", read_h1()),
+            ("read-body", read_body()),
+            ("edit-body", edit_body()),
+            ("meta", meta()),
+        ];
+        let weight = |family: &FontFamily| match family {
+            FontFamily::Name(name) if name.ends_with("-semibold") => 600,
+            FontFamily::Name(name) if name.ends_with("-medium") => 500,
+            _ => 400,
+        };
+        let mono = |family: &FontFamily| match family {
+            FontFamily::Monospace => true,
+            FontFamily::Name(name) => name.contains("mono"),
+            FontFamily::Proportional => false,
+        };
+        for group in tokens().type_groups {
+            for style in group.styles {
+                let name = style.name.as_str();
+                let (_, font) = fonts
+                    .iter()
+                    .find(|(known, _)| *known == name)
+                    .unwrap_or_else(|| panic!("{name} has no font in theme.rs"));
+                assert_eq!(
+                    Some(font.size),
+                    style.font_size.as_deref().map(px),
+                    "{name}"
+                );
+                assert_eq!(Some(weight(&font.family)), style.weight, "{name}");
+                assert_eq!(mono(&font.family), group.family == "mono", "{name}");
+                if let Some(em) = style.letter_spacing.as_deref() {
+                    let em: f32 = em.trim_end_matches("em").parse().unwrap();
+                    assert!((em * font.size - LABEL_TRACKING).abs() < 1e-4, "{name}");
+                }
+            }
         }
     }
 }

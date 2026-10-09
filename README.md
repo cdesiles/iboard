@@ -16,7 +16,7 @@ iboard --list              # print the board to stdout, no window
 
 ## What for?
 
-`iboard` is suitable for every small projects that does not require a complex integration workflow with Gitlab, github or what not. It make ticketing fast: creation, follow up... Its a matter of reading and writing local files, for humans an AI agents.
+`iboard` is suitable for every small project that does not require a complex integration workflow with GitLab, GitHub or what not. It makes ticketing fast: creation, follow-up... It's a matter of reading and writing local files, for humans and AI agents.
 
 ## Design
 
@@ -27,14 +27,19 @@ HTML preview per component under `design/components/`.
 ### The design-system toolchain
 
 `idesign` creates, browses, imports and renders a project's design system; the
-board's **Design** button opens the same system in a panel, and running `idesign`
-alone in a terminal opens that same browser in its own window. A component
-preview is turned into a PNG by a short-lived WebKit helper (`macos/render.swift`,
-built by `build.rs`), so the board never loads a browser itself: startup stays
-instant and a broken preview cannot take the window down.
+board's **Design** button opens the same system in a panel. Running `idesign`
+alone in a terminal opens the live catalog, an interactive page of every
+component in a WebKit window (`macos/catalog.swift`); `idesign --browser` opens
+the board's panel in its own window instead. A component preview is turned into
+a PNG by a short-lived WebKit helper (`macos/render.swift`). `build.rs` builds
+both helpers, and both run as their own processes, so the board never loads a
+browser itself: startup stays instant and a broken preview cannot take the
+window down. `IBOARD_RENDER` and `IBOARD_CATALOG` point at other builds of the
+two helpers.
 
 ```sh
-idesign                         # open the browser (in a terminal)
+idesign                         # open the live catalog (in a terminal)
+idesign --browser               # open the design panel in a window
 idesign show                    # summary of the current project's system
 idesign list                    # one line per component
 idesign validate                # token references, missing previews, missing docs
@@ -70,12 +75,14 @@ restrained defaults.
 From this repository:
 
 ```sh
-$ make help                                                                                                  
+$ make help
   build      Build the binary (debug)
   release    Build the binary (optimized)
+  check      Everything a ticket needs before it is done: formatting, lints and tests
   test       Run all tests
-  lint       Check formatting and run clippy (fails on warnings)
+  lint       Check formatting, run clippy and swift-format (fails on warnings)
   fmt        Format code in place
+  hooks      Lint the staged snapshot before each commit (installs .githooks)
   run        Launch a binary, iboard by default: make run, make run iboard, make run idesign
   iboard     Launch the board directly, e.g. make iboard ARGS="~/code/moon-cull"
   idesign    Launch the design tool directly, e.g. make idesign ARGS="show"
@@ -139,7 +146,7 @@ model = "default"   # or a model ID from the tool's list
 command = ""        # custom only, e.g. "llm -m {model} < {prompt}"
 
 [titles]
-engine = "apple"    # "apple" (on-device), "agent" or "off"
+engine = "apple"    # "apple" (on-device), "agent" or "manual"
 
 [delete]
 confirm = true      # false: delete without asking, with ⌘Z undo

@@ -1,6 +1,6 @@
 # GeneralSettings
 
-The **General** tab of the Settings dialog (`⌘,`), first of three: *General*, *AI review*, *Titles*. Today it holds one choice.
+The **General** tab of the Settings dialog (`⌘,`), first of four: *General*, *AI review*, *Titles*, *Labels*. Today it holds one choice.
 
 ## Ask before deleting an issue
 

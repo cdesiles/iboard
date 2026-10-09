@@ -1,11 +1,11 @@
 # ReviewSettings
 
-The *AI review* tab of the Settings dialog: which agent runs the AI review, and with which model. It opens from `⌘,` or from the menu on the Review button, and saves to `~/.config/iboard/iboard.toml`. The other tabs are *General* (GeneralSettings) and *Titles* (TitleSettings).
+The *AI review* tab of the Settings dialog: which agent runs the AI review, and with which model. It opens from `⌘,` or from the menu on the Review button, and saves to `~/.config/iboard/iboard.toml`. The other tabs are *General* (GeneralSettings), *Titles* (TitleSettings) and *Labels*.
 
 ## Layout
 
-- 440pt wide on `surface` with a `line-strong` edge, `radius-md` and `shadow-popover`. The height fits its content; no empty space under the fields.
-- Header: "Settings" in `ui-title`, left-aligned, then the tabs (*General*, *AI review*, *Titles*) and a ghost close button. No tinted header bar.
+- 440pt wide on `surface` with a `line-strong` edge, `radius-md` and `shadow-popover`. The body keeps one height on every tab, 420pt, and scrolls when a tab needs more.
+- Header: "Settings" in `ui-title`, left-aligned, then the tabs (*General*, *AI review*, *Titles*, *Labels*) and a ghost close button. No tinted header bar.
 - Body: one column of fields, label above control (`ui-strong` 12pt), `space-5` between fields, one line of `ui-small` help under each.
 - Footer: the config path in `meta` on the left, Cancel and Save (primary, `⌘↩`) on the right.
 

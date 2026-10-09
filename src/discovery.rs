@@ -223,7 +223,7 @@ fn create_columns(root: &Path) -> Result<()> {
 }
 
 /// The window title for a resolved project: the configured title, else the
-/// project folder name, else `Board`.
+/// project folder name, else `iboard`.
 pub fn window_title(located: &Located) -> String {
     located
         .config

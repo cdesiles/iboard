@@ -1,7 +1,9 @@
-//! Embeds `macos/Info.plist` in the binary so macOS names the app "iboard"
+//! Embeds `macos/Info.plist` in the binaries so macOS names the app "iboard"
 //! in the menu bar even when it runs outside an `.app` bundle, and compiles
-//! the Swift shim that names new issues with Apple's on-device model
-//! (`macos/titles.swift`).
+//! the Swift code: the shim that names new issues with Apple's on-device model
+//! (`macos/titles.swift`), and the two WebKit helpers run as subprocesses, the
+//! preview renderer (`macos/render.swift`) and the live catalog window
+//! (`macos/catalog.swift`).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -37,7 +39,7 @@ fn main() -> Result<(), std::env::VarError> {
         }
         Err(why) => println!(
             "cargo:warning=building without the component renderer ({why}); \
-             design previews stay unavailable and iboard opens the HTML instead"
+             component previews are unavailable"
         ),
     }
 

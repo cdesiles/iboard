@@ -524,7 +524,7 @@ impl eframe::App for IDesignApp {
     /// Window land here first, and the Quit menu item arrives as a flag. Dropping
     /// the `NSWindow` lets the Touch Bar finder race the teardown and abort the
     /// process on Touch Bar Macs; exiting here leaves the window in place, which
-    /// avoids it. Nothing is buffered — component writes are atomic.
+    /// avoids it. Nothing is buffered: each change is written when it is made.
     #[cfg(target_os = "macos")]
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if iboard::menu::take_quit_request() || ctx.input(|i| i.viewport().close_requested()) {

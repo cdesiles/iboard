@@ -94,9 +94,9 @@ fn main() -> eframe::Result {
         .with_min_inner_size([880.0, 480.0]);
     if app::UNIFIED_TITLEBAR {
         // macOS names the app menu after the title the window starts with
-        // (given the Info.plist `build.rs` embeds), so start as "Board
-        // Viewer" and rename the window once it is up. The header bar is the
-        // title bar: no native title, content under the traffic lights.
+        // (given the Info.plist `build.rs` embeds), so start as "iboard" and
+        // rename the window once it is up. The header bar is the title bar:
+        // no native title, content under the traffic lights.
         viewport = viewport
             .with_title("iboard")
             .with_fullsize_content_view(true)
