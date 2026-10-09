@@ -1,0 +1,18 @@
+#!/bin/sh
+# Lints exactly what is being committed, in a copy of it: other agents'
+# unstaged work in the shared tree neither blocks the commit nor gets touched.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+snapshot="$root/target/pre-commit"
+staged=$(mktemp -d)
+trap 'rm -rf "$staged"' EXIT
+
+git checkout-index --all --prefix="$staged/"
+mkdir -p "$snapshot"
+# --checksum without --times leaves unchanged files alone, so builds stay incremental.
+rsync --recursive --checksum --delete "$staged/" "$snapshot/"
+
+cd "$snapshot"
+cargo fmt --all --check
+CARGO_TARGET_DIR="$root/target" cargo clippy --all-targets --quiet -- -D warnings

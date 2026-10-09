@@ -1,7 +1,10 @@
-.PHONY: build release test lint fmt run iboard idesign list install clean help
+.PHONY: build release check test lint fmt toolchain hooks run iboard idesign list install clean help
 
 # `make run` launches iboard; `make run idesign` switches to the design tool.
 BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
+
+SWIFT_FORMAT := $(shell xcrun --find swift-format 2>/dev/null)
+PINNED_RUST := $(shell sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
 
 ## Build the binary (debug)
 build:
@@ -11,18 +14,37 @@ build:
 release:
 	cargo build --release
 
+## Everything a ticket needs before it is done: formatting, lints and tests
+check: toolchain lint test
+
 ## Run all tests
 test:
 	cargo test
 
-## Check formatting and run clippy (fails on warnings)
+## Check formatting, run clippy and swift-format (fails on warnings)
 lint:
 	cargo fmt --all --check
 	cargo clippy --all-targets -- -D warnings
+ifneq ($(SWIFT_FORMAT),)
+	$(SWIFT_FORMAT) lint --strict macos/*.swift
+endif
 
 ## Format code in place
 fmt:
 	cargo fmt
+ifneq ($(SWIFT_FORMAT),)
+	$(SWIFT_FORMAT) format --in-place macos/*.swift
+endif
+
+toolchain:
+	@case "$$(rustc --version)" in \
+		"rustc $(PINNED_RUST)"*) ;; \
+		*) echo "warning: $$(rustc --version) is not the pinned $(PINNED_RUST) (rust-toolchain.toml); new lints may appear" >&2 ;; \
+	esac
+
+## Lint the staged snapshot before each commit (installs .githooks)
+hooks:
+	git config core.hooksPath .githooks
 
 ## Launch a binary, iboard by default: make run, make run iboard, make run idesign
 run:

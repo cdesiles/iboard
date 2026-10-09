@@ -179,7 +179,7 @@ enum CardAction {
 
 /// What a card shows beyond its file: the last review's verdict pill, and
 /// whether the selected card offers Review.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct CardExtras<'a> {
     review_pill: Option<(&'a str, Color32)>,
     review_button: bool,
@@ -187,17 +187,6 @@ struct CardExtras<'a> {
     wide: bool,
     /// The reader's standard sections, for the wide card's facts row.
     sections: &'a [String],
-}
-
-impl Default for CardExtras<'_> {
-    fn default() -> Self {
-        Self {
-            review_pill: None,
-            review_button: false,
-            wide: false,
-            sections: &[],
-        }
-    }
 }
 
 /// A finished review kept for the session, so its card pill can reopen it.
@@ -5777,7 +5766,7 @@ fn focus_issues<'a>(column: &'a Column, filter: &Filter, sort: Sort) -> Vec<&'a 
         Sort::Created => {
             issues.sort_by_key(|issue| std::cmp::Reverse(issue.created.or(issue.modified)))
         }
-        Sort::Title => issues.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+        Sort::Title => issues.sort_by_cached_key(|issue| issue.title.to_lowercase()),
         Sort::MostToDo => issues.sort_by_key(|issue| {
             let (done, total) = sheet::checklist(&issue.markdown);
             std::cmp::Reverse(total.saturating_sub(done))
@@ -5791,7 +5780,7 @@ fn focus_issues<'a>(column: &'a Column, filter: &Filter, sort: Sort) -> Vec<&'a 
 
 /// Splits sorted issues into label sections, most-used label first with the
 /// unlabelled ones last, for Group by label.
-fn group_issues<'a>(issues: Vec<&'a Issue>) -> Vec<(Option<String>, Vec<&'a Issue>)> {
+fn group_issues(issues: Vec<&Issue>) -> Vec<(Option<String>, Vec<&Issue>)> {
     let mut map: Vec<(String, Vec<&Issue>)> = Vec::new();
     let mut unlabelled: Vec<&Issue> = Vec::new();
     for issue in issues {
@@ -6015,21 +6004,17 @@ fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> FocusGridActions {
                             .map(|pos| insertion_index(&cards, pos))
                             .unwrap_or(cards.len());
                         if response.dnd_hover_payload::<IssueDrag>().is_some()
-                            && let Some(pos) = pointer
-                            && !cards.is_empty()
+                            && pointer.is_some()
+                            && let Some((_, last)) = cards.last()
                         {
                             let (x, y0, y1) = match cards.get(insert) {
                                 Some((_, rect)) => (rect.min.x - gap / 2.0, rect.min.y, rect.max.y),
-                                None => {
-                                    let last = cards.last().expect("not empty");
-                                    (last.1.max.x + gap / 2.0, last.1.min.y, last.1.max.y)
-                                }
+                                None => (last.max.x + gap / 2.0, last.min.y, last.max.y),
                             };
                             ui.painter().line_segment(
                                 [Pos2::new(x, y0), Pos2::new(x, y1)],
                                 Stroke::new(2.0, p.accent),
                             );
-                            let _ = pos;
                         }
                         if response.dnd_release_payload::<IssueDrag>().is_some() {
                             actions.reorder = Some((

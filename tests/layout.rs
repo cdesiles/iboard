@@ -1,0 +1,54 @@
+//! Keeps the source tree easy to find one's way in.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::path::{Path, PathBuf};
+
+/// The longest a source file may get. A ratchet: lower it whenever the longest
+/// file shrinks, never raise it.
+const MAX_LINES: usize = 10_300;
+
+fn root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// Every Rust and Swift file under `dir`, recursively.
+fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            sources(&path, out);
+        } else if matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("rs" | "swift")
+        ) {
+            out.push(path);
+        }
+    }
+}
+
+fn source_files() -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for dir in ["src", "macos", "tests"] {
+        sources(&root().join(dir), &mut files);
+    }
+    files.push(root().join("build.rs"));
+    files.sort();
+    files
+}
+
+#[test]
+fn no_source_file_grows_past_the_budget() {
+    let too_long: Vec<String> = source_files()
+        .iter()
+        .filter_map(|file| {
+            let lines = std::fs::read_to_string(file).unwrap().lines().count();
+            let name = file.strip_prefix(root()).unwrap().display();
+            (lines > MAX_LINES).then(|| format!("{name} ({lines} lines)"))
+        })
+        .collect();
+    assert!(
+        too_long.is_empty(),
+        "split these files, they are over {MAX_LINES} lines: {too_long:?}"
+    );
+}

@@ -6,22 +6,23 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn main() {
+fn main() -> Result<(), std::env::VarError> {
     println!("cargo:rerun-if-changed=macos/Info.plist");
     println!("cargo::rustc-check-cfg=cfg(apple_titles)");
     println!("cargo::rustc-check-cfg=cfg(apple_render)");
     println!("cargo::rustc-check-cfg=cfg(apple_catalog)");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
-        return;
+        return Ok(());
     }
-    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
+    let out = PathBuf::from(std::env::var("OUT_DIR")?);
     let plist = manifest.join("macos/Info.plist");
     println!(
         "cargo:rustc-link-arg-bins=-Wl,-sectcreate,__TEXT,__info_plist,{}",
         plist.display()
     );
 
-    match build_titles_shim(&manifest) {
+    match build_titles_shim(&manifest, &out) {
         Ok(()) => println!("cargo:rustc-cfg=apple_titles"),
         Err(why) => println!(
             "cargo:warning=building without on-device titles ({why}); \
@@ -29,7 +30,7 @@ fn main() {
         ),
     }
 
-    match build_render_helper(&manifest) {
+    match build_render_helper(&manifest, &out) {
         Ok(path) => {
             println!("cargo:rustc-cfg=apple_render");
             println!("cargo:rustc-env=IBOARD_RENDER_HELPER={}", path.display());
@@ -40,7 +41,7 @@ fn main() {
         ),
     }
 
-    match build_catalog_helper(&manifest) {
+    match build_catalog_helper(&manifest, &out) {
         Ok(path) => {
             println!("cargo:rustc-cfg=apple_catalog");
             println!("cargo:rustc-env=IBOARD_CATALOG_HELPER={}", path.display());
@@ -50,16 +51,16 @@ fn main() {
              the design catalog opens in the browser instead"
         ),
     }
+    Ok(())
 }
 
 /// Compiles `macos/catalog.swift` into a small executable that opens a window
 /// with a live `WKWebView` on the design catalog. Like the renderer, it runs
 /// out of process: the catalog is interactive and WebKit never loads into the
 /// board's own process.
-fn build_catalog_helper(manifest: &Path) -> Result<PathBuf, String> {
+fn build_catalog_helper(manifest: &Path, out: &Path) -> Result<PathBuf, String> {
     let source = manifest.join("macos/catalog.swift");
     println!("cargo:rerun-if-changed={}", source.display());
-    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let binary = out.join("iboard-catalog");
     let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
         Ok("aarch64") => "arm64",
@@ -90,10 +91,9 @@ fn build_catalog_helper(manifest: &Path) -> Result<PathBuf, String> {
 /// short-lived helper to snapshot an HTML preview to a PNG. Keeping WebKit out
 /// of the app's own process is deliberate: startup stays instant and a render
 /// cannot take the board down.
-fn build_render_helper(manifest: &Path) -> Result<PathBuf, String> {
+fn build_render_helper(manifest: &Path, out: &Path) -> Result<PathBuf, String> {
     let source = manifest.join("macos/render.swift");
     println!("cargo:rerun-if-changed={}", source.display());
-    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let binary = out.join("iboard-render");
     let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
         Ok("aarch64") => "arm64",
@@ -123,10 +123,9 @@ fn build_render_helper(manifest: &Path) -> Result<PathBuf, String> {
 /// Compiles `macos/titles.swift` into a static library and links it with the
 /// Swift runtime. FoundationModels is weak-linked, so the binary still starts
 /// on a Mac without it; the shim checks availability at runtime.
-fn build_titles_shim(manifest: &Path) -> Result<(), String> {
+fn build_titles_shim(manifest: &Path, out: &Path) -> Result<(), String> {
     let source = manifest.join("macos/titles.swift");
     println!("cargo:rerun-if-changed={}", source.display());
-    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
         Ok("aarch64") => "arm64",
         Ok("x86_64") => "x86_64",

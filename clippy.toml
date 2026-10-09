@@ -1,0 +1,4 @@
+# A ratchet: lower it whenever the longest function gets shorter.
+too-many-lines-threshold = 230
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

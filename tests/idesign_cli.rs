@@ -3,6 +3,8 @@
 //! These guard the argument handling that is easy to get wrong — a bare
 //! `idesign` must behave like `idesign show`, not panic.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::path::Path;
 use std::process::{Command, Output};
 

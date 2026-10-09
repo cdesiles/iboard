@@ -2,6 +2,7 @@
 name = "iboard"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.99"
 description = "Fast, local kanban board and markdown reader for issues/ directories"
 license = "Apache-2.0"
 autobins = false
@@ -25,6 +26,14 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.6"
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+[lints.clippy]
+too_many_lines = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+undocumented_unsafe_blocks = "warn"
+dbg_macro = "warn"
+todo = "warn"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"

@@ -374,9 +374,11 @@ fn assets(system: &DesignSystem) -> String {
             ));
             group = asset.group.clone();
         }
-        let size = (asset.bytes > 0)
-            .then(|| format!("<span class=\"ds-val\">{}</span>", human_bytes(asset.bytes)))
-            .unwrap_or_default();
+        let size = if asset.bytes > 0 {
+            format!("<span class=\"ds-val\">{}</span>", human_bytes(asset.bytes))
+        } else {
+            String::new()
+        };
         out.push_str(&format!(
             "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>{size}</div>\n",
             escape(&asset.name),

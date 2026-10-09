@@ -93,8 +93,15 @@ define_class!(
 impl MenuTarget {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(());
+        // SAFETY: `NSObject`'s designated initializer, on a fresh allocation.
         unsafe { msg_send![super(this), init] }
     }
+}
+
+/// Sends `item`'s action to the app's menu target.
+fn set_target(item: &NSMenuItem, target: &'static AnyObject) {
+    // SAFETY: the target is leaked, so it outlives the item holding it weakly.
+    unsafe { item.setTarget(Some(target)) };
 }
 
 /// Replaces winit's default menu bar. Does nothing off the main thread.
@@ -112,7 +119,7 @@ pub fn install(app_name: &str, credits: &str, settings: bool) {
     });
     let app = NSApplication::sharedApplication(mtm);
     // Menu items hold their target weakly; the target lives as long as the app.
-    let target = Box::leak(Box::new(MenuTarget::new(mtm)));
+    let target: &'static AnyObject = Box::leak(Box::new(MenuTarget::new(mtm)));
 
     let menubar = NSMenu::new(mtm);
 
@@ -124,7 +131,7 @@ pub fn install(app_name: &str, credits: &str, settings: bool) {
         Some(sel!(showAbout:)),
         "",
     );
-    unsafe { about.setTarget(Some(target)) };
+    set_target(&about, target);
     app_menu.addItem(&about);
     app_menu.addItem(&NSMenuItem::separatorItem(mtm));
     let services_menu = NSMenu::new(mtm);
@@ -155,7 +162,7 @@ pub fn install(app_name: &str, credits: &str, settings: bool) {
         Some(sel!(quitIboard:)),
         "q",
     );
-    unsafe { quit.setTarget(Some(target)) };
+    set_target(&quit, target);
     app_menu.addItem(&quit);
 
     // File menu.
@@ -170,7 +177,7 @@ pub fn install(app_name: &str, credits: &str, settings: bool) {
         window_menu.addItem(&NSMenuItem::separatorItem(mtm));
         // No key equivalent: `⌘,` stays the app's own toggle, handled in egui.
         let settings_item = item(mtm, "Settings…", Some(sel!(openSettings:)), "");
-        unsafe { settings_item.setTarget(Some(target)) };
+        set_target(&settings_item, target);
         window_menu.addItem(&settings_item);
     }
     window_menu.addItem(&NSMenuItem::separatorItem(mtm));
@@ -195,6 +202,7 @@ fn show_about_panel(mtm: MainThreadMarker) {
     let credits = NSAttributedString::from_nsstring(&NSString::from_str(
         about.map(|a| a.credits.as_str()).unwrap_or_default(),
     ));
+    // SAFETY: AppKit's own option keys, each paired with the type it documents.
     let options = unsafe {
         NSDictionary::<NSString, AnyObject>::from_slices(
             &[
@@ -208,6 +216,7 @@ fn show_about_panel(mtm: MainThreadMarker) {
         )
     };
     let app = NSApplication::sharedApplication(mtm);
+    // SAFETY: `options` only holds the About-panel keys and value types above.
     unsafe { app.orderFrontStandardAboutPanelWithOptions(&options) };
     app.activate();
 }
@@ -231,6 +240,8 @@ fn item(
     action: Option<Sel>,
     key: &str,
 ) -> Retained<NSMenuItem> {
+    // SAFETY: every `action` passed here is implemented by AppKit's responder
+    // chain or by `MenuTarget`.
     unsafe {
         NSMenuItem::initWithTitle_action_keyEquivalent(
             NSMenuItem::alloc(mtm),
