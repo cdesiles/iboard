@@ -542,7 +542,40 @@ fn inline(text: &str) -> String {
 fn fragment(component: &Component) -> String {
     let text = std::fs::read_to_string(component.dir.join("preview.html")).unwrap_or_default();
     let text = strip_card_comment(&text);
-    body_inner(&text)
+    scoped(&head_styles(&text), &body_inner(&text))
+}
+
+/// A body that brings its own styles goes in a shadow root, so rules such as
+/// `html, body { overflow:hidden }` stay inside the card. Tokens still reach it:
+/// custom properties inherit across the shadow boundary.
+fn scoped(styles: &str, body: &str) -> String {
+    if styles.is_empty() {
+        return body.to_string();
+    }
+    format!(
+        "<div class=\"ds-scoped\"><template shadowrootmode=\"open\">\
+         <style>:host{{display:block}}\n{styles}</style>{body}</template></div>"
+    )
+}
+
+/// The contents of every `<style>` before `<body>`.
+fn head_styles(text: &str) -> String {
+    let head = &text[..text.find("<body").unwrap_or(0)];
+    let mut out = String::new();
+    let mut rest = head;
+    while let Some(start) = rest.find("<style") {
+        let Some(open_end) = rest[start..].find('>') else {
+            break;
+        };
+        let inner = &rest[start + open_end + 1..];
+        let Some(end) = inner.find("</style>") else {
+            break;
+        };
+        out.push_str(inner[..end].trim());
+        out.push('\n');
+        rest = &inner[end + "</style>".len()..];
+    }
+    out
 }
 
 /// Drop a leading `<!-- @dsCard … -->` comment.
@@ -882,6 +915,16 @@ mod tests {
         assert!(!stripped.contains("@dsCard"));
         let body = body_inner(&stripped);
         assert_eq!(body, "<div>hi</div>");
+    }
+
+    #[test]
+    fn a_fragment_keeps_its_head_styles_in_a_shadow_root() {
+        let text = "<!doctype html><head><style>.x{color:red}</style></head>\n<body><div class=\"x\">hi</div></body>";
+        let html = scoped(&head_styles(text), &body_inner(text));
+        assert!(html.contains("shadowrootmode=\"open\""));
+        assert!(html.contains(".x{color:red}"));
+        assert!(html.contains("<div class=\"x\">hi</div>"));
+        assert_eq!(scoped("", "<p>plain</p>"), "<p>plain</p>");
     }
 
     #[test]
