@@ -4,7 +4,6 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use egui::text::{CCursor, CCursorRange, LayoutJob};
@@ -21,8 +20,10 @@ use crate::files::atomic_write;
 use crate::filter::{self, Filter};
 use crate::general;
 use crate::issue::Issue;
+use crate::job::{self, Job};
 use crate::label_picker::{self, LabelPicker};
 use crate::labels::{self, Labels};
+use crate::process;
 use crate::review_settings::{self, Catalog};
 use crate::settings::{self, UserConfig};
 use crate::theme::{self, Icon, Palette};
@@ -390,8 +391,7 @@ enum TitleStage {
 }
 
 struct NamingRun {
-    answer: Receiver<Result<String, String>>,
-    started: Instant,
+    answer: Job<Result<String, String>>,
     /// Clicked away: write and close as soon as the title is in.
     then_close: bool,
 }
@@ -448,17 +448,9 @@ struct ReviewState {
 }
 
 enum ReviewStatus {
-    Running {
-        answer: Receiver<Result<String, String>>,
-        pid: Option<u32>,
-    },
-    Done {
-        raw: String,
-        report: Option<Report>,
-    },
-    Failed {
-        error: String,
-    },
+    Running { answer: Job<Result<String, String>> },
+    Done { raw: String, report: Option<Report> },
+    Failed { error: String },
 }
 
 /// The file name part of a path, as UTF-8 (empty when there is none).
@@ -689,7 +681,7 @@ pub struct IboardApp {
 /// A component whose preview an agent is drafting.
 struct DraftJob {
     name: String,
-    running: agent::Running,
+    job: Job<Result<String, String>>,
 }
 
 /// A UX enrichment of one issue: the agent's mockup, its preview, and the
@@ -711,9 +703,9 @@ struct Enrichment {
 
 enum EnrichStatus {
     /// The agent is writing the mockup.
-    Running(Receiver<Result<String, String>>),
+    Running(Job<Result<String, String>>),
     /// The mockup is in; the renderer is turning it into a PNG.
-    Rendering(Receiver<Result<PathBuf, String>>),
+    Rendering(Job<Result<PathBuf, String>>),
     Done,
     Failed(String),
 }
@@ -1133,6 +1125,7 @@ impl IboardApp {
     /// (`SIGABRT`). Exiting here skips that teardown; unsaved edits were just
     /// saved or discarded, and writes are atomic, so there is nothing to flush.
     fn quit(&mut self, _ctx: &egui::Context) {
+        process::stop_all();
         #[cfg(not(target_os = "macos"))]
         _ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         #[cfg(target_os = "macos")]
@@ -1712,15 +1705,12 @@ impl IboardApp {
             self.open_config();
             return;
         }
-        let running = agent::start(&self.agent, &prompt, &path);
+        let answer = agent::start(&self.agent, &prompt, &path);
         self.review = Some(ReviewState {
             path,
             draft,
             agent: self.agent.label(),
-            status: ReviewStatus::Running {
-                answer: running.answer,
-                pid: running.pid,
-            },
+            status: ReviewStatus::Running { answer },
             follow_up: String::new(),
         });
     }
@@ -1774,7 +1764,8 @@ impl IboardApp {
             return;
         };
         match review.status {
-            ReviewStatus::Running { pid, .. } => agent::cancel(pid),
+            // Dropping the job stops the agent.
+            ReviewStatus::Running { .. } => {}
             // A finished review stays reachable from the card's pill.
             ReviewStatus::Done { raw, report } => {
                 self.past_reviews.insert(
@@ -1813,22 +1804,19 @@ impl IboardApp {
         let Some(review) = self.review.as_mut() else {
             return;
         };
-        let ReviewStatus::Running { answer, .. } = &review.status else {
+        let ReviewStatus::Running { answer } = &review.status else {
             return;
         };
-        match answer.try_recv() {
-            Ok(Ok(raw)) => {
+        let Some(result) = answer.answer() else {
+            return;
+        };
+        review.status = match result {
+            Ok(raw) => {
                 let report = agent::parse(&raw);
-                review.status = ReviewStatus::Done { raw, report };
+                ReviewStatus::Done { raw, report }
             }
-            Ok(Err(error)) => review.status = ReviewStatus::Failed { error },
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                review.status = ReviewStatus::Failed {
-                    error: "the agent stopped unexpectedly".to_string(),
-                };
-            }
-        }
+            Err(error) => ReviewStatus::Failed { error },
+        };
     }
 
     /// Whether a review is running for the issue currently in the reader.
@@ -1986,7 +1974,6 @@ impl IboardApp {
         {
             composer.naming = Some(NamingRun {
                 answer: titles::start(engine, &self.agent, &description),
-                started: Instant::now(),
                 then_close: close,
             });
             composer.stage = TitleStage::Naming;
@@ -2039,14 +2026,13 @@ impl IboardApp {
         let Some(run) = self.composer.as_ref().and_then(|c| c.naming.as_ref()) else {
             return;
         };
-        let result = match run.answer.try_recv() {
-            Ok(result) => result,
-            Err(TryRecvError::Empty) if run.started.elapsed() < NAMING_BUDGET => {
-                ctx.request_repaint_after(Duration::from_millis(50));
+        let result = match run.answer.answer() {
+            Some(result) => result,
+            None if run.answer.elapsed() < NAMING_BUDGET => {
+                ctx.request_repaint_after(job::POLL_EVERY);
                 return;
             }
-            Err(TryRecvError::Empty) => Err("the engine took too long".to_string()),
-            Err(TryRecvError::Disconnected) => Err("the engine stopped".to_string()),
+            None => Err("the engine took too long".to_string()),
         };
         let Some(composer) = self.composer.as_mut() else {
             return;
@@ -3876,32 +3862,23 @@ impl IboardApp {
             .join("components")
             .join(name)
             .join("preview.html");
-        let running = agent::start(&self.agent, &prompt, &preview);
         self.design_draft = Some(DraftJob {
             name: name.to_string(),
-            running,
+            job: agent::start(&self.agent, &prompt, &preview),
         });
     }
 
     /// Adopt a drafted component as soon as the agent answers. Runs every frame,
     /// so a draft started before the panel closed still lands.
     fn poll_design_draft(&mut self, ctx: &egui::Context) {
-        let received = match self.design_draft.as_ref() {
-            Some(job) => match job.running.answer.try_recv() {
-                Ok(result) => Some((job.name.clone(), result)),
-                Err(TryRecvError::Empty) => {
-                    ctx.request_repaint_after(Duration::from_millis(150));
-                    return;
-                }
-                Err(TryRecvError::Disconnected) => {
-                    Some((job.name.clone(), Err("the agent stopped".to_string())))
-                }
-            },
-            None => None,
-        };
-        let Some((name, result)) = received else {
+        let Some(draft) = self.design_draft.as_ref() else {
             return;
         };
+        let Some(result) = draft.job.answer() else {
+            ctx.request_repaint_after(job::POLL_EVERY);
+            return;
+        };
+        let name = draft.name.clone();
         self.design_draft = None;
 
         let message = match result {
@@ -3951,12 +3928,11 @@ impl IboardApp {
             .clone()
             .or_else(|| DesignSystem::discover(&self.located.project_dir).ok());
         let prompt = prompts::enrichment_prompt(&issue, system.as_ref(), None, "light");
-        let running = agent::start(&self.agent, &prompt, path);
         self.enrichment = Some(Enrichment {
             path: path.to_path_buf(),
             html: None,
             png: None,
-            status: EnrichStatus::Running(running.answer),
+            status: EnrichStatus::Running(agent::start(&self.agent, &prompt, path)),
             refine: String::new(),
             texture: None,
             note: None,
@@ -3989,9 +3965,9 @@ impl IboardApp {
             Some((&html, &instruction)),
             "light",
         );
-        let running = agent::start(&self.agent, &prompt, &path);
+        let answer = agent::start(&self.agent, &prompt, &path);
         if let Some(enrichment) = self.enrichment.as_mut() {
-            enrichment.status = EnrichStatus::Running(running.answer);
+            enrichment.status = EnrichStatus::Running(answer);
             enrichment.refine.clear();
             enrichment.note = None;
         }
@@ -4003,27 +3979,13 @@ impl IboardApp {
             return;
         };
         let outcome = match &enrichment.status {
-            EnrichStatus::Running(receiver) => match receiver.try_recv() {
-                Ok(result) => EnrichOutcome::Agent(result),
-                Err(TryRecvError::Empty) => {
-                    ctx.request_repaint_after(Duration::from_millis(150));
-                    return;
-                }
-                Err(TryRecvError::Disconnected) => {
-                    EnrichOutcome::Agent(Err("the agent stopped".to_string()))
-                }
-            },
-            EnrichStatus::Rendering(receiver) => match receiver.try_recv() {
-                Ok(result) => EnrichOutcome::Png(result),
-                Err(TryRecvError::Empty) => {
-                    ctx.request_repaint_after(Duration::from_millis(120));
-                    return;
-                }
-                Err(TryRecvError::Disconnected) => {
-                    EnrichOutcome::Png(Err("the render stopped".to_string()))
-                }
-            },
+            EnrichStatus::Running(drafting) => drafting.answer().map(EnrichOutcome::Agent),
+            EnrichStatus::Rendering(rendering) => rendering.answer().map(EnrichOutcome::Png),
             EnrichStatus::Done | EnrichStatus::Failed(_) => return,
+        };
+        let Some(outcome) = outcome else {
+            ctx.request_repaint_after(job::POLL_EVERY);
+            return;
         };
 
         match outcome {
@@ -4039,9 +4001,10 @@ impl IboardApp {
                         let png = enrichment_dir(&enrichment.path).join("ui.png");
                         enrichment.html = Some(html);
                         enrichment.note = Some(format!("Saved {}", file.display()));
-                        enrichment.status = match start_enrichment_render(&file, &png) {
-                            Ok(receiver) => EnrichStatus::Rendering(receiver),
-                            Err(_) => EnrichStatus::Done,
+                        enrichment.status = if design::render::available() {
+                            EnrichStatus::Rendering(design::render::start(&file, &png, 1100, 800))
+                        } else {
+                            EnrichStatus::Done
                         };
                     }
                     Err(err) => enrichment.status = EnrichStatus::Failed(err),
@@ -4188,7 +4151,7 @@ impl IboardApp {
             .as_ref()
             .is_some_and(|review| matches!(review.status, ReviewStatus::Running { .. }))
         {
-            ctx.request_repaint_after(Duration::from_millis(100));
+            ctx.request_repaint_after(job::POLL_EVERY);
         }
     }
 
@@ -4936,23 +4899,6 @@ fn write_enrichment_artifact(issue: &Path, html: &str) -> Result<PathBuf, String
     std::fs::write(&file, html)
         .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
     Ok(file)
-}
-
-/// Render a mockup to `png` on a background thread.
-fn start_enrichment_render(
-    html: &Path,
-    png: &Path,
-) -> Result<Receiver<Result<PathBuf, String>>, String> {
-    if !design::render::available() {
-        return Err("no renderer".to_string());
-    }
-    let html = html.to_path_buf();
-    let png = png.to_path_buf();
-    let (sender, receiver) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = sender.send(design::render::snapshot(&html, &png, 1100, 800));
-    });
-    Ok(receiver)
 }
 
 impl eframe::App for IboardApp {
@@ -8863,11 +8809,9 @@ mod tests {
 
     /// Stands in for the engine: the answer is already waiting.
     fn answer_with(app: &mut IboardApp, answer: Result<String, String>) {
-        let (sender, receiver) = std::sync::mpsc::channel();
-        sender.send(answer).unwrap();
         let composer = app.composer.as_mut().unwrap();
         let run = composer.naming.as_mut().expect("naming started");
-        run.answer = receiver;
+        run.answer = Job::done(answer);
     }
 
     #[test]
@@ -10090,11 +10034,11 @@ mod tests {
         }
         let design = Path::new(env!("CARGO_MANIFEST_DIR")).join("design");
         let system = DesignSystem::load(&design).expect("repo design");
-        let receiver = design::render::component_preview(&system, "Button").expect("spawn render");
-        match receiver.recv_timeout(Duration::from_secs(60)) {
-            Ok(Ok(path)) => assert!(path.is_file(), "PNG written"),
-            Ok(Err(err)) => panic!("render failed: {err}"),
-            Err(err) => panic!("render timed out: {err}"),
+        let render = design::render::component_preview(&system, "Button").expect("spawn render");
+        match render.wait() {
+            Some(Ok(path)) => assert!(path.is_file(), "PNG written"),
+            Some(Err(err)) => panic!("render failed: {err}"),
+            None => panic!("the render thread died"),
         }
     }
 

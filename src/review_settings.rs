@@ -9,7 +9,6 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use egui::{
     Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Modifiers, RichText,
@@ -17,6 +16,7 @@ use egui::{
 };
 
 use crate::agent::{self, AgentConfig, Detected, Models, Tool};
+use crate::job::{self, Job, Poll};
 use crate::labels::{self, Labels};
 use crate::theme::{self, Icon};
 use crate::titles::{self, Availability, Engine};
@@ -32,29 +32,25 @@ const DIALOG_BODY_H: f32 = 420.0;
 /// Tallest the model menu's list grows before it scrolls.
 const MODEL_LIST_MAX_H: f32 = 240.0;
 
-/// A value computed on another thread.
+/// A value computed on another thread, kept once it lands.
 enum Pending<T> {
-    Loading(Receiver<T>),
+    Loading(Job<T>),
     Ready(T),
 }
 
 impl<T: Send + 'static> Pending<T> {
     fn spawn(work: impl FnOnce() -> T + Send + 'static) -> Self {
-        let (sender, receiver) = channel();
-        std::thread::spawn(move || {
-            let _ = sender.send(work());
-        });
-        Pending::Loading(receiver)
+        Pending::Loading(Job::spawn(move |_| work()))
     }
 
     /// Adopts the result once it lands; `lost` stands in for a thread that
     /// died without answering.
     fn poll(&mut self, lost: impl FnOnce() -> T) {
-        if let Pending::Loading(receiver) = self {
-            match receiver.try_recv() {
-                Ok(value) => *self = Pending::Ready(value),
-                Err(TryRecvError::Disconnected) => *self = Pending::Ready(lost()),
-                Err(TryRecvError::Empty) => {}
+        if let Pending::Loading(job) = self {
+            match job.poll() {
+                Poll::Ready(value) => *self = Pending::Ready(value),
+                Poll::Lost => *self = Pending::Ready(lost()),
+                Poll::Waiting => {}
             }
         }
     }
@@ -298,7 +294,7 @@ impl Dialog {
         let ctx = ui.ctx();
         catalog.load(self.form.tool);
         if catalog.poll() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            ctx.request_repaint_after(job::POLL_EVERY);
         }
 
         // An open menu owns the arrows, `↩` and `esc`; otherwise `esc` closes

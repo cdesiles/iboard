@@ -1,7 +1,19 @@
 //! Writing files so that a crash or a full disk never leaves one half-written.
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// A fresh path in the temp folder, `iboard-<tag>-<pid>-<n>.<extension>`: the
+/// counter keeps two files made at the same instant apart.
+pub fn temp_path(tag: &str, extension: &str) -> PathBuf {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "iboard-{tag}-{}-{n}.{extension}",
+        std::process::id()
+    ))
+}
 
 /// Writes `contents` to `path` through a hidden temp file in the same folder,
 /// synced to disk, then renamed over `path`. The temp name starts with `.`, so

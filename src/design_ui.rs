@@ -13,13 +13,12 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, TryRecvError};
-use std::time::Duration;
 
 use egui::{Align2, Color32, CornerRadius, Rect, Stroke, StrokeKind, pos2};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 use crate::design::{self, Component, DesignSystem, Token};
+use crate::job::{self, Job};
 
 use crate::theme;
 use crate::widgets::{self, ButtonKind};
@@ -127,7 +126,7 @@ pub struct Panel {
     /// only appears here once it has scrolled into view.
     previews: BTreeMap<String, Preview>,
     /// The one render in flight, and the component it belongs to.
-    running: Option<(String, Receiver<Result<PathBuf, String>>)>,
+    running: Option<(String, Job<Result<PathBuf, String>>)>,
     /// Layout cache for the Overview brief's markdown.
     brief_cache: CommonMarkCache,
 }
@@ -154,8 +153,8 @@ impl Default for Panel {
 
 impl Panel {
     /// Adopt a render the host started for `name`.
-    pub fn start_render(&mut self, name: String, receiver: Receiver<Result<PathBuf, String>>) {
-        self.running = Some((name, receiver));
+    pub fn start_render(&mut self, name: String, job: Job<Result<PathBuf, String>>) {
+        self.running = Some((name, job));
     }
 
     /// Record that a render could not even be started.
@@ -643,44 +642,23 @@ impl Panel {
 
     /// Poll the running render and, when it lands, decode it into a texture.
     fn poll(&mut self, ctx: &egui::Context) {
-        let received = self
-            .running
-            .as_ref()
-            .map(|(_, receiver)| receiver.try_recv());
-        match received {
-            Some(Ok(Ok(path))) => {
-                let Some((name, _)) = self.running.take() else {
-                    return;
-                };
-                match load_texture(ctx, &path) {
-                    Ok(texture) => {
-                        self.previews.insert(name, Preview::Ready(texture));
-                    }
-                    Err(err) => {
-                        self.previews.insert(name, Preview::Failed(err));
-                    }
-                }
-                // Let the next card in view load without waiting for input.
-                ctx.request_repaint();
-            }
-            Some(Ok(Err(err))) => {
-                if let Some((name, _)) = self.running.take() {
-                    self.previews.insert(name, Preview::Failed(err));
-                }
-                ctx.request_repaint();
-            }
-            Some(Err(TryRecvError::Empty)) => {
-                ctx.request_repaint_after(Duration::from_millis(120));
-            }
-            Some(Err(TryRecvError::Disconnected)) => {
-                if let Some((name, _)) = self.running.take() {
-                    self.previews
-                        .insert(name, Preview::Failed("the renderer stopped".to_string()));
-                }
-                ctx.request_repaint();
-            }
-            None => {}
-        }
+        let Some(result) = self.running.as_ref().map(|(_, job)| job.answer()) else {
+            return;
+        };
+        let Some(result) = result else {
+            ctx.request_repaint_after(job::POLL_EVERY);
+            return;
+        };
+        let Some((name, _)) = self.running.take() else {
+            return;
+        };
+        let preview = match result.and_then(|path| load_texture(ctx, &path)) {
+            Ok(texture) => Preview::Ready(texture),
+            Err(err) => Preview::Failed(err),
+        };
+        self.previews.insert(name, preview);
+        // Let the next card in view load without waiting for input.
+        ctx.request_repaint();
     }
 }
 
@@ -1423,8 +1401,13 @@ mod tests {
         };
         let _ = frame(&mut panel, &system, true);
         // Pretend the host started the render and it is still running.
-        let (_tx, rx) = std::sync::mpsc::channel();
-        panel.start_render("Button".to_string(), rx);
+        let running = Job::spawn(|cancel| {
+            while !cancel.is_cancelled() {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Err("stopped".to_string())
+        });
+        panel.start_render("Button".to_string(), running);
         assert!(matches!(frame(&mut panel, &system, true), Action::Keep));
     }
 

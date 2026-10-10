@@ -8,13 +8,19 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc::Receiver;
+use std::time::Duration;
 
 use super::DesignSystem;
+use crate::job::{Cancel, Job};
+use crate::process;
 
 /// The default snapshot size when a component's card declares no height.
 const DEFAULT_WIDTH: u32 = 900;
 const DEFAULT_HEIGHT: u32 = 640;
+
+/// How long a render may take; the helper gives up on a page by itself well
+/// before.
+const RENDER_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The renderer helper's path: the `IBOARD_RENDER` override when it points at
 /// a file, else the helper `build.rs` compiled.
@@ -45,8 +51,25 @@ pub fn available() -> bool {
 }
 
 /// Render `html` to a PNG at `png`, `width`×`height`. Blocks until the helper
-/// finishes; callers run it off the UI thread.
+/// finishes.
 pub fn snapshot(html: &Path, png: &Path, width: u32, height: u32) -> Result<PathBuf, String> {
+    render(html, png, width, height, &Cancel::default())
+}
+
+/// [`snapshot`] on a background thread, so the UI stays responsive while
+/// WebKit runs. Dropping the job stops the helper.
+pub fn start(html: &Path, png: &Path, width: u32, height: u32) -> Job<Result<PathBuf, String>> {
+    let (html, png) = (html.to_path_buf(), png.to_path_buf());
+    Job::spawn(move |cancel| render(&html, &png, width, height, cancel))
+}
+
+fn render(
+    html: &Path,
+    png: &Path,
+    width: u32,
+    height: u32,
+    cancel: &Cancel,
+) -> Result<PathBuf, String> {
     let helper = helper().ok_or_else(|| {
         "No HTML renderer is available (build the render helper, or set IBOARD_RENDER).".to_string()
     })?;
@@ -54,31 +77,23 @@ pub fn snapshot(html: &Path, png: &Path, width: u32, height: u32) -> Result<Path
         std::fs::create_dir_all(parent)
             .map_err(|err| format!("Couldn't create {}: {err}", parent.display()))?;
     }
-    let output = Command::new(&helper)
+    let mut command = Command::new(&helper);
+    command
         .arg(html)
         .arg(png)
         .arg(width.to_string())
-        .arg(height.to_string())
-        .output()
-        .map_err(|err| format!("Couldn't run the renderer: {err}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            format!("The renderer exited with {}", output.status)
-        } else {
-            stderr
-        });
-    }
+        .arg(height.to_string());
+    let what = "the renderer";
+    process::run(command, what, cancel, RENDER_TIMEOUT)?.into_result(what)?;
     Ok(png.to_path_buf())
 }
 
-/// Compose a component's preview and render it on a background thread, so a
-/// caller's UI stays responsive while WebKit runs. The receiver yields the PNG
-/// path, or why the render failed.
+/// Compose a component's preview and render it on a background thread. The
+/// job yields the PNG path, or why the render failed.
 pub fn component_preview(
     system: &DesignSystem,
     name: &str,
-) -> Result<Receiver<Result<PathBuf, String>>, String> {
+) -> Result<Job<Result<PathBuf, String>>, String> {
     let Some(component) = system
         .components
         .iter()
@@ -91,7 +106,6 @@ pub fn component_preview(
     std::fs::write(&html_path, html)
         .map_err(|err| format!("Couldn't write {}: {err}", html_path.display()))?;
     let png = std::env::temp_dir().join(format!("iboard-preview-{name}.png"));
-    let png_for_thread = png.clone();
     // Snapshot at the height the card declares, so a 56pt checkbox is not a
     // full 640pt frame of empty space.
     let height = component
@@ -99,11 +113,7 @@ pub fn component_preview(
         .height
         .unwrap_or(DEFAULT_HEIGHT)
         .clamp(56, 2400);
-    let (sender, receiver) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = sender.send(snapshot(&html_path, &png_for_thread, DEFAULT_WIDTH, height));
-    });
-    Ok(receiver)
+    Ok(start(&html_path, &png, DEFAULT_WIDTH, height))
 }
 
 #[cfg(test)]

@@ -157,5 +157,11 @@ the `model` in Claude Code's settings. OpenCode and Claude Code run
 non-interactively (`opencode run`, `claude -p`); a custom command runs through
 `sh` with `{prompt}` (a temp file holding the issue and the review
 instructions), `{model}` and `{issue}` (the issue path) filled in, and the
-review is read from its stdout. An older `tool = "<any command>"` keeps working
-as a custom command.
+review is read from its stdout. The placeholders become the quoted variables
+`"$IBOARD_PROMPT"`, `"$IBOARD_MODEL"` and `"$IBOARD_ISSUE"`, so a file name can
+never run as shell code. An older `tool = "<any command>"` keeps working as a
+custom command.
+
+An agent is stopped, with everything it started, when its window closes, when
+a new run replaces it, when iboard quits, or after 10 minutes without an
+answer.

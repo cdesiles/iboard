@@ -528,6 +528,7 @@ impl eframe::App for IDesignApp {
     #[cfg(target_os = "macos")]
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if iboard::menu::take_quit_request() || ctx.input(|i| i.viewport().close_requested()) {
+            iboard::process::stop_all();
             std::process::exit(0);
         }
     }

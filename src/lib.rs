@@ -20,9 +20,11 @@ pub mod filter;
 pub mod general;
 pub mod history;
 pub mod issue;
+pub mod job;
 pub mod labels;
 #[cfg(target_os = "macos")]
 pub mod menu;
+pub mod process;
 pub mod prompts;
 pub mod settings;
 pub mod sheet;

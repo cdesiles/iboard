@@ -18,11 +18,14 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::mpsc::{Receiver, channel};
+use std::process::Command;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::files;
+use crate::job::{Cancel, Job};
+use crate::process;
 use crate::settings::{self, Section, UserConfig};
 
 /// What a [`AgentConfig::model`] of "the tool's first favorite" is written as.
@@ -278,15 +281,12 @@ pub fn detect(tool: Tool) -> Detected {
     let Some(path) = tool.binary().and_then(find_binary) else {
         return Detected::default();
     };
-    let version = Command::new(&path)
-        .arg("--version")
-        .env("PATH", search_path())
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
+    let mut command = Command::new(&path);
+    command.arg("--version").env("PATH", search_path());
+    let version = process::run(command, tool.key(), &Cancel::default(), PROBE_TIMEOUT)
+        .and_then(|output| output.into_result(tool.key()))
         .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| parse_version(&String::from_utf8_lossy(&output.stdout)));
+        .and_then(|stdout| parse_version(&stdout));
     Detected {
         path: Some(path),
         version,
@@ -371,21 +371,12 @@ fn favorites(tool: Tool) -> Vec<String> {
 fn opencode_models() -> Result<Vec<String>, String> {
     let binary =
         find_binary("opencode").ok_or_else(|| "opencode is not on your PATH".to_string())?;
-    let output = Command::new(binary)
-        .arg("models")
-        .env("PATH", search_path())
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|err| format!("Couldn't run opencode models: {err}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            format!("opencode models exited with {}", output.status)
-        } else {
-            stderr
-        });
-    }
-    Ok(parse_model_list(&String::from_utf8_lossy(&output.stdout)))
+    let mut command = Command::new(binary);
+    command.arg("models").env("PATH", search_path());
+    let what = "opencode models";
+    let stdout =
+        process::run(command, what, &Cancel::default(), PROBE_TIMEOUT)?.into_result(what)?;
+    Ok(parse_model_list(&stdout))
 }
 
 /// One model ID per line; anything with a space is a banner, not an ID.
@@ -442,13 +433,18 @@ fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
-/// A review running in the background.
-pub struct Running {
-    /// The agent's answer, or why it failed.
-    pub answer: Receiver<Result<String, String>>,
-    /// The child's process id, so the run can be cancelled.
-    pub pid: Option<u32>,
-}
+/// How long an agent may work on an answer before it is stopped.
+pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// How long `--version` and `opencode models` may take.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// The shell variables a custom command's placeholders become.
+const PLACEHOLDERS: [(&str, &str); 3] = [
+    ("{prompt}", "IBOARD_PROMPT"),
+    ("{model}", "IBOARD_MODEL"),
+    ("{issue}", "IBOARD_ISSUE"),
+];
 
 /// Builds the command for `config`, ready to spawn. `model` is the resolved
 /// one (empty for the tool's own choice); `prompt_file` holds `prompt` for a
@@ -463,13 +459,13 @@ pub fn command(
 ) -> Command {
     let mut command = match config.tool {
         Tool::Custom => {
-            let script = config
-                .command
-                .replace("{prompt}", &shell_quote(&prompt_file.display().to_string()))
-                .replace("{model}", &shell_quote(model))
-                .replace("{issue}", &shell_quote(&issue.display().to_string()));
             let mut command = Command::new("sh");
-            command.arg("-c").arg(script);
+            command
+                .arg("-c")
+                .arg(shell_script(&config.command))
+                .env("IBOARD_PROMPT", prompt_file)
+                .env("IBOARD_MODEL", model)
+                .env("IBOARD_ISSUE", issue);
             command
         }
         tool => {
@@ -489,101 +485,63 @@ pub fn command(
     command
 }
 
-/// Starts a review of the issue at `issue`. The tool is run without a terminal
-/// (`stdin` from `/dev/null`), which is what one-shot modes need; a failure to
-/// spawn is reported on the returned channel.
-pub fn start(config: &AgentConfig, prompt: &str, issue: &Path) -> Running {
-    let (sender, answer) = channel();
+/// A custom command with its placeholders turned into quoted shell variables,
+/// so no file name or model is ever read as code. A placeholder the command
+/// already wrapped in quotes keeps one pair of them.
+fn shell_script(command: &str) -> String {
+    let mut script = command.to_string();
+    for (placeholder, variable) in PLACEHOLDERS {
+        let quoted = format!("\"${variable}\"");
+        for wrapped in [format!("\"{placeholder}\""), format!("'{placeholder}'")] {
+            script = script.replace(&wrapped, &quoted);
+        }
+        script = script.replace(placeholder, &quoted);
+    }
+    script
+}
+
+/// Runs the agent on `prompt` and waits for its answer, on this thread. The
+/// tool runs without a terminal, which is what one-shot modes need; it is
+/// stopped when `cancel` says so, or after [`ANSWER_TIMEOUT`]. `issue` is the
+/// file the prompt is about, a custom command's `{issue}`.
+pub fn run(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    cancel: &Cancel,
+) -> Result<String, String> {
     let model = match config.model.trim() {
         "" if config.tool != Tool::Custom => default_model(config.tool).unwrap_or_default(),
         model => model.to_string(),
     };
     // A custom command reads the prompt from a file: it may be too long for
-    // an argument, and `{prompt}` can then go anywhere in the command. The
-    // sequence keeps two runs in the same process (or two tests) from sharing
-    // a path when the clock reads the same instant.
-    static REVIEW_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let sequence = REVIEW_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let prompt_file = std::env::temp_dir().join(format!(
-        "iboard-review-{}-{}-{}.md",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or_default(),
-        sequence,
-    ));
+    // an argument, and `{prompt}` can then go anywhere in the command.
     let custom = config.tool == Tool::Custom;
-    if custom && let Err(err) = std::fs::write(&prompt_file, prompt) {
-        let _ = sender.send(Err(format!(
-            "Couldn't write {}: {err}",
-            prompt_file.display()
-        )));
-        return Running { answer, pid: None };
+    let prompt_file = files::temp_path("prompt", "md");
+    if custom {
+        std::fs::write(&prompt_file, prompt)
+            .map_err(|err| format!("Couldn't write {}: {err}", prompt_file.display()))?;
     }
-    let cleanup = move |file: &Path| {
-        if custom {
-            let _ = std::fs::remove_file(file);
-        }
+    let what = match config.tool {
+        Tool::Custom => "the custom command",
+        tool => tool.key(),
     };
-
-    let mut command = command(config, &model, prompt, &prompt_file, issue);
-    match command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => {
-            let pid = Some(child.id());
-            std::thread::spawn(move || {
-                let result = match child.wait_with_output() {
-                    Ok(output) if output.status.success() => {
-                        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        if text.is_empty() {
-                            Err("the agent returned no answer".to_string())
-                        } else {
-                            Ok(text)
-                        }
-                    }
-                    Ok(output) => {
-                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                        if stderr.is_empty() {
-                            Err(format!("the agent exited with {}", output.status))
-                        } else {
-                            Err(stderr)
-                        }
-                    }
-                    Err(err) => Err(format!("the agent could not be read: {err}")),
-                };
-                cleanup(&prompt_file);
-                let _ = sender.send(result);
-            });
-            Running { answer, pid }
-        }
-        Err(err) => {
-            cleanup(&prompt_file);
-            let what = match config.tool {
-                Tool::Custom => "the custom command",
-                tool => tool.key(),
-            };
-            let _ = sender.send(Err(format!("Couldn't run {what}: {err}")));
-            Running { answer, pid: None }
-        }
+    let command = command(config, &model, prompt, &prompt_file, issue);
+    let output = process::run(command, what, cancel, ANSWER_TIMEOUT);
+    if custom {
+        let _ = std::fs::remove_file(&prompt_file);
+    }
+    let answer = output?.into_result("the agent")?;
+    match answer.trim() {
+        "" => Err("the agent returned no answer".to_string()),
+        answer => Ok(answer.to_string()),
     }
 }
 
-/// Asks the tool to stop, best effort.
-pub fn cancel(pid: Option<u32>) {
-    #[cfg(unix)]
-    if let Some(pid) = pid {
-        let _ = Command::new("kill")
-            .arg("-TERM")
-            .arg(pid.to_string())
-            .status();
-    }
-    #[cfg(not(unix))]
-    let _ = pid;
+/// [`run`] on a background thread. Dropping the job stops the agent.
+pub fn start(config: &AgentConfig, prompt: &str, issue: &Path) -> Job<Result<String, String>> {
+    let (config, prompt, issue) = (config.clone(), prompt.to_string(), issue.to_path_buf());
+    Job::spawn(move |cancel| run(&config, &prompt, &issue, cancel))
 }
 
 /// The verdict on one axis of the review.
@@ -696,7 +654,6 @@ pub fn parse(text: &str) -> Option<Report> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     fn custom(command: &str) -> AgentConfig {
         AgentConfig {
@@ -716,32 +673,77 @@ mod tests {
 
     #[test]
     fn a_custom_command_reads_the_prompt_file_and_answers() {
-        let running = start(
+        let job = start(
             &custom("cat {prompt}"),
             "hello there",
             Path::new("todo/a.md"),
         );
-        let answer = running
-            .answer
-            .recv_timeout(Duration::from_secs(5))
-            .expect("the channel closes")
-            .expect("cat succeeds");
+        let answer = job.wait().expect("the job answers").expect("cat succeeds");
         assert_eq!(answer, "hello there");
     }
 
     #[test]
     fn a_failing_command_reports_its_error_instead_of_panicking() {
-        let running = start(
-            &custom("echo nope >&2; exit 3 # {prompt}"),
-            "x",
-            Path::new("a.md"),
+        let config = custom("echo nope >&2; exit 3 # {prompt}");
+        let error = run(&config, "x", Path::new("a.md"), &Cancel::default());
+        assert_eq!(error, Err("nope".to_string()));
+    }
+
+    #[test]
+    fn file_names_never_run_as_shell_code() {
+        let dir = std::env::temp_dir().join(format!("iboard-quoting-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let planted = dir.join("planted");
+        let issue = dir.join(format!(
+            "$(touch {}) `touch {}`.md",
+            planted.display(),
+            planted.display()
+        ));
+        for template in [
+            "printf %s {issue} # {prompt}",
+            "printf %s \"{issue}\" # {prompt}",
+            "printf %s '{issue}' # {prompt}",
+        ] {
+            let answer = run(&custom(template), "x", &issue, &Cancel::default());
+            assert_eq!(answer, Ok(issue.display().to_string()), "{template}");
+        }
+        assert!(!planted.exists(), "a file name ran as code");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dropping_a_run_stops_the_agent() {
+        // SAFETY: signal 0 only checks that the process exists.
+        let alive = |pid: i32| unsafe { libc::kill(pid, 0) == 0 };
+        let eventually = |done: &dyn Fn() -> bool| {
+            let start = std::time::Instant::now();
+            while !done() && start.elapsed() < std::time::Duration::from_secs(5) {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            done()
+        };
+        let dir = std::env::temp_dir().join(format!("iboard-stop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pid_file = dir.join("agent.pid");
+        let script = format!(
+            "echo $$ > '{}'; sleep 30; echo late # {{prompt}}",
+            pid_file.display()
         );
-        let error = running
-            .answer
-            .recv_timeout(Duration::from_secs(5))
-            .expect("the channel closes")
-            .expect_err("the command fails");
-        assert_eq!(error, "nope");
+        let job = start(&custom(&script), "x", Path::new("a.md"));
+        let pid = || {
+            std::fs::read_to_string(&pid_file)
+                .ok()
+                .and_then(|text| text.trim().parse::<i32>().ok())
+        };
+        assert!(eventually(&|| pid().is_some()), "the agent never started");
+        let pid = pid().unwrap();
+        assert!(alive(pid));
+
+        drop(job);
+
+        assert!(eventually(&|| !alive(pid)), "the agent outlived its job");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -772,8 +774,21 @@ mod tests {
         assert_eq!(built.get_program(), "sh");
         assert_eq!(
             args(&built),
-            ["-c", "llm -m 'gpt' < '/tmp/prompt.md' # '/p/todo/a b.md'"]
+            [
+                "-c",
+                "llm -m \"$IBOARD_MODEL\" < \"$IBOARD_PROMPT\" # \"$IBOARD_ISSUE\""
+            ]
         );
+        let env = |name: &str| {
+            built
+                .get_envs()
+                .find(|(key, _)| *key == name)
+                .and_then(|(_, value)| value)
+                .map(|value| value.to_string_lossy().into_owned())
+        };
+        assert_eq!(env("IBOARD_MODEL").as_deref(), Some("gpt"));
+        assert_eq!(env("IBOARD_PROMPT").as_deref(), Some("/tmp/prompt.md"));
+        assert_eq!(env("IBOARD_ISSUE").as_deref(), Some("/p/todo/a b.md"));
     }
 
     #[test]

@@ -36,6 +36,9 @@ undocumented_unsafe_blocks = "warn"
 dbg_macro = "warn"
 todo = "warn"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.189"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-app-kit = "0.3.2"

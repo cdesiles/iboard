@@ -13,11 +13,11 @@
 //! `agent` asks the tool configured for AI review. Neither is ever required:
 //! without a title, [`first_line_title`] names the issue from the description.
 
-use std::sync::mpsc::{Receiver, channel};
-
 use serde::{Deserialize, Serialize};
 
 use crate::agent::{self, AgentConfig};
+use crate::files;
+use crate::job::Job;
 use crate::settings::{Section, UserConfig};
 
 /// The longest title the composer accepts.
@@ -138,52 +138,32 @@ pub fn prewarm(engine: Engine) {
     }
 }
 
-/// Names `description` on a background thread; the answer arrives on the
-/// returned channel, already cleaned.
+/// Names `description` on a background thread, the answer already cleaned.
+/// Dropping the job stops an agent still thinking.
 pub fn start(
     engine: Engine,
     agent: &AgentConfig,
     description: &str,
-) -> Receiver<Result<String, String>> {
-    let (sender, answer) = channel();
+) -> Job<Result<String, String>> {
     let description = description.to_string();
     match engine {
         Engine::Apple => {
-            std::thread::spawn(move || {
-                let result = apple::infer(&description).and_then(|raw| clean(&raw));
-                let _ = sender.send(result);
-            });
+            Job::spawn(move |_| apple::infer(&description).and_then(|raw| clean(&raw)))
         }
         Engine::Agent => {
-            // A custom command may read the description from `{issue}`.
-            let file = std::env::temp_dir().join(format!(
-                "iboard-title-{}-{}.md",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|elapsed| elapsed.as_nanos())
-                    .unwrap_or_default()
-            ));
-            if let Err(err) = std::fs::write(&file, &description) {
-                let _ = sender.send(Err(format!("Couldn't write {}: {err}", file.display())));
-                return answer;
-            }
-            let running = agent::start(agent, &agent_prompt(&description), &file);
-            std::thread::spawn(move || {
-                let result = running
-                    .answer
-                    .recv()
-                    .unwrap_or_else(|_| Err("the agent stopped".to_string()))
-                    .and_then(|raw| clean(&raw));
+            let agent = agent.clone();
+            Job::spawn(move |cancel| {
+                // A custom command may read the description from `{issue}`.
+                let file = files::temp_path("title", "md");
+                std::fs::write(&file, &description)
+                    .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
+                let result = agent::run(&agent, &agent_prompt(&description), &file, cancel);
                 let _ = std::fs::remove_file(&file);
-                let _ = sender.send(result);
-            });
+                result.and_then(|raw| clean(&raw))
+            })
         }
-        Engine::Manual => {
-            let _ = sender.send(Err("automatic titles are off".to_string()));
-        }
+        Engine::Manual => Job::done(Err("automatic titles are off".to_string())),
     }
-    answer
 }
 
 fn agent_prompt(description: &str) -> String {
@@ -511,7 +491,7 @@ mod apple_tests {
             &agent,
             "quand je double clique sur une colonne ça devrait créer un ticket directement dedans",
         )
-        .recv()
+        .wait()
         .unwrap();
         let title = answer.unwrap();
         assert!(!title.is_empty() && title.chars().count() <= MAX_TITLE_CHARS);
