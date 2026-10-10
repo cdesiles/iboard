@@ -595,7 +595,10 @@ pub struct IboardApp {
     /// The filter is in use: focused, or being clicked (a click on a chip
     /// takes focus from the text for a frame).
     filter_open: bool,
+    /// The last action that failed, until it is dismissed.
     error: Option<String>,
+    /// Why the board could not be read; the next good scan clears it.
+    scan_error: Option<String>,
     /// A destructive action waiting for the user to confirm it.
     confirm: Option<Confirm>,
     /// The LabelPicker, open on one issue.
@@ -759,7 +762,7 @@ impl IboardApp {
     }
 
     fn from_located(located: Located) -> Self {
-        let (board, error) = match discovery::build(&located) {
+        let (board, scan_error) = match discovery::build(&located) {
             Ok(board) => (board, None),
             Err(err) => (Board::empty(&located), Some(format!("{err:#}"))),
         };
@@ -779,7 +782,8 @@ impl IboardApp {
             settings_tab: review_settings::Tab::General,
             chip_cursor: None,
             filter_open: false,
-            error,
+            error: None,
+            scan_error,
             confirm: None,
             label_picker: None,
             commits: None,
@@ -851,6 +855,7 @@ impl IboardApp {
                 self.scroll_to_selected = false;
                 self.filter.clear();
                 self.error = None;
+                self.scan_error = None;
                 // Remember the project root discovery settled on, not the
                 // folder the user happened to pick inside it.
                 self.remember(&project_dir);
@@ -864,9 +869,9 @@ impl IboardApp {
         match discovery::build(&self.located) {
             Ok(board) => {
                 self.board = board;
-                self.error = None;
+                self.scan_error = None;
             }
-            Err(err) => self.error = Some(format!("{err:#}")),
+            Err(err) => self.scan_error = Some(format!("{err:#}")),
         }
         self.reconcile_editor();
     }
@@ -2234,7 +2239,7 @@ impl IboardApp {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(p.bg))
             .show(ui, |ui| {
-                if let Some(error) = self.error.clone() {
+                if let Some(error) = self.scan_error.clone().or_else(|| self.error.clone()) {
                     self.error_strip(ui, &error);
                 }
                 match self.screen.clone() {
@@ -2313,6 +2318,7 @@ impl IboardApp {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if widgets::button(ui, ButtonKind::Ghost, None, "Dismiss", None).clicked() {
                             self.error = None;
+                            self.scan_error = None;
                         }
                     });
                 });
@@ -7701,6 +7707,27 @@ mod tests {
         assert!(file.exists(), "source must survive a refused move");
         assert_eq!(std::fs::read_to_string(&existing).unwrap(), "# Other\n");
         assert!(app.error.is_some(), "the refusal is surfaced to the user");
+        app.refresh();
+        assert!(app.error.is_some(), "and the next scan does not wipe it");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_scan_error_clears_itself_once_the_board_reads_again() {
+        let dir = scratch_dir("scan-error");
+        let issues = dir.join("issues");
+        std::fs::create_dir_all(issues.join("todo")).unwrap();
+        let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+
+        std::fs::rename(&issues, dir.join("gone")).unwrap();
+        app.refresh();
+        assert!(app.scan_error.is_some());
+        assert!(app.error.is_none(), "a scan is not an action");
+
+        std::fs::rename(dir.join("gone"), &issues).unwrap();
+        app.refresh();
+        assert!(app.scan_error.is_none());
 
         std::fs::remove_dir_all(&dir).ok();
     }
