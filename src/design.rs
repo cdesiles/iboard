@@ -22,6 +22,7 @@ use serde::Deserialize;
 
 pub mod catalog;
 pub mod css;
+pub mod fonts;
 pub mod open_design;
 pub mod render;
 

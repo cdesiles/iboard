@@ -13,6 +13,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use super::fonts::{self, FontFace};
 use super::{Component, DesignSystem, css};
 
 /// The catalog's categories, in Claude Design's order: `(id, label)`.
@@ -33,7 +34,8 @@ const CATEGORIES: [(&str, &str); 10] = [
 pub fn html(system: &DesignSystem, _theme: &str) -> Result<String, String> {
     let has_dark = system.tokens.themes.iter().any(|t| t.id == "dark");
 
-    let mut style = String::new();
+    let faces = fonts::faces(system);
+    let mut style = fonts::font_face_css(&faces);
     style.push_str(&css::tokens_block(system, "light", ":root"));
     if has_dark {
         style.push_str(&css::tokens_block(system, "dark", "[data-theme=\"dark\"]"));
@@ -59,7 +61,7 @@ pub fn html(system: &DesignSystem, _theme: &str) -> Result<String, String> {
         title = escape(&system.meta.title),
         style = style,
         side = sidebar(system, toggle),
-        main = main_panes(system),
+        main = main_panes(system, &faces),
         script = SCRIPT,
     ))
 }
@@ -128,11 +130,11 @@ fn sidebar(system: &DesignSystem, toggle: &str) -> String {
 
 /// One pane per category; only Overview starts visible, the script reveals the
 /// selected one.
-fn main_panes(system: &DesignSystem) -> String {
+fn main_panes(system: &DesignSystem, faces: &[FontFace]) -> String {
     [
         ("overview", overview(system), false),
         ("colors", colors(system), true),
-        ("typography", typography(system), true),
+        ("typography", typography(system, faces), true),
         ("spacing", spacing(system), true),
         ("radius", radius(system), true),
         ("shadows", shadows(system), true),
@@ -230,47 +232,114 @@ fn colors(system: &DesignSystem) -> String {
     out
 }
 
-fn typography(system: &DesignSystem) -> String {
+const PANGRAM: &str = "The quick brown fox jumps over the lazy dog";
+
+fn typography(system: &DesignSystem, faces: &[FontFace]) -> String {
     let mut out = head(
         "Typography",
-        &format!("{} styles", system.tokens.type_style_count()),
+        &format!(
+            "{} styles · {} font files",
+            system.tokens.type_style_count(),
+            faces.len()
+        ),
     );
     for group in &system.tokens.type_groups {
-        out.push_str(&format!(
-            "<h3 class=\"ds-sub\">{}</h3>\n",
-            escape(&group.name)
-        ));
-        let family = system
+        let stack = system
             .tokens
             .families
             .get(&group.family)
             .cloned()
             .unwrap_or_default();
-        if !family.is_empty() {
-            out.push_str(&format!("<p class=\"ds-usage\">{}</p>\n", escape(&family)));
-        }
+        let face = fonts::primary(&stack);
+        out.push_str(&format!(
+            "<div class=\"ds-tgroup\"><h2>{}</h2>\
+             <div class=\"ds-ttable\"><div class=\"ds-thead\"><span>Name</span><span>Preview</span></div>\n",
+            escape(&group.name)
+        ));
         for style in &group.styles {
             let size = style.font_size.clone().unwrap_or_else(|| "13px".into());
-            let weight = style
-                .weight
-                .map(|w| w.to_string())
-                .unwrap_or_else(|| "400".into());
+            let weight = style.weight.unwrap_or(400);
             let line = style.line_height.clone().unwrap_or_else(|| "normal".into());
-            let sample = style.sample.clone().unwrap_or_else(|| style.name.clone());
+            let tracking = style
+                .letter_spacing
+                .clone()
+                .unwrap_or_else(|| "normal".into());
+            let mut chips = vec![
+                format!("{face} · {}", size.trim_end_matches("px")),
+                weight.to_string(),
+                format!("line {line}"),
+            ];
+            if style.letter_spacing.is_some() {
+                chips.push(format!("tracking {tracking}"));
+            }
+            let chips: String = chips
+                .iter()
+                .map(|chip| format!("<span class=\"ds-chip\">{}</span>", escape(chip)))
+                .collect();
+            let usage = style
+                .usage
+                .as_deref()
+                .map(|usage| format!("<span class=\"ds-usage\">{}</span>", escape(usage)))
+                .unwrap_or_default();
             out.push_str(&format!(
-                "<div class=\"ds-type\">\
-                 <div class=\"ds-type__sample\" style=\"font-family:{family};font-size:{size};\
-                 font-weight:{weight};line-height:{line}\">{sample}</div>\
-                 <div class=\"ds-usage\">{name} · {size} · {weight} · line {line}</div></div>\n",
-                family = escape(&family),
-                size = escape(&size),
-                weight = weight,
-                line = escape(&line),
-                sample = escape(&sample),
+                "<div class=\"ds-trow\"><code class=\"ds-tname\">{name}</code>\
+                 <div class=\"ds-tpreview\"><div class=\"ds-type__sample\" style=\"font-family:{stack};\
+                 font-size:{size};font-weight:{weight};line-height:{line};letter-spacing:{tracking}\" \
+                 contenteditable=\"plaintext-only\" spellcheck=\"false\">{PANGRAM}</div>\
+                 <div class=\"ds-chips\">{chips}{usage}</div></div></div>\n",
                 name = escape(&style.name),
+                stack = escape(&stack),
+                size = escape(&size),
+                line = escape(&line),
+                tracking = escape(&tracking),
             ));
         }
+        out.push_str("</div></div>\n");
     }
+    out.push_str(&font_files(system, faces));
+    out
+}
+
+/// One specimen per shipped family, then whether each declared stack's first
+/// face is embedded or left to the system.
+fn font_files(system: &DesignSystem, faces: &[FontFace]) -> String {
+    let mut out = String::from("<div class=\"ds-tgroup\"><h2>Fonts</h2>\n");
+    for (key, stack) in &system.tokens.families {
+        let face = fonts::primary(stack);
+        let shipped = faces.iter().any(|f| f.family == face);
+        out.push_str(&format!(
+            "<div class=\"ds-row\"><span class=\"ds-name\">--font-{key}</span>\
+             <span class=\"ds-chip{flag}\">{state}</span><code class=\"ds-val\">{stack}</code></div>\n",
+            key = escape(key),
+            flag = if shipped { "" } else { " ds-chip--warn" },
+            state = if shipped { "embedded" } else { "system fallback" },
+            stack = escape(stack),
+        ));
+    }
+    let mut families: Vec<&str> = faces.iter().map(|f| f.family.as_str()).collect();
+    families.dedup();
+    for family in families {
+        out.push_str(&format!(
+            "<div class=\"ds-specimen\"><div class=\"ds-specimen__aa\" style=\"font-family:'{css}'\">Aa</div>\
+             <div class=\"ds-specimen__body\"><h3>{name}</h3>\
+             <p style=\"font-family:'{css}'\">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 !?&amp;@#%*()</p>\n",
+            css = escape(&family.replace('\'', "")),
+            name = escape(family),
+        ));
+        for face in faces.iter().filter(|f| f.family == family) {
+            out.push_str(&format!(
+                "<div class=\"ds-weight\" style=\"font-family:'{css}';font-weight:{weight};font-style:{italic}\">\
+                 <span>{style} {weight}</span><code class=\"ds-val\">{file}</code></div>\n",
+                css = escape(&family.replace('\'', "")),
+                weight = face.weight,
+                italic = if face.italic { "italic" } else { "normal" },
+                style = escape(&face.style),
+                file = escape(&face.file),
+            ));
+        }
+        out.push_str("</div></div>\n");
+    }
+    out.push_str("</div>\n");
     out
 }
 
@@ -774,8 +843,25 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ds-bar{height:12px;background:var(--accent);border-radius:2px;flex:0 0 auto;min-width:1px}
 .ds-box{width:40px;height:40px;background:var(--surface-sunken);border:1px solid var(--line-strong);flex:0 0 auto}
 .ds-shadow{width:64px;height:40px;background:var(--surface);border-radius:var(--radius-md);flex:0 0 auto}
-.ds-type{margin:0 0 14px}
-.ds-type__sample{color:var(--ink);overflow-wrap:anywhere}
+.ds-type__sample{color:var(--ink);overflow-wrap:anywhere;outline:none}
+.ds-type__sample:focus{box-shadow:inset 0 -1px 0 var(--focus)}
+.ds-tgroup{max-width:1040px;margin:0 0 40px}
+.ds-tgroup>h2{font:500 15px/20px var(--font-sans);margin:0 0 10px}
+.ds-ttable{border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);overflow:hidden}
+.ds-thead,.ds-trow{display:grid;grid-template-columns:180px minmax(0,1fr)}
+.ds-thead{color:var(--ink-faint);font-size:12px;border-bottom:1px solid var(--line)}
+.ds-thead span,.ds-tname,.ds-tpreview{padding:10px 16px}
+.ds-trow+.ds-trow{border-top:1px solid var(--line)}
+.ds-thead span+span,.ds-tpreview{border-left:1px solid var(--line)}
+.ds-tname{font:12px/18px var(--font-mono);color:var(--ink)}
+.ds-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.ds-chip{display:inline-flex;align-items:center;height:22px;padding:0 8px;border:1px solid var(--line);border-radius:var(--radius-sm);font:12px/16px var(--font-sans);color:var(--ink-muted);white-space:nowrap}
+.ds-chip--warn{border-style:dashed;color:var(--ink-faint)}
+.ds-specimen{display:grid;grid-template-columns:120px minmax(0,1fr);gap:20px;margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}
+.ds-specimen__aa{font-size:64px;line-height:72px;color:var(--ink)}
+.ds-specimen__body h3{font:600 13px/18px var(--font-sans);margin:0 0 6px}
+.ds-specimen__body p{font-size:18px;line-height:26px;margin:0 0 10px;color:var(--ink);overflow-wrap:anywhere}
+.ds-weight{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:4px 0;border-top:1px solid var(--line);font-size:15px;color:var(--ink)}
 .ds-brief{max-width:720px}
 .ds-brief h1{font:600 18px/24px var(--font-sans)}
 .ds-brief h2{font:600 15px/20px var(--font-sans);margin:20px 0 6px}
@@ -907,6 +993,24 @@ mod tests {
         assert!(
             html.contains("href=\"#c-button\""),
             "the second level links a component"
+        );
+    }
+
+    #[test]
+    fn typography_embeds_the_shipped_fonts_as_a_specimen() {
+        let html = html(&repo(), "light").expect("compose");
+        assert!(html.contains("@font-face{font-family:\"IBM Plex Sans\";font-weight:600"));
+        assert!(
+            html.contains("class=\"ds-ttable\""),
+            "a Name | Preview table"
+        );
+        assert!(
+            html.contains(">IBM Plex Sans · 15</span>"),
+            "a family · size chip"
+        );
+        assert!(
+            html.contains(">embedded</span>"),
+            "the sans stack is shipped"
         );
     }
 
