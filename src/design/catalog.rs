@@ -16,19 +16,66 @@ use std::process::Command;
 use super::fonts::{self, FontFace};
 use super::{Component, DesignSystem, css};
 
-/// The catalog's categories, in Claude Design's order: `(id, label)`.
-const CATEGORIES: [(&str, &str); 10] = [
-    ("overview", "Overview"),
-    ("colors", "Colors"),
-    ("typography", "Typography"),
-    ("spacing", "Spacing"),
-    ("radius", "Corner radius"),
-    ("shadows", "Shadows"),
-    ("size", "Size"),
-    ("components", "Components"),
-    ("assets", "Assets"),
-    ("files", "Files"),
+/// The catalog's categories, in Claude Design's order: `(id, label, icon)`,
+/// the icon being the inner SVG of a 24-unit line pictogram.
+const CATEGORIES: [(&str, &str, &str); 10] = [
+    (
+        "overview",
+        "Overview",
+        r#"<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>"#,
+    ),
+    (
+        "colors",
+        "Colors",
+        r#"<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/>"#,
+    ),
+    (
+        "typography",
+        "Typography",
+        r#"<path d="m15 16 2.5-7.3a1 1 0 0 1 1.9 0L22 16"/><path d="M15.7 14h5.6"/><path d="m2 16 4-9.7a.5.5 0 0 1 .9 0L11 16"/><path d="M3.3 13h6.4"/>"#,
+    ),
+    (
+        "spacing",
+        "Spacing",
+        r#"<path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/>"#,
+    ),
+    (
+        "radius",
+        "Corner radius",
+        r#"<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>"#,
+    ),
+    (
+        "shadows",
+        "Shadows",
+        r#"<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/>"#,
+    ),
+    (
+        "size",
+        "Size",
+        r#"<rect width="16" height="6" x="4" y="4" rx="2"/><rect width="12" height="6" x="6" y="14" rx="2"/>"#,
+    ),
+    (
+        "components",
+        "Components",
+        r#"<path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>"#,
+    ),
+    (
+        "assets",
+        "Assets",
+        r#"<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>"#,
+    ),
+    (
+        "files",
+        "Files",
+        r#"<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>"#,
+    ),
 ];
+
+const SEARCH_ICON: &str = r#"<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>"#;
+
+fn icon(paths: &str) -> String {
+    format!("<svg class=\"ds-ico\" viewBox=\"0 0 24 24\" aria-hidden=\"true\">{paths}</svg>")
+}
 
 /// The full catalog document for `theme` (`light`'s values become the default).
 pub fn html(system: &DesignSystem, _theme: &str) -> Result<String, String> {
@@ -75,13 +122,14 @@ fn sidebar(system: &DesignSystem, toggle: &str) -> String {
         escape(&system.meta.title),
         escape(&system.meta.namespace),
     ));
-    out.push_str(
-        "<input id=\"ds-q\" class=\"ds-search\" type=\"search\" placeholder=\"Search\">\n",
-    );
+    out.push_str(&format!(
+        "<label class=\"ds-search\">{}<input id=\"ds-q\" type=\"search\" placeholder=\"Search\"></label>\n",
+        icon(SEARCH_ICON)
+    ));
     out.push_str("<div class=\"ds-rails\" id=\"ds-rails\">\n");
 
     out.push_str("<nav class=\"ds-rail ds-rail--main\" id=\"ds-rail-main\">\n");
-    for (id, label) in CATEGORIES {
+    for (id, label, paths) in CATEGORIES {
         let count = match id {
             "components" => Some(system.components.len()),
             "files" => Some(system.files().len()),
@@ -94,9 +142,13 @@ fn sidebar(system: &DesignSystem, toggle: &str) -> String {
         } else {
             ""
         };
+        if id == "files" {
+            out.push_str("<hr class=\"ds-rule\">\n");
+        }
         out.push_str(&format!(
             "<button type=\"button\" class=\"ds-item\" data-cat=\"{id}\"{drill}>\
-             <span>{label}</span>{count}</button>\n",
+             {icon}<span class=\"ds-label\">{label}</span>{count}</button>\n",
+            icon = icon(paths),
             label = escape(label),
         ));
     }
@@ -809,15 +861,20 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ds-side{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--surface);padding:16px;overflow:hidden}
 .ds-side h1{font:600 15px/20px var(--font-sans);margin:0}
 .ds-ns{font:11px/14px var(--font-mono);color:var(--ink-muted);margin:2px 0 12px}
-.ds-search{width:100%;height:28px;padding:0 8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:13px/18px var(--font-sans);margin-bottom:10px;flex:0 0 auto}
-.ds-search:focus{outline:2px solid var(--focus);outline-offset:1px}
+.ds-search{display:flex;align-items:center;gap:6px;width:100%;height:28px;padding:0 8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink-faint);margin-bottom:10px;flex:0 0 auto;cursor:text}
+.ds-search:focus-within{outline:2px solid var(--focus);outline-offset:1px}
+.ds-search input{flex:1 1 auto;min-width:0;height:100%;padding:0;border:0;outline:0;background:none;color:var(--ink);font:13px/18px var(--font-sans)}
+.ds-ico{width:16px;height:16px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ds-ico circle[r=".5"]{fill:currentColor}
+.ds-label{flex:1 1 auto}
+.ds-rule{border:0;border-top:1px solid var(--line);margin:6px 0}
 .ds-rails{position:relative;flex:1 1 auto;min-height:0;overflow:hidden}
 .ds-rail{position:absolute;inset:0;overflow:auto;transition:transform .22s ease}
 .ds-rail--main{transform:translateX(0)}
 .ds-rail--sub{transform:translateX(100%)}
 .ds-rails.ds-open .ds-rail--main{transform:translateX(-100%)}
 .ds-rails.ds-open .ds-rail--sub{transform:translateX(0)}
-.ds-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;background:none;border:0;padding:6px 8px;border-radius:var(--radius-sm);color:var(--ink-muted);font:13px/18px var(--font-sans);cursor:pointer}
+.ds-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;padding:6px 8px;border-radius:var(--radius-sm);color:var(--ink-muted);font:13px/18px var(--font-sans);cursor:pointer}
 .ds-item:hover{background:var(--surface-hover);color:var(--ink)}
 .ds-item[aria-current]{background:var(--accent-soft);color:var(--ink)}
 .ds-count{font:11px/14px var(--font-mono);color:var(--ink-faint)}
@@ -989,6 +1046,11 @@ mod tests {
         let html = html(&system, "light").expect("compose");
         assert!(html.contains("data-cat=\"components\""), "category item");
         assert!(html.contains("data-drill=\"1\""), "components drills in");
+        assert_eq!(
+            html.matches("<svg class=\"ds-ico\"").count(),
+            CATEGORIES.len() + 1,
+            "a pictogram per category and one in the search box"
+        );
         assert!(html.contains("class=\"ds-back\""), "a back button");
         assert!(
             html.contains("href=\"#c-button\""),
