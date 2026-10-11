@@ -2498,3 +2498,34 @@ fn a_ticket_can_show_an_image_from_its_asset_folder() {
         "the ticket's image decodes through the file loader"
     );
 }
+
+#[test]
+fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
+    let dir = scratch_dir("rescan");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::write(todo.join("a.md"), "# A\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.auto = true;
+    let ctx = egui::Context::default();
+
+    std::fs::write(todo.join("b.md"), "# B\n").unwrap();
+    app.last_refresh = Instant::now() - RESCAN_EVERY;
+    app.background(&ctx);
+    assert!(app.scan.is_some(), "the rescan runs in the background");
+    assert!(until(|| {
+        app.background(&ctx);
+        app.scan.is_none()
+    }));
+    assert!(app.board.find(&todo.join("b.md")).is_some());
+
+    app.last_refresh = Instant::now() - RESCAN_EVERY;
+    app.background(&ctx);
+    app.refresh();
+    let newer = app.board_generation;
+    assert!(until(|| {
+        app.background(&ctx);
+        app.scan.is_none()
+    }));
+    assert_eq!(app.board_generation, newer, "the older scan was dropped");
+}

@@ -321,12 +321,46 @@ impl IboardApp {
         self.settings = Some(dialog);
     }
 
-    /// The short hash of the newest commit naming `path`'s file, if any.
-    pub(super) fn latest_commit(&self, path: &Path) -> Option<String> {
-        let dir = path.parent().unwrap_or(&self.board.root);
-        commits::for_file(dir, &file_name(path))
-            .first()
-            .map(|commit| commit.hash.clone())
+    /// The short hash of the newest commit naming `path`'s file, once a
+    /// lookup off the UI thread has found it. The lookup runs again when the
+    /// issue or the board changes, showing the last hash meanwhile.
+    pub(super) fn latest_commit(&mut self, path: &Path, ctx: &egui::Context) -> Option<String> {
+        let current = self
+            .commit_hash
+            .as_ref()
+            .is_some_and(|known| known.path == path && known.generation == self.board_generation);
+        if !current {
+            let hash = self
+                .commit_hash
+                .take()
+                .filter(|known| known.path == path)
+                .and_then(|known| known.hash);
+            let dir = path.parent().unwrap_or(&self.board.root).to_path_buf();
+            let file = file_name(path);
+            let lookup = Job::spawn(move |_| {
+                commits::for_file(&dir, &file)
+                    .first()
+                    .map(|commit| commit.hash.clone())
+            });
+            self.commit_hash = Some(CommitHash {
+                path: path.to_path_buf(),
+                generation: self.board_generation,
+                lookup: Some(lookup),
+                hash,
+            });
+        }
+        let known = self.commit_hash.as_mut()?;
+        if let Some(lookup) = &known.lookup {
+            match lookup.poll() {
+                job::Poll::Ready(hash) => {
+                    known.hash = hash;
+                    known.lookup = None;
+                }
+                job::Poll::Lost => known.lookup = None,
+                job::Poll::Waiting => ctx.request_repaint_after(job::POLL_EVERY),
+            }
+        }
+        known.hash.clone()
     }
 
     /// Opens the commits popup for `path`: the git log entries whose message

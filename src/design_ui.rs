@@ -13,11 +13,12 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use egui::{Align2, Color32, CornerRadius, Rect, Stroke, StrokeKind, pos2};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
-use crate::design::{self, Component, DesignSystem, Token};
+use crate::design::{self, Asset, Component, DesignFile, DesignSystem, Token};
 use crate::job::{self, Job};
 
 use crate::theme;
@@ -129,6 +130,36 @@ pub struct Panel {
     running: Option<(String, Job<Result<PathBuf, String>>)>,
     /// Layout cache for the Overview brief's markdown.
     brief_cache: CommonMarkCache,
+    /// What the panes read from the design folder.
+    disk: Disk,
+}
+
+/// What the panes read from the design folder, read again at most every
+/// [`DISK_EVERY`], or when the system changes.
+#[derive(Default)]
+struct Disk {
+    /// The system it was read for: its root and its number of components.
+    key: Option<(PathBuf, usize)>,
+    at: Option<Instant>,
+    files: Vec<DesignFile>,
+    assets: Vec<Asset>,
+    brief: Option<String>,
+}
+
+const DISK_EVERY: Duration = Duration::from_secs(2);
+
+impl Disk {
+    fn read(&mut self, system: &DesignSystem) {
+        let key = Some((system.root.clone(), system.components.len()));
+        let fresh = self.key == key && self.at.is_some_and(|at| at.elapsed() < DISK_EVERY);
+        if !fresh {
+            self.key = key;
+            self.at = Some(Instant::now());
+            self.files = system.files();
+            self.assets = system.assets();
+            self.brief = system.brief();
+        }
+    }
 }
 
 impl Default for Panel {
@@ -147,6 +178,7 @@ impl Default for Panel {
             previews: BTreeMap::new(),
             running: None,
             brief_cache: CommonMarkCache::default(),
+            disk: Disk::default(),
         }
     }
 }
@@ -207,6 +239,9 @@ impl Panel {
         agent_ready: bool,
     ) -> Action {
         self.poll(ui.ctx());
+        if let Some(system) = system {
+            self.disk.read(system);
+        }
         let mut action = Action::Keep;
         let p = theme::palette(ui);
         ui.horizontal(|ui| {
@@ -361,7 +396,7 @@ impl Panel {
 
         for category in Category::ALL {
             let meta = match category {
-                Category::Files => Some(system.files().len().to_string()),
+                Category::Files => Some(self.disk.files.len().to_string()),
                 Category::Components => Some(system.components.len().to_string()),
                 _ => None,
             };
@@ -434,7 +469,12 @@ impl Panel {
     ) {
         ui.add_space(theme::SPACE_4);
         match self.category {
-            Category::Overview => overview(ui, system, &mut self.brief_cache),
+            Category::Overview => overview(
+                ui,
+                system,
+                self.disk.brief.as_deref(),
+                &mut self.brief_cache,
+            ),
             Category::Colors => colors(ui, system),
             Category::Typography => typography(ui, system),
             Category::Spacing => spacing(ui, system),
@@ -444,8 +484,8 @@ impl Panel {
             Category::Components => {
                 self.components(ui, system, render_available, agent_ready, action)
             }
-            Category::Assets => assets(ui, system),
-            Category::Files => files(ui, system),
+            Category::Assets => assets(ui, &self.disk.assets),
+            Category::Files => files(ui, &self.disk.files),
         }
     }
 
@@ -792,7 +832,12 @@ fn centred(ui: &egui::Ui, rect: Rect, text: &str, color: Color32) {
 }
 
 /// The Overview landing: identity, counts, the last change and the brief.
-fn overview(ui: &mut egui::Ui, system: &DesignSystem, cache: &mut CommonMarkCache) {
+fn overview(
+    ui: &mut egui::Ui,
+    system: &DesignSystem,
+    brief: Option<&str>,
+    cache: &mut CommonMarkCache,
+) {
     let p = theme::palette(ui);
     ui.label(
         egui::RichText::new(&system.meta.title)
@@ -835,7 +880,7 @@ fn overview(ui: &mut egui::Ui, system: &DesignSystem, cache: &mut CommonMarkCach
     }
 
     ui.separator();
-    let Some(brief) = system.brief() else {
+    let Some(brief) = brief else {
         ui.label(
             egui::RichText::new("No design/README.md brief yet.")
                 .color(p.ink_faint)
@@ -850,7 +895,7 @@ fn overview(ui: &mut egui::Ui, system: &DesignSystem, cache: &mut CommonMarkCach
     styles.insert(egui::TextStyle::Heading, theme::ui_title());
     styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.0));
     ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-    CommonMarkViewer::new().show(ui, cache, &brief);
+    CommonMarkViewer::new().show(ui, cache, brief);
 }
 
 /// Colors: one row per color token, a swatch per theme, copy on click.
@@ -1057,9 +1102,8 @@ fn size(ui: &mut egui::Ui, system: &DesignSystem) {
 }
 
 /// Assets: the bundled fonts and any declared images, grouped.
-fn assets(ui: &mut egui::Ui, system: &DesignSystem) {
+fn assets(ui: &mut egui::Ui, assets: &[Asset]) {
     let p = theme::palette(ui);
-    let assets = system.assets();
     if assets.is_empty() {
         ui.label(
             egui::RichText::new("No assets bundled or declared.")
@@ -1069,7 +1113,7 @@ fn assets(ui: &mut egui::Ui, system: &DesignSystem) {
         return;
     }
     let mut current = String::new();
-    for asset in &assets {
+    for asset in assets {
         if asset.group != current {
             heading(ui, &asset.group);
             current = asset.group.clone();
@@ -1103,9 +1147,8 @@ fn assets(ui: &mut egui::Ui, system: &DesignSystem) {
 }
 
 /// Files: every file under `design/`, with a count.
-fn files(ui: &mut egui::Ui, system: &DesignSystem) {
+fn files(ui: &mut egui::Ui, files: &[DesignFile]) {
     let p = theme::palette(ui);
-    let files = system.files();
     heading(ui, &format!("Files {}", files.len()));
     for file in files {
         ui.horizontal(|ui| {

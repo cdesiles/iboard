@@ -284,7 +284,7 @@ impl IboardApp {
                         None,
                     )
                     .on_hover_text("The git commits that name this ticket");
-                    if let Some(hash) = self.latest_commit(&path) {
+                    if let Some(hash) = self.latest_commit(&path, ui.ctx()) {
                         let p = theme::palette(ui);
                         ui.label(
                             RichText::new(hash)

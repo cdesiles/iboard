@@ -37,13 +37,16 @@ fn committed_dates(dir: &Path) -> Dates {
     let Some(head) = git(dir, &["rev-parse", "HEAD"]) else {
         return Dates::new();
     };
-    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    let cache = cache.get_or_insert_with(HashMap::new);
-    if let Some((cached_head, dates)) = cache.get(dir)
-        && *cached_head == head
     {
-        return dates.clone();
+        let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((cached_head, dates)) = cache.as_ref().and_then(|cache| cache.get(dir))
+            && *cached_head == head
+        {
+            return dates.clone();
+        }
     }
+    // Not under the lock: a scan in the background must not hold up one on
+    // the UI thread while git walks the history.
     let dates = git(
         dir,
         &[
@@ -59,7 +62,11 @@ fn committed_dates(dir: &Path) -> Dates {
     )
     .map(|log| parse_log(dir, &log))
     .unwrap_or_default();
-    cache.insert(dir.to_path_buf(), (head, dates.clone()));
+    CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(dir.to_path_buf(), (head, dates.clone()));
     dates
 }
 

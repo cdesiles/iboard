@@ -297,12 +297,27 @@ impl IboardApp {
             self.flush_autosave(false);
         }
 
+        // Auto reads the board again every RESCAN_EVERY, off the UI thread.
         if self.auto {
-            if self.last_refresh.elapsed() >= Duration::from_millis(2000) {
+            if self.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
                 self.last_refresh = Instant::now();
-                self.refresh();
+                let located = self.located.clone();
+                let rescan = Job::spawn(move |_| scan(&located));
+                self.scan = Some((rescan, self.board_generation));
             }
-            ctx.request_repaint_after(Duration::from_millis(2000));
+            ctx.request_repaint_after(RESCAN_EVERY);
+        }
+        if let Some((rescan, generation)) = &self.scan {
+            match rescan.answer() {
+                Some(scanned) => {
+                    let current = *generation == self.board_generation;
+                    self.scan = None;
+                    if current {
+                        self.adopt(scanned);
+                    }
+                }
+                None => ctx.request_repaint_after(job::POLL_EVERY),
+            }
         }
         // Poll a running review a few times a second.
         if self

@@ -62,6 +62,9 @@ use filter_bar::*;
 use labelling::*;
 use reader::*;
 
+/// How often Auto reads the board again.
+const RESCAN_EVERY: Duration = Duration::from_secs(2);
+
 /// How long after the last keystroke an edit is written to disk.
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(800);
 
@@ -240,6 +243,15 @@ const DOCK_SLIDE: f32 = 0.14;
 const NOTICE_FOR: Duration = Duration::from_secs(4);
 /// How long `⌘Z` can bring back an issue deleted without asking.
 const UNDO_FOR: Duration = Duration::from_secs(10);
+
+/// The newest commit naming one issue's file, for the board it was looked up
+/// on.
+struct CommitHash {
+    path: PathBuf,
+    generation: u64,
+    lookup: Option<Job<Option<String>>>,
+    hash: Option<String>,
+}
 
 /// The commits popup: the hashes whose message names a ticket's file, read
 /// from git when its button is pressed.
@@ -470,6 +482,15 @@ pub struct IboardApp {
     /// leaving the editor. Off, the editor asks before dropping unsaved edits.
     auto: bool,
     last_refresh: Instant,
+    /// The rescan Auto runs in the background, and the board generation it
+    /// started from.
+    scan: Option<(Job<Result<Board, String>>, u64)>,
+    /// Counts the boards adopted, so a background scan that started before
+    /// a newer board never replaces it.
+    board_generation: u64,
+    /// The newest commit naming the open issue's file, looked up off the UI
+    /// thread.
+    commit_hash: Option<CommitHash>,
     /// The card selected on the board, moved with the arrow keys.
     selected: Option<PathBuf>,
     /// Scroll the selected card into view on the next frame.
@@ -640,6 +661,9 @@ impl IboardApp {
             dock_archivable: false,
             auto: true,
             last_refresh: Instant::now(),
+            scan: None,
+            board_generation: 0,
+            commit_hash: None,
             selected: None,
             scroll_to_selected: false,
             leave_prompt: None,
@@ -712,6 +736,8 @@ impl IboardApp {
                 self.filter.clear();
                 self.error = None;
                 self.scan_error = None;
+                self.scan = None;
+                self.commit_hash = None;
                 // Remember the project root discovery settled on, not the
                 // folder the user happened to pick inside it.
                 self.remember(&project_dir);
@@ -721,13 +747,21 @@ impl IboardApp {
         }
     }
 
+    /// Reads the board again, now: what an action that changed files needs
+    /// before it goes on.
     fn refresh(&mut self) {
-        match discovery::build(&self.located) {
+        self.adopt(scan(&self.located));
+    }
+
+    /// Takes a fresh scan of the board, or why it could not be read.
+    fn adopt(&mut self, scanned: Result<Board, String>) {
+        self.board_generation += 1;
+        match scanned {
             Ok(board) => {
                 self.board = board;
                 self.scan_error = None;
             }
-            Err(err) => self.scan_error = Some(format!("{err:#}")),
+            Err(err) => self.scan_error = Some(err),
         }
         self.reconcile_editor();
     }
@@ -812,6 +846,11 @@ impl IboardApp {
         self.commits_window(ui);
         self.flush_pending_front(ui.ctx());
     }
+}
+
+/// Reads the board of `located`, or says why it could not.
+fn scan(located: &Located) -> Result<Board, String> {
+    discovery::build(located).map_err(|err| format!("{err:#}"))
 }
 
 impl eframe::App for IboardApp {
