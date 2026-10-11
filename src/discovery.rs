@@ -362,6 +362,11 @@ pub fn is_ready_column(dir: &Path) -> bool {
     canonical_name(dir) == Some("Ready")
 }
 
+/// Whether `dir` is the Done column.
+pub fn is_done_column(dir: &Path) -> bool {
+    canonical_name(dir) == Some("Done")
+}
+
 /// Whether a column's order is its file-name order, so dropping a card at a
 /// position can renumber the files. Todo and Ready; Doing and Done are sorted
 /// by date instead.
@@ -434,6 +439,62 @@ pub fn numbered_name(position: usize, name: &str) -> String {
         strip_priority(name),
         width = PRIORITY_DIGITS
     )
+}
+
+/// Renames the files of an ordered column so their `001-` prefixes match
+/// `order`. Renames go through hidden temp names in two phases, so a swap
+/// (`001-a` ↔ `002-b`) cannot clobber a file. Returns every `(old, new)` pair
+/// that changed.
+pub fn renumber(dir: &Path, order: &[PathBuf]) -> Result<Vec<(PathBuf, PathBuf)>, String> {
+    let changes: Vec<(PathBuf, PathBuf)> = order
+        .iter()
+        .enumerate()
+        .filter_map(|(index, path)| {
+            let target = dir.join(numbered_name(index + 1, &files::file_name(path)));
+            (target != *path).then(|| (path.clone(), target))
+        })
+        .collect();
+    if changes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Phase 1: every changing file moves to a unique hidden temp name.
+    let mut staged: Vec<(PathBuf, PathBuf, PathBuf)> = Vec::new();
+    for (index, (original, target)) in changes.iter().enumerate() {
+        let temp = dir.join(format!(".renumber-{}-{index}.tmp", std::process::id()));
+        if let Err(err) = std::fs::rename(original, &temp) {
+            restore(&staged);
+            return Err(format!(
+                "Couldn't renumber {}: {err}",
+                files::file_name(original)
+            ));
+        }
+        staged.push((temp, original.clone(), target.clone()));
+    }
+
+    // Phase 2: temps take their final names. On failure, put back what moved.
+    let mut done: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for (index, (temp, original, target)) in staged.iter().enumerate() {
+        if let Err(err) = std::fs::rename(temp, target) {
+            restore(&staged[index..]);
+            for (final_name, original) in &done {
+                let _ = std::fs::rename(final_name, original);
+            }
+            return Err(format!(
+                "Couldn't renumber {}: {err}",
+                files::file_name(original)
+            ));
+        }
+        done.push((target.clone(), original.clone()));
+    }
+    Ok(changes)
+}
+
+/// Best-effort undo of the staging phase.
+fn restore(staged: &[(PathBuf, PathBuf, PathBuf)]) {
+    for (temp, original, _) in staged {
+        let _ = std::fs::rename(temp, original);
+    }
 }
 
 fn load_issues(files: Vec<PathBuf>, warnings: &mut Vec<String>) -> Vec<Issue> {

@@ -16,7 +16,7 @@ use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use crate::agent::{self, AgentConfig, Report};
 use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
-use crate::files::{self, atomic_write, file_name, normalize_file_name, slugify, unique_name};
+use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_name};
 use crate::filter::{self, Filter};
 use crate::format::{card_date, display_path, relative_time};
 use crate::general;
@@ -24,6 +24,7 @@ use crate::issue::Issue;
 use crate::job::{self, Job};
 use crate::label_picker::{self, LabelPicker};
 use crate::labels::{self, Labels};
+use crate::order::{Sort, default_sort, focus_issues, group_issues};
 use crate::process;
 use crate::review_settings::{self, Catalog};
 use crate::settings::{self, UserConfig};
@@ -97,63 +98,6 @@ enum ProjectChoice {
     Recent(PathBuf),
     /// Ask the OS for a folder.
     Browse,
-}
-
-/// How a column orders its cards in ColumnFocus. The choice is remembered per
-/// column for the session; only [`Sort::Board`] offers drag reordering.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Sort {
-    /// The order the files are in on the board.
-    Board,
-    /// Most recently edited first.
-    Modified,
-    /// Most recently created first.
-    Created,
-    /// Title, A to Z.
-    Title,
-    /// The most open checklist items first.
-    MostToDo,
-    /// Most recently finished first; Done's default.
-    Finished,
-}
-
-impl Sort {
-    /// The five sorts every column offers; Done additionally opens with
-    /// [`Sort::Finished`].
-    const MENU: [Sort; 5] = [
-        Sort::Board,
-        Sort::Modified,
-        Sort::Created,
-        Sort::Title,
-        Sort::MostToDo,
-    ];
-
-    fn label(self) -> &'static str {
-        match self {
-            Sort::Board => "Board order",
-            Sort::Modified => "Recently modified",
-            Sort::Created => "Recently created",
-            Sort::Title => "Title A to Z",
-            Sort::MostToDo => "Most to do",
-            Sort::Finished => "Recently finished",
-        }
-    }
-}
-
-/// The default sort of a focused column, chosen by what people look for there.
-fn default_sort(dir: &Path) -> Sort {
-    let name = dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if discovery::is_ready_column(dir) {
-        Sort::Board
-    } else if name == "done" || name == "completed" {
-        Sort::Finished
-    } else {
-        Sort::Modified
-    }
 }
 
 /// An issue action available from a card or the detail header.
@@ -446,56 +390,6 @@ enum ReviewStatus {
     Running { answer: Job<Result<String, String>> },
     Done { raw: String, report: Option<Report> },
     Failed { error: String },
-}
-
-/// Renames the files of an ordered column so their `001-` prefixes match
-/// `order`. Renames go through hidden temp names in two phases, so a swap
-/// (`001-a` ↔ `002-b`) cannot clobber a file. Returns every `(old, new)` pair
-/// that changed.
-fn renumber(dir: &Path, order: &[PathBuf]) -> Result<Vec<(PathBuf, PathBuf)>, String> {
-    let changes: Vec<(PathBuf, PathBuf)> = order
-        .iter()
-        .enumerate()
-        .filter_map(|(index, path)| {
-            let target = dir.join(discovery::numbered_name(index + 1, &file_name(path)));
-            (target != *path).then(|| (path.clone(), target))
-        })
-        .collect();
-    if changes.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Phase 1: every changing file moves to a unique hidden temp name.
-    let mut staged: Vec<(PathBuf, PathBuf, PathBuf)> = Vec::new();
-    for (index, (original, target)) in changes.iter().enumerate() {
-        let temp = dir.join(format!(".renumber-{}-{index}.tmp", std::process::id()));
-        if let Err(err) = std::fs::rename(original, &temp) {
-            restore(&staged);
-            return Err(format!("Couldn't renumber {}: {err}", file_name(original)));
-        }
-        staged.push((temp, original.clone(), target.clone()));
-    }
-
-    // Phase 2: temps take their final names. On failure, put back what moved.
-    let mut done: Vec<(PathBuf, PathBuf)> = Vec::new();
-    for (index, (temp, original, target)) in staged.iter().enumerate() {
-        if let Err(err) = std::fs::rename(temp, target) {
-            restore(&staged[index..]);
-            for (final_name, original) in &done {
-                let _ = std::fs::rename(final_name, original);
-            }
-            return Err(format!("Couldn't renumber {}: {err}", file_name(original)));
-        }
-        done.push((target.clone(), original.clone()));
-    }
-    Ok(changes)
-}
-
-/// Best-effort undo of the staging phase.
-fn restore(staged: &[(PathBuf, PathBuf, PathBuf)]) {
-    for (temp, original, _) in staged {
-        let _ = std::fs::rename(temp, original);
-    }
 }
 
 pub struct IboardApp {
@@ -1230,7 +1124,7 @@ impl IboardApp {
             Some(index) => order.insert(index, moved.to_path_buf()),
             None => order.push(moved.to_path_buf()),
         }
-        let result = match renumber(dir, &order) {
+        let result = match discovery::renumber(dir, &order) {
             Ok(renames) => {
                 let renamed = renames
                     .iter()
@@ -1868,7 +1762,7 @@ impl IboardApp {
         description: &str,
     ) -> Result<PathBuf, String> {
         let title = title.trim();
-        let (name, _) = planned_issue_name(dir, title);
+        let (name, _) = crate::issue::new_file_name(dir, title);
         let path = dir.join(&name);
         let body = description.trim_end();
         let content = if body.trim().is_empty() {
@@ -5670,59 +5564,6 @@ struct FocusGridActions {
     reorder: Option<(PathBuf, Option<PathBuf>)>,
 }
 
-/// The focused column's issues, filtered and ordered by `sort`.
-fn focus_issues<'a>(column: &'a Column, filter: &Filter, sort: Sort) -> Vec<&'a Issue> {
-    let mut issues: Vec<&Issue> = column
-        .issues
-        .iter()
-        .filter(|issue| filter.matches(issue))
-        .collect();
-    match sort {
-        Sort::Board => {}
-        Sort::Modified => issues.sort_by_key(|issue| std::cmp::Reverse(issue.modified)),
-        Sort::Created => {
-            issues.sort_by_key(|issue| std::cmp::Reverse(issue.created.or(issue.modified)))
-        }
-        Sort::Title => issues.sort_by_cached_key(|issue| issue.title.to_lowercase()),
-        Sort::MostToDo => issues.sort_by_key(|issue| {
-            let (done, total) = sheet::checklist(&issue.markdown);
-            std::cmp::Reverse(total.saturating_sub(done))
-        }),
-        Sort::Finished => issues.sort_by_key(|issue| {
-            std::cmp::Reverse(issue.done_at.map(|at| at.timestamp()).unwrap_or(i64::MIN))
-        }),
-    }
-    issues
-}
-
-/// Splits sorted issues into label sections, most-used label first with the
-/// unlabelled ones last, for Group by label.
-fn group_issues(issues: Vec<&Issue>) -> Vec<(Option<String>, Vec<&Issue>)> {
-    let mut map: Vec<(String, Vec<&Issue>)> = Vec::new();
-    let mut unlabelled: Vec<&Issue> = Vec::new();
-    for issue in issues {
-        // An issue with two labels shows under both.
-        if issue.labels.is_empty() {
-            unlabelled.push(issue);
-        }
-        for label in &issue.labels {
-            match map.iter_mut().find(|(name, _)| name == label) {
-                Some((_, group)) => group.push(issue),
-                None => map.push((label.clone(), vec![issue])),
-            }
-        }
-    }
-    map.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
-    let mut groups: Vec<(Option<String>, Vec<&Issue>)> = map
-        .into_iter()
-        .map(|(name, group)| (Some(name), group))
-        .collect();
-    if !unlabelled.is_empty() {
-        groups.push((None, unlabelled));
-    }
-    groups
-}
-
 /// Where a card dropped at `pos` lands among `cards` (row-major): the index to
 /// insert before, or `cards.len()` at the end.
 fn insertion_index(cards: &[(PathBuf, Rect)], pos: Pos2) -> usize {
@@ -6340,7 +6181,7 @@ fn composer_meta(ui: &mut egui::Ui, composer: &Composer, column: &Column, folder
                 )],
             ),
             _ if !title.is_empty() => {
-                let (name, taken) = planned_issue_name(&column.dir, title);
+                let (name, taken) = crate::issue::new_file_name(&column.dir, title);
                 let color = if taken {
                     p.status_doing
                 } else if composer.stage == TitleStage::Inferred {
@@ -6597,40 +6438,13 @@ fn fact(ui: &mut egui::Ui, text: &str, color: Color32, checked: bool) {
     );
 }
 
-/// A wide card's facts: each standard section, `true` when it is written (and
-/// so gets a check; acceptance criteria carries its checklist count), `false`
-/// and `Name —` when it is missing. A bare issue is one "No sections yet".
-fn facts(issue: &Issue, sections: &[String]) -> Vec<(String, bool)> {
-    let missing = sheet::missing_sections(&issue.markdown, sections);
-    if sections
-        .iter()
-        .all(|section| missing.contains(&section.as_str()))
-    {
-        return vec![("No sections yet".to_string(), false)];
-    }
-    let (done, total) = sheet::checklist(&issue.markdown);
-    sections
-        .iter()
-        .map(|section| {
-            let present = !missing.contains(&section.as_str());
-            if !present {
-                (format!("{section} —"), false)
-            } else if section.eq_ignore_ascii_case("Acceptance criteria") {
-                (format!("Criteria {done}/{total}"), true)
-            } else {
-                (section.clone(), true)
-            }
-        })
-        .collect()
-}
-
 /// A wide card's facts row: the written sections checked in `status-done`, the
 /// missing ones as `Out of scope —` in `ink-muted`.
 fn fact_row(ui: &mut egui::Ui, issue: &Issue, sections: &[String]) {
     let p = theme::palette(ui);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::new(10.0, 4.0);
-        for (text, checked) in facts(issue, sections) {
+        for (text, checked) in sheet::facts(issue, sections) {
             let color = if checked { p.status_done } else { p.ink_muted };
             fact(ui, &text, color, checked);
         }
@@ -7153,20 +6967,6 @@ fn step_selection(
             .or(at),
         _ => at,
     }
-}
-
-/// The file name the composer will write for `title` in `dir`, and whether the
-/// plain slug was taken (so a `-2`, `-3`... suffix was added). The slug leaves
-/// the title's `[label]` groups out.
-fn planned_issue_name(dir: &Path, title: &str) -> (String, bool) {
-    let slug = slugify(&labels::display_title(title));
-    let mut candidate = format!("{slug}.md");
-    let mut n = 2;
-    while dir.join(&candidate).exists() {
-        candidate = format!("{slug}-{n}.md");
-        n += 1;
-    }
-    (candidate, n > 2)
 }
 
 #[cfg(test)]
@@ -8308,30 +8108,6 @@ mod tests {
     }
 
     #[test]
-    fn planned_names_take_a_suffix_when_taken() {
-        let dir = scratch_dir("planned");
-        assert_eq!(
-            planned_issue_name(&dir, "Fix it"),
-            ("fix-it.md".to_string(), false)
-        );
-        assert_eq!(
-            planned_issue_name(&dir, "[Bug] [UI] Fix it"),
-            ("fix-it.md".to_string(), false),
-            "labels stay out of the file name"
-        );
-        std::fs::write(dir.join("fix-it.md"), "").unwrap();
-        assert_eq!(
-            planned_issue_name(&dir, "Fix it"),
-            ("fix-it-2.md".to_string(), true)
-        );
-        std::fs::write(dir.join("fix-it-2.md"), "").unwrap();
-        assert_eq!(
-            planned_issue_name(&dir, "Fix it"),
-            ("fix-it-3.md".to_string(), true)
-        );
-    }
-
-    #[test]
     fn the_composer_creates_issues_and_stays_open() {
         let dir = scratch_dir("compose");
         let todo = dir.join("issues/todo");
@@ -9292,14 +9068,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn focused_columns_open_with_their_own_default_sort() {
-        assert_eq!(default_sort(Path::new("/x/todo")), Sort::Modified);
-        assert_eq!(default_sort(Path::new("/x/ready")), Sort::Board);
-        assert_eq!(default_sort(Path::new("/x/doing")), Sort::Modified);
-        assert_eq!(default_sort(Path::new("/x/done")), Sort::Finished);
-    }
-
     /// A focused Todo column lays the wide cards out four across at 1280pt,
     /// with the fifth wrapping to a new row inside the gutters.
     #[test]
@@ -9362,84 +9130,6 @@ mod tests {
                 rect.center()
             );
         }
-    }
-
-    #[test]
-    fn focus_sorts_order_the_cards() {
-        let (_dir, todo, app) = focus_app(
-            "focus-sort",
-            &[("Zebra", None), ("Apple", None), ("Mango", None)],
-        );
-        let column = app
-            .board
-            .columns
-            .iter()
-            .find(|column| column.dir == todo)
-            .unwrap();
-        let titles = |sort| {
-            focus_issues(column, &Filter::default(), sort)
-                .into_iter()
-                .map(|issue| issue.title.clone())
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(titles(Sort::Board), ["Zebra", "Apple", "Mango"]);
-        assert_eq!(titles(Sort::Title), ["Apple", "Mango", "Zebra"]);
-        // Each issue has two checklist items, one open; most-to-do keeps them.
-        assert_eq!(titles(Sort::MostToDo).len(), 3);
-    }
-
-    #[test]
-    fn grouping_orders_labels_by_count_and_unlabelled_last() {
-        let (_dir, todo, app) = focus_app(
-            "focus-group",
-            &[
-                ("A", Some("bug")),
-                ("B", Some("bug")),
-                ("C", Some("feature")),
-                ("D", None),
-            ],
-        );
-        let column = app
-            .board
-            .columns
-            .iter()
-            .find(|column| column.dir == todo)
-            .unwrap();
-        let groups = group_issues(focus_issues(column, &Filter::default(), Sort::Board));
-        let names: Vec<Option<&str>> = groups.iter().map(|(label, _)| label.as_deref()).collect();
-        assert_eq!(names, [Some("bug"), Some("feature"), None]);
-        assert_eq!(groups[0].1.len(), 2);
-        assert_eq!(groups[2].1.len(), 1);
-    }
-
-    #[test]
-    fn facts_check_written_sections_and_mark_missing() {
-        let sections: Vec<String> = crate::sheet::DEFAULT_SECTIONS
-            .iter()
-            .map(|section| section.to_string())
-            .collect();
-        let dir = scratch_dir("facts");
-        let file = dir.join("x.md");
-        std::fs::write(
-            &file,
-            "# T\n\n## Context\n\nWhy.\n\n## Acceptance criteria\n\n- [x] a\n- [ ] b\n",
-        )
-        .unwrap();
-        let issue = Issue::load(&file).unwrap();
-        let row = facts(&issue, &sections);
-        assert!(row.iter().any(|(text, ok)| text == "Context" && *ok));
-        assert!(row.iter().any(|(text, ok)| text == "Criteria 1/2" && *ok));
-        assert!(
-            row.iter()
-                .any(|(text, ok)| text == "Out of scope —" && !*ok)
-        );
-
-        std::fs::write(&file, "# Bare\n").unwrap();
-        let issue = Issue::load(&file).unwrap();
-        assert_eq!(
-            facts(&issue, &sections),
-            vec![("No sections yet".to_string(), false)]
-        );
     }
 
     /// Opening an issue from a focused column and going back returns to that

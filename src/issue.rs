@@ -11,6 +11,7 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Local};
 
+use crate::files;
 use crate::labels;
 
 /// Maximum number of characters shown in a card summary (before the ellipsis).
@@ -316,10 +317,45 @@ fn truncate_with_ellipsis(text: &str, limit: usize) -> String {
     format!("{}...", truncated.trim_end())
 }
 
+/// The file name the composer writes a new issue titled `title` to in
+/// `dir`, its `[label]` groups left out, and whether that slug was taken, so
+/// a `-2`, `-3`... suffix was added.
+pub fn new_file_name(dir: &Path, title: &str) -> (String, bool) {
+    let plain = format!("{}.md", files::slugify(&labels::display_title(title)));
+    let name = files::unique_name(dir, &plain);
+    let taken = name != plain;
+    (name, taken)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn new_file_names_take_a_suffix_when_taken() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        assert_eq!(
+            new_file_name(dir, "Fix it"),
+            ("fix-it.md".to_string(), false)
+        );
+        assert_eq!(
+            new_file_name(dir, "[Bug] [UI] Fix it"),
+            ("fix-it.md".to_string(), false),
+            "labels stay out of the file name"
+        );
+        std::fs::write(dir.join("fix-it.md"), "").unwrap();
+        assert_eq!(
+            new_file_name(dir, "Fix it"),
+            ("fix-it-2.md".to_string(), true)
+        );
+        std::fs::write(dir.join("fix-it-2.md"), "").unwrap();
+        assert_eq!(
+            new_file_name(dir, "Fix it"),
+            ("fix-it-3.md".to_string(), true)
+        );
+    }
 
     #[test]
     fn heading_wins_over_first_line() {

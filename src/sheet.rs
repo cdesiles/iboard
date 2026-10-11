@@ -1,6 +1,7 @@
 //! What the reader sheet says about an issue beyond its text: checklist
 //! progress, word count, and which standard sections are still missing.
 
+use crate::issue::Issue;
 use crate::labels;
 
 /// The sections the reader asks for when `[reader] sections` is not set.
@@ -147,9 +148,67 @@ pub fn restore_line(markdown: &str, index: usize, line: &str) -> String {
     lines.concat()
 }
 
+/// A wide card's facts: each standard section, `true` when it is written (and
+/// so gets a check; acceptance criteria carries its checklist count), `false`
+/// and `Name —` when it is missing. A bare issue is one "No sections yet".
+pub fn facts(issue: &Issue, sections: &[String]) -> Vec<(String, bool)> {
+    let missing = missing_sections(&issue.markdown, sections);
+    if sections
+        .iter()
+        .all(|section| missing.contains(&section.as_str()))
+    {
+        return vec![("No sections yet".to_string(), false)];
+    }
+    let (done, total) = checklist(&issue.markdown);
+    sections
+        .iter()
+        .map(|section| {
+            let present = !missing.contains(&section.as_str());
+            if !present {
+                (format!("{section} —"), false)
+            } else if section.eq_ignore_ascii_case("Acceptance criteria") {
+                (format!("Criteria {done}/{total}"), true)
+            } else {
+                (section.clone(), true)
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn facts_check_written_sections_and_mark_missing() {
+        let sections: Vec<String> = DEFAULT_SECTIONS
+            .iter()
+            .map(|section| section.to_string())
+            .collect();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        let file = dir.join("x.md");
+        std::fs::write(
+            &file,
+            "# T\n\n## Context\n\nWhy.\n\n## Acceptance criteria\n\n- [x] a\n- [ ] b\n",
+        )
+        .unwrap();
+        let issue = Issue::load(&file).unwrap();
+        let row = facts(&issue, &sections);
+        assert!(row.iter().any(|(text, ok)| text == "Context" && *ok));
+        assert!(row.iter().any(|(text, ok)| text == "Criteria 1/2" && *ok));
+        assert!(
+            row.iter()
+                .any(|(text, ok)| text == "Out of scope —" && !*ok)
+        );
+
+        std::fs::write(&file, "# Bare\n").unwrap();
+        let issue = Issue::load(&file).unwrap();
+        assert_eq!(
+            facts(&issue, &sections),
+            vec![("No sections yet".to_string(), false)]
+        );
+    }
 
     #[test]
     fn the_title_labels_hide_and_come_back() {

@@ -25,6 +25,7 @@ pub mod job;
 pub mod labels;
 #[cfg(target_os = "macos")]
 pub mod menu;
+pub mod order;
 pub mod process;
 pub mod prompts;
 pub mod settings;
