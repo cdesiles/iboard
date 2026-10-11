@@ -34,7 +34,7 @@ fn main() -> eframe::Result {
                 return Ok(());
             }
             "init" => init = true,
-            "-l" | "--list" | "--print" => list = true,
+            "-l" | "--list" => list = true,
             other if other.starts_with('-') => {
                 eprintln!("iboard: unknown option `{other}`\n");
                 print_help();
