@@ -30,4 +30,5 @@ pub mod settings;
 pub mod sheet;
 pub mod theme;
 pub mod titles;
+pub mod trash;
 pub mod widgets;

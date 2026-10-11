@@ -28,6 +28,7 @@ use crate::review_settings::{self, Catalog};
 use crate::settings::{self, UserConfig};
 use crate::theme::{self, Icon, Palette};
 use crate::titles::{self, Engine};
+use crate::trash::{self, Trash};
 use crate::widgets::{self, ButtonKind};
 use crate::{design_ui, dialog, recents, sheet};
 use iboard::design::{self, DesignSystem};
@@ -539,6 +540,9 @@ pub struct IboardApp {
     confirm_delete: bool,
     /// The last issue deleted without asking, for `⌘Z`.
     undo: Option<Deleted>,
+    /// Where deleted issues go: the user's Trash in the app, a folder of its
+    /// own for a board built in tests.
+    trash: Trash,
     /// The last finished review of each issue this session, behind the
     /// card's verdict pill.
     past_reviews: HashMap<PathBuf, PastReview>,
@@ -667,6 +671,7 @@ impl IboardApp {
         if let Some(file) = &app.recents_file {
             app.recents = recents::read(file);
         }
+        app.trash = Trash::System;
         // Likewise for the user configuration.
         app.config_file = settings::config_file();
         let mut config = UserConfig::load(app.config_file.as_deref());
@@ -716,6 +721,7 @@ impl IboardApp {
             notice: None,
             confirm_delete: true,
             undo: None,
+            trash: Trash::Folder(std::env::temp_dir().join("iboard-trash")),
             past_reviews: HashMap::new(),
             focused_column: None,
             column_sorts: HashMap::new(),
@@ -1326,17 +1332,7 @@ impl IboardApp {
             return;
         }
         let restored = match &deleted.trashed {
-            Some(trashed) if std::fs::rename(trashed, &deleted.path).is_ok() => {
-                // A freedesktop Trash also holds `info/<name>.trashinfo`.
-                if let (Some(files), Some(name)) = (trashed.parent(), trashed.file_name())
-                    && let Some(trash) = files.parent().filter(|_| files.ends_with("files"))
-                {
-                    let mut info = name.to_os_string();
-                    info.push(".trashinfo");
-                    let _ = std::fs::remove_file(trash.join("info").join(info));
-                }
-                Ok(())
-            }
+            Some(trashed) if trash::restore(trashed, &deleted.path).is_ok() => Ok(()),
             _ => atomic_write(&deleted.path, &deleted.content),
         };
         match restored {
@@ -1365,7 +1361,7 @@ impl IboardApp {
             .is_some_and(|d| d.at.elapsed() < UNDO_FOR)
     }
 
-    /// Deletes an issue's file (to the macOS Trash) and lets the board catch
+    /// Deletes an issue's file to `self.trash` and lets the board catch
     /// up. Returns where the Trash put it (`Some(None)` when it can't say),
     /// or `None` when the delete failed.
     fn delete_issue(&mut self, path: &Path) -> Option<Option<PathBuf>> {
@@ -1378,7 +1374,7 @@ impl IboardApp {
         {
             self.cancel_review();
         }
-        match trash(path) {
+        match self.trash.delete(path) {
             Ok(trashed) => {
                 self.notice = Some((format!("Deleted {}", file_name(path)), Instant::now()));
                 if self.selected.as_deref() == Some(path) {
@@ -2327,7 +2323,7 @@ impl IboardApp {
                         );
                     });
                 ui.label(
-                    RichText::new(DELETE_CONSEQUENCE)
+                    RichText::new(trash::CONSEQUENCE)
                         .font(theme::ui_small())
                         .color(p.ink_muted),
                 );
@@ -7186,98 +7182,6 @@ fn planned_issue_name(dir: &Path, title: &str) -> (String, bool) {
     (candidate, n > 2)
 }
 
-/// Where a deleted issue goes, as the confirmation dialog tells the user.
-#[cfg(target_os = "macos")]
-const DELETE_CONSEQUENCE: &str =
-    "The file is moved to the macOS Trash. You can restore it from there.";
-#[cfg(not(target_os = "macos"))]
-const DELETE_CONSEQUENCE: &str = "The file is moved to the Trash. You can restore it from there.";
-
-/// Deletes a file the way `DELETE_CONSEQUENCE` says: to the Trash on macOS,
-/// for good elsewhere. Tests delete for good, so they never fill the Trash.
-/// Returns where the Trash put the file, when it can say.
-fn trash(path: &Path) -> std::io::Result<Option<PathBuf>> {
-    #[cfg(target_os = "macos")]
-    if !cfg!(test) {
-        use objc2::rc::Retained;
-        use objc2_foundation::{NSFileManager, NSString, NSURL};
-
-        let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
-        let mut resulting: Option<Retained<NSURL>> = None;
-        NSFileManager::defaultManager()
-            .trashItemAtURL_resultingItemURL_error(&url, Some(&mut resulting))
-            .map_err(|err| std::io::Error::other(err.localizedDescription().to_string()))?;
-        return Ok(resulting
-            .and_then(|url| url.path())
-            .map(|path| PathBuf::from(path.to_string())));
-    }
-    #[cfg(not(target_os = "macos"))]
-    if !cfg!(test) {
-        return freedesktop_trash(path).map(Some);
-    }
-    std::fs::remove_file(path).map(|()| None)
-}
-
-/// Moves `path` to the freedesktop Trash (`$XDG_DATA_HOME/Trash`, by default
-/// `~/.local/share/Trash`): the file under `files/`, and a `.trashinfo` under
-/// `info/` so file managers can restore it. Returns where the file went.
-#[cfg(not(target_os = "macos"))]
-fn freedesktop_trash(path: &Path) -> std::io::Result<PathBuf> {
-    let data = std::env::var_os("XDG_DATA_HOME")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
-        .ok_or_else(|| std::io::Error::other("no home folder for the Trash"))?;
-    trash_into(path, &data.join("Trash"))
-}
-
-/// [`freedesktop_trash`] into a given Trash folder. Built on every OS so it is
-/// tested everywhere; only Linux and the BSDs call it.
-#[cfg_attr(target_os = "macos", allow(dead_code))]
-fn trash_into(path: &Path, trash: &Path) -> std::io::Result<PathBuf> {
-    let (files, info) = (trash.join("files"), trash.join("info"));
-    std::fs::create_dir_all(&files)?;
-    std::fs::create_dir_all(&info)?;
-    let original = std::fs::canonicalize(path)?;
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "issue.md".to_string());
-    // A free name: `issue.md`, then `issue.2.md`, `issue.3.md`...
-    let (stem, ext) = match name.rsplit_once('.') {
-        Some((stem, ext)) => (stem.to_string(), format!(".{ext}")),
-        None => (name.clone(), String::new()),
-    };
-    let mut candidate = name.clone();
-    let mut n = 2;
-    while files.join(&candidate).exists() || info.join(format!("{candidate}.trashinfo")).exists() {
-        candidate = format!("{stem}.{n}{ext}");
-        n += 1;
-    }
-    let encoded: String = original
-        .to_string_lossy()
-        .bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect();
-    let date = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S");
-    std::fs::write(
-        info.join(format!("{candidate}.trashinfo")),
-        format!("[Trash Info]\nPath={encoded}\nDeletionDate={date}\n"),
-    )?;
-    let target = files.join(&candidate);
-    // Another file system: copy, then remove.
-    if std::fs::rename(path, &target).is_err() {
-        std::fs::copy(path, &target)?;
-        std::fs::remove_file(path)?;
-    }
-    Ok(target)
-}
-
 /// Shortens absolute paths under the home directory to `~/...`.
 fn display_path(path: &Path) -> String {
     if let Some(home) = std::env::var_os("HOME") {
@@ -8867,32 +8771,6 @@ mod tests {
             app.detail_mode,
             DetailMode::Preview,
             "like the Save ⌘S button, it shows the saved issue"
-        );
-    }
-
-    #[test]
-    fn the_freedesktop_trash_keeps_a_restorable_copy() {
-        let dir = scratch_dir("xdg-trash");
-        let file = dir.join("my issue.md");
-        std::fs::write(&file, "# Mine\n").unwrap();
-        let trash = dir.join("Trash");
-        let first = trash_into(&file, &trash).unwrap();
-        assert!(!file.exists());
-        assert_eq!(first, trash.join("files/my issue.md"));
-        let info = std::fs::read_to_string(trash.join("info/my issue.md.trashinfo")).unwrap();
-        assert!(info.starts_with("[Trash Info]\nPath=/"), "{info}");
-        assert!(
-            info.contains("my%20issue.md"),
-            "the path is URL-encoded: {info}"
-        );
-        assert!(info.contains("DeletionDate="));
-
-        std::fs::write(&file, "# Again\n").unwrap();
-        let second = trash_into(&file, &trash).unwrap();
-        assert_eq!(
-            second,
-            trash.join("files/my issue.2.md"),
-            "never overwrites"
         );
     }
 
