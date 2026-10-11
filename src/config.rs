@@ -46,27 +46,46 @@ pub struct LoadedConfig {
     pub path: PathBuf,
 }
 
-/// Look for a config file in `dir`, returning the first one that parses.
+/// The `iboard.toml` in `dir`, when there is one and it parses.
 pub fn load(dir: &Path) -> Option<LoadedConfig> {
-    for name in ["iboard.toml"] {
-        let path = dir.join(name);
-        if !path.is_file() {
-            continue;
-        }
-        let text = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(err) => {
-                eprintln!("warning: cannot read {}: {err}", path.display());
-                return None;
-            }
-        };
-        return match toml::from_str::<Config>(&text) {
-            Ok(config) => Some(LoadedConfig { config, path }),
-            Err(err) => {
-                eprintln!("warning: invalid {}: {err}", path.display());
-                None
-            }
-        };
+    let path = dir.join("iboard.toml");
+    if !path.is_file() {
+        return None;
     }
-    None
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) => {
+            eprintln!("warning: cannot read {}: {err}", path.display());
+            return None;
+        }
+    };
+    match toml::from_str::<Config>(&text) {
+        Ok(config) => Some(LoadedConfig { config, path }),
+        Err(err) => {
+            eprintln!("warning: invalid {}: {err}", path.display());
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_config_is_read_and_one_with_an_unknown_key_is_not() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        assert!(load(dir).is_none(), "no file, no config");
+
+        let text = "title = \"Moon\"\ncolumns = [\"todo\"]\n[reader]\nsections = []\n";
+        std::fs::write(dir.join("iboard.toml"), text).unwrap();
+        let config = load(dir).unwrap().config;
+        assert_eq!(config.title.as_deref(), Some("Moon"));
+        assert_eq!(config.columns, Some(vec!["todo".to_string()]));
+        assert_eq!(config.reader.unwrap().sections, Some(Vec::new()));
+
+        std::fs::write(dir.join("iboard.toml"), "titel = \"a typo\"\n").unwrap();
+        assert!(load(dir).is_none());
+    }
 }

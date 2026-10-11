@@ -16,7 +16,7 @@ use crate::history;
 use crate::issue::Issue;
 
 /// A resolved project: where the issues live and how it was configured.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Located {
     pub project_dir: PathBuf,
     pub root: PathBuf,
@@ -604,6 +604,105 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn names(board: &Board) -> Vec<String> {
+        board
+            .columns
+            .iter()
+            .map(|column| column.name.clone())
+            .collect()
+    }
+
+    #[test]
+    fn locate_works_from_the_project_the_issues_a_column_or_a_file() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        fs::create_dir_all(dir.join("issues/todo")).unwrap();
+        let file = dir.join("issues/todo/a.md");
+        fs::write(&file, "# A\n").unwrap();
+        for start in [
+            dir.to_path_buf(),
+            dir.join("issues"),
+            dir.join("issues/todo"),
+            file,
+        ] {
+            let located = locate(&start).unwrap();
+            assert_eq!(located.root, dir.join("issues"), "from {}", start.display());
+            assert_eq!(located.project_dir, dir);
+        }
+    }
+
+    #[test]
+    fn a_configured_root_is_followed_and_must_exist() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        fs::create_dir_all(dir.join("tickets/todo")).unwrap();
+        fs::write(
+            dir.join("iboard.toml"),
+            "root = \"tickets\"\ntitle = \"Moon\"\n",
+        )
+        .unwrap();
+        let located = locate(dir).unwrap();
+        assert_eq!(located.root, dir.join("tickets"));
+        assert_eq!(build(&located).unwrap().title.as_deref(), Some("Moon"));
+
+        fs::write(dir.join("iboard.toml"), "root = \"nowhere\"\n").unwrap();
+        let err = locate(dir).unwrap_err().to_string();
+        assert!(err.contains("nowhere"), "{err}");
+    }
+
+    #[test]
+    fn a_folder_with_no_issues_above_it_is_an_error() {
+        let scratch = tempfile::tempdir().unwrap();
+        assert!(locate(scratch.path()).is_err());
+    }
+
+    #[test]
+    fn configured_columns_keep_their_order_and_name_the_missing_ones() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        for column in ["done", "todo"] {
+            fs::create_dir_all(dir.join("issues").join(column)).unwrap();
+        }
+        fs::write(
+            dir.join("iboard.toml"),
+            "columns = [\"done\", \"wip\", \"todo\"]\n",
+        )
+        .unwrap();
+        let board = build(&locate(dir).unwrap()).unwrap();
+        assert_eq!(names(&board), ["Done", "Todo"]);
+        assert_eq!(board.warnings.len(), 1);
+        assert!(board.warnings[0].contains("wip"), "{:?}", board.warnings);
+    }
+
+    #[test]
+    fn files_in_the_issues_root_are_todo_or_the_backlog() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        fs::create_dir_all(dir.join("issues/doing")).unwrap();
+        fs::write(dir.join("issues/loose.md"), "# Loose\n").unwrap();
+        let board = build(&locate(dir).unwrap()).unwrap();
+        assert_eq!(names(&board), ["Todo", "Doing"]);
+
+        fs::create_dir_all(dir.join("issues/todo")).unwrap();
+        let board = build(&locate(dir).unwrap()).unwrap();
+        assert_eq!(names(&board), ["Backlog", "Todo", "Doing"]);
+    }
+
+    #[test]
+    fn hidden_folders_and_folders_without_issues_are_not_columns() {
+        let scratch = tempfile::tempdir().unwrap();
+        let issues = scratch.path().join("issues");
+        fs::create_dir_all(issues.join("todo")).unwrap();
+        fs::create_dir_all(issues.join(".archive")).unwrap();
+        fs::write(issues.join(".archive/old.md"), "# Old\n").unwrap();
+        fs::create_dir_all(issues.join("assets")).unwrap();
+        fs::write(issues.join("assets/shot.png"), "png").unwrap();
+        fs::create_dir_all(issues.join("spikes")).unwrap();
+        fs::write(issues.join("spikes/idea.md"), "# Idea\n").unwrap();
+        let board = build(&locate(scratch.path()).unwrap()).unwrap();
+        assert_eq!(names(&board), ["Todo", "Spikes"]);
+    }
 
     #[test]
     fn natural_order_is_numeric() {
