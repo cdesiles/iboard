@@ -218,7 +218,6 @@ fn show_about_panel(mtm: MainThreadMarker) {
     let app = NSApplication::sharedApplication(mtm);
     // SAFETY: `options` only holds the About-panel keys and value types above.
     unsafe { app.orderFrontStandardAboutPanelWithOptions(&options) };
-    app.activate();
 }
 
 /// Adds a top-level menu titled `title` to `menubar` and returns it.
