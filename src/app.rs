@@ -1161,14 +1161,6 @@ impl IboardApp {
         }
     }
 
-    /// The column an issue currently belongs to.
-    fn column_of(&self, path: &Path) -> Option<&Column> {
-        self.board
-            .columns
-            .iter()
-            .find(|column| column.issues.iter().any(|issue| issue.path == path))
-    }
-
     /// Expands a column to the whole window (ColumnFocus).
     fn focus_column(&mut self, dir: PathBuf) {
         if self.board.columns.iter().any(|column| column.dir == dir) {
@@ -1499,25 +1491,19 @@ impl IboardApp {
         }
     }
 
-    /// The column new issues land in (Todo).
-    fn todo_column(&self) -> Option<&Column> {
-        self.board
-            .columns
-            .iter()
-            .find(|column| column.accepts_new_issues())
-    }
-
     /// Whether `path` is still being written, in Todo: the only issues that
     /// get the AI review and the "Not written yet" block.
     fn is_todo_issue(&self, path: &Path) -> bool {
-        self.column_of(path)
+        self.board
+            .column_of(path)
             .is_some_and(|column| column.accepts_new_issues())
     }
 
     /// Whether `path` can be edited: Doing and Done tickets are the agent's
     /// and the finished ones, so they open read-only.
     fn can_edit(&self, path: &Path) -> bool {
-        self.column_of(path)
+        self.board
+            .column_of(path)
             .is_some_and(|column| discovery::is_editable_column(&column.dir))
     }
 
@@ -1722,7 +1708,7 @@ impl IboardApp {
 
     /// Opens the quick-add composer at the top of Todo, from any screen.
     fn open_composer(&mut self) {
-        if self.todo_column().is_none() {
+        if self.board.todo_column().is_none() {
             return;
         }
         if matches!(self.screen, Screen::Board) {
@@ -1823,7 +1809,7 @@ impl IboardApp {
     /// Writes the composed issue to Todo; on success the composer clears (or
     /// closes), on failure it keeps everything and says why.
     fn write_composed(&mut self, title: &str, description: &str, close: bool) {
-        let Some(dir) = self.todo_column().map(|c| c.dir.clone()) else {
+        let Some(dir) = self.board.todo_column().map(|c| c.dir.clone()) else {
             return;
         };
         match self.create_issue(&dir, title, description) {
@@ -2024,20 +2010,6 @@ impl IboardApp {
         }
     }
 
-    fn project_name(&self) -> String {
-        self.board
-            .title
-            .clone()
-            .or_else(|| {
-                self.board
-                    .project_dir
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .map(str::to_string)
-            })
-            .unwrap_or_else(|| "iboard".to_string())
-    }
-
     /// Draws the whole window: header bar, the current screen, status bar.
     fn draw(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette(ui);
@@ -2116,6 +2088,7 @@ impl IboardApp {
             return;
         }
         let anchor = self
+            .board
             .todo_column()
             .and_then(|column| column.issues.first().map(|issue| issue.path.clone()))
             .filter(|first| first != &path);
@@ -2484,7 +2457,7 @@ impl IboardApp {
     fn breadcrumb(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette(ui);
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-        let project = self.project_name();
+        let project = self.board.name();
         match self.screen.clone() {
             Screen::Board if self.focused_column.is_some() => {
                 // ColumnFocus: `project / Column`, the project linking back.
@@ -2646,7 +2619,7 @@ impl IboardApp {
     fn header_controls(&mut self, ui: &mut egui::Ui) {
         match self.screen {
             Screen::Board => {
-                let has_todo = self.todo_column().is_some();
+                let has_todo = self.board.todo_column().is_some();
                 let new_issue = ui.add_enabled_ui(has_todo, |ui| {
                     widgets::button(
                         ui,
@@ -2675,8 +2648,9 @@ impl IboardApp {
                 let path = path.clone();
                 let exists = self.board.find(&path).is_some();
                 let done = self
+                    .board
                     .column_of(&path)
-                    .map(|column| column.name == "Done")
+                    .map(Column::is_done)
                     .unwrap_or(false);
                 // Reviewing refines an issue, so only Todo issues offer it.
                 if self.is_todo_issue(&path) {
@@ -3201,7 +3175,7 @@ impl IboardApp {
                         )));
                         hints = vec![("↩", "open"), ("⌘1–4", "column"), ("esc", "board")];
                     } else if self.composer.is_some()
-                        && let Some(todo) = self.todo_column()
+                        && let Some(todo) = self.board.todo_column()
                     {
                         ui.label(meta(self.relative(&todo.dir)));
                         hints = vec![("↩", "add"), ("⇧↩", "new line"), ("esc", "close")];
@@ -4325,6 +4299,7 @@ impl IboardApp {
         let issue_labels = issue.labels.clone();
         let p = theme::palette(ui);
         let (column_name, status, todo_issue) = self
+            .board
             .column_of(path)
             .map(|column| {
                 (

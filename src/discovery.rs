@@ -38,6 +38,11 @@ impl Column {
     pub fn accepts_new_issues(&self) -> bool {
         self.name.eq_ignore_ascii_case("todo")
     }
+
+    /// Whether this is the Done column.
+    pub fn is_done(&self) -> bool {
+        is_done_column(&self.dir)
+    }
 }
 
 pub struct Board {
@@ -52,6 +57,26 @@ pub struct Board {
 }
 
 impl Board {
+    /// The column holding the issue at `path`.
+    pub fn column_of(&self, path: &Path) -> Option<&Column> {
+        self.columns
+            .iter()
+            .find(|column| column.issues.iter().any(|issue| issue.path == path))
+    }
+
+    /// The column new issues are written to.
+    pub fn todo_column(&self) -> Option<&Column> {
+        self.columns
+            .iter()
+            .find(|column| column.accepts_new_issues())
+    }
+
+    /// What the project is called: its configured title, else its folder's
+    /// name.
+    pub fn name(&self) -> String {
+        project_name(self.title.as_deref(), &self.project_dir)
+    }
+
     /// An empty board, used when a scan fails so the UI can still render.
     pub fn empty(located: &Located) -> Self {
         Self {
@@ -226,13 +251,19 @@ fn create_columns(root: &Path) -> Result<()> {
 /// The window title for a resolved project: the configured title, else the
 /// project folder name, else `iboard`.
 pub fn window_title(located: &Located) -> String {
-    located
+    let title = located
         .config
         .as_ref()
-        .and_then(|config| config.title.clone())
+        .and_then(|config| config.title.as_deref());
+    project_name(title, &located.project_dir)
+}
+
+/// What a project is called: its configured title, else its folder's name.
+fn project_name(title: Option<&str>, project_dir: &Path) -> String {
+    title
+        .map(str::to_string)
         .or_else(|| {
-            located
-                .project_dir
+            project_dir
                 .file_name()
                 .and_then(|name| name.to_str())
                 .map(str::to_string)

@@ -120,19 +120,7 @@ fn main() -> eframe::Result {
 /// Text-mode dump of the board, useful for scripting and for checking discovery
 /// without opening a window.
 fn print_listing(board: &discovery::Board) {
-    let title = board
-        .title
-        .clone()
-        .or_else(|| {
-            board
-                .project_dir
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| "iboard".to_string());
-
-    println!("{title}  ({})", board.root.display());
+    println!("{}  ({})", board.name(), board.root.display());
     for column in &board.columns {
         println!("\n{} ({})", column.name, column.issues.len());
         if column.issues.is_empty() {
