@@ -46,10 +46,6 @@ impl Engine {
     }
 
     fn from_key(key: &str) -> Option<Self> {
-        // `off` is what Manual used to be called.
-        if key == "off" {
-            return Some(Engine::Manual);
-        }
         Engine::ALL.into_iter().find(|engine| engine.key() == key)
     }
 
@@ -456,11 +452,8 @@ mod tests {
             text.contains("tool = \"claude\""),
             "other sections stay: {text}"
         );
-        // The old name still reads as Manual.
-        std::fs::write(&file, "[titles]\nengine = \"off\"\n").unwrap();
-        assert_eq!(engine(), Engine::Manual);
-        // An unknown one is reported.
-        let mut config = UserConfig::parse("[titles]\nengine = \"gpt\"\n", &file);
+        // An unknown one, the pre-0.1 `off` included, is reported.
+        let mut config = UserConfig::parse("[titles]\nengine = \"off\"\n", &file);
         assert_eq!(load_engine(&mut config), Engine::Apple);
         assert_eq!(config.problems.len(), 1);
         std::fs::remove_dir_all(&dir).ok();
