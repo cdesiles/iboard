@@ -14,6 +14,7 @@ use std::path::Path;
 
 use egui::Color32;
 
+use crate::files;
 use crate::settings::{Section, UserConfig};
 
 /// The labels iboard ships with, applied with zero configuration. Mid tones,
@@ -311,19 +312,7 @@ fn add_label(markdown: &str, label: &str) -> Result<Option<String>, String> {
 /// Adds `label` to the issue at `path`, re-reading it first so an edit made
 /// since the last refresh is kept. `Ok(false)` when it was already there.
 pub fn add_label_to_file(path: &Path, label: &str) -> Result<bool, String> {
-    let name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let markdown =
-        std::fs::read_to_string(path).map_err(|err| format!("Couldn't read {name}: {err}"))?;
-    match add_label(&markdown, label).map_err(|why| format!("Couldn't label {name}: {why}"))? {
-        None => Ok(false),
-        Some(updated) => {
-            std::fs::write(path, updated).map_err(|err| format!("Couldn't save {name}: {err}"))?;
-            Ok(true)
-        }
-    }
+    edit_file(path, |markdown| add_label(markdown, label))
 }
 
 /// Removes `label` from an issue's markdown, wherever it carries it: the front
@@ -413,37 +402,34 @@ fn remove_label(markdown: &str, label: &str) -> Option<String> {
 
 /// Removes `label` from the issue at `path`, re-reading it first so an edit
 /// made since the last refresh is kept. `Ok(false)` when it was not there.
-pub fn remove_label_to_file(path: &Path, label: &str) -> Result<bool, String> {
-    let name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let markdown =
-        std::fs::read_to_string(path).map_err(|err| format!("Couldn't read {name}: {err}"))?;
-    match remove_label(&markdown, label) {
-        None => Ok(false),
-        Some(updated) => {
-            std::fs::write(path, updated).map_err(|err| format!("Couldn't save {name}: {err}"))?;
-            Ok(true)
-        }
-    }
+pub fn remove_label_from_file(path: &Path, label: &str) -> Result<bool, String> {
+    edit_file(path, |markdown| Ok(remove_label(markdown, label)))
 }
 
 /// Renames `from` to `to` on the issue at `path`, keeping where the label
 /// lived (front matter list or `# H1` groups). `Ok(false)` when the issue does
 /// not carry `from`.
 pub fn rename_label_to_file(path: &Path, from: &str, to: &str) -> Result<bool, String> {
-    let name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    edit_file(path, |markdown| {
+        Ok(remove_label(markdown, from)
+            .map(|without| add_label(&without, to).unwrap_or(None).unwrap_or(without)))
+    })
+}
+
+/// Rewrites the issue at `path` with `change`, atomically. `Ok(false)` when
+/// `change` leaves it as it is.
+fn edit_file(
+    path: &Path,
+    change: impl FnOnce(&str) -> Result<Option<String>, String>,
+) -> Result<bool, String> {
+    let name = files::file_name(path);
     let markdown =
         std::fs::read_to_string(path).map_err(|err| format!("Couldn't read {name}: {err}"))?;
-    let Some(without) = remove_label(&markdown, from) else {
+    let Some(updated) = change(&markdown).map_err(|why| format!("Couldn't label {name}: {why}"))?
+    else {
         return Ok(false);
     };
-    let updated = add_label(&without, to).unwrap_or(None).unwrap_or(without);
-    std::fs::write(path, updated).map_err(|err| format!("Couldn't save {name}: {err}"))?;
+    files::atomic_write(path, updated).map_err(|err| format!("Couldn't save {name}: {err}"))?;
     Ok(true)
 }
 

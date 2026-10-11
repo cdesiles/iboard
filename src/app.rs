@@ -16,7 +16,7 @@ use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use crate::agent::{self, AgentConfig, Report};
 use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
-use crate::files::atomic_write;
+use crate::files::{self, atomic_write, file_name, normalize_file_name, slugify, unique_name};
 use crate::filter::{self, Filter};
 use crate::general;
 use crate::issue::Issue;
@@ -69,13 +69,6 @@ fn filter_try_font() -> egui::FontId {
 fn filter_id() -> egui::Id {
     egui::Id::new("filter")
 }
-
-/// Longest slug the composer derives from a title.
-const MAX_SLUG_LEN: usize = 60;
-
-/// Longest file name the editor accepts, in bytes, including its extension.
-/// 255 bytes is the limit of APFS, ext4 and NTFS: longer names fail to write.
-const MAX_FILE_NAME_BYTES: usize = 255;
 
 /// Directory done issues are archived into, under the issues root. It starts
 /// with a dot, so discovery never reads it back.
@@ -451,74 +444,6 @@ enum ReviewStatus {
     Running { answer: Job<Result<String, String>> },
     Done { raw: String, report: Option<Report> },
     Failed { error: String },
-}
-
-/// The file name part of a path, as UTF-8 (empty when there is none).
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default()
-        .to_string()
-}
-
-/// Makes sure a user-typed file name keeps a markdown extension so the issue
-/// stays visible to discovery, and caps it at [`MAX_FILE_NAME_BYTES`] so the
-/// filesystem accepts it. A missing or non-markdown extension is replaced with
-/// `.md`.
-fn normalize_file_name(input: &str) -> String {
-    let trimmed = input.trim();
-    let is_markdown = Path::new(trimmed)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
-        .unwrap_or(false);
-    let (stem, ext) = if is_markdown {
-        let ext = Path::new(trimmed)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("md");
-        let stem = trimmed.strip_suffix(&format!(".{ext}")).unwrap_or(trimmed);
-        (stem.to_string(), ext.to_string())
-    } else {
-        (trimmed.to_string(), "md".to_string())
-    };
-    let budget = MAX_FILE_NAME_BYTES.saturating_sub(ext.len() + 1);
-    format!("{}.{ext}", truncate_stem(&stem, budget))
-}
-
-/// Cuts `stem` to at most `max_bytes`, on a character boundary, without leaving
-/// a trailing hyphen or space.
-fn truncate_stem(stem: &str, max_bytes: usize) -> String {
-    if stem.len() <= max_bytes {
-        return stem.to_string();
-    }
-    let mut end = max_bytes;
-    while end > 0 && !stem.is_char_boundary(end) {
-        end -= 1;
-    }
-    stem[..end].trim_end_matches(['-', ' ']).to_string()
-}
-
-/// A file name in `dir` that does not exist yet: `name`, then `name-2`, ...
-fn unique_name(dir: &Path, name: &str) -> String {
-    if !dir.join(name).exists() {
-        return name.to_string();
-    }
-    let (stem, ext) = match Path::new(name).extension().and_then(|e| e.to_str()) {
-        Some(ext) => (
-            name.strip_suffix(&format!(".{ext}")).unwrap_or(name),
-            format!(".{ext}"),
-        ),
-        None => (name, String::new()),
-    };
-    let mut n = 2;
-    loop {
-        let candidate = format!("{stem}-{n}{ext}");
-        if !dir.join(&candidate).exists() {
-            return candidate;
-        }
-        n += 1;
-    }
 }
 
 /// Renames the files of an ordered column so their `001-` prefixes match
@@ -1574,7 +1499,7 @@ impl IboardApp {
             .unwrap_or(&path)
             .display()
             .to_string();
-        match labels::remove_label_to_file(&path, label) {
+        match labels::remove_label_from_file(&path, label) {
             Ok(_) => {
                 self.refresh();
                 if let Some(picker) = self.label_picker.as_mut() {
@@ -4776,7 +4701,7 @@ impl IboardApp {
                         .font(theme::meta())
                         .text_color(p.ink)
                         .hint_text("issue.md")
-                        .char_limit(MAX_FILE_NAME_BYTES)
+                        .char_limit(files::MAX_FILE_NAME_BYTES)
                         .margin(Margin::symmetric(theme::SPACE_2 as i8, 4))
                         .desired_width(240.0),
                 );
@@ -7247,38 +7172,6 @@ fn step_selection(
     }
 }
 
-/// Turns a title into a file stem: lowercase ASCII words joined by hyphens, at
-/// most 60 characters. A title with no ASCII letters or digits gives `issue`.
-fn slugify(title: &str) -> String {
-    let mut slug = String::new();
-    for word in title
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|word| !word.is_empty())
-    {
-        let word = word.to_ascii_lowercase();
-        let extra = if slug.is_empty() {
-            word.len()
-        } else {
-            word.len() + 1
-        };
-        if slug.len() + extra > MAX_SLUG_LEN {
-            if slug.is_empty() {
-                slug = word[..MAX_SLUG_LEN].to_string();
-            }
-            break;
-        }
-        if !slug.is_empty() {
-            slug.push('-');
-        }
-        slug.push_str(&word);
-    }
-    if slug.is_empty() {
-        "issue".to_string()
-    } else {
-        slug
-    }
-}
-
 /// The file name the composer will write for `title` in `dir`, and whether the
 /// plain slug was taken (so a `-2`, `-3`... suffix was added). The slug leaves
 /// the title's `[label]` groups out.
@@ -8276,14 +8169,6 @@ mod tests {
     }
 
     #[test]
-    fn file_names_keep_a_markdown_extension() {
-        assert_eq!(normalize_file_name("notes.md"), "notes.md");
-        assert_eq!(normalize_file_name("notes.markdown"), "notes.markdown");
-        assert_eq!(normalize_file_name("  notes.MD  "), "notes.MD");
-        assert_eq!(normalize_file_name("notes"), "notes.md");
-    }
-
-    #[test]
     fn renaming_an_issue_via_the_editor_moves_the_file() {
         let dir = scratch_dir("rename");
         let todo = dir.join("issues/todo");
@@ -8559,20 +8444,6 @@ mod tests {
             std::fs::read_to_string(&file).unwrap(),
             "# Changed elsewhere\n"
         );
-    }
-
-    #[test]
-    fn slugs_are_lowercase_ascii_words_joined_by_hyphens() {
-        assert_eq!(slugify("Fix login redirect"), "fix-login-redirect");
-        assert_eq!(
-            slugify("  AI assist: refine an issue!  "),
-            "ai-assist-refine-an-issue"
-        );
-        assert_eq!(slugify("Café au lait"), "caf-au-lait");
-        assert_eq!(slugify("¿¡!?"), "issue");
-        let long = slugify(&"word ".repeat(30));
-        assert!(long.len() <= MAX_SLUG_LEN, "{long} is too long");
-        assert!(!long.ends_with('-'));
     }
 
     #[test]
@@ -9083,29 +8954,6 @@ mod tests {
         };
         assert!(find("Todo").accepts_new_issues());
         assert!(!find("Doing").accepts_new_issues());
-    }
-
-    #[test]
-    fn long_issue_names_are_capped_and_keep_their_extension() {
-        let long = "word ".repeat(80);
-        let name = normalize_file_name(&long);
-        assert!(
-            name.len() <= MAX_FILE_NAME_BYTES,
-            "{name} is too long ({} bytes)",
-            name.len()
-        );
-        assert!(name.ends_with(".md"));
-
-        let long_markdown = format!("{}.markdown", "b".repeat(400));
-        let name = normalize_file_name(&long_markdown);
-        assert!(name.len() <= MAX_FILE_NAME_BYTES);
-        assert!(name.ends_with(".markdown"));
-
-        // Multi-byte characters are cut on a character boundary.
-        let accented = format!("{}.md", "é".repeat(400));
-        let name = normalize_file_name(&accented);
-        assert!(name.len() <= MAX_FILE_NAME_BYTES);
-        assert!(name.ends_with(".md"));
     }
 
     #[test]

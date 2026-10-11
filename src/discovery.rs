@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 
 use crate::config::Config;
+use crate::files;
 use crate::history;
 use crate::issue::Issue;
 
@@ -459,7 +460,7 @@ fn collect_markdown(dir: &Path, warnings: &mut Vec<String>) -> Vec<PathBuf> {
         .map(|entry| entry.path())
         .filter(|path| path.is_file() && !is_hidden(path) && is_markdown(path))
         .collect();
-    files.sort_by(|a, b| natural_cmp(&file_name(a), &file_name(b)));
+    files.sort_by(|a, b| natural_cmp(&files::file_name(a), &files::file_name(b)));
     files
 }
 
@@ -531,13 +532,6 @@ fn is_hidden(path: &Path) -> bool {
         .and_then(|name| name.to_str())
         .map(|name| name.starts_with('.'))
         .unwrap_or(false)
-}
-
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default()
-        .to_string()
 }
 
 fn title_case(raw: &str) -> String {

@@ -64,11 +64,7 @@ impl Issue {
     }
 
     pub fn file_name(&self) -> String {
-        self.path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default()
-            .to_string()
+        crate::files::file_name(&self.path)
     }
 
     /// Case-insensitive match against the title, summary and file name.
