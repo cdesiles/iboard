@@ -833,9 +833,10 @@ impl IboardApp {
     }
 
     /// Switches the board to another project, resolving its board and
-    /// remembering it. A folder with no issues directory reports an error and leaves
-    /// the current project in place. Any editor state belongs to the old
-    /// project, so it is dropped.
+    /// remembering it. A folder with no issues directory reports an error and
+    /// leaves the current project in place. Everything that belongs to the old
+    /// project is dropped: the editor, the composer, reviews, undo, the Design
+    /// panel, and the agents still drafting for it.
     fn open_project(&mut self, project: PathBuf) {
         let project = recents::canonical(&project);
         match discovery::locate(&project) {
@@ -851,8 +852,21 @@ impl IboardApp {
                 self.new_card = None;
                 self.leave_prompt = None;
                 self.cancel_review();
+                self.past_reviews.clear();
                 self.selected = None;
                 self.scroll_to_selected = false;
+                self.focused_column = None;
+                self.focus_editor = false;
+                self.label_picker = None;
+                self.commits = None;
+                self.pending_front = None;
+                self.notice = None;
+                self.undo = None;
+                self.design = None;
+                self.design_system = None;
+                self.design_error = None;
+                self.design_draft = None;
+                self.enrichment = None;
                 self.filter.clear();
                 self.error = None;
                 self.scan_error = None;
@@ -7658,9 +7672,25 @@ mod tests {
 
         let located = discovery::locate(&alpha).unwrap();
         let mut app = IboardApp::from_located(located);
+        // What belongs to alpha must not follow the switch.
+        let a = alpha.join("issues/todo/a.md");
+        app.undo = Some(Deleted {
+            path: a.clone(),
+            trashed: None,
+            content: Vec::new(),
+            at: Instant::now(),
+        });
+        app.notice = Some(("Archived a.md".to_string(), Instant::now()));
+        app.pending_front = Some((alpha.join("issues/todo"), a.clone()));
+        app.design_error = Some("alpha has no design".to_string());
+        app.focused_column = Some(alpha.join("issues/todo"));
 
         app.open_project(beta.clone());
 
+        assert!(app.undo.is_none(), "⌘Z cannot restore into the old project");
+        assert!(app.notice.is_none() && app.pending_front.is_none());
+        assert!(app.design_error.is_none() && app.design_system.is_none());
+        assert!(app.focused_column.is_none());
         assert!(app.error.is_none());
         assert_eq!(
             recents::canonical(&app.board.root),
