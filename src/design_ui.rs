@@ -861,8 +861,7 @@ fn colors(ui: &mut egui::Ui, system: &DesignSystem) {
             );
             for id in &themes {
                 let value = design::css::token_value_for(token, id).unwrap_or_default();
-                let resolved = resolve_value(system, &value);
-                let color = parse_color(&resolved).unwrap_or(p.surface_sunken);
+                let color = swatch_color(system, token, id).unwrap_or(p.surface_sunken);
                 let swatch = swatch(ui, color).on_hover_text(format!("{id}: {value}"));
                 if swatch.clicked() {
                     ui.ctx().copy_text(value.clone());
@@ -917,7 +916,7 @@ fn spacing(ui: &mut egui::Ui, system: &DesignSystem) {
     let p = theme::palette(ui);
     for token in &system.tokens.spacing {
         let value = design::css::token_value_for(token, "light").unwrap_or_default();
-        let resolved = resolve_value(system, &value);
+        let resolved = design::css::resolved_value(system, token, "light").unwrap_or_default();
         let px = parse_px(&resolved).unwrap_or(0.0);
         ui.horizontal(|ui| {
             ui.add_sized(
@@ -946,7 +945,7 @@ fn radius(ui: &mut egui::Ui, system: &DesignSystem) {
     let p = theme::palette(ui);
     for token in &system.tokens.radius {
         let value = design::css::token_value_for(token, "light").unwrap_or_default();
-        let resolved = resolve_value(system, &value);
+        let resolved = design::css::resolved_value(system, token, "light").unwrap_or_default();
         let px = parse_px(&resolved).unwrap_or(0.0);
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(56.0, 56.0), egui::Sense::hover());
@@ -979,7 +978,8 @@ fn shadows(ui: &mut egui::Ui, system: &DesignSystem) {
     let p = theme::palette(ui);
     for token in &system.tokens.shadow {
         let value = design::css::token_value_for(token, "light").unwrap_or_default();
-        let (offset, blur, color) = parse_shadow(system, &value);
+        let resolved = design::css::resolved_value(system, token, "light").unwrap_or_default();
+        let (offset, blur, color) = parse_shadow(&resolved);
         ui.horizontal(|ui| {
             egui::Frame::new()
                 .fill(p.surface)
@@ -1122,41 +1122,10 @@ fn swatch(ui: &mut egui::Ui, color: Color32) -> egui::Response {
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-/// Resolve `{token}` references inside a value to their first concrete value.
-fn resolve_value(system: &DesignSystem, value: &str) -> String {
-    let mut out = String::new();
-    let mut rest = value;
-    let mut guard = 0;
-    while let Some(start) = rest.find('{') {
-        out.push_str(&rest[..start]);
-        let after = &rest[start + 1..];
-        let Some(end) = after.find('}') else {
-            out.push_str(&rest[start..]);
-            return out;
-        };
-        let name = after[..end].trim();
-        let resolved = system.token(name).and_then(|token| {
-            token
-                .value
-                .theme("light")
-                .or_else(|| token.value.values().first().copied())
-        });
-        match resolved {
-            Some(resolved) => out.push_str(resolved),
-            None => {
-                out.push('{');
-                out.push_str(name);
-                out.push('}');
-            }
-        }
-        rest = &after[end + 1..];
-        guard += 1;
-        if guard > 32 {
-            break;
-        }
-    }
-    out.push_str(rest);
-    out
+/// The colour a token shows in `theme`, its `{references}` resolved in that
+/// same theme.
+fn swatch_color(system: &DesignSystem, token: &Token, theme: &str) -> Option<Color32> {
+    parse_color(&design::css::resolved_value(system, token, theme)?)
 }
 
 /// Parse a CSS color: `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()` or `rgba()`.
@@ -1226,12 +1195,12 @@ fn parse_px(text: &str) -> Option<f32> {
 }
 
 /// The offset, blur and color of a CSS `box-shadow`, for `egui`'s `Shadow`.
-fn parse_shadow(system: &DesignSystem, text: &str) -> ([i8; 2], u8, Color32) {
+fn parse_shadow(text: &str) -> ([i8; 2], u8, Color32) {
     let mut numbers = Vec::new();
     let mut color = None;
     for part in text.split_whitespace() {
         if part.starts_with("rgb") {
-            color = parse_color(&resolve_value(system, part));
+            color = parse_color(part);
         } else if let Some(number) = parse_px(part) {
             numbers.push(number);
         }
@@ -1482,8 +1451,7 @@ mod tests {
         assert_eq!(parse_color("#€€"), None, "six bytes, not six digits");
         assert_eq!(parse_color("#é"), None);
 
-        let system = repo();
-        let (offset, blur, _) = parse_shadow(&system, "0 4px 16px rgba(21,24,29,0.12)");
+        let (offset, blur, _) = parse_shadow("0 4px 16px rgba(21,24,29,0.12)");
         assert_eq!(offset, [0, 4]);
         assert_eq!(blur, 16);
     }
@@ -1502,9 +1470,15 @@ mod tests {
     }
 
     #[test]
-    fn references_resolve_to_their_value() {
+    fn a_swatch_resolves_its_references_in_its_own_theme() {
         let system = repo();
-        assert_eq!(resolve_value(&system, "{accent}"), "#2b54c4");
-        assert_eq!(resolve_value(&system, "plain"), "plain");
+        let focus = system.token("focus").expect("focus is {accent}");
+        let accent = |theme| {
+            let accent = system.token("accent").unwrap();
+            parse_color(&design::css::token_value_for(accent, theme).unwrap())
+        };
+        assert_eq!(swatch_color(&system, focus, "light"), accent("light"));
+        assert_eq!(swatch_color(&system, focus, "dark"), accent("dark"));
+        assert_ne!(accent("light"), accent("dark"));
     }
 }
