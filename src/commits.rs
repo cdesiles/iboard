@@ -64,14 +64,9 @@ fn run(dir: &Path, file_name: &str) -> Vec<Commit> {
     let output = Command::new("git")
         .arg("-C")
         .arg(dir)
-        .args([
-            "log",
-            "--all",
-            "--fixed-strings",
-            "--grep",
-            file_name,
-            "--format=%h%x09%cI%x09%s",
-        ])
+        .args(["log", "--all", "--extended-regexp", "--grep"])
+        .arg(whole_name(file_name))
+        .arg("--format=%h%x09%cI%x09%s")
         .output();
     let Ok(output) = output else {
         return Vec::new();
@@ -83,6 +78,19 @@ fn run(dir: &Path, file_name: &str) -> Vec<Commit> {
         .lines()
         .filter_map(parse_line)
         .collect()
+}
+
+/// A `git log --extended-regexp` pattern for `file_name` as a whole name: a
+/// commit naming `data.md` does not name `a.md`.
+fn whole_name(file_name: &str) -> String {
+    let mut escaped = String::new();
+    for c in file_name.chars() {
+        if ".[]()*+?{}|^$\\".contains(c) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    format!("(^|[^[:alnum:]._-]){escaped}([^[:alnum:]._-]|$)")
 }
 
 fn parse_line(line: &str) -> Option<Commit> {
@@ -100,6 +108,52 @@ fn parse_line(line: &str) -> Option<Commit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_is_found_by_its_whole_name_only() {
+        let dir = std::env::temp_dir().join(format!("iboard-commits-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(["-c", "core.hooksPath=/dev/null"])
+                .args(args)
+                .output()
+                .unwrap()
+                .status;
+            assert!(status.success(), "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        git(&[
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "Data\n\ncloses data.md",
+        ]);
+        git(&["commit", "-q", "--allow-empty", "-m", "Mine\n\ncloses a.md"]);
+        git(&[
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "Anyone\n\ncloses aXmd",
+        ]);
+
+        let subjects: Vec<String> = run(&dir, "a.md").into_iter().map(|c| c.subject).collect();
+
+        assert_eq!(subjects, ["Mine"]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn a_line_splits_into_hash_date_and_subject() {
