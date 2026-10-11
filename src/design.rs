@@ -242,11 +242,13 @@ impl DesignSystem {
     }
 
     /// Find a design system from any starting folder, walking up to the root.
+    /// The first folder that has one decides: a system that fails to load is
+    /// reported, never skipped for one further up.
     pub fn discover(start: &Path) -> Result<Self, String> {
         let mut dir = std::fs::canonicalize(start).unwrap_or_else(|_| start.to_path_buf());
         loop {
-            if let Ok(system) = Self::load(&dir) {
-                return Ok(system);
+            if locate_root(&dir).is_ok() {
+                return Self::load(&dir);
             }
             match dir.parent() {
                 Some(parent) => dir = parent.to_path_buf(),
@@ -1214,6 +1216,24 @@ mod tests {
     fn repo() -> DesignSystem {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("design");
         DesignSystem::load(&dir).expect("the repo's design/ loads")
+    }
+
+    #[test]
+    fn discover_reports_a_broken_system_instead_of_skipping_it() {
+        let dir = std::env::temp_dir().join(format!("iboard-discover-{}", std::process::id()));
+        let design = dir.join("design");
+        std::fs::create_dir_all(&design).unwrap();
+        std::fs::write(
+            design.join("design-system.json"),
+            r#"{ "v": 1, "title": "T", "namespace": "t" }"#,
+        )
+        .unwrap();
+        std::fs::write(design.join("tokens.json"), "{ not json").unwrap();
+
+        let err = DesignSystem::discover(&dir.join("issues")).unwrap_err();
+
+        assert!(err.contains("tokens.json"), "{err}");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
