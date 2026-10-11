@@ -1164,6 +1164,9 @@ fn parse_color(text: &str) -> Option<Color32> {
     let text = text.trim();
     if let Some(hex) = text.strip_prefix('#') {
         let hex = hex.trim();
+        if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return None;
+        }
         let channel = |pair: &str| u8::from_str_radix(pair, 16).ok();
         return match hex.len() {
             3 => {
@@ -1476,6 +1479,8 @@ mod tests {
             Some(Color32::from_rgba_unmultiplied(21, 24, 29, 31))
         );
         assert_eq!(parse_color("oklch(0.6 0.2 250)"), None);
+        assert_eq!(parse_color("#€€"), None, "six bytes, not six digits");
+        assert_eq!(parse_color("#é"), None);
 
         let system = repo();
         let (offset, blur, _) = parse_shadow(&system, "0 4px 16px rgba(21,24,29,0.12)");
