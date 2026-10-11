@@ -17,6 +17,7 @@ pub mod design_ui;
 pub mod discovery;
 pub mod files;
 pub mod filter;
+pub mod format;
 pub mod general;
 pub mod history;
 pub mod issue;

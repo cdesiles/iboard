@@ -18,6 +18,7 @@ use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
 use crate::files::{self, atomic_write, file_name, normalize_file_name, slugify, unique_name};
 use crate::filter::{self, Filter};
+use crate::format::{card_date, display_path, relative_time};
 use crate::general;
 use crate::issue::Issue;
 use crate::job::{self, Job};
@@ -6636,20 +6637,6 @@ fn fact_row(ui: &mut egui::Ui, issue: &Issue, sections: &[String]) {
     });
 }
 
-/// A card's modified date, friendly: "today 18:02", "yesterday", "2 Oct".
-fn card_date(time: std::time::SystemTime) -> String {
-    let at = chrono::DateTime::<chrono::Local>::from(time);
-    let date = at.date_naive();
-    let today = chrono::Local::now().date_naive();
-    if date == today {
-        format!("today {}", at.format("%H:%M"))
-    } else if Some(date) == today.pred_opt() {
-        "yesterday".to_string()
-    } else {
-        at.format("%-d %b").to_string()
-    }
-}
-
 /// The issue whose LabelPicker is open, for its card.
 fn label_picker_open(ctx: &egui::Context) -> Option<PathBuf> {
     label_picker::open_path(ctx)
@@ -7180,36 +7167,6 @@ fn planned_issue_name(dir: &Path, title: &str) -> (String, bool) {
         n += 1;
     }
     (candidate, n > 2)
-}
-
-/// Shortens absolute paths under the home directory to `~/...`.
-fn display_path(path: &Path) -> String {
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = PathBuf::from(home);
-        if let Ok(relative) = path.strip_prefix(&home) {
-            return format!("~/{}", relative.display());
-        }
-    }
-    path.display().to_string()
-}
-
-/// Human-friendly "time since" for the status bar.
-fn relative_time(time: std::time::SystemTime) -> String {
-    match time.elapsed() {
-        Ok(duration) => {
-            let secs = duration.as_secs();
-            if secs < 60 {
-                "just now".to_string()
-            } else if secs < 3600 {
-                format!("{}m ago", secs / 60)
-            } else if secs < 86_400 {
-                format!("{}h ago", secs / 3600)
-            } else {
-                format!("{}d ago", secs / 86_400)
-            }
-        }
-        Err(_) => "unknown".to_string(),
-    }
 }
 
 #[cfg(test)]

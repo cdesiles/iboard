@@ -8,7 +8,6 @@
 //! background by a [`Catalog`] that lives for the session.
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use egui::{
     Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Modifiers, RichText,
@@ -16,6 +15,7 @@ use egui::{
 };
 
 use crate::agent::{self, AgentConfig, Detected, Models, Tool};
+use crate::format::display_path;
 use crate::job::{self, Job, Poll};
 use crate::labels::{self, Labels};
 use crate::theme::{self, Icon};
@@ -1331,17 +1331,6 @@ fn menu_note(ui: &mut egui::Ui, text: &str, color: Color32) {
             theme::SPACE_2 as i8,
         ))
         .show(ui, |ui| help(ui, text, color));
-}
-
-/// `path` with the home folder written `~`.
-fn display_path(path: &Path) -> String {
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = std::path::PathBuf::from(home);
-        if let Ok(relative) = path.strip_prefix(&home) {
-            return format!("~/{}", relative.display());
-        }
-    }
-    path.display().to_string()
 }
 
 /// The label a name typed in Settings › Labels stands for, the same way a

@@ -10,8 +10,8 @@ mod review_settings;
 // The shared modules live in the `iboard` library. Re-export them at this crate
 // root so the view modules keep addressing them as `crate::…`.
 use iboard::{
-    agent, commits, design_ui, discovery, files, filter, general, issue, job, labels, process,
-    settings, sheet, theme, titles, trash, widgets,
+    agent, commits, design_ui, discovery, files, filter, format, general, issue, job, labels,
+    process, settings, sheet, theme, titles, trash, widgets,
 };
 
 use std::path::PathBuf;
