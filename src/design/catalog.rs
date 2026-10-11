@@ -208,7 +208,8 @@ fn main_panes(system: &DesignSystem, faces: &[FontFace]) -> String {
     })
     .collect();
     format!(
-        "<div class=\"ds-flow\" id=\"ds-flow\">\n{flow}</div>\n\
+        "<div class=\"ds-flow\" id=\"ds-flow\">\n{flow}\
+         <p class=\"ds-empty\" id=\"ds-empty\" hidden>No results</p></div>\n\
          <section class=\"ds-page\" data-page=\"components\" hidden>\n{}</section>\n\
          <section class=\"ds-page\" data-page=\"files\" hidden>\n{}</section>\n",
         components(system),
@@ -919,6 +920,7 @@ fn escape(text: &str) -> String {
 /// The catalog's own chrome, on top of the bundle.
 const CATALOG_CSS: &str = r##"
 html,body{height:100%}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans);font-size:13px;line-height:18px;-webkit-font-smoothing:antialiased}
 *{box-sizing:border-box}
 .ds-shell{display:grid;grid-template-columns:236px minmax(0,1fr);height:100vh}
@@ -950,9 +952,10 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ds-subitem[aria-current]{background:var(--accent-soft);color:var(--ink)}
 .ds-theme{display:flex;align-items:center;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink-muted);font-size:12px;cursor:pointer;flex:0 0 auto}
 .ds-main{position:relative;overflow:auto;padding:24px 32px 64px}
-.ds-flow[hidden],.ds-page[hidden]{display:none}
+.ds-flow>.ds-cat.ds-miss{display:none}
+.ds-empty{color:var(--ink-faint);margin:0}
 .ds-flow>.ds-cat{padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid var(--line)}
-.ds-flow>.ds-cat:last-child{border-bottom:0;min-height:calc(100vh - 88px)}
+.ds-flow>.ds-cat:last-of-type{border-bottom:0;min-height:calc(100vh - 88px)}
 .ds-cta{margin-top:14px}
 .ds-head{max-width:760px;margin-bottom:20px}
 .ds-head h1{font:600 20px/26px var(--font-sans);margin:0}
@@ -1040,9 +1043,11 @@ const SCRIPT: &str = r##"
   function spy() {
     if (flow.hidden) { return; }
     var line = main.scrollTop + 80;
-    var current = cats[0];
-    cats.forEach(function (s) { if (s.offsetTop <= line) { current = s; } });
-    if (main.scrollTop + main.clientHeight >= main.scrollHeight - 2) { current = cats[cats.length - 1]; }
+    var live = cats.filter(function (s) { return !s.classList.contains('ds-miss'); });
+    if (!live.length) { return mark(''); }
+    var current = live[0];
+    live.forEach(function (s) { if (s.offsetTop <= line) { current = s; } });
+    if (main.scrollTop + main.clientHeight >= main.scrollHeight - 2) { current = live[live.length - 1]; }
     mark(current.dataset.cat);
   }
   function open(drill) { rails.classList.toggle('ds-open', !!drill); }
@@ -1066,11 +1071,35 @@ const SCRIPT: &str = r##"
   spy();
 
   var q = document.getElementById('ds-q');
-  q.addEventListener('input', function () {
+  var empty = document.getElementById('ds-empty');
+  var entries = '.ds-row, .ds-trow, .ds-specimen, .ds-comp';
+  function has(el, v) { return el.textContent.toLowerCase().indexOf(v) >= 0; }
+  function shown(s) { return s.querySelector(visible); }
+  var visible = entries.split(', ').map(function (e) { return e + ':not([hidden])'; }).join(', ');
+  function filter() {
     var v = q.value.trim().toLowerCase();
-    items.forEach(function (b) { b.hidden = v !== '' && b.textContent.toLowerCase().indexOf(v) < 0; });
+    var any = false;
+    cats.concat(pages).forEach(function (s) {
+      var id = s.dataset.cat || s.dataset.page;
+      var label = items.filter(function (b) { return b.dataset.cat === id; })[0];
+      var all = v === '' || (label && has(label, v));
+      var rows = s.querySelectorAll(entries);
+      rows.forEach(function (e) { e.hidden = !all && !has(e, v); });
+      s.querySelectorAll('.ds-tgroup').forEach(function (g) { g.hidden = !all && !shown(g); });
+      if (!s.dataset.cat) { return; }
+      var hit = all || (rows.length ? !!shown(s) : has(s, v));
+      s.classList.toggle('ds-miss', !hit);
+      if (label) { label.hidden = !hit; }
+      any = any || hit;
+    });
     subs.forEach(function (a) { a.hidden = v !== '' && (a.dataset.name || '').indexOf(v) < 0; });
-  });
+    var rule = document.querySelector('.ds-rule');
+    if (rule) { rule.hidden = !!(rule.nextElementSibling && rule.nextElementSibling.hidden); }
+    empty.hidden = any;
+    spy();
+  }
+  q.addEventListener('input', filter);
+  q.addEventListener('keydown', function (e) { if (e.key === 'Escape') { q.value = ''; filter(); } });
 
   var toggle = document.getElementById('ds-theme');
   if (toggle) {
@@ -1204,6 +1233,11 @@ mod tests {
             "a components CTA"
         );
         assert!(html.contains("data-open=\"files\""), "a files CTA");
+        assert!(
+            html.contains("[hidden]{display:none!important}"),
+            "a filtered row hides even when its class sets display"
+        );
+        assert!(html.contains("id=\"ds-empty\" hidden"), "a no-results line");
     }
 
     #[test]
