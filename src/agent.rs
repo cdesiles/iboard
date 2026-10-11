@@ -580,8 +580,7 @@ pub fn parse(text: &str) -> Option<Report> {
             proposal_lines.push(line);
             continue;
         }
-        if let Some((head, rest)) = trimmed.split_once(':') {
-            let key = head.trim().to_ascii_uppercase();
+        if let Some((key, rest)) = key_and_rest(trimmed) {
             if key == "PROPOSAL" {
                 flush(&mut findings, &mut current, &mut body);
                 in_proposal = true;
@@ -592,7 +591,7 @@ pub fn parse(text: &str) -> Option<Report> {
                 continue;
             }
             if AXES.contains(&key.as_str())
-                && let Some(verdict) = Verdict::parse(rest)
+                && let Some((verdict, note)) = verdict_and_note(rest)
             {
                 flush(&mut findings, &mut current, &mut body);
                 let axis = match key.as_str() {
@@ -601,6 +600,10 @@ pub fn parse(text: &str) -> Option<Report> {
                     _ => "Clarity",
                 };
                 current = Some((axis.to_string(), verdict));
+                if !note.is_empty() {
+                    body.push_str(note);
+                    body.push('\n');
+                }
                 continue;
             }
         }
@@ -623,9 +626,72 @@ pub fn parse(text: &str) -> Option<Report> {
     Some(Report { findings, proposal })
 }
 
+/// A line's `KEY: rest`, the markdown around the key dropped: `**Size:** Pass`
+/// and `## Size: Pass` both give `SIZE`. Keys are single words.
+fn key_and_rest(line: &str) -> Option<(String, &str)> {
+    let (head, rest) = line.split_once(':')?;
+    let key = head.trim_matches(|c: char| c.is_whitespace() || "*_#-`".contains(c));
+    if key.is_empty() || key.contains(char::is_whitespace) {
+        return None;
+    }
+    let rest = rest.trim_start_matches(|c: char| c.is_whitespace() || "*_`".contains(c));
+    Some((key.to_ascii_uppercase(), rest))
+}
+
+/// The verdict a finding's line starts with, and what follows it:
+/// `**Challenge** — too big` gives Challenge and `too big`. The prompt's own
+/// `Pass|Challenge|Block` is a list of choices, not a verdict.
+fn verdict_and_note(rest: &str) -> Option<(Verdict, &str)> {
+    let end = rest
+        .find(|c: char| !c.is_ascii_alphabetic())
+        .unwrap_or(rest.len());
+    if rest[end..].trim_start().starts_with(['|', '/']) {
+        return None;
+    }
+    let verdict = Verdict::parse(&rest[..end])?;
+    let note = rest[end..]
+        .trim_start_matches(|c: char| c.is_whitespace() || "*_`.,;:—–-".contains(c))
+        .trim_end();
+    Some((verdict, note))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verdicts_survive_markdown_and_punctuation() {
+        let answer = "**RELEVANCE:** Pass\nStill needed.\n\
+                      ## Size: **Challenge** — split it\nIt does two things.\n\
+                      - CLARITY: Block.\nWhich tool?\n\
+                      **PROPOSAL:**\n# Better\n";
+        let report = parse(answer).expect("a report");
+        let verdicts: Vec<(&str, Verdict)> = report
+            .findings
+            .iter()
+            .map(|finding| (finding.axis.as_str(), finding.verdict))
+            .collect();
+        assert_eq!(
+            verdicts,
+            [
+                ("Relevance", Verdict::Pass),
+                ("Size", Verdict::Challenge),
+                ("Clarity", Verdict::Block)
+            ]
+        );
+        assert_eq!(report.findings[1].body, "split it\nIt does two things.");
+        assert_eq!(report.proposal.as_deref(), Some("# Better"));
+    }
+
+    #[test]
+    fn a_line_that_only_looks_like_a_finding_stays_text() {
+        let answer = "RELEVANCE: Pass\nSize: the issue is large\nSIZE: Pass\nok\nCLARITY: Pass\nok\nPROPOSAL: NONE";
+        let report = parse(answer).expect("a report");
+        assert_eq!(report.findings[0].body, "Size: the issue is large");
+        assert_eq!(report.proposal, None);
+        let echoed = crate::prompts::review_prompt("# An issue");
+        assert!(parse(&echoed).is_none(), "an agent repeating the prompt");
+    }
 
     fn custom(command: &str) -> AgentConfig {
         AgentConfig {
