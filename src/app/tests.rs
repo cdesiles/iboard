@@ -1565,8 +1565,10 @@ fn archive_all_clears_done() {
     std::fs::write(&a, "# A\n").unwrap();
     std::fs::write(&b, "# B\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let before = app.board_generation;
 
     app.archive_all(&[a.clone(), b.clone()]);
+    assert_eq!(app.board_generation, before + 1, "the board is read once");
     assert!(!a.exists() && !b.exists());
     assert!(dir.join("issues/.archive/a.md").exists());
     assert_eq!(

@@ -263,6 +263,30 @@ impl IboardApp {
     /// Moves a done issue out of the board into `issues/.archive`, which
     /// discovery ignores. Never overwrites an archived file.
     pub(super) fn archive_issue(&mut self, path: &Path) {
+        if self.move_to_archive(path) {
+            self.notice = Some((format!("Archived {}", file_name(path)), Instant::now()));
+            self.refresh();
+        }
+    }
+
+    /// "Archive all" at the foot of Done: moves every listed issue to
+    /// `.archive/`, then reads the board once, and says how many went.
+    pub(super) fn archive_all(&mut self, paths: &[PathBuf]) {
+        let archived = paths
+            .iter()
+            .filter(|path| self.move_to_archive(path))
+            .count();
+        self.refresh();
+        if archived > 0 {
+            let noun = if archived == 1 { "issue" } else { "issues" };
+            self.notice = Some((format!("Archived {archived} {noun}"), Instant::now()));
+        }
+    }
+
+    /// Moves `path` into `.archive/` and lets go of it wherever it is open,
+    /// without reading the board again. `false`, with the reason in
+    /// `self.error`, when it could not.
+    fn move_to_archive(&mut self, path: &Path) -> bool {
         if self
             .review
             .as_ref()
@@ -276,43 +300,24 @@ impl IboardApp {
                 "Couldn't create {}: {err}",
                 self.relative(&archive)
             ));
-            return;
+            return false;
         }
-        let name = unique_name(&archive, &file_name(path));
-        let target = archive.join(&name);
-        match std::fs::rename(path, &target) {
-            Ok(()) => {
-                self.notice = Some((format!("Archived {}", file_name(path)), Instant::now()));
-                if self.selected.as_deref() == Some(path) {
-                    self.selected = None;
-                }
-                if self.editor.as_ref().is_some_and(|e| e.path == path) {
-                    self.editor = None;
-                }
-                if matches!(&self.screen, Screen::Detail(open) if open == path) {
-                    self.detail_mode = DetailMode::Preview;
-                    self.screen = Screen::Board;
-                }
-                self.refresh();
-            }
-            Err(err) => {
-                self.error = Some(format!("Couldn't archive {}: {err}", self.relative(path)));
-            }
+        let target = archive.join(unique_name(&archive, &file_name(path)));
+        if let Err(err) = std::fs::rename(path, &target) {
+            self.error = Some(format!("Couldn't archive {}: {err}", self.relative(path)));
+            return false;
         }
-    }
-
-    /// "Archive all" at the foot of Done: moves every listed issue to
-    /// `.archive/` and says how many went.
-    pub(super) fn archive_all(&mut self, paths: &[PathBuf]) {
-        let before = self.board.issue_count();
-        for path in paths {
-            self.archive_issue(path);
+        if self.selected.as_deref() == Some(path) {
+            self.selected = None;
         }
-        let archived = before.saturating_sub(self.board.issue_count());
-        if archived > 0 {
-            let noun = if archived == 1 { "issue" } else { "issues" };
-            self.notice = Some((format!("Archived {archived} {noun}"), Instant::now()));
+        if self.editor.as_ref().is_some_and(|e| e.path == path) {
+            self.editor = None;
         }
+        if matches!(&self.screen, Screen::Detail(open) if open == path) {
+            self.detail_mode = DetailMode::Preview;
+            self.screen = Screen::Board;
+        }
+        true
     }
 
     /// Moves a just-composed ticket to position 1, once the pointer has settled.
