@@ -127,51 +127,6 @@ impl AgentConfig {
         Ok(())
     }
 
-    fn from_raw(raw: RawAgent) -> Self {
-        let model = raw.model.trim();
-        let model = if model.eq_ignore_ascii_case(DEFAULT_MODEL) {
-            String::new()
-        } else {
-            model.to_string()
-        };
-        let tool = raw.tool.trim();
-        if tool.is_empty() {
-            return Self::default();
-        }
-        if let Some(known) = Tool::from_key(tool) {
-            return Self {
-                tool: known,
-                model,
-                command: raw.command,
-                configured: true,
-            };
-        }
-        // Before the settings dialog, `tool` held a program name or path.
-        let stem = Path::new(tool)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or(tool);
-        if let Some(known) = Tool::from_key(stem).filter(|known| *known != Tool::Custom) {
-            return Self {
-                tool: known,
-                model,
-                command: String::new(),
-                configured: true,
-            };
-        }
-        let model_flag = if model.is_empty() {
-            ""
-        } else {
-            "--model {model} "
-        };
-        Self {
-            tool: Tool::Custom,
-            command: format!("{} {model_flag}\"$(cat {{prompt}})\"", shell_quote(tool)),
-            model,
-            configured: true,
-        }
-    }
-
     fn to_raw(&self) -> RawAgent {
         let model = self.model.trim();
         RawAgent {
@@ -201,9 +156,31 @@ struct RawAgent {
     command: String,
 }
 
-/// The agent in the `[ai]` section; unconfigured when there is none.
+/// The agent in the `[ai]` section; unconfigured when there is none, or when
+/// its tool is not one iboard runs, which is reported.
 pub fn load(config: &mut UserConfig) -> AgentConfig {
-    AgentConfig::from_raw(config.section("ai"))
+    let raw: RawAgent = config.section("ai");
+    let tool = raw.tool.trim();
+    if tool.is_empty() {
+        return AgentConfig::default();
+    }
+    let Some(tool) = Tool::from_key(tool) else {
+        config.problem(format!(
+            "[ai]: tool \"{tool}\" is not opencode, claude or custom"
+        ));
+        return AgentConfig::default();
+    };
+    let model = raw.model.trim();
+    AgentConfig {
+        tool,
+        model: if model.eq_ignore_ascii_case(DEFAULT_MODEL) {
+            String::new()
+        } else {
+            model.to_string()
+        },
+        command: raw.command,
+        configured: true,
+    }
 }
 
 /// The `[ai]` section that stores `config`.
@@ -426,11 +403,6 @@ fn parse_claude_model(text: &str) -> Option<String> {
         .map(str::trim)
         .filter(|model| !model.is_empty())
         .map(str::to_string)
-}
-
-/// Quotes `text` for `sh`, so a path or model with spaces stays one word.
-fn shell_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', r"'\''"))
 }
 
 /// How long an agent may work on an answer before it is stopped.
@@ -810,28 +782,21 @@ mod tests {
     }
 
     #[test]
-    fn an_older_configuration_still_loads() {
-        let load = |tool: &str, model: &str| {
-            AgentConfig::from_raw(RawAgent {
-                tool: tool.into(),
-                model: model.into(),
-                command: String::new(),
-            })
+    fn a_tool_iboard_does_not_run_is_reported() {
+        let read = |text: &str| {
+            let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
+            (load(&mut config), config.problems)
         };
-        let claude = load("/usr/local/bin/claude", "");
-        assert_eq!(claude.tool, Tool::Claude);
-        assert!(claude.configured());
+        let (agent, problems) = read("[ai]\ntool = \"claude\"\nmodel = \"Default\"\n");
+        assert_eq!(agent.tool, Tool::Claude);
+        assert!(agent.configured() && agent.model.is_empty() && problems.is_empty());
 
-        let other = load("my-agent", "fast");
-        assert_eq!(other.tool, Tool::Custom);
-        assert_eq!(
-            other.command,
-            "'my-agent' --model {model} \"$(cat {prompt})\""
-        );
-        assert_eq!(other.model, "fast");
-        assert!(other.validate().is_ok());
+        let (agent, problems) = read("[ai]\ntool = \"/usr/local/bin/claude\"\n");
+        assert!(!agent.configured());
+        assert_eq!(problems.len(), 1);
 
-        assert!(!load("", "").configured());
+        let (agent, problems) = read("");
+        assert!(!agent.configured() && problems.is_empty());
     }
 
     #[test]

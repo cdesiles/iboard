@@ -159,8 +159,7 @@ non-interactively (`opencode run`, `claude -p`); a custom command runs through
 instructions), `{model}` and `{issue}` (the issue path) filled in, and the
 review is read from its stdout. The placeholders become the quoted variables
 `"$IBOARD_PROMPT"`, `"$IBOARD_MODEL"` and `"$IBOARD_ISSUE"`, so a file name can
-never run as shell code. An older `tool = "<any command>"` keeps working as a
-custom command.
+never run as shell code.
 
 An agent is stopped, with everything it started, when its window closes, when
 a new run replaces it, when iboard quits, or after 10 minutes without an
