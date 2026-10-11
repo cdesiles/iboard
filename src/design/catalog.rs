@@ -180,29 +180,86 @@ fn sidebar(system: &DesignSystem, toggle: &str) -> String {
     out
 }
 
-/// One pane per category; only Overview starts visible, the script reveals the
-/// selected one.
+/// Every category in one scrolling flow, Components and Files as summaries
+/// there; their full views are separate pages the script swaps in.
 fn main_panes(system: &DesignSystem, faces: &[FontFace]) -> String {
-    [
-        ("overview", overview(system), false),
-        ("colors", colors(system), true),
-        ("typography", typography(system, faces), true),
-        ("spacing", spacing(system), true),
-        ("radius", radius(system), true),
-        ("shadows", shadows(system), true),
-        ("size", size(system), true),
-        ("components", components(system), true),
-        ("assets", assets(system), true),
-        ("files", files(system), true),
+    let flow: String = [
+        ("overview", overview(system)),
+        ("colors", colors(system)),
+        ("typography", typography(system, faces)),
+        ("spacing", spacing(system)),
+        ("radius", radius(system)),
+        ("shadows", shadows(system)),
+        ("size", size(system)),
+        ("components", components_summary(system)),
+        ("assets", assets(system)),
+        ("files", files_summary(system)),
     ]
     .into_iter()
-    .map(|(id, inner, hidden)| {
-        format!(
-            "<section class=\"ds-cat\" data-cat=\"{id}\"{}>\n{inner}</section>\n",
-            if hidden { " hidden" } else { "" }
-        )
+    .map(|(id, inner)| {
+        format!("<section class=\"ds-cat\" id=\"cat-{id}\" data-cat=\"{id}\">\n{inner}</section>\n")
     })
-    .collect()
+    .collect();
+    format!(
+        "<div class=\"ds-flow\" id=\"ds-flow\">\n{flow}</div>\n\
+         <section class=\"ds-page\" data-page=\"components\" hidden>\n{}</section>\n\
+         <section class=\"ds-page\" data-page=\"files\" hidden>\n{}</section>\n",
+        components(system),
+        files(system),
+    )
+}
+
+fn cta(page: &str, label: &str) -> String {
+    format!(
+        "<button type=\"button\" class=\"ib-btn ds-cta\" data-open=\"{page}\">{}\
+         <span aria-hidden=\"true\">\u{2192}</span></button>\n",
+        escape(label)
+    )
+}
+
+fn components_summary(system: &DesignSystem) -> String {
+    let mut out = head(
+        "Components",
+        &format!("{} components", system.components.len()),
+    );
+    for (group, list) in system.component_groups() {
+        let names: Vec<&str> = list.iter().map(|c| c.name.as_str()).collect();
+        out.push_str(&format!(
+            "<div class=\"ds-row\"><span class=\"ds-name\">{} · {}</span>\
+             <span class=\"ds-usage\">{}</span></div>\n",
+            escape(&group),
+            list.len(),
+            escape(&names.join(", ")),
+        ));
+    }
+    out.push_str(&cta("components", "Browse components"));
+    out
+}
+
+fn files_summary(system: &DesignSystem) -> String {
+    let files = system.files();
+    let mut out = head("Files", &format!("{} files", files.len()));
+    let mut folders: Vec<(&str, usize, u64)> = Vec::new();
+    for file in &files {
+        let folder = file.rel.split_once('/').map_or(".", |(dir, _)| dir);
+        match folders.iter_mut().find(|(name, ..)| *name == folder) {
+            Some(entry) => {
+                entry.1 += 1;
+                entry.2 += file.bytes;
+            }
+            None => folders.push((folder, 1, file.bytes)),
+        }
+    }
+    for (folder, count, bytes) in folders {
+        out.push_str(&format!(
+            "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>\
+             <span class=\"ds-val\">{count} files · {}</span></div>\n",
+            escape(if folder == "." { "./" } else { folder }),
+            human_bytes(bytes),
+        ));
+    }
+    out.push_str(&cta("files", "Browse files"));
+    out
 }
 
 /// The themed token ids, or `light` when the system declares no themes.
@@ -885,8 +942,11 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ds-subitem:hover{background:var(--surface-hover);color:var(--ink)}
 .ds-subitem[aria-current]{background:var(--accent-soft);color:var(--ink)}
 .ds-theme{display:flex;align-items:center;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink-muted);font-size:12px;cursor:pointer;flex:0 0 auto}
-.ds-main{overflow:auto;padding:24px 32px 64px}
-.ds-cat[hidden]{display:none}
+.ds-main{position:relative;overflow:auto;padding:24px 32px 64px}
+.ds-flow[hidden],.ds-page[hidden]{display:none}
+.ds-flow>.ds-cat{padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid var(--line)}
+.ds-flow>.ds-cat:last-child{border-bottom:0;min-height:calc(100vh - 88px)}
+.ds-cta{margin-top:14px}
 .ds-head{max-width:760px;margin-bottom:20px}
 .ds-head h1{font:600 20px/26px var(--font-sans);margin:0}
 .ds-head p{color:var(--ink-muted);margin:4px 0 0}
@@ -945,26 +1005,58 @@ const SCRIPT: &str = r##"
   var items = Array.prototype.slice.call(document.querySelectorAll('.ds-item'));
   var subs = Array.prototype.slice.call(document.querySelectorAll('.ds-subitem'));
 
-  function select(id) {
-    document.querySelectorAll('.ds-cat').forEach(function (s) {
-      s.hidden = s.dataset.cat !== id;
-    });
+  var main = document.querySelector('.ds-main');
+  var flow = document.getElementById('ds-flow');
+  var pages = Array.prototype.slice.call(document.querySelectorAll('.ds-page'));
+  var cats = Array.prototype.slice.call(flow.querySelectorAll('.ds-cat'));
+
+  function mark(id) {
     items.forEach(function (b) {
       if (b.dataset.cat === id) { b.setAttribute('aria-current', 'page'); }
       else { b.removeAttribute('aria-current'); }
     });
-    document.querySelector('.ds-main').scrollTop = 0;
+  }
+  function page(id) {
+    flow.hidden = true;
+    pages.forEach(function (p) { p.hidden = p.dataset.page !== id; });
+    mark(id);
+    main.scrollTop = 0;
+  }
+  function select(id) {
+    var smooth = !flow.hidden;
+    flow.hidden = false;
+    pages.forEach(function (p) { p.hidden = true; });
+    var target = document.getElementById('cat-' + id);
+    if (target) { main.scrollTo({ top: target.offsetTop, behavior: smooth ? 'smooth' : 'auto' }); }
+    mark(id);
+  }
+  function spy() {
+    if (flow.hidden) { return; }
+    var line = main.scrollTop + 80;
+    var current = cats[0];
+    cats.forEach(function (s) { if (s.offsetTop <= line) { current = s; } });
+    if (main.scrollTop + main.clientHeight >= main.scrollHeight - 2) { current = cats[cats.length - 1]; }
+    mark(current.dataset.cat);
   }
   function open(drill) { rails.classList.toggle('ds-open', !!drill); }
 
+  main.addEventListener('scroll', spy, { passive: true });
   items.forEach(function (b) {
-    b.addEventListener('click', function () { select(b.dataset.cat); open(b.dataset.drill === '1'); });
+    b.addEventListener('click', function () {
+      var id = b.dataset.cat;
+      if (pages.some(function (p) { return p.dataset.page === id; })) { page(id); } else { select(id); }
+      open(b.dataset.drill === '1');
+    });
+  });
+  document.querySelectorAll('[data-open]').forEach(function (c) {
+    c.addEventListener('click', function () { page(c.dataset.open); open(c.dataset.open === 'components'); });
   });
   var back = document.querySelector('.ds-back');
-  if (back) { back.addEventListener('click', function () { open(false); }); }
+  if (back) { back.addEventListener('click', function () { open(false); select('components'); }); }
   subs.forEach(function (a) {
-    a.addEventListener('click', function () { select('components'); open(true); });
+    a.addEventListener('click', function () { page('components'); open(true); });
   });
+  spy();
 
   var q = document.getElementById('ds-q');
   q.addEventListener('input', function () {
@@ -1074,6 +1166,24 @@ mod tests {
             html.contains(">embedded</span>"),
             "the sans stack is shipped"
         );
+    }
+
+    #[test]
+    fn the_categories_flow_and_components_and_files_open_a_page() {
+        let html = html(&repo(), "light").expect("compose");
+        for (id, ..) in CATEGORIES {
+            assert!(
+                html.contains(&format!("id=\"cat-{id}\"")),
+                "{id} in the flow"
+            );
+        }
+        assert!(html.contains("data-page=\"components\" hidden"));
+        assert!(html.contains("data-page=\"files\" hidden"));
+        assert!(
+            html.contains("data-open=\"components\""),
+            "a components CTA"
+        );
+        assert!(html.contains("data-open=\"files\""), "a files CTA");
     }
 
     #[test]
