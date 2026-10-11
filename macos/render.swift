@@ -30,6 +30,8 @@ let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
 
 let configuration = WKWebViewConfiguration()
+// Previews are static, and an agent may have written them: no scripts run.
+configuration.defaultWebpagePreferences.allowsContentJavaScript = false
 let webView = WKWebView(
     frame: NSRect(x: 0, y: 0, width: width, height: height), configuration: configuration)
 

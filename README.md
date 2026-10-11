@@ -34,8 +34,10 @@ the board's panel in its own window instead. A component preview is turned into
 a PNG by a short-lived WebKit helper (`macos/render.swift`). `build.rs` builds
 both helpers, and both run as their own processes, so the board never loads a
 browser itself: startup stays instant and a broken preview cannot take the
-window down. `IBOARD_RENDER` and `IBOARD_CATALOG` point at other builds of the
-two helpers.
+window down. The binaries carry both helpers and write them out to
+`~/.cache/iboard/helpers` on first use, so an installed copy keeps them after
+`cargo clean`; `IBOARD_RENDER` and `IBOARD_CATALOG` point at other builds.
+Previews render with JavaScript off, from a folder of their own.
 
 ```sh
 idesign                         # open the live catalog (in a terminal)

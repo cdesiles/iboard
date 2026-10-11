@@ -25,21 +25,27 @@ pub fn tokens_block(system: &DesignSystem, theme: &str, selector: &str) -> Strin
     for token in system.tokens.all() {
         if let Some(value) = token_value_for(token, theme) {
             out.push_str("  --");
-            out.push_str(&token.name);
+            out.push_str(&in_style(&token.name));
             out.push_str(": ");
-            out.push_str(&resolve_refs(system, theme, &value));
+            out.push_str(&in_style(&resolve_refs(system, theme, &value)));
             out.push_str(";\n");
         }
     }
     for (key, stack) in &system.tokens.families {
         out.push_str("  --font-");
-        out.push_str(key);
+        out.push_str(&in_style(key));
         out.push_str(": ");
-        out.push_str(stack);
+        out.push_str(&in_style(stack));
         out.push_str(";\n");
     }
     out.push_str("}\n");
     out
+}
+
+/// `text` safe inside a `<style>` element: `<` and `>` as CSS escapes, so a
+/// token value can never close the element and start markup.
+fn in_style(text: &str) -> String {
+    text.replace('<', "\\3C ").replace('>', "\\3E ")
 }
 
 /// Replace `{name}` references in a token value with the referenced token's
@@ -169,6 +175,16 @@ pub fn component_summary(component: &Component) -> Option<String> {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn a_token_value_cannot_close_the_style_element() {
+        let mut system = repo();
+        system.tokens.color[0].value =
+            TokenValue::Plain("red</style><script>alert(1)</script>".to_string());
+        let block = tokens_block(&system, "light", ":root");
+        assert!(!block.contains('<'), "{block}");
+        assert!(block.contains("red\\3C /style\\3E "), "{block}");
+    }
 
     fn repo() -> DesignSystem {
         DesignSystem::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("design")).expect("load")

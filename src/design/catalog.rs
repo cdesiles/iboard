@@ -609,8 +609,11 @@ fn section(component: &Component, id: &str) -> String {
         ""
     };
     let meta = match component.card.height {
-        Some(height) => format!("<span class=\"ds-dim\">{group} · {height}pt</span>"),
-        None => format!("<span class=\"ds-dim\">{group}</span>"),
+        Some(height) => format!(
+            "<span class=\"ds-dim\">{} · {height}pt</span>",
+            escape(&group)
+        ),
+        None => format!("<span class=\"ds-dim\">{}</span>", escape(&group)),
     };
     let body = fragment(component);
     format!(
@@ -845,24 +848,7 @@ pub fn open(html: &Path, title: &str) -> Result<(), String> {
 
 /// The webview helper `build.rs` compiled, when there is one.
 fn viewer() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("IBOARD_CATALOG") {
-        let path = PathBuf::from(path);
-        if path.is_file() {
-            return Some(path);
-        }
-    }
-    build_viewer()
-}
-
-#[cfg(apple_catalog)]
-fn build_viewer() -> Option<PathBuf> {
-    let path = PathBuf::from(env!("IBOARD_CATALOG_HELPER"));
-    path.is_file().then_some(path)
-}
-
-#[cfg(not(apple_catalog))]
-fn build_viewer() -> Option<PathBuf> {
-    None
+    super::helpers::catalog()
 }
 
 /// Whether a live catalog window can be opened here.
@@ -1125,6 +1111,15 @@ const SCRIPT: &str = r##"
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_component_group_is_escaped() {
+        let mut component = repo().components.remove(0);
+        component.card.group = Some("<img src=x onerror=alert(1)>".to_string());
+        let html = section(&component, "c-x");
+        assert!(!html.contains("<img"), "{html}");
+        assert!(html.contains("&lt;img"));
+    }
 
     fn repo() -> DesignSystem {
         DesignSystem::discover(Path::new(env!("CARGO_MANIFEST_DIR"))).expect("repo design")

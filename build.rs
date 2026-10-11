@@ -3,16 +3,38 @@
 //! the Swift code: the shim that names new issues with Apple's on-device model
 //! (`macos/titles.swift`), and the two WebKit helpers run as subprocesses, the
 //! preview renderer (`macos/render.swift`) and the live catalog window
-//! (`macos/catalog.swift`).
+//! (`macos/catalog.swift`). The binaries embed the helpers, see
+//! `src/design/helpers.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The WebKit helpers: each runs as its own process, so WebKit never loads
+/// into the app's. Binary, source, cfg, the variable naming its path, and what
+/// a build without it loses.
+const HELPERS: [(&str, &str, &str, &str, &str); 2] = [
+    (
+        "iboard-render",
+        "macos/render.swift",
+        "apple_render",
+        "IBOARD_RENDER_HELPER",
+        "the component renderer; component previews are unavailable",
+    ),
+    (
+        "iboard-catalog",
+        "macos/catalog.swift",
+        "apple_catalog",
+        "IBOARD_CATALOG_HELPER",
+        "the live catalog window; the design catalog opens in the browser instead",
+    ),
+];
+
 fn main() -> Result<(), std::env::VarError> {
     println!("cargo:rerun-if-changed=macos/Info.plist");
-    println!("cargo::rustc-check-cfg=cfg(apple_titles)");
-    println!("cargo::rustc-check-cfg=cfg(apple_render)");
-    println!("cargo::rustc-check-cfg=cfg(apple_catalog)");
+    println!("cargo:rerun-if-env-changed=DEVELOPER_DIR");
+    for cfg in ["apple_titles", "apple_render", "apple_catalog"] {
+        println!("cargo::rustc-check-cfg=cfg({cfg})");
+    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return Ok(());
     }
@@ -24,149 +46,112 @@ fn main() -> Result<(), std::env::VarError> {
         plist.display()
     );
 
-    match build_titles_shim(&manifest, &out) {
+    let swift = match Swift::find() {
+        Ok(swift) => swift,
+        Err(why) => {
+            println!("cargo:warning=building without Swift ({why}): no on-device titles");
+            for (_, _, _, _, lost) in HELPERS {
+                println!("cargo:warning=building without {lost}");
+            }
+            return Ok(());
+        }
+    };
+
+    match swift.titles_shim(&manifest, &out) {
         Ok(()) => println!("cargo:rustc-cfg=apple_titles"),
         Err(why) => println!(
             "cargo:warning=building without on-device titles ({why}); \
              the composer falls back to the review agent or the first line"
         ),
     }
-
-    match build_render_helper(&manifest, &out) {
-        Ok(path) => {
-            println!("cargo:rustc-cfg=apple_render");
-            println!("cargo:rustc-env=IBOARD_RENDER_HELPER={}", path.display());
+    for (binary, source, cfg, variable, lost) in HELPERS {
+        let path = out.join(binary);
+        match swift.compile(&manifest.join(source), &[], &path) {
+            Ok(()) => {
+                println!("cargo:rustc-cfg={cfg}");
+                println!("cargo:rustc-env={variable}={}", path.display());
+            }
+            Err(why) => println!("cargo:warning=building without {lost} ({why})"),
         }
-        Err(why) => println!(
-            "cargo:warning=building without the component renderer ({why}); \
-             component previews are unavailable"
-        ),
-    }
-
-    match build_catalog_helper(&manifest, &out) {
-        Ok(path) => {
-            println!("cargo:rustc-cfg=apple_catalog");
-            println!("cargo:rustc-env=IBOARD_CATALOG_HELPER={}", path.display());
-        }
-        Err(why) => println!(
-            "cargo:warning=building without the live catalog window ({why}); \
-             the design catalog opens in the browser instead"
-        ),
     }
     Ok(())
 }
 
-/// Compiles `macos/catalog.swift` into a small executable that opens a window
-/// with a live `WKWebView` on the design catalog. Like the renderer, it runs
-/// out of process: the catalog is interactive and WebKit never loads into the
-/// board's own process.
-fn build_catalog_helper(manifest: &Path, out: &Path) -> Result<PathBuf, String> {
-    let source = manifest.join("macos/catalog.swift");
-    println!("cargo:rerun-if-changed={}", source.display());
-    let binary = out.join("iboard-catalog");
-    let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
-        Ok("aarch64") => "arm64",
-        Ok("x86_64") => "x86_64",
-        other => return Err(format!("unsupported architecture {other:?}")),
-    };
-
-    let swiftc = xcrun(&["--find", "swiftc"]).ok_or("swiftc not found")?;
-    let sdk = xcrun(&["--sdk", "macosx", "--show-sdk-path"]).ok_or("macOS SDK not found")?;
-    let status = Command::new(&swiftc)
-        .env_remove("SDKROOT")
-        .env_remove("MACOSX_DEPLOYMENT_TARGET")
-        .args(["-sdk", &sdk])
-        .args(["-O"])
-        .args(["-target", &format!("{arch}-apple-macos12.0")])
-        .arg("-o")
-        .arg(&binary)
-        .arg(&source)
-        .status()
-        .map_err(|err| format!("couldn't run swiftc: {err}"))?;
-    if !status.success() {
-        return Err(format!("swiftc exited with {status}"));
-    }
-    Ok(binary)
+/// The Swift compiler and macOS SDK, for the architecture being built.
+struct Swift {
+    swiftc: String,
+    sdk: String,
+    target: String,
 }
 
-/// Compiles `macos/render.swift` into a small executable the app runs as a
-/// short-lived helper to snapshot an HTML preview to a PNG. Keeping WebKit out
-/// of the app's own process is deliberate: startup stays instant and a render
-/// cannot take the board down.
-fn build_render_helper(manifest: &Path, out: &Path) -> Result<PathBuf, String> {
-    let source = manifest.join("macos/render.swift");
-    println!("cargo:rerun-if-changed={}", source.display());
-    let binary = out.join("iboard-render");
-    let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
-        Ok("aarch64") => "arm64",
-        Ok("x86_64") => "x86_64",
-        other => return Err(format!("unsupported architecture {other:?}")),
-    };
-
-    let swiftc = xcrun(&["--find", "swiftc"]).ok_or("swiftc not found")?;
-    let sdk = xcrun(&["--sdk", "macosx", "--show-sdk-path"]).ok_or("macOS SDK not found")?;
-    let status = Command::new(&swiftc)
-        .env_remove("SDKROOT")
-        .env_remove("MACOSX_DEPLOYMENT_TARGET")
-        .args(["-sdk", &sdk])
-        .args(["-O"])
-        .args(["-target", &format!("{arch}-apple-macos12.0")])
-        .arg("-o")
-        .arg(&binary)
-        .arg(&source)
-        .status()
-        .map_err(|err| format!("couldn't run swiftc: {err}"))?;
-    if !status.success() {
-        return Err(format!("swiftc exited with {status}"));
-    }
-    Ok(binary)
-}
-
-/// Compiles `macos/titles.swift` into a static library and links it with the
-/// Swift runtime. FoundationModels is weak-linked, so the binary still starts
-/// on a Mac without it; the shim checks availability at runtime.
-fn build_titles_shim(manifest: &Path, out: &Path) -> Result<(), String> {
-    let source = manifest.join("macos/titles.swift");
-    println!("cargo:rerun-if-changed={}", source.display());
-    let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
-        Ok("aarch64") => "arm64",
-        Ok("x86_64") => "x86_64",
-        other => return Err(format!("unsupported architecture {other:?}")),
-    };
-
-    let swiftc = xcrun(&["--find", "swiftc"]).ok_or("swiftc not found")?;
-    let sdk = xcrun(&["--sdk", "macosx", "--show-sdk-path"]).ok_or("macOS SDK not found")?;
-    let status = Command::new(&swiftc)
-        // Cargo's environment (SDKROOT, deployment target) is meant for rustc.
-        .env_remove("SDKROOT")
-        .env_remove("MACOSX_DEPLOYMENT_TARGET")
-        .args(["-sdk", &sdk])
-        .args(["-emit-library", "-static", "-O", "-parse-as-library"])
-        .args(["-module-name", "IboardTitles"])
-        .args(["-target", &format!("{arch}-apple-macos12.0")])
-        .arg("-o")
-        .arg(out.join("libiboard_titles.a"))
-        .arg(&source)
-        .status()
-        .map_err(|err| format!("couldn't run swiftc: {err}"))?;
-    if !status.success() {
-        return Err(format!("swiftc exited with {status}"));
+impl Swift {
+    fn find() -> Result<Self, String> {
+        let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+            Ok("aarch64") => "arm64",
+            Ok("x86_64") => "x86_64",
+            other => return Err(format!("unsupported architecture {other:?}")),
+        };
+        let swiftc = xcrun(&["--find", "swiftc"]).ok_or("swiftc not found")?;
+        let sdk = xcrun(&["--sdk", "macosx", "--show-sdk-path"]).ok_or("macOS SDK not found")?;
+        Ok(Self {
+            swiftc,
+            sdk,
+            target: format!("{arch}-apple-macos12.0"),
+        })
     }
 
-    // The Swift runtime: the toolchain's copy to link against, the system's
-    // copy (macOS 12+) at run time.
-    let toolchain = Path::new(&swiftc)
-        .parent()
-        .and_then(Path::parent)
-        .ok_or("unexpected swiftc location")?
-        .join("lib/swift/macosx");
-    println!("cargo:rustc-link-search=native={}", out.display());
-    println!("cargo:rustc-link-search=native={}", toolchain.display());
-    println!("cargo:rustc-link-search=native={sdk}/usr/lib/swift");
-    println!("cargo:rustc-link-lib=static=iboard_titles");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
-    println!("cargo:rustc-link-arg=-Wl,-weak_framework,FoundationModels");
-    Ok(())
+    /// Compiles `source` to `output`, an executable unless `args` say
+    /// otherwise.
+    fn compile(&self, source: &Path, args: &[&str], output: &Path) -> Result<(), String> {
+        println!("cargo:rerun-if-changed={}", source.display());
+        let status = Command::new(&self.swiftc)
+            // Cargo's environment (SDKROOT, deployment target) is meant for rustc.
+            .env_remove("SDKROOT")
+            .env_remove("MACOSX_DEPLOYMENT_TARGET")
+            .args(["-sdk", &self.sdk, "-O", "-target", &self.target])
+            .args(args)
+            .arg("-o")
+            .arg(output)
+            .arg(source)
+            .status()
+            .map_err(|err| format!("couldn't run swiftc: {err}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("swiftc exited with {status}"))
+        }
+    }
+
+    /// Compiles `macos/titles.swift` into a static library linked with the
+    /// Swift runtime. FoundationModels is weak-linked, so the binary still
+    /// starts on a Mac without it; the shim checks availability at runtime.
+    fn titles_shim(&self, manifest: &Path, out: &Path) -> Result<(), String> {
+        self.compile(
+            &manifest.join("macos/titles.swift"),
+            &[
+                "-emit-library",
+                "-static",
+                "-parse-as-library",
+                "-module-name",
+                "IboardTitles",
+            ],
+            &out.join("libiboard_titles.a"),
+        )?;
+        // The Swift runtime: the toolchain's copy to link against, the
+        // system's copy (macOS 12+) at run time.
+        let toolchain = Path::new(&self.swiftc)
+            .parent()
+            .and_then(Path::parent)
+            .ok_or("unexpected swiftc location")?
+            .join("lib/swift/macosx");
+        println!("cargo:rustc-link-search=native={}", out.display());
+        println!("cargo:rustc-link-search=native={}", toolchain.display());
+        println!("cargo:rustc-link-search=native={}/usr/lib/swift", self.sdk);
+        println!("cargo:rustc-link-lib=static=iboard_titles");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+        println!("cargo:rustc-link-arg=-Wl,-weak_framework,FoundationModels");
+        Ok(())
+    }
 }
 
 fn xcrun(args: &[&str]) -> Option<String> {

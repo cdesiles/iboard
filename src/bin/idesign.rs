@@ -255,16 +255,18 @@ fn preview(system: &DesignSystem, name: &str, flags: &Flags) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let html_path = std::env::temp_dir().join(format!("iboard-preview-{name}.html"));
+    let (html_path, png) = match design::render::preview_paths(name) {
+        Ok(paths) => paths,
+        Err(err) => {
+            eprintln!("idesign: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
     if let Err(err) = std::fs::write(&html_path, &html) {
         eprintln!("idesign: couldn't write {}: {err}", html_path.display());
         return ExitCode::FAILURE;
     }
-    let out = flags
-        .out
-        .as_ref()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join(format!("iboard-preview-{name}.png")));
+    let out = flags.out.as_ref().map(PathBuf::from).unwrap_or(png);
     let width = flags.width.unwrap_or(DEFAULT_WIDTH);
     let height = flags.height.unwrap_or(DEFAULT_HEIGHT);
     match design::render::snapshot(&html_path, &out, width, height) {

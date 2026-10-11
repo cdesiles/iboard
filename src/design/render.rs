@@ -23,26 +23,9 @@ const DEFAULT_HEIGHT: u32 = 640;
 const RENDER_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The renderer helper's path: the `IBOARD_RENDER` override when it points at
-/// a file, else the helper `build.rs` compiled.
+/// a file, else the copy this binary embeds.
 fn helper() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("IBOARD_RENDER") {
-        let path = PathBuf::from(path);
-        if path.is_file() {
-            return Some(path);
-        }
-    }
-    build_helper()
-}
-
-#[cfg(apple_render)]
-fn build_helper() -> Option<PathBuf> {
-    let path = PathBuf::from(env!("IBOARD_RENDER_HELPER"));
-    path.is_file().then_some(path)
-}
-
-#[cfg(not(apple_render))]
-fn build_helper() -> Option<PathBuf> {
-    None
+    super::helpers::renderer()
 }
 
 /// Whether a renderer is available on this machine.
@@ -88,6 +71,18 @@ fn render(
     Ok(png.to_path_buf())
 }
 
+/// Where `name`'s preview page and picture go: a folder of their own, the only
+/// one the renderer is allowed to read.
+pub fn preview_paths(name: &str) -> Result<(PathBuf, PathBuf), String> {
+    let dir = std::env::temp_dir().join("iboard-previews");
+    std::fs::create_dir_all(&dir)
+        .map_err(|err| format!("Couldn't create {}: {err}", dir.display()))?;
+    Ok((
+        dir.join(format!("{name}.html")),
+        dir.join(format!("{name}.png")),
+    ))
+}
+
 /// Compose a component's preview and render it on a background thread. The
 /// job yields the PNG path, or why the render failed.
 pub fn component_preview(
@@ -102,10 +97,9 @@ pub fn component_preview(
         return Err(format!("no component named `{name}`"));
     };
     let html = super::css::preview_html(system, component, "light")?;
-    let html_path = std::env::temp_dir().join(format!("iboard-preview-{name}.html"));
+    let (html_path, png) = preview_paths(name)?;
     std::fs::write(&html_path, html)
         .map_err(|err| format!("Couldn't write {}: {err}", html_path.display()))?;
-    let png = std::env::temp_dir().join(format!("iboard-preview-{name}.png"));
     // Snapshot at the height the card declares, so a 56pt checkbox is not a
     // full 640pt frame of empty space.
     let height = component
