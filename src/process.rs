@@ -275,9 +275,8 @@ mod tests {
 
     #[test]
     fn cancelling_stops_the_whole_pipeline() {
-        let dir = std::env::temp_dir().join(format!("iboard-process-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let pid_file = dir.join("sleep.pid");
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("sleep.pid");
         let script = format!("sleep 30 & echo $! > '{}'; wait", pid_file.display());
         let cancel = Cancel::default();
         let token = cancel.clone();
@@ -306,6 +305,5 @@ mod tests {
             std::thread::sleep(TICK);
         }
         assert!(!alive(pid), "the grandchild outlived the cancel");
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

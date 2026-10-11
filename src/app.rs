@@ -4922,8 +4922,11 @@ fn write_enrichment_artifact(issue: &Path, html: &str) -> Result<PathBuf, String
     Ok(file)
 }
 
-impl eframe::App for IboardApp {
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl IboardApp {
+    /// The work each frame does before drawing: keys and shortcuts, menu
+    /// requests, and what runs in the background. Tests drive it with no
+    /// window.
+    fn frame_logic(&mut self, ctx: &egui::Context) {
         // A project switch sets the title; apply it now that we have a context.
         if let Some(title) = self.pending_title.take() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
@@ -5192,6 +5195,12 @@ impl eframe::App for IboardApp {
         }
 
         self.background(ctx);
+    }
+}
+
+impl eframe::App for IboardApp {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.frame_logic(ctx);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -7434,14 +7443,95 @@ mod tests {
         false
     }
 
-    fn scratch_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "iboard-{tag}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    /// A folder for one test, removed when it drops, even when the test
+    /// fails. It reads as the folder's `Path`.
+    struct Scratch(tempfile::TempDir);
+
+    impl std::ops::Deref for Scratch {
+        type Target = Path;
+
+        fn deref(&self) -> &Path {
+            self.0.path()
+        }
+    }
+
+    impl AsRef<Path> for Scratch {
+        fn as_ref(&self) -> &Path {
+            self.0.path()
+        }
+    }
+
+    fn scratch_dir(tag: &str) -> Scratch {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("iboard-{tag}-"))
+            .tempdir()
+            .unwrap();
+        Scratch(dir)
+    }
+
+    /// The 1280×800 window every UI test draws in.
+    fn window() -> egui::Rect {
+        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))
+    }
+
+    fn run(
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+        draw: impl FnMut(&mut egui::Ui),
+    ) -> egui::PlatformOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(window()),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, draw);
+        output.textures_delta.clear();
+        output.platform_output
+    }
+
+    /// One frame of `app` that only draws, `events` as its input.
+    fn draw(
+        ctx: &egui::Context,
+        app: &mut IboardApp,
+        events: Vec<egui::Event>,
+    ) -> egui::PlatformOutput {
+        run(ctx, events, |ui| app.draw(ui))
+    }
+
+    /// One frame of `app` as eframe runs it: its logic, then the drawing.
+    fn frame(
+        ctx: &egui::Context,
+        app: &mut IboardApp,
+        events: Vec<egui::Event>,
+    ) -> egui::PlatformOutput {
+        run(ctx, events, |ui| {
+            app.frame_logic(ui.ctx());
+            app.draw(ui);
+        })
+    }
+
+    fn key(key: Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    fn moved(pos: egui::Pos2) -> egui::Event {
+        egui::Event::PointerMoved(pos)
+    }
+
+    /// The primary button going down, or up, at `pos`.
+    fn button(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        }
     }
 
     #[test]
@@ -7468,45 +7558,29 @@ mod tests {
         let mut app = IboardApp::from_located(located);
 
         let ctx = themed_ctx();
-        let raw = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1280.0, 800.0),
-            )),
-            ..Default::default()
-        };
 
-        let pass = |app: &mut IboardApp| {
-            let mut output = ctx.run_ui(raw.clone(), |ui| {
-                app.draw(ui);
-            });
-            output.textures_delta.clear();
-        };
-
-        pass(&mut app); // board
+        draw(&ctx, &mut app, vec![]); // board
 
         app.open_issue(file.clone());
-        pass(&mut app); // rendered preview with mutable checkboxes
+        draw(&ctx, &mut app, vec![]); // rendered preview with mutable checkboxes
 
         app.start_editing(&file);
-        pass(&mut app); // editor
+        draw(&ctx, &mut app, vec![]); // editor
 
         app.screen = Screen::Board;
         app.open_composer();
         app.composer.as_mut().unwrap().title = "Export board".to_string();
-        pass(&mut app); // board with the quick-add composer open
+        draw(&ctx, &mut app, vec![]); // board with the quick-add composer open
 
         app.composer = None;
         app.move_selection(Key::ArrowDown);
-        pass(&mut app); // board with a selected card
+        draw(&ctx, &mut app, vec![]); // board with a selected card
 
         app.auto = false;
         app.start_editing(&file);
         app.editor.as_mut().unwrap().text.push_str("more\n");
         app.show_preview();
-        pass(&mut app); // editor asking before leaving
-
-        std::fs::remove_dir_all(&dir).ok();
+        draw(&ctx, &mut app, vec![]); // editor asking before leaving
     }
 
     /// A labeled issue shows its chip on the card and in the reader header,
@@ -7523,34 +7597,21 @@ mod tests {
         let located = discovery::locate(&dir).unwrap();
         let mut app = IboardApp::from_located(located);
         let ctx = themed_ctx();
-        let raw = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1280.0, 800.0),
-            )),
-            ..Default::default()
-        };
-        let pass = |app: &mut IboardApp| {
-            let mut output = ctx.run_ui(raw.clone(), |ui| app.draw(ui));
-            output.textures_delta.clear();
-        };
 
         let issue = app.board.find(&file).unwrap();
         assert_eq!(issue.title, "Hey look!");
         assert_eq!(issue.labels, ["discovery"]);
 
-        pass(&mut app); // board: chip beside the card title
+        draw(&ctx, &mut app, vec![]); // board: chip beside the card title
 
         app.open_issue(file.clone());
-        pass(&mut app); // reader: chip in the head strip
+        draw(&ctx, &mut app, vec![]); // reader: chip in the head strip
 
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             raw_markdown,
             "the raw file is never rewritten for a label"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// The reader sheet draws ghost blocks for a bare issue and chips for a
@@ -7573,22 +7634,11 @@ mod tests {
         let located = discovery::locate(&dir).unwrap();
         let mut app = IboardApp::from_located(located);
         let ctx = themed_ctx();
-        let raw = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1280.0, 800.0),
-            )),
-            ..Default::default()
-        };
-        let pass = |app: &mut IboardApp| {
-            let mut output = ctx.run_ui(raw.clone(), |ui| app.draw(ui));
-            output.textures_delta.clear();
-        };
 
         app.open_issue(bare.clone());
-        pass(&mut app); // ghost blocks
+        draw(&ctx, &mut app, vec![]); // ghost blocks
         app.open_issue(partial.clone());
-        pass(&mut app); // "Add a section" chips and checklist progress
+        draw(&ctx, &mut app, vec![]); // "Add a section" chips and checklist progress
 
         app.add_section(&partial, "Acceptance criteria");
         assert_eq!(app.detail_mode, DetailMode::Edit);
@@ -7605,9 +7655,7 @@ mod tests {
                 .unwrap()
                 .contains("Acceptance")
         );
-        pass(&mut app);
-
-        std::fs::remove_dir_all(&dir).ok();
+        draw(&ctx, &mut app, vec![]);
     }
 
     #[test]
@@ -7635,8 +7683,6 @@ mod tests {
             Some("Demo"),
             "the board adopts the moved issue"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -7666,8 +7712,6 @@ mod tests {
             "leaving Ready drops it"
         );
         assert!(app.error.is_none());
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -7694,7 +7738,7 @@ mod tests {
         app.design_error = Some("alpha has no design".to_string());
         app.focused_column = Some(alpha.join("issues/todo"));
 
-        app.open_project(beta.clone());
+        app.open_project(beta.to_path_buf());
 
         assert!(app.undo.is_none(), "⌘Z cannot restore into the old project");
         assert!(app.notice.is_none() && app.pending_front.is_none());
@@ -7717,13 +7761,9 @@ mod tests {
         // A folder with no issues directory reports an error and changes nothing.
         let empty = scratch_dir("switch-empty");
         let before = app.board.root.clone();
-        app.open_project(empty.clone());
+        app.open_project(empty.to_path_buf());
         assert!(app.error.is_some());
         assert_eq!(app.board.root, before);
-
-        for dir in [&alpha, &beta, &empty] {
-            std::fs::remove_dir_all(dir).ok();
-        }
     }
 
     #[test]
@@ -7748,8 +7788,6 @@ mod tests {
         assert!(app.error.is_some(), "the refusal is surfaced to the user");
         app.refresh();
         assert!(app.error.is_some(), "and the next scan does not wipe it");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -7767,8 +7805,6 @@ mod tests {
         std::fs::rename(dir.join("gone"), &issues).unwrap();
         app.refresh();
         assert!(app.scan_error.is_none());
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Simulates a real pointer drag from a `todo/` card onto the `doing/`
@@ -7791,28 +7827,8 @@ mod tests {
         let mut app = IboardApp::from_located(located);
 
         let ctx = themed_ctx();
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
 
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(screen),
-                events,
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |ui| {
-                app.draw(ui);
-            });
-            output.textures_delta.clear();
-        };
-        let moved = |pos: egui::Pos2| egui::Event::PointerMoved(pos);
-        let button = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: Default::default(),
-        };
-
-        pass(&mut app, vec![]);
+        draw(&ctx, &mut app, vec![]);
 
         let card_id = egui::Id::new(("issue_card", &file));
         let start = ctx
@@ -7830,13 +7846,13 @@ mod tests {
             .center();
 
         // Hover, press, then move well past the drag threshold.
-        pass(&mut app, vec![moved(start)]);
-        pass(&mut app, vec![moved(start), button(start, true)]);
-        pass(&mut app, vec![moved(start + egui::vec2(30.0, 0.0))]);
-        pass(&mut app, vec![moved(target)]);
-        pass(&mut app, vec![moved(target)]);
+        draw(&ctx, &mut app, vec![moved(start)]);
+        draw(&ctx, &mut app, vec![moved(start), button(start, true)]);
+        draw(&ctx, &mut app, vec![moved(start + egui::vec2(30.0, 0.0))]);
+        draw(&ctx, &mut app, vec![moved(target)]);
+        draw(&ctx, &mut app, vec![moved(target)]);
         // Release over the target column.
-        pass(&mut app, vec![moved(target), button(target, false)]);
+        draw(&ctx, &mut app, vec![moved(target), button(target, false)]);
 
         let moved_file = doing.join("01-demo.md");
         assert!(
@@ -7844,8 +7860,6 @@ mod tests {
             "dragging the card should move the file into the target column"
         );
         assert!(!file.exists(), "the original file should be gone");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Drives a real pointer drag of `file`'s card onto the DropZones dock
@@ -7853,45 +7867,27 @@ mod tests {
     /// returns the app afterwards.
     fn drag_card_to_zone(app: &mut IboardApp, file: &Path, zone: Option<&str>) {
         let ctx = themed_ctx();
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(screen),
-                events,
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |ui| {
-                app.draw(ui);
-            });
-            output.textures_delta.clear();
-        };
-        let moved = |pos: egui::Pos2| egui::Event::PointerMoved(pos);
-        let button = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: Default::default(),
-        };
 
-        pass(app, vec![]);
+        draw(&ctx, app, vec![]);
         let start = ctx
             .read_response(egui::Id::new(("issue_card", file)))
             .expect("the card is a drag source")
             .rect
             .center();
-        pass(app, vec![moved(start)]);
-        pass(app, vec![moved(start), button(start, true)]);
+        draw(&ctx, app, vec![moved(start)]);
+        draw(&ctx, app, vec![moved(start), button(start, true)]);
         let lifted = start + egui::vec2(30.0, 30.0);
         // Let the dock slide all the way in.
         for _ in 0..20 {
-            pass(app, vec![moved(lifted)]);
+            draw(&ctx, app, vec![moved(lifted)]);
         }
         assert!(
             egui::DragAndDrop::has_payload_of_type::<IssueDrag>(&ctx),
             "the card is being dragged"
         );
         let Some(zone) = zone else {
-            pass(
+            draw(
+                &ctx,
                 app,
                 vec![egui::Event::Key {
                     key: Key::Escape,
@@ -7905,7 +7901,7 @@ mod tests {
                 !egui::DragAndDrop::has_any_payload(&ctx),
                 "esc cancels the drag"
             );
-            pass(app, vec![moved(lifted), button(lifted, false)]);
+            draw(&ctx, app, vec![moved(lifted), button(lifted, false)]);
             return;
         };
         let target = ctx
@@ -7913,9 +7909,9 @@ mod tests {
             .expect("the dock shows while dragging")
             .rect
             .center();
-        pass(app, vec![moved(target)]);
-        pass(app, vec![moved(target)]);
-        pass(app, vec![moved(target), button(target, false)]);
+        draw(&ctx, app, vec![moved(target)]);
+        draw(&ctx, app, vec![moved(target)]);
+        draw(&ctx, app, vec![moved(target), button(target, false)]);
     }
 
     #[test]
@@ -7935,7 +7931,6 @@ mod tests {
             app.notice.as_ref().map(|(text, _)| text.as_str()),
             Some("Archived 01-demo.md")
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A card outside Done only gets the Delete zone: Archive is a Done-only
@@ -7951,37 +7946,18 @@ mod tests {
         let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
         let ctx = themed_ctx();
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(screen),
-                events,
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |ui| {
-                app.draw(ui);
-            });
-            output.textures_delta.clear();
-        };
-        let moved = |pos: egui::Pos2| egui::Event::PointerMoved(pos);
-        let button = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: Default::default(),
-        };
 
-        pass(&mut app, vec![]);
+        draw(&ctx, &mut app, vec![]);
         let start = ctx
             .read_response(egui::Id::new(("issue_card", &file)))
             .expect("the card is a drag source")
             .rect
             .center();
-        pass(&mut app, vec![moved(start)]);
-        pass(&mut app, vec![moved(start), button(start, true)]);
+        draw(&ctx, &mut app, vec![moved(start)]);
+        draw(&ctx, &mut app, vec![moved(start), button(start, true)]);
         let lifted = start + egui::vec2(30.0, 30.0);
         for _ in 0..20 {
-            pass(&mut app, vec![moved(lifted)]);
+            draw(&ctx, &mut app, vec![moved(lifted)]);
         }
         assert!(
             ctx.read_response(egui::Id::new("drop_zone_delete"))
@@ -7994,7 +7970,8 @@ mod tests {
             "Archive is only shown for Done cards"
         );
         // Cancel the drag: the card stays where it was.
-        pass(
+        draw(
+            &ctx,
             &mut app,
             vec![egui::Event::Key {
                 key: Key::Escape,
@@ -8004,11 +7981,10 @@ mod tests {
                 modifiers: Default::default(),
             }],
         );
-        pass(&mut app, vec![moved(lifted), button(lifted, false)]);
+        draw(&ctx, &mut app, vec![moved(lifted), button(lifted, false)]);
 
         assert!(file.exists(), "the card goes back to its place");
         assert!(!dir.join("issues/.archive").exists());
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -8033,7 +8009,6 @@ mod tests {
             app.notice.as_ref().map(|(text, _)| text.as_str()),
             Some("Deleted 01-demo.md")
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -8049,7 +8024,6 @@ mod tests {
 
         assert!(file.exists());
         assert!(app.confirm.is_none());
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -8074,11 +8048,10 @@ mod tests {
             ..Default::default()
         };
         let _ = ctx.run_ui(input, |ui| {
-            eframe::App::logic(&mut app, ui.ctx(), &mut eframe::Frame::_new_kittest());
+            app.frame_logic(ui.ctx());
         });
 
         assert!(dir.join("issues/.archive/01-demo.md").exists());
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// `⌘F` opens the filter with its suggestions; `↓ ↩` picks one as a token,
@@ -8093,64 +8066,60 @@ mod tests {
         let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
         let ctx = themed_ctx();
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 800.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            ctx.run_ui(input, |ui| {
-                eframe::App::logic(app, ui.ctx(), &mut eframe::Frame::_new_kittest());
-                app.draw(ui);
-            })
-            .textures_delta
-            .clear();
-        };
-        let key = |key: Key, modifiers: egui::Modifiers| egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers,
-        };
         let focused = |ctx: &egui::Context| ctx.memory(|m| m.has_focus(filter_id()));
 
-        pass(&mut app, vec![]);
+        frame(&ctx, &mut app, vec![]);
         // What `⌘F` sets.
         app.focus_filter = true;
-        pass(&mut app, vec![]);
-        pass(&mut app, vec![]);
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, vec![]);
         assert!(focused(&ctx), "the filter takes focus");
 
-        pass(&mut app, vec![key(Key::ArrowDown, egui::Modifiers::NONE)]);
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(Key::ArrowDown, egui::Modifiers::NONE)],
+        );
         assert_eq!(app.chip_cursor, Some(0), "↓ reaches the first chip");
-        pass(&mut app, vec![key(Key::Enter, egui::Modifiers::NONE)]);
+        frame(&ctx, &mut app, vec![key(Key::Enter, egui::Modifiers::NONE)]);
         assert_eq!(app.filter.tokens, vec!["bug"]);
         assert!(focused(&ctx), "picking keeps focus in the field");
         assert_eq!(app.visible_grid().concat().len(), 1, "only the bug matches");
 
-        pass(&mut app, vec![key(Key::Escape, egui::Modifiers::NONE)]);
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(Key::Escape, egui::Modifiers::NONE)],
+        );
         assert_eq!(
             app.chip_cursor, None,
             "esc goes back from the chips to the text"
         );
         assert!(focused(&ctx), "leaving the chips keeps focus");
-        pass(&mut app, vec![key(Key::Backspace, egui::Modifiers::NONE)]);
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(Key::Backspace, egui::Modifiers::NONE)],
+        );
         assert!(
             app.filter.tokens.is_empty(),
             "⌫ in an empty field drops the token"
         );
 
         app.filter.pick("feature");
-        pass(&mut app, vec![key(Key::Escape, egui::Modifiers::NONE)]);
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(Key::Escape, egui::Modifiers::NONE)],
+        );
         assert!(app.filter.is_empty(), "the first esc clears");
         assert!(focused(&ctx));
-        pass(&mut app, vec![key(Key::Escape, egui::Modifiers::NONE)]);
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(Key::Escape, egui::Modifiers::NONE)],
+        );
         assert!(!focused(&ctx), "the second esc leaves the field");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// `L` opens the LabelPicker on the selected card; `↩` writes the typed
@@ -8168,22 +8137,6 @@ mod tests {
         app.selected = Some(login.clone());
 
         let ctx = themed_ctx();
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 800.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            ctx.run_ui(input, |ui| {
-                eframe::App::logic(app, ui.ctx(), &mut eframe::Frame::_new_kittest());
-                app.draw(ui);
-            })
-            .textures_delta
-            .clear();
-        };
         let key = |key: Key| egui::Event::Key {
             key,
             physical_key: None,
@@ -8193,43 +8146,42 @@ mod tests {
         };
         let field = egui::Id::new("label_picker_field");
 
-        pass(&mut app, vec![]);
-        pass(&mut app, vec![key(Key::L)]);
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, vec![key(Key::L)]);
         assert!(app.label_picker.is_some(), "L opens the picker");
-        pass(&mut app, vec![]);
+        frame(&ctx, &mut app, vec![]);
         assert!(ctx.memory(|m| m.has_focus(field)), "the field takes focus");
 
-        pass(&mut app, vec![egui::Event::Text("Tech debt".into())]);
-        pass(&mut app, vec![key(Key::Enter)]);
+        frame(&ctx, &mut app, vec![egui::Event::Text("Tech debt".into())]);
+        frame(&ctx, &mut app, vec![key(Key::Enter)]);
         assert_eq!(
             std::fs::read_to_string(&login).unwrap(),
             "# [Bug] [tech-debt] Fix login\n\nA bug.\n"
         );
         let picker = app.label_picker.as_ref().expect("the picker stays open");
         assert!(picker.text.is_empty(), "the field is cleared");
-        pass(&mut app, vec![]);
+        frame(&ctx, &mut app, vec![]);
         assert!(
             ctx.memory(|m| m.has_focus(field)),
             "focus stays in the field"
         );
 
         // The board's labels, most used first, minus the two it has: feature.
-        pass(&mut app, vec![key(Key::ArrowDown)]);
-        pass(&mut app, vec![key(Key::Enter)]);
-        pass(&mut app, vec![]);
+        frame(&ctx, &mut app, vec![key(Key::ArrowDown)]);
+        frame(&ctx, &mut app, vec![key(Key::Enter)]);
+        frame(&ctx, &mut app, vec![]);
         assert_eq!(
             app.board.find(&login).unwrap().labels,
             ["bug", "feature", "tech-debt"],
             "labels are shown alphabetically"
         );
 
-        pass(&mut app, vec![]);
-        pass(&mut app, vec![egui::Event::Text("left over".into())]);
-        pass(&mut app, vec![key(Key::Escape)]);
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, vec![egui::Event::Text("left over".into())]);
+        frame(&ctx, &mut app, vec![key(Key::Escape)]);
         assert!(app.label_picker.is_none(), "esc closes the picker");
         assert!(!std::fs::read_to_string(&login).unwrap().contains("left"));
         assert!(login.exists(), "the file name never changes");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A press and release without movement is still a click, not a drag.
@@ -8245,25 +8197,14 @@ mod tests {
         let mut app = IboardApp::from_located(located);
 
         let ctx = themed_ctx();
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(screen),
-                events,
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |ui| {
-                app.draw(ui);
-            });
-            output.textures_delta.clear();
-        };
 
-        pass(&mut app, vec![]);
+        draw(&ctx, &mut app, vec![]);
         let card_id = egui::Id::new(("issue_card", &file));
         let start = ctx.read_response(card_id).unwrap().rect.center();
 
-        pass(&mut app, vec![egui::Event::PointerMoved(start)]);
-        pass(
+        draw(&ctx, &mut app, vec![egui::Event::PointerMoved(start)]);
+        draw(
+            &ctx,
             &mut app,
             vec![
                 egui::Event::PointerMoved(start),
@@ -8275,7 +8216,8 @@ mod tests {
                 },
             ],
         );
-        pass(
+        draw(
+            &ctx,
             &mut app,
             vec![egui::Event::PointerButton {
                 pos: start,
@@ -8289,8 +8231,6 @@ mod tests {
             matches!(app.screen, Screen::Detail(path) if path == file),
             "a plain click should open the issue"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Hover actions are not drag handles: over the card the cursor is the
@@ -8305,21 +8245,8 @@ mod tests {
         let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
         let ctx = themed_ctx();
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(screen),
-                events,
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |ui| {
-                app.draw(ui);
-            });
-            output.textures_delta.clear();
-            output.platform_output.cursor_icon
-        };
 
-        pass(&mut app, vec![]);
+        draw(&ctx, &mut app, vec![]);
         let center = ctx
             .read_response(egui::Id::new(("issue_card", &file)))
             .unwrap()
@@ -8327,9 +8254,9 @@ mod tests {
             .center();
 
         // The card body is a drag handle.
-        pass(&mut app, vec![egui::Event::PointerMoved(center)]);
+        draw(&ctx, &mut app, vec![egui::Event::PointerMoved(center)]);
         assert_eq!(
-            pass(&mut app, vec![egui::Event::PointerMoved(center)]),
+            draw(&ctx, &mut app, vec![egui::Event::PointerMoved(center)]).cursor_icon,
             egui::CursorIcon::Grab,
             "the card invites a drag"
         );
@@ -8340,14 +8267,12 @@ mod tests {
             .expect("actions show on hover")
             .rect
             .center();
-        pass(&mut app, vec![egui::Event::PointerMoved(delete)]);
+        draw(&ctx, &mut app, vec![egui::Event::PointerMoved(delete)]);
         assert_eq!(
-            pass(&mut app, vec![egui::Event::PointerMoved(delete)]),
+            draw(&ctx, &mut app, vec![egui::Event::PointerMoved(delete)]).cursor_icon,
             egui::CursorIcon::PointingHand,
             "an action button is not a drag handle"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -8387,8 +8312,6 @@ mod tests {
             Some("Demo"),
             "the board adopts the renamed issue"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -8414,8 +8337,6 @@ mod tests {
             app.editor.as_ref().unwrap().error.is_some(),
             "the clash is surfaced to the user"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A glyph missing from a font stack draws as nothing, so check the key
@@ -8489,8 +8410,6 @@ mod tests {
                 card.display()
             );
         }
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -8557,12 +8476,10 @@ mod tests {
         app.open_issue(todo.join("02-beta.md"));
         app.back_to_board();
         assert_eq!(app.selected, Some(todo.join("02-beta.md")));
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// An app editing `todo/01-demo.md` with an unsaved change.
-    fn editing_with_unsaved_change(tag: &str, auto: bool) -> (PathBuf, PathBuf, IboardApp) {
+    fn editing_with_unsaved_change(tag: &str, auto: bool) -> (Scratch, PathBuf, IboardApp) {
         let dir = scratch_dir(tag);
         let todo = dir.join("issues/todo");
         std::fs::create_dir_all(&todo).unwrap();
@@ -8580,7 +8497,7 @@ mod tests {
 
     #[test]
     fn leaving_with_auto_on_saves() {
-        let (dir, file, mut app) = editing_with_unsaved_change("leave-auto", true);
+        let (_dir, file, mut app) = editing_with_unsaved_change("leave-auto", true);
 
         app.show_preview();
 
@@ -8590,13 +8507,11 @@ mod tests {
             "no question when the save worked"
         );
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Demo\n\nmore\n");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn leaving_with_auto_off_asks_first() {
-        let (dir, file, mut app) = editing_with_unsaved_change("leave-ask", false);
+        let (_dir, file, mut app) = editing_with_unsaved_change("leave-ask", false);
 
         app.back_to_board();
         assert_eq!(app.leave_prompt, Some(Leave::Board), "the editor asks");
@@ -8611,13 +8526,11 @@ mod tests {
         app.answer_leave(LeaveChoice::Save);
         assert!(matches!(app.screen, Screen::Board), "saved, then left");
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Demo\n\nmore\n");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn discarding_on_leave_keeps_the_file() {
-        let (dir, file, mut app) = editing_with_unsaved_change("leave-discard", false);
+        let (_dir, file, mut app) = editing_with_unsaved_change("leave-discard", false);
 
         app.open_composer();
         assert_eq!(app.leave_prompt, Some(Leave::Composer));
@@ -8627,13 +8540,11 @@ mod tests {
         assert!(app.composer.is_some(), "the composer opens after leaving");
         assert!(!app.has_unsaved_edits());
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Demo\n");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn a_conflict_asks_even_with_auto_on() {
-        let (dir, file, mut app) = editing_with_unsaved_change("leave-conflict", true);
+        let (_dir, file, mut app) = editing_with_unsaved_change("leave-conflict", true);
         std::fs::write(&file, "# Changed elsewhere\n").unwrap();
         app.refresh();
 
@@ -8648,8 +8559,6 @@ mod tests {
             std::fs::read_to_string(&file).unwrap(),
             "# Changed elsewhere\n"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -8688,8 +8597,6 @@ mod tests {
             planned_issue_name(&dir, "Fix it"),
             ("fix-it-3.md".to_string(), true)
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -8721,8 +8628,6 @@ mod tests {
         // An empty title never creates a file.
         app.submit_composer(false);
         assert_eq!(std::fs::read_dir(&todo).unwrap().count(), 1);
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -8743,8 +8648,6 @@ mod tests {
         assert!(app.composer.is_none(), "the composer closes");
         assert!(matches!(app.screen, Screen::Board), "the board stays");
         assert_eq!(app.selected.as_deref(), Some(created.as_path()));
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// The composer's keys, as typed: `⇧↩` and `⌘↩` are new lines, `↩` and
@@ -8760,22 +8663,6 @@ mod tests {
         app.open_composer();
 
         let ctx = themed_ctx();
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 800.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            ctx.run_ui(input, |ui| {
-                eframe::App::logic(app, ui.ctx(), &mut eframe::Frame::_new_kittest());
-                app.draw(ui);
-            })
-            .textures_delta
-            .clear();
-        };
         let key = |key: Key, modifiers: egui::Modifiers| {
             vec![
                 egui::Event::ModifiersChanged(modifiers),
@@ -8791,43 +8678,45 @@ mod tests {
         let text = |text: &str| vec![egui::Event::Text(text.into())];
         let files = || std::fs::read_dir(&todo).unwrap().count();
 
-        pass(&mut app, vec![]);
-        pass(&mut app, vec![]);
-        pass(&mut app, text("First line"));
-        pass(&mut app, key(Key::Enter, egui::Modifiers::SHIFT));
-        pass(&mut app, text("second"));
-        pass(&mut app, key(Key::Enter, egui::Modifiers::COMMAND));
-        pass(&mut app, text("third"));
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, text("First line"));
+        frame(&ctx, &mut app, key(Key::Enter, egui::Modifiers::SHIFT));
+        frame(&ctx, &mut app, text("second"));
+        frame(&ctx, &mut app, key(Key::Enter, egui::Modifiers::COMMAND));
+        frame(&ctx, &mut app, text("third"));
         assert_eq!(
             app.composer.as_ref().unwrap().description,
             "First line\nsecond\nthird"
         );
         assert_eq!(files(), 1, "new lines never add");
 
-        pass(&mut app, key(Key::Enter, egui::Modifiers::NONE));
+        frame(&ctx, &mut app, key(Key::Enter, egui::Modifiers::NONE));
         assert_eq!(
             std::fs::read_to_string(todo.join("first-line.md")).unwrap(),
             "# First line\n\nFirst line\nsecond\nthird\n"
         );
         assert!(app.composer.is_some(), "↩ keeps it open for the next one");
 
-        pass(
+        frame(
+            &ctx,
             &mut app,
             vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)],
         );
-        pass(&mut app, text("Saved with command S"));
-        pass(&mut app, key(Key::S, egui::Modifiers::COMMAND));
+        frame(&ctx, &mut app, text("Saved with command S"));
+        frame(&ctx, &mut app, key(Key::S, egui::Modifiers::COMMAND));
         // Adding a ticket at the top renumbers Todo's files.
         assert!(todo.join("001-saved-with-command-s.md").exists(), "⌘S adds");
         assert!(app.composer.is_some());
         let other = todo.join("003-other.md");
         assert!(other.exists(), "the older card was renumbered too");
 
-        pass(
+        frame(
+            &ctx,
             &mut app,
             vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)],
         );
-        pass(&mut app, text("Clicked away"));
+        frame(&ctx, &mut app, text("Clicked away"));
         let card = ctx
             .read_response(egui::Id::new(("issue_card", &other)))
             .unwrap()
@@ -8839,12 +8728,13 @@ mod tests {
             pressed,
             modifiers: Default::default(),
         };
-        pass(&mut app, vec![egui::Event::PointerMoved(card)]);
-        pass(
+        frame(&ctx, &mut app, vec![egui::Event::PointerMoved(card)]);
+        frame(
+            &ctx,
             &mut app,
             vec![egui::Event::PointerMoved(card), button(true)],
         );
-        pass(&mut app, vec![button(false)]);
+        frame(&ctx, &mut app, vec![button(false)]);
         assert!(
             todo.join("001-clicked-away.md").exists(),
             "the click adds it"
@@ -8856,11 +8746,10 @@ mod tests {
             _ => None,
         };
         assert_eq!(got, Some(opened), "the clicked card still opens");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A composer whose engine answers through `sender`, as the real ones do.
-    fn composer_with_engine(tag: &str) -> (PathBuf, PathBuf, IboardApp) {
+    fn composer_with_engine(tag: &str) -> (Scratch, PathBuf, IboardApp) {
         let dir = scratch_dir(tag);
         let todo = dir.join("issues/todo");
         std::fs::create_dir_all(&todo).unwrap();
@@ -8889,7 +8778,7 @@ mod tests {
 
     #[test]
     fn enter_names_the_issue_then_adds_it() {
-        let (dir, todo, mut app) = composer_with_engine("compose-name");
+        let (_dir, todo, mut app) = composer_with_engine("compose-name");
         let ctx = egui::Context::default();
 
         app.submit_composer(false);
@@ -8919,12 +8808,11 @@ mod tests {
         let composer = app.composer.as_ref().expect("the composer stays open");
         assert!(composer.title.is_empty() && composer.description.is_empty());
         assert!(composer.stage == TitleStage::Idle);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn a_failed_name_falls_back_to_the_first_line() {
-        let (dir, todo, mut app) = composer_with_engine("compose-fail");
+        let (_dir, todo, mut app) = composer_with_engine("compose-fail");
         let ctx = egui::Context::default();
 
         app.submit_composer(false);
@@ -8944,12 +8832,11 @@ mod tests {
                 .exists(),
             "↩ uses the first line"
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn clicking_away_while_naming_writes_once_named() {
-        let (dir, todo, mut app) = composer_with_engine("compose-name-away");
+        let (_dir, todo, mut app) = composer_with_engine("compose-name-away");
         let ctx = egui::Context::default();
 
         app.submit_composer(false);
@@ -8962,12 +8849,11 @@ mod tests {
             "a click away never stops on the suggestion"
         );
         assert!(app.composer.is_none(), "and closes the composer");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn esc_while_naming_lets_you_type_the_title() {
-        let (dir, todo, mut app) = composer_with_engine("compose-skip");
+        let (_dir, todo, mut app) = composer_with_engine("compose-skip");
         app.submit_composer(false);
         app.composer_escape();
         let composer = app
@@ -8982,7 +8868,6 @@ mod tests {
         assert!(todo.join("board-export.md").exists());
         app.composer_escape();
         assert!(app.composer.is_none(), "esc closes it otherwise");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9003,7 +8888,6 @@ mod tests {
             std::fs::read_to_string(todo.join("fix-the-login-redirect.md")).unwrap(),
             "# Fix the login redirect\n\n  Fix the login redirect\nIt loses the deep link.\n"
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9036,7 +8920,6 @@ mod tests {
         assert!(app.board.find(&file).is_some(), "and on the board");
         assert_eq!(app.selected.as_deref(), Some(file.as_path()));
         assert!(!app.can_undo_delete(), "once");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Bug: opening another issue dropped the composer and what was typed.
@@ -9062,7 +8945,6 @@ mod tests {
         app.composer.as_mut().unwrap().description.clear();
         app.open_issue(other);
         assert!(app.composer.is_none(), "an empty composer still closes");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Reviewing and "Not written yet" are for issues still in Todo.
@@ -9079,7 +8961,6 @@ mod tests {
         assert!(!app.is_todo_issue(&file));
         app.start_review(&file, false);
         assert!(app.review.is_none(), "a Ready issue is not reviewed");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Bug: `⌘S` in the editor did not save.
@@ -9096,24 +8977,8 @@ mod tests {
         app.editor.as_mut().unwrap().text = "# Demo\n\nMore.\n".into();
 
         let ctx = themed_ctx();
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>, _modifiers: egui::Modifiers| {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 800.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            ctx.run_ui(input, |ui| {
-                eframe::App::logic(app, ui.ctx(), &mut eframe::Frame::_new_kittest());
-                app.draw(ui);
-            })
-            .textures_delta
-            .clear();
-        };
-        pass(&mut app, vec![], egui::Modifiers::NONE);
-        pass(&mut app, vec![], egui::Modifiers::NONE);
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, vec![]);
         let s = egui::Event::Key {
             key: Key::S,
             physical_key: Some(Key::S),
@@ -9121,10 +8986,10 @@ mod tests {
             repeat: false,
             modifiers: egui::Modifiers::COMMAND,
         };
-        pass(
+        frame(
+            &ctx,
             &mut app,
             vec![egui::Event::ModifiersChanged(egui::Modifiers::COMMAND), s],
-            egui::Modifiers::COMMAND,
         );
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Demo\n\nMore.\n");
         assert_eq!(
@@ -9132,7 +8997,6 @@ mod tests {
             DetailMode::Preview,
             "like the Save ⌘S button, it shows the saved issue"
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9159,13 +9023,12 @@ mod tests {
             trash.join("files/my issue.2.md"),
             "never overwrites"
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A dismissed review stays behind the card's verdict pill.
     #[test]
     fn a_dismissed_review_can_be_reopened_from_its_card() {
-        let (dir, file, mut app) = open_issue_with_review("past-review");
+        let (_dir, file, mut app) = open_issue_with_review("past-review");
         app.cancel_review();
         assert!(app.review.is_none());
         let past = app.past_reviews.get(&file).expect("kept for the session");
@@ -9177,7 +9040,6 @@ mod tests {
         assert!(matches!(&app.screen, Screen::Detail(path) if *path == file));
         let review = app.review.as_ref().expect("the panel is back");
         assert!(matches!(review.status, ReviewStatus::Done { .. }));
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9199,7 +9061,6 @@ mod tests {
             app.notice.as_ref().map(|(text, _)| text.as_str()),
             Some("Archived 2 issues")
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9222,8 +9083,6 @@ mod tests {
         };
         assert!(find("Todo").accepts_new_issues());
         assert!(!find("Doing").accepts_new_issues());
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9274,8 +9133,6 @@ mod tests {
             matches!(app.screen, Screen::Board),
             "deleting the open issue returns to the board"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9306,8 +9163,6 @@ mod tests {
         app.refresh();
         app.archive_issue(&file);
         assert!(dir.join("issues/.archive/01-demo-2.md").exists());
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9343,8 +9198,6 @@ mod tests {
             .map(|issue| issue.file_name())
             .collect();
         assert_eq!(names, ["001-byebye.md", "002-hello.md"]);
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9367,8 +9220,6 @@ mod tests {
         assert!(ready.join("001-later.md").exists(), "it takes priority 1");
         assert!(ready.join("002-first.md").exists(), "the other moves down");
         assert!(app.error.is_none(), "{:?}", app.error);
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A real pointer drag of the last Todo card onto the top of the column
@@ -9387,27 +9238,8 @@ mod tests {
         let mut app = IboardApp::from_located(located);
 
         let ctx = themed_ctx();
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(screen),
-                events,
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |ui| {
-                app.draw(ui);
-            });
-            output.textures_delta.clear();
-        };
-        let moved = |pos: egui::Pos2| egui::Event::PointerMoved(pos);
-        let button = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: Default::default(),
-        };
 
-        pass(&mut app, vec![]);
+        draw(&ctx, &mut app, vec![]);
         let start = ctx
             .read_response(egui::Id::new(("issue_card", &second)))
             .expect("the card is a drag source")
@@ -9421,20 +9253,18 @@ mod tests {
             .center()
             - egui::vec2(0.0, 6.0);
 
-        pass(&mut app, vec![moved(start)]);
-        pass(&mut app, vec![moved(start), button(start, true)]);
-        pass(&mut app, vec![moved(start + egui::vec2(0.0, 30.0))]);
-        pass(&mut app, vec![moved(target)]);
-        pass(&mut app, vec![moved(target)]);
-        pass(&mut app, vec![moved(target), button(target, false)]);
+        draw(&ctx, &mut app, vec![moved(start)]);
+        draw(&ctx, &mut app, vec![moved(start), button(start, true)]);
+        draw(&ctx, &mut app, vec![moved(start + egui::vec2(0.0, 30.0))]);
+        draw(&ctx, &mut app, vec![moved(target)]);
+        draw(&ctx, &mut app, vec![moved(target)]);
+        draw(&ctx, &mut app, vec![moved(target), button(target, false)]);
 
         assert!(
             todo.join("001-second.md").exists() && todo.join("002-first.md").exists(),
             "dropping the second card on top renumbers the column"
         );
         assert!(!first.exists() && !second.exists(), "old names are gone");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// The delete icon is its own click target: using it must not open the
@@ -9451,27 +9281,16 @@ mod tests {
         let mut app = IboardApp::from_located(located);
 
         let ctx = themed_ctx();
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
-        let pass = |app: &mut IboardApp, events: Vec<egui::Event>| {
-            let input = egui::RawInput {
-                screen_rect: Some(screen),
-                events,
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |ui| {
-                app.draw(ui);
-            });
-            output.textures_delta.clear();
-        };
 
-        pass(&mut app, vec![]);
+        draw(&ctx, &mut app, vec![]);
         let icon = ctx
             .read_response(egui::Id::new(("card_delete", &file)))
             .expect("the card draws a delete icon")
             .rect
             .center();
-        pass(&mut app, vec![egui::Event::PointerMoved(icon)]);
-        pass(
+        draw(&ctx, &mut app, vec![egui::Event::PointerMoved(icon)]);
+        draw(
+            &ctx,
             &mut app,
             vec![
                 egui::Event::PointerMoved(icon),
@@ -9483,7 +9302,8 @@ mod tests {
                 },
             ],
         );
-        pass(
+        draw(
+            &ctx,
             &mut app,
             vec![egui::Event::PointerButton {
                 pos: icon,
@@ -9498,12 +9318,10 @@ mod tests {
             matches!(app.screen, Screen::Board),
             "and does not open the issue"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// An app reading `todo/01-demo.md`, with a finished review of it.
-    fn open_issue_with_review(tag: &str) -> (PathBuf, PathBuf, IboardApp) {
+    fn open_issue_with_review(tag: &str) -> (Scratch, PathBuf, IboardApp) {
         let dir = scratch_dir(tag);
         let todo = dir.join("issues/todo");
         std::fs::create_dir_all(&todo).unwrap();
@@ -9530,7 +9348,7 @@ mod tests {
 
     #[test]
     fn applying_a_review_opens_the_editor_with_an_unsaved_draft() {
-        let (dir, file, mut app) = open_issue_with_review("apply");
+        let (_dir, file, mut app) = open_issue_with_review("apply");
 
         app.apply_review_proposal();
 
@@ -9547,8 +9365,6 @@ mod tests {
             "# Demo\n\nContext.\n",
             "the agent never writes the file"
         );
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9567,8 +9383,6 @@ mod tests {
 
         assert!(app.settings.is_some(), "the settings dialog opens instead");
         assert!(app.review.is_none(), "no review was started");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A configured tool (here `echo`) is spawned, polled and adopted, so the
@@ -9605,15 +9419,13 @@ mod tests {
             }
             _ => panic!("the review never finished"),
         }
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// `⌘↩` in the settings dialog saves; a custom command without
     /// `{prompt}` keeps it open, and `esc` there never cancels the review.
     #[test]
     fn the_settings_dialog_saves_with_command_enter() {
-        let (dir, _file, mut app) = open_issue_with_review("settings-save");
+        let (_dir, _file, mut app) = open_issue_with_review("settings-save");
         let ctx = themed_ctx();
         let frame = |app: &mut IboardApp, events: Vec<egui::Event>| {
             let input = egui::RawInput {
@@ -9625,13 +9437,6 @@ mod tests {
                 ..Default::default()
             };
             ctx.run_ui(input, |ui| app.draw(ui)).textures_delta.clear();
-        };
-        let key = |key: Key, modifiers: egui::Modifiers| egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers,
         };
 
         app.open_config();
@@ -9654,8 +9459,6 @@ mod tests {
         frame(&mut app, vec![key(Key::Escape, egui::Modifiers::NONE)]);
         assert!(app.settings.is_none(), "esc closes the dialog");
         assert!(app.review.is_some(), "and leaves the review alone");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Save writes only the sections that changed, keeps the rest of the file
@@ -9714,15 +9517,13 @@ mod tests {
             .and_then(|dialog| dialog.save_error.clone());
         assert!(error.is_some_and(|error| error.contains("line 1")));
         assert_eq!(std::fs::read_to_string(&config).unwrap(), broken);
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// The panel and the settings window go through a real egui pass, so a
     /// panic or a layout mistake surfaces without a display.
     #[test]
     fn the_review_panel_and_config_window_render() {
-        let (dir, _file, mut app) = open_issue_with_review("review-render");
+        let (_dir, _file, mut app) = open_issue_with_review("review-render");
         let ctx = themed_ctx();
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -9744,12 +9545,10 @@ mod tests {
                 .textures_delta
                 .clear();
         }
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A project with a Todo column of `(title, label)` issues, and the app.
-    fn focus_app(tag: &str, cards: &[(&str, Option<&str>)]) -> (PathBuf, PathBuf, IboardApp) {
+    fn focus_app(tag: &str, cards: &[(&str, Option<&str>)]) -> (Scratch, PathBuf, IboardApp) {
         let dir = scratch_dir(tag);
         let todo = dir.join("issues/todo");
         std::fs::create_dir_all(&todo).unwrap();
@@ -9792,7 +9591,7 @@ mod tests {
     /// with the fifth wrapping to a new row inside the gutters.
     #[test]
     fn column_focus_lays_wide_cards_in_a_grid() {
-        let (dir, todo, mut app) = focus_app(
+        let (_dir, todo, mut app) = focus_app(
             "focus-grid",
             &[
                 ("One", None),
@@ -9850,13 +9649,11 @@ mod tests {
                 rect.center()
             );
         }
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn focus_sorts_order_the_cards() {
-        let (dir, todo, app) = focus_app(
+        let (_dir, todo, app) = focus_app(
             "focus-sort",
             &[("Zebra", None), ("Apple", None), ("Mango", None)],
         );
@@ -9876,12 +9673,11 @@ mod tests {
         assert_eq!(titles(Sort::Title), ["Apple", "Mango", "Zebra"]);
         // Each issue has two checklist items, one open; most-to-do keeps them.
         assert_eq!(titles(Sort::MostToDo).len(), 3);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn grouping_orders_labels_by_count_and_unlabelled_last() {
-        let (dir, todo, app) = focus_app(
+        let (_dir, todo, app) = focus_app(
             "focus-group",
             &[
                 ("A", Some("bug")),
@@ -9901,7 +9697,6 @@ mod tests {
         assert_eq!(names, [Some("bug"), Some("feature"), None]);
         assert_eq!(groups[0].1.len(), 2);
         assert_eq!(groups[2].1.len(), 1);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -9932,14 +9727,13 @@ mod tests {
             facts(&issue, &sections),
             vec![("No sections yet".to_string(), false)]
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Opening an issue from a focused column and going back returns to that
     /// column, not the whole board.
     #[test]
     fn opening_an_issue_from_focus_returns_to_the_focused_column() {
-        let (dir, todo, mut app) = focus_app("focus-open", &[("One", None), ("Two", None)]);
+        let (_dir, todo, mut app) = focus_app("focus-open", &[("One", None), ("Two", None)]);
         app.focus_column(todo.clone());
         let file = app
             .board
@@ -9964,7 +9758,6 @@ mod tests {
         // The active column, and `esc`, leave ColumnFocus.
         app.unfocus_column();
         assert!(app.focused_column.is_none());
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A focused column still accepts a card dropped on another tab, moving the
@@ -9986,7 +9779,6 @@ mod tests {
         app.move_issue(&file, &doing);
         assert!(doing.join("card.md").exists(), "moved into doing/");
         assert!(!file.exists());
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A tiny `design/` so the panel tests need no display and no repo data.
@@ -10078,7 +9870,6 @@ mod tests {
         app.design = Some(panel);
         let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
         output.textures_delta.clear();
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -10094,7 +9885,6 @@ mod tests {
         let (ctx, raw) = panel_ctx();
         let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
         output.textures_delta.clear();
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -10159,7 +9949,6 @@ mod tests {
         );
         assert!(!written.contains("```"), "code fences stripped: {written}");
         assert!(app.design_draft.is_none(), "the draft finished");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -10214,7 +10003,6 @@ mod tests {
         // The window renders without a display, loader and all.
         let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
         output.textures_delta.clear();
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -10229,7 +10017,6 @@ mod tests {
         app.start_enrichment(&file);
         assert!(app.enrichment.is_none(), "nothing started");
         assert!(app.settings.is_some(), "the settings dialog opened");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -10277,6 +10064,5 @@ mod tests {
             decoded,
             "the ticket's image decodes through the file loader"
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

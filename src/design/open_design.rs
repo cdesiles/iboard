@@ -264,17 +264,8 @@ fn slug(text: &str) -> String {
 mod tests {
     use super::*;
 
-    fn temp_dir(tag: &str) -> PathBuf {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!(
-            "idesign-import-{tag}-{}-{unique}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        dir
+    fn temp_dir() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
     }
 
     #[test]
@@ -295,7 +286,8 @@ mod tests {
 
     #[test]
     fn reads_and_writes_a_package() {
-        let package_dir = temp_dir("package");
+        let package_scratch = temp_dir();
+        let package_dir = package_scratch.path();
         std::fs::write(
             package_dir.join("manifest.json"),
             r#"{ "schemaVersion": "x", "id": "acme", "name": "Acme", "files": { "design": "DESIGN.md", "tokens": "tokens.css" } }"#,
@@ -308,7 +300,7 @@ mod tests {
         )
         .unwrap();
 
-        let package = read(&package_dir).expect("read");
+        let package = read(package_dir).expect("read");
         assert_eq!(package.title, "Acme");
         assert_eq!(package.namespace, "acme");
         assert_eq!(package.brief.as_deref(), Some("# Acme\n\nBold and red.\n"));
@@ -323,14 +315,12 @@ mod tests {
         assert_eq!(reloaded.meta.title, "Acme");
         assert_eq!(reloaded.tokens.color.len(), 2);
         assert!(reloaded.errors().is_empty());
-
-        std::fs::remove_dir_all(&package_dir).ok();
     }
 
     #[test]
     fn rejects_a_folder_without_a_manifest() {
-        let dir = temp_dir("nomanifest");
-        assert!(read(&dir).is_err());
-        std::fs::remove_dir_all(&dir).ok();
+        let scratch = temp_dir();
+        let dir = scratch.path();
+        assert!(read(dir).is_err());
     }
 }

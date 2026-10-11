@@ -386,13 +386,12 @@ mod tests {
 
     #[test]
     fn labels_merge_and_sort_alphabetically() {
-        let dir = std::env::temp_dir().join(format!("iboard-issue-labels-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let file = dir.join("t.md");
         std::fs::write(&file, "---\nlabels: [zebra, apple]\n---\n# [mango] T\n").unwrap();
         let issue = Issue::load(&file).unwrap();
         assert_eq!(issue.labels, ["apple", "mango", "zebra"]);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

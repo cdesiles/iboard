@@ -136,8 +136,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn issue(file: &str, markdown: &str) -> Issue {
-        let dir = std::env::temp_dir().join(format!("iboard-filter-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let path: PathBuf = dir.join(file);
         std::fs::write(&path, markdown).unwrap();
         Issue::load(&path).unwrap()

@@ -46,34 +46,33 @@ mod tests {
 
     #[test]
     fn atomic_write_replaces_content_without_leaving_temp_files() {
-        let dir = std::env::temp_dir().join(format!("iboard-files-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let file = dir.join("issue.md");
         std::fs::write(&file, "old").unwrap();
 
         atomic_write(&file, "new content").unwrap();
 
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "new content");
-        let names: Vec<String> = std::fs::read_dir(&dir)
+        let names: Vec<String> = std::fs::read_dir(dir)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, ["issue.md"]);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn a_failed_write_leaves_no_temp_file() {
-        let dir = std::env::temp_dir().join(format!("iboard-files-fail-{}", std::process::id()));
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         std::fs::create_dir_all(dir.join("taken")).unwrap();
 
         assert!(atomic_write(&dir.join("taken"), "over a folder").is_err());
 
-        let names: Vec<String> = std::fs::read_dir(&dir)
+        let names: Vec<String> = std::fs::read_dir(dir)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, ["taken"]);
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

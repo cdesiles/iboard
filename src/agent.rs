@@ -663,8 +663,8 @@ mod tests {
 
     #[test]
     fn file_names_never_run_as_shell_code() {
-        let dir = std::env::temp_dir().join(format!("iboard-quoting-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let planted = dir.join("planted");
         let issue = dir.join(format!(
             "$(touch {}) `touch {}`.md",
@@ -680,7 +680,6 @@ mod tests {
             assert_eq!(answer, Ok(issue.display().to_string()), "{template}");
         }
         assert!(!planted.exists(), "a file name ran as code");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[cfg(unix)]
@@ -695,8 +694,8 @@ mod tests {
             }
             done()
         };
-        let dir = std::env::temp_dir().join(format!("iboard-stop-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let pid_file = dir.join("agent.pid");
         let script = format!(
             "echo $$ > '{}'; sleep 30; echo late # {{prompt}}",
@@ -715,7 +714,6 @@ mod tests {
         drop(job);
 
         assert!(eventually(&|| !alive(pid)), "the agent outlived its job");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -874,12 +872,8 @@ Some context.";
 
     #[test]
     fn the_configuration_round_trips_through_a_file() {
-        let dir = std::env::temp_dir().join(format!(
-            "iboard-agent-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let file = dir.join("iboard.toml");
         std::fs::write(&file, "[other]\nkey = 1\n").unwrap();
 
@@ -898,7 +892,5 @@ Some context.";
         // A missing file is simply an unconfigured agent.
         let absent = dir.join("absent.toml");
         assert!(!load(&mut UserConfig::load(Some(&absent))).configured());
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

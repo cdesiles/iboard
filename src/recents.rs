@@ -72,22 +72,18 @@ pub fn canonical(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
-    fn scratch_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "iboard-recents-{tag}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
+    /// A folder named `name` inside `root`, as `remember` stores it.
+    fn folder(root: &tempfile::TempDir, name: &str) -> PathBuf {
+        let dir = root.path().join(name);
         std::fs::create_dir_all(&dir).unwrap();
         canonical(&dir)
     }
 
     #[test]
     fn remembering_moves_a_project_to_the_front_without_duplicates() {
-        let a = scratch_dir("a");
-        let b = scratch_dir("b");
-        let c = scratch_dir("c");
-        let file = scratch_dir("file").join(CACHE_FILE);
+        let root = tempfile::tempdir().unwrap();
+        let (a, b, c) = (folder(&root, "a"), folder(&root, "b"), folder(&root, "c"));
+        let file = root.path().join(CACHE_FILE);
 
         let mut list = remember(Vec::new(), &a);
         list = remember(list, &b);
@@ -96,13 +92,12 @@ mod tests {
         write(&file, &list);
 
         assert_eq!(read(&file), vec![a, c, b], "newest first, no duplicate `a`");
-
-        std::fs::remove_dir_all(file.parent().unwrap()).ok();
     }
 
     #[test]
     fn the_list_is_capped_and_drops_the_oldest() {
-        let dir = scratch_dir("cap");
+        let root = tempfile::tempdir().unwrap();
+        let dir = folder(&root, "cap");
         let file = dir.join(CACHE_FILE);
         let mut list = Vec::new();
         let projects: Vec<PathBuf> = (0..MAX_RECENT + 2)
@@ -122,19 +117,16 @@ mod tests {
         assert_eq!(read_back.len(), MAX_RECENT);
         assert_eq!(read_back.first(), projects.last());
         assert!(!read_back.contains(&projects[0]), "the oldest fell off");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn reading_skips_projects_that_are_gone() {
-        let dir = scratch_dir("stale");
+        let root = tempfile::tempdir().unwrap();
+        let dir = folder(&root, "stale");
         let file = dir.join(CACHE_FILE);
         let gone = dir.join("deleted");
         std::fs::write(&file, format!("{}\n{}\n\n", gone.display(), dir.display())).unwrap();
 
         assert_eq!(read(&file), vec![canonical(&dir)]);
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

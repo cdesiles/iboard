@@ -126,13 +126,8 @@ mod tests {
         if !available() {
             return;
         }
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or(0);
-        let dir =
-            std::env::temp_dir().join(format!("idesign-render-{}-{unique}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("temp dir");
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let html = dir.join("preview.html");
         std::fs::write(
             &html,
@@ -144,7 +139,5 @@ mod tests {
         let result = snapshot(&html, &png, 240, 160);
         assert!(result.is_ok(), "snapshot failed: {result:?}");
         assert!(png.is_file(), "no PNG written");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

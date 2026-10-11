@@ -1497,6 +1497,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "serde",
  "serde_json",
+ "tempfile",
  "toml",
  "toml_edit",
 ]

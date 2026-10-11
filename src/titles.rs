@@ -439,8 +439,8 @@ mod tests {
 
     #[test]
     fn the_engine_round_trips_through_the_config() {
-        let dir = std::env::temp_dir().join(format!("iboard-titles-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let file = dir.join("iboard.toml");
         let engine = || load_engine(&mut UserConfig::load(Some(&file)));
         std::fs::write(&file, "[ai]\ntool = \"claude\"\n").unwrap();
@@ -456,7 +456,6 @@ mod tests {
         let mut config = UserConfig::parse("[titles]\nengine = \"off\"\n", &file);
         assert_eq!(load_engine(&mut config), Engine::Apple);
         assert_eq!(config.problems.len(), 1);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -72,11 +72,8 @@ fn an_unknown_option_is_a_usage_error() {
 
 #[test]
 fn catalog_writes_a_live_page() {
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos())
-        .unwrap_or(0);
-    let out = std::env::temp_dir().join(format!("idesign-catalog-{unique}.html"));
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("catalog.html");
 
     let output = idesign(&["catalog", "--out", out.to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
@@ -84,18 +81,13 @@ fn catalog_writes_a_live_page() {
     assert!(html.contains("--bg:"), "tokens inlined");
     assert!(html.contains("ds-search"), "search box present");
     assert!(html.contains("Button"), "a component is shown");
-
-    std::fs::remove_file(&out).ok();
 }
 
 #[test]
 fn add_component_scaffolds_a_component() {
     // A throwaway copy of the design system, so the repo is untouched.
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos())
-        .unwrap_or(0);
-    let dir = std::env::temp_dir().join(format!("idesign-cli-{}-{unique}", std::process::id()));
+    let scratch = tempfile::tempdir().unwrap();
+    let dir = scratch.path();
     let design = dir.join("design");
     copy_dir(&repo().join("design"), &design);
 
@@ -108,14 +100,12 @@ fn add_component_scaffolds_a_component() {
             "--intent",
             "Transient confirmation.",
         ])
-        .current_dir(&dir)
+        .current_dir(dir)
         .output()
         .expect("idesign runs");
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert!(design.join("components/Toast/README.md").is_file());
     assert!(design.join("components/Toast/preview.html").is_file());
-
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 fn copy_dir(from: &Path, to: &Path) {

@@ -111,12 +111,12 @@ mod tests {
 
     #[test]
     fn a_file_is_found_by_its_whole_name_only() {
-        let dir = std::env::temp_dir().join(format!("iboard-commits-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let git = |args: &[&str]| {
             let status = Command::new("git")
                 .arg("-C")
-                .arg(&dir)
+                .arg(dir)
                 .args([
                     "-c",
                     "user.name=t",
@@ -149,10 +149,9 @@ mod tests {
             "Anyone\n\ncloses aXmd",
         ]);
 
-        let subjects: Vec<String> = run(&dir, "a.md").into_iter().map(|c| c.subject).collect();
+        let subjects: Vec<String> = run(dir, "a.md").into_iter().map(|c| c.subject).collect();
 
         assert_eq!(subjects, ["Mine"]);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

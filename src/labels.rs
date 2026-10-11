@@ -632,8 +632,8 @@ mod tests {
 
     #[test]
     fn saving_keeps_only_what_differs_from_the_presets() {
-        let dir = std::env::temp_dir().join(format!("iboard-labels-save-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let file = dir.join("iboard.toml");
         std::fs::write(&file, "[delete]\nconfirm = false\n").unwrap();
         let entries = vec![
@@ -659,7 +659,6 @@ mod tests {
         assert!(text.contains("chore = \"\""), "{text}");
         assert_eq!(labels.color("chore"), None);
         assert_eq!(labels.color("discovery"), None);
-        std::fs::remove_dir_all(&dir).ok();
     }
     #[test]
     fn a_label_goes_after_the_heading_groups() {
@@ -749,8 +748,8 @@ mod tests {
 
     #[test]
     fn renaming_a_label_keeps_where_it_lived() {
-        let dir = std::env::temp_dir().join(format!("iboard-rename-label-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let file = dir.join("t.md");
         std::fs::write(&file, "# [Discovery] [bug] T\n").unwrap();
         assert_eq!(rename_label_to_file(&file, "bug", "defect"), Ok(true));
@@ -759,13 +758,12 @@ mod tests {
             "# [Discovery] [defect] T\n"
         );
         assert_eq!(rename_label_to_file(&file, "bug", "defect"), Ok(false));
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn labelling_a_file_rewrites_only_the_title_line() {
-        let dir = std::env::temp_dir().join(format!("iboard-add-label-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let file = dir.join("fix-login.md");
         std::fs::write(&file, "# Fix login\n\n## Context\n\n- [ ] x\n").unwrap();
         assert_eq!(add_label_to_file(&file, "bug"), Ok(true));
@@ -775,6 +773,5 @@ mod tests {
             "# [bug] Fix login\n\n## Context\n\n- [ ] x\n"
         );
         assert!(file.exists(), "the file name never changes");
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

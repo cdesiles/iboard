@@ -620,19 +620,20 @@ mod tests {
 
     #[test]
     fn ready_sits_between_todo_and_doing() {
-        let dir = std::env::temp_dir().join(format!("iboard-ready-{}", std::process::id()));
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         for name in ["done", "doing", "ready", "todo"] {
             fs::create_dir_all(dir.join("issues").join(name)).unwrap();
         }
-        let board = build(&locate(&dir).unwrap()).unwrap();
+        let board = build(&locate(dir).unwrap()).unwrap();
         let names: Vec<&str> = board.columns.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["Todo", "Ready", "Doing", "Done"]);
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn entering_ready_numbers_an_issue_and_leaving_drops_the_number() {
-        let dir = std::env::temp_dir().join(format!("iboard-prio-{}", std::process::id()));
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let (todo, ready, doing) = (dir.join("todo"), dir.join("ready"), dir.join("doing"));
         for d in [&todo, &ready, &doing] {
             fs::create_dir_all(d).unwrap();
@@ -658,13 +659,13 @@ mod tests {
         assert_eq!(moved_name("unnumbered.md", &ready, &doing), "unnumbered.md");
         assert_eq!(moved_name("001-x.md", &todo, &doing), "001-x.md");
         assert_eq!(strip_priority("2026-05-29-dated.md"), "2026-05-29-dated.md");
-        fs::remove_dir_all(&dir).ok();
     }
 
     /// Doing is ordered by last edit too, but its cards carry no date.
     #[test]
     fn doing_issues_are_most_recent_first_without_a_date() {
-        let dir = std::env::temp_dir().join(format!("iboard-doing-{}", std::process::id()));
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let doing = dir.join("issues/doing");
         fs::create_dir_all(&doing).unwrap();
         for name in ["a.md", "b.md"] {
@@ -678,18 +679,18 @@ mod tests {
             .set_modified(later)
             .unwrap();
 
-        let board = build(&locate(&dir).unwrap()).unwrap();
+        let board = build(&locate(dir).unwrap()).unwrap();
         let column = board.columns.iter().find(|c| c.name == "Doing").unwrap();
         let names: Vec<String> = column.issues.iter().map(|t| t.file_name()).collect();
         assert_eq!(names, ["a.md", "b.md"]);
         assert!(column.issues.iter().all(|t| t.done_at.is_none()));
-        fs::remove_dir_all(&dir).ok();
     }
 
     /// Outside git, done issues are dated by their file times.
     #[test]
     fn done_issues_are_dated_and_most_recent_first() {
-        let dir = std::env::temp_dir().join(format!("iboard-done-{}", std::process::id()));
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let done = dir.join("issues/done");
         let todo = dir.join("issues/todo");
         fs::create_dir_all(&done).unwrap();
@@ -707,7 +708,7 @@ mod tests {
             .set_modified(later)
             .unwrap();
 
-        let board = build(&locate(&dir).unwrap()).unwrap();
+        let board = build(&locate(dir).unwrap()).unwrap();
         let column = |name: &str| board.columns.iter().find(|c| c.name == name).unwrap();
         let names: Vec<String> = column("Done")
             .issues
@@ -720,8 +721,6 @@ mod tests {
             column("Todo").issues[0].done_at.is_none(),
             "only Done is dated"
         );
-
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -737,10 +736,10 @@ mod tests {
 
     #[test]
     fn init_creates_the_standard_columns_and_is_idempotent() {
-        let dir = std::env::temp_dir().join(format!("iboard-init-{}", std::process::id()));
-        fs::remove_dir_all(&dir).ok();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
 
-        let located = init(&dir).unwrap();
+        let located = init(dir).unwrap();
         assert_eq!(located.project_dir, dir);
         assert_eq!(located.root, dir.join("issues"));
         for name in INIT_COLUMNS {
@@ -753,29 +752,27 @@ mod tests {
         assert_eq!(names, ["Todo", "Ready", "Doing", "Done"]);
 
         // A second run keeps the layout and never fails.
-        let again = init(&dir).unwrap();
+        let again = init(dir).unwrap();
         assert_eq!(again.root, located.root);
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn init_respects_a_configured_root() {
-        let dir = std::env::temp_dir().join(format!("iboard-init-cfg-{}", std::process::id()));
-        fs::remove_dir_all(&dir).ok();
-        fs::create_dir_all(&dir).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        fs::create_dir_all(dir).unwrap();
         fs::write(dir.join("iboard.toml"), "root = \"tasks\"\n").unwrap();
 
-        let located = init(&dir).unwrap();
+        let located = init(dir).unwrap();
         assert_eq!(located.root, dir.join("tasks"));
         assert!(dir.join("tasks/todo/.gitkeep").is_file());
         assert!(!dir.join("issues").exists());
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn init_from_a_subfolder_uses_the_enclosing_project() {
-        let dir = std::env::temp_dir().join(format!("iboard-init-sub-{}", std::process::id()));
-        fs::remove_dir_all(&dir).ok();
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let nested = dir.join("src/deep");
         fs::create_dir_all(&nested).unwrap();
         fs::create_dir_all(dir.join("issues")).unwrap();
@@ -784,6 +781,5 @@ mod tests {
         assert_eq!(located.project_dir, dir);
         assert_eq!(located.root, dir.join("issues"));
         assert!(!nested.join("issues").exists());
-        fs::remove_dir_all(&dir).ok();
     }
 }

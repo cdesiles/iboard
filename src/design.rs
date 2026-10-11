@@ -1220,7 +1220,8 @@ mod tests {
 
     #[test]
     fn discover_reports_a_broken_system_instead_of_skipping_it() {
-        let dir = std::env::temp_dir().join(format!("iboard-discover-{}", std::process::id()));
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
         let design = dir.join("design");
         std::fs::create_dir_all(&design).unwrap();
         std::fs::write(
@@ -1233,7 +1234,6 @@ mod tests {
         let err = DesignSystem::discover(&dir.join("issues")).unwrap_err();
 
         assert!(err.contains("tokens.json"), "{err}");
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -1311,21 +1311,15 @@ mod tests {
         assert!(system.errors().is_empty());
     }
 
-    fn temp_dir(tag: &str) -> PathBuf {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or(0);
-        let dir =
-            std::env::temp_dir().join(format!("idesign-{tag}-{}-{unique}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        dir
+    fn temp_dir() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
     }
 
     #[test]
     fn save_round_trips_the_repo_system() {
         let source = repo();
-        let base = temp_dir("roundtrip");
+        let scratch = temp_dir();
+        let base = scratch.path();
         let target = base.join("design");
 
         source.save(&target).expect("save");
@@ -1342,13 +1336,12 @@ mod tests {
             .collect();
         assert_eq!(after, before);
         assert_eq!(reloaded.errors(), Vec::<String>::new());
-
-        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]
     fn add_component_creates_and_reloads() {
-        let base = temp_dir("add");
+        let scratch = temp_dir();
+        let base = scratch.path();
         let target = base.join("design");
         repo().save(&target).expect("seed");
         let mut system = DesignSystem::load(&target).expect("load copy");
@@ -1371,13 +1364,12 @@ mod tests {
                 .and_then(|c| c.via.as_deref()),
             Some("idesign")
         );
-
-        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]
     fn add_component_refuses_duplicates_and_bad_names() {
-        let base = temp_dir("bad");
+        let scratch = temp_dir();
+        let base = scratch.path();
         let target = base.join("design");
         repo().save(&target).expect("seed");
         let mut system = DesignSystem::load(&target).expect("load copy");
@@ -1386,7 +1378,5 @@ mod tests {
         assert!(system.add_component("", "Controls", None).is_err());
         assert!(system.add_component("../Evil", "Controls", None).is_err());
         assert!(system.add_component("Lead/ing", "Controls", None).is_err());
-
-        std::fs::remove_dir_all(&base).ok();
     }
 }

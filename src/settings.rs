@@ -232,14 +232,8 @@ mod tests {
         model: String,
     }
 
-    fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "iboard-settings-{tag}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join(FILE)
+    fn scratch() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
     }
 
     fn raw(tool: &str) -> Raw {
@@ -251,7 +245,8 @@ mod tests {
 
     #[test]
     fn a_missing_file_is_an_empty_configuration() {
-        let mut config = UserConfig::load(Some(&scratch("missing").join("absent.toml")));
+        let dir = scratch();
+        let mut config = UserConfig::load(Some(&dir.path().join("absent.toml")));
         assert_eq!(config.section::<Raw>("ai"), Raw::default());
         assert!(config.problems.is_empty());
         assert!(UserConfig::load(None).problems.is_empty());
@@ -281,7 +276,8 @@ mod tests {
 
     #[test]
     fn saving_keeps_comments_order_and_other_sections() {
-        let file = scratch("keep");
+        let dir = scratch();
+        let file = dir.path().join(FILE);
         let before = "# my settings\n\
                       [delete]\n\
                       confirm = false # asked too often\n\
@@ -311,7 +307,8 @@ mod tests {
 
     #[test]
     fn saving_adds_and_removes_whole_sections() {
-        let file = scratch("sections");
+        let dir = scratch();
+        let file = dir.path().join(FILE);
         std::fs::write(&file, "[labels]\nbug = \"\"\n").unwrap();
         save(
             &file,
@@ -330,7 +327,8 @@ mod tests {
 
     #[test]
     fn saving_never_writes_over_a_broken_file() {
-        let file = scratch("broken");
+        let dir = scratch();
+        let file = dir.path().join(FILE);
         let broken = "[ai]\ntool = \"claude\"\n[delete\nconfirm = false\n";
         std::fs::write(&file, broken).unwrap();
 
@@ -342,7 +340,8 @@ mod tests {
 
     #[test]
     fn saving_creates_the_folder_and_the_file() {
-        let file = scratch("create").with_file_name("nested").join(FILE);
+        let dir = scratch();
+        let file = dir.path().join("nested").join(FILE);
         save(&file, &[Section::new("ai", &raw("claude")).unwrap()]).unwrap();
         assert_eq!(
             UserConfig::load(Some(&file)).section::<Raw>("ai"),
