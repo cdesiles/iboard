@@ -921,11 +921,7 @@ impl Dialog {
                     .desired_width(140.0),
             );
             hex_field(ui, &mut self.new_hex, "#rrggbb");
-            let name = self
-                .new_label
-                .trim()
-                .trim_matches(['[', ']'])
-                .to_lowercase();
+            let name = new_label_name(&self.new_label).unwrap_or_default();
             if !name.is_empty() {
                 widgets::label_pill(ui, &name, labels::parse_hex(&self.new_hex));
             }
@@ -1348,9 +1344,22 @@ fn display_path(path: &Path) -> String {
     path.display().to_string()
 }
 
+/// The label a name typed in Settings › Labels stands for, the same way a
+/// title's `[Tech debt]` gives `tech-debt`.
+fn new_label_name(typed: &str) -> Option<String> {
+    labels::normalize(typed.trim().trim_matches(['[', ']']))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_label_is_named_like_the_labels_in_titles() {
+        assert_eq!(new_label_name("Tech debt").as_deref(), Some("tech-debt"));
+        assert_eq!(new_label_name(" [Bug] ").as_deref(), Some("bug"));
+        assert_eq!(new_label_name("[ ]"), None);
+    }
 
     fn models(ids: &[(&str, bool)]) -> Models {
         Models {
