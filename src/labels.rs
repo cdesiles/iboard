@@ -15,6 +15,7 @@ use std::path::Path;
 use egui::Color32;
 
 use crate::files;
+use crate::markdown;
 use crate::settings::{Section, UserConfig};
 
 /// The labels iboard ships with, applied with zero configuration. Mid tones,
@@ -194,10 +195,10 @@ pub fn split_leading_labels(heading: &str) -> (Vec<String>, String) {
 /// The `labels:` list of a markdown file's front matter, normalized: either
 /// inline (`labels: [bug, ui]`) or one `- item` per line.
 pub fn front_matter_labels(markdown: &str) -> Vec<String> {
-    let mut lines = markdown.lines();
-    if lines.next().map(str::trim) != Some("---") {
+    let lines: Vec<&str> = markdown.lines().collect();
+    let Some(matter) = markdown::front_matter(&lines) else {
         return Vec::new();
-    }
+    };
     let mut labels: Vec<String> = Vec::new();
     let mut push = |raw: &str| {
         let raw = raw.trim().trim_matches(['"', '\'']);
@@ -208,11 +209,8 @@ pub fn front_matter_labels(markdown: &str) -> Vec<String> {
         }
     };
     let mut in_list = false;
-    for line in lines {
+    for line in &lines[matter] {
         let trimmed = line.trim();
-        if trimmed == "---" {
-            break;
-        }
         if in_list {
             if let Some(item) = trimmed.strip_prefix("- ") {
                 push(item);
@@ -443,22 +441,17 @@ enum List {
 }
 
 fn front_matter_list(lines: &[&str]) -> Option<List> {
-    if lines.first().map(|line| line.trim()) != Some("---") {
-        return None;
-    }
-    let mut i = 1;
-    while i < lines.len() {
+    let matter = markdown::front_matter(lines)?;
+    for i in matter.clone() {
         let trimmed = lines[i].trim();
-        if trimmed == "---" {
-            return None;
-        }
         if let Some(value) = trimmed.strip_prefix("labels:") {
             if !value.trim().is_empty() {
                 return Some(List::Inline(i));
             }
             let mut last = i;
             let mut indent = "  ".to_string();
-            while let Some(line) = lines.get(last + 1)
+            while last + 1 < matter.end
+                && let Some(line) = lines.get(last + 1)
                 && line.trim().starts_with("- ")
             {
                 last += 1;
@@ -466,14 +459,13 @@ fn front_matter_list(lines: &[&str]) -> Option<List> {
             }
             return Some(List::Block { last, indent });
         }
-        i += 1;
     }
     None
 }
 
-/// The index of the first `# ` heading line.
+/// The index of the title line, outside the front matter and code.
 fn h1(lines: &[&str]) -> Option<usize> {
-    lines.iter().position(|line| line.trim().starts_with("# "))
+    markdown::title_line(lines)
 }
 
 /// The text of a `# ` heading line, after the marker.
@@ -646,6 +638,15 @@ mod tests {
         assert_eq!(labels.color("chore"), None);
         assert_eq!(labels.color("discovery"), None);
     }
+    #[test]
+    fn a_label_never_lands_in_a_code_block() {
+        let markdown = "```sh\n# comment\n```\n# Real title\n";
+        assert_eq!(
+            add_label(markdown, "bug").unwrap().unwrap(),
+            "```sh\n# comment\n```\n# [bug] Real title\n"
+        );
+    }
+
     #[test]
     fn a_label_goes_after_the_heading_groups() {
         let add = |md: &str, label: &str| add_label(md, label).unwrap().unwrap();

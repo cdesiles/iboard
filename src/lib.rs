@@ -23,6 +23,7 @@ pub mod history;
 pub mod issue;
 pub mod job;
 pub mod labels;
+pub mod markdown;
 #[cfg(target_os = "macos")]
 pub mod menu;
 pub mod order;

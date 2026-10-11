@@ -13,6 +13,7 @@ use chrono::{DateTime, Local};
 
 use crate::files;
 use crate::labels;
+use crate::markdown;
 
 /// Maximum number of characters shown in a card summary (before the ellipsis).
 const SUMMARY_LIMIT: usize = 180;
@@ -83,9 +84,12 @@ impl Issue {
 /// Returns the display title, its labels and the line index it came from (so
 /// the summary can skip that line and avoid repeating it).
 fn extract_title(content: &str, path: &Path) -> (String, Vec<String>, Option<usize>) {
+    let lines: Vec<&str> = content.lines().collect();
+    let prose = markdown::prose(&lines);
+    let prose_lines = || lines.iter().enumerate().filter(|(idx, _)| prose[*idx]);
     // Prefer the first level-1 heading. Its leading `[label]` groups are split
     // off before the inline markup is stripped.
-    for (idx, line) in content.lines().enumerate() {
+    for (idx, line) in prose_lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("# ") {
             let (labels, display) = labels::split_leading_labels(rest.trim());
@@ -96,7 +100,7 @@ fn extract_title(content: &str, path: &Path) -> (String, Vec<String>, Option<usi
         }
     }
     // Otherwise the first non-empty line.
-    for (idx, line) in content.lines().enumerate() {
+    for (idx, line) in prose_lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -112,19 +116,15 @@ fn extract_title(content: &str, path: &Path) -> (String, Vec<String>, Option<usi
 /// Builds a one-paragraph plain-text summary of the issue body.
 fn extract_summary(content: &str, title_line: Option<usize>) -> String {
     let start = title_line.map(|i| i + 1).unwrap_or(0);
+    let lines: Vec<&str> = content.lines().collect();
+    let prose = markdown::prose(&lines);
     let mut out = String::new();
-    let mut in_fence = false;
 
-    for line in content.lines().skip(start) {
+    for (index, line) in lines.iter().enumerate().skip(start) {
+        if !prose[index] {
+            continue;
+        }
         let trimmed = line.trim();
-
-        if trimmed.starts_with("```") {
-            in_fence = !in_fence;
-            continue;
-        }
-        if in_fence {
-            continue;
-        }
         if trimmed.is_empty() {
             if !out.is_empty() {
                 break;
@@ -199,48 +199,72 @@ fn is_list_line(line: &str) -> bool {
 
 /// Removes emphasis markers, inline code and links/images, keeping their text.
 fn strip_inline(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
     let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-
-    while let Some(c) = chars.next() {
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
         match c {
             '\\' => {
-                if let Some(next) = chars.next() {
+                if let Some(&next) = chars.get(i + 1) {
                     out.push(next);
+                    i += 1;
                 }
             }
-            '`' | '*' | '_' | '~' => {}
+            // A code span keeps its text as written: `parse_color` stays.
+            '`' => {
+                if let Some(len) = chars[i + 1..].iter().position(|&cc| cc == '`') {
+                    out.extend(&chars[i + 1..i + 1 + len]);
+                    i += len + 1;
+                }
+            }
+            '*' => {}
+            // Emphasis, unless inside a word: `snake_case` stays.
+            '_' => {
+                let inside_word = i > 0
+                    && chars[i - 1].is_alphanumeric()
+                    && chars.get(i + 1).is_some_and(|next| next.is_alphanumeric());
+                if inside_word {
+                    out.push('_');
+                }
+            }
+            // `~~` is strikethrough; a single `~` stays, as in `~/notes`.
+            '~' => {
+                if chars.get(i + 1) == Some(&'~') {
+                    i += 1;
+                } else {
+                    out.push('~');
+                }
+            }
             '!' => {
                 // Only drop the bang when it precedes a link (image syntax).
-                if chars.peek() != Some(&'[') {
+                if chars.get(i + 1) != Some(&'[') {
                     out.push(c);
                 }
             }
             '[' => {
                 let mut text = String::new();
                 let mut depth = 1;
-                for cc in chars.by_ref() {
-                    match cc {
-                        '[' => {
-                            depth += 1;
-                            text.push(cc);
+                i += 1;
+                while i < chars.len() {
+                    let cc = chars[i];
+                    if cc == '[' {
+                        depth += 1;
+                    } else if cc == ']' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
                         }
-                        ']' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            text.push(cc);
-                        }
-                        _ => text.push(cc),
                     }
+                    text.push(cc);
+                    i += 1;
                 }
                 // Drop a following "(url)" target, if any.
-                if chars.peek() == Some(&'(') {
-                    chars.next();
+                if chars.get(i + 1) == Some(&'(') {
+                    i += 2;
                     let mut depth = 1;
-                    for cc in chars.by_ref() {
-                        match cc {
+                    while i < chars.len() {
+                        match chars[i] {
                             '(' => depth += 1,
                             ')' => {
                                 depth -= 1;
@@ -250,12 +274,14 @@ fn strip_inline(input: &str) -> String {
                             }
                             _ => {}
                         }
+                        i += 1;
                     }
                 }
-                out.push_str(&text);
+                out.push_str(&strip_inline(&text));
             }
             _ => out.push(c),
         }
+        i += 1;
     }
     out
 }
@@ -331,6 +357,38 @@ pub fn new_file_name(dir: &Path, title: &str) -> (String, bool) {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn titles_skip_code_and_front_matter() {
+        let path = Path::new("x.md");
+        let title = |text: &str| extract_title(text, path).0;
+        assert_eq!(title("```sh\n# not a title\n```\n\nBody.\n"), "Body.");
+        assert_eq!(title("---\nlabels: bug\n---\n\nSome body.\n"), "Some body.");
+        assert_eq!(title("~~~\n# no\n~~~\n# Yes\n"), "Yes");
+        let content = "---\nlabels: bug\n---\n# T\n\nWhy it matters.\n";
+        let (_, _, line) = extract_title(content, path);
+        assert_eq!(extract_summary(content, line), "Why it matters.");
+    }
+
+    #[test]
+    fn inline_markup_goes_but_code_and_words_stay() {
+        assert_eq!(
+            strip_inline("Fix `parse_color` for *dark* themes"),
+            "Fix parse_color for dark themes"
+        );
+        assert_eq!(
+            strip_inline("Rename snake_case files, _not_ this"),
+            "Rename snake_case files, not this"
+        );
+        assert_eq!(
+            strip_inline("Moved to ~/notes, ~~old~~ gone"),
+            "Moved to ~/notes, old gone"
+        );
+        assert_eq!(
+            strip_inline("See [**the** doc](https://x) and ![shot](a.png)"),
+            "See the doc and shot"
+        );
+    }
 
     #[test]
     fn new_file_names_take_a_suffix_when_taken() {

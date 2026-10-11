@@ -3,6 +3,7 @@
 
 use crate::issue::Issue;
 use crate::labels;
+use crate::markdown;
 
 /// The sections the reader asks for when `[reader] sections` is not set.
 pub const DEFAULT_SECTIONS: [&str; 4] = [
@@ -92,27 +93,14 @@ pub fn section_hint(section: &str) -> Option<&'static str> {
     }
 }
 
-/// Lines outside fenced (```` ``` ```` or `~~~`) code blocks.
+/// The lines outside the front matter and fenced code blocks.
 fn prose_lines(markdown: &str) -> impl Iterator<Item = &str> {
-    let mut fence: Option<&str> = None;
-    markdown.lines().filter(move |line| {
-        let trimmed = line.trim_start();
-        let marker = ["```", "~~~"]
-            .into_iter()
-            .find(|marker| trimmed.starts_with(marker));
-        match (fence, marker) {
-            (None, Some(marker)) => {
-                fence = Some(marker);
-                false
-            }
-            (Some(open), Some(marker)) if open == marker => {
-                fence = None;
-                false
-            }
-            (Some(_), _) => false,
-            (None, None) => true,
-        }
-    })
+    let lines: Vec<&str> = markdown.lines().collect();
+    let prose = markdown::prose(&lines);
+    lines
+        .into_iter()
+        .zip(prose)
+        .filter_map(|(line, prose)| prose.then_some(line))
 }
 
 /// `markdown` as the reader shows it: the first `# H1` without its leading
@@ -121,10 +109,7 @@ fn prose_lines(markdown: &str) -> impl Iterator<Item = &str> {
 /// (ticking a checkbox) can be written back with [`restore_line`].
 pub fn hide_title_labels(markdown: &str) -> (String, Option<(usize, String)>) {
     let mut lines: Vec<&str> = markdown.split_inclusive('\n').collect();
-    let Some(index) = lines
-        .iter()
-        .position(|line| line.trim_start().starts_with("# "))
-    else {
+    let Some(index) = markdown::title_line(&lines) else {
         return (markdown.to_string(), None);
     };
     let original = lines[index];
