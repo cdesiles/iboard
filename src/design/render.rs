@@ -24,7 +24,7 @@ const RENDER_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The renderer helper's path: the `IBOARD_RENDER` override when it points at
 /// a file, else the helper `build.rs` compiled.
-pub fn helper() -> Option<PathBuf> {
+fn helper() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("IBOARD_RENDER") {
         let path = PathBuf::from(path);
         if path.is_file() {

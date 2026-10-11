@@ -7,8 +7,6 @@
 //! a fragment so the renderer has everything it needs — the same split Open
 //! Design makes between its `tokens.css` contract and its components.
 
-use std::path::Path;
-
 use super::{Component, DesignSystem, Token, TokenValue};
 
 /// The `:root` block for `theme`, ready to paste into a `<style>`.
@@ -165,11 +163,6 @@ pub fn component_summary(component: &Component) -> Option<String> {
         .map(str::trim)
         .find(|line| !line.is_empty() && !line.starts_with('#'))
         .map(str::to_string)
-}
-
-/// Whether `system.root` looks like a `design/` directory.
-pub fn is_design_dir(path: &Path) -> bool {
-    path.join("design-system.json").is_file()
 }
 
 #[cfg(test)]

@@ -80,7 +80,7 @@ fn icon(paths: &str) -> String {
 /// The full catalog document. It opens in `theme` when that is `dark` and the
 /// system has one; otherwise in light, or in the theme last picked with its
 /// switch.
-pub fn html(system: &DesignSystem, theme: &str) -> Result<String, String> {
+fn html(system: &DesignSystem, theme: &str) -> Result<String, String> {
     let has_dark = system.tokens.themes.iter().any(|t| t.id == "dark");
     let dark = has_dark && theme == "dark";
 
@@ -797,7 +797,7 @@ fn body_inner(text: &str) -> String {
 }
 
 /// Where the catalog is written when no path is given.
-pub fn default_path(system: &DesignSystem) -> PathBuf {
+fn default_path(system: &DesignSystem) -> PathBuf {
     let slug: String = system
         .meta
         .namespace
@@ -844,7 +844,7 @@ pub fn open(html: &Path, title: &str) -> Result<(), String> {
 }
 
 /// The webview helper `build.rs` compiled, when there is one.
-pub fn viewer() -> Option<PathBuf> {
+fn viewer() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("IBOARD_CATALOG") {
         let path = PathBuf::from(path);
         if path.is_file() {

@@ -247,7 +247,7 @@ fn search_path() -> OsString {
 }
 
 /// The full path of an executable named `name`, if one is installed.
-pub fn find_binary(name: &str) -> Option<PathBuf> {
+fn find_binary(name: &str) -> Option<PathBuf> {
     search_dirs()
         .into_iter()
         .map(|dir| dir.join(name))
@@ -349,7 +349,7 @@ pub fn list_models(tool: Tool) -> Models {
 }
 
 /// The model Default stands for: the tool's first favorite.
-pub fn default_model(tool: Tool) -> Option<String> {
+fn default_model(tool: Tool) -> Option<String> {
     favorites(tool).into_iter().next()
 }
 
@@ -450,7 +450,7 @@ const PLACEHOLDERS: [(&str, &str); 3] = [
 /// one (empty for the tool's own choice); `prompt_file` holds `prompt` for a
 /// custom command. Factored out so the argument shape per tool is testable
 /// without running anything.
-pub fn command(
+fn command(
     config: &AgentConfig,
     model: &str,
     prompt: &str,

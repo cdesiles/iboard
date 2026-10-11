@@ -38,7 +38,7 @@ impl Package {
     }
 
     /// The same package as a `DesignSystem` rooted at `root`, without writing.
-    pub fn into_design_system(self, root: PathBuf) -> DesignSystem {
+    fn into_design_system(self, root: PathBuf) -> DesignSystem {
         DesignSystem {
             root,
             meta: Meta {
@@ -184,7 +184,7 @@ fn read_optional(dir: &Path, name: &str) -> Result<Option<String>, String> {
 
 /// `--name: value;` pairs from a stylesheet, ignoring comments. A themed block
 /// (`[data-theme=dark]`) is not modeled; every value is taken as-is.
-pub fn parse_tokens_css(css: &str) -> Vec<Token> {
+fn parse_tokens_css(css: &str) -> Vec<Token> {
     let chars: Vec<char> = strip_comments(css).chars().collect();
     let mut tokens = Vec::new();
     let mut i = 0;

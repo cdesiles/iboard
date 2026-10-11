@@ -19,7 +19,7 @@ use crate::settings::{Section, UserConfig};
 /// The labels iboard ships with, applied with zero configuration. Mid tones,
 /// so the colour stays readable as chip text in both themes; the chip falls
 /// back to `ink` when it does not.
-pub const PRESETS: [(&str, &str); 5] = [
+const PRESETS: [(&str, &str); 5] = [
     ("discovery", "#0b6076"),
     ("bug", "#b12f22"),
     ("feature", "#1a6e42"),
@@ -91,7 +91,7 @@ pub fn preset_hex(name: &str) -> Option<&'static str> {
 }
 
 /// `#rrggbb` for a colour.
-pub fn to_hex(color: Color32) -> String {
+fn to_hex(color: Color32) -> String {
     format!("#{:02x}{:02x}{:02x}", color.r(), color.g(), color.b())
 }
 
@@ -242,7 +242,7 @@ pub fn front_matter_labels(markdown: &str) -> Vec<String> {
 /// `# H1`, after its leading `[label]` groups. Only that one line changes (or,
 /// for a block list, one line is added). `Ok(None)` when the issue already
 /// has the label; `Err` when there is no `# ` heading to put it on.
-pub fn add_label(markdown: &str, label: &str) -> Result<Option<String>, String> {
+fn add_label(markdown: &str, label: &str) -> Result<Option<String>, String> {
     let lines: Vec<&str> = markdown.split_inclusive('\n').collect();
     if let Some((title_labels, _)) = h1(&lines).map(|i| split_leading_labels(heading(lines[i])))
         && title_labels.iter().any(|name| name == label)
@@ -329,7 +329,7 @@ pub fn add_label_to_file(path: &Path, label: &str) -> Result<bool, String> {
 /// Removes `label` from an issue's markdown, wherever it carries it: the front
 /// matter's `labels:` list and the `# H1`'s leading `[label]` groups. `None`
 /// when the issue does not have the label.
-pub fn remove_label(markdown: &str, label: &str) -> Option<String> {
+fn remove_label(markdown: &str, label: &str) -> Option<String> {
     let lines: Vec<&str> = markdown.split_inclusive('\n').collect();
     let mut out: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
     let mut remove_lines: Vec<usize> = Vec::new();

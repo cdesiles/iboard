@@ -5074,11 +5074,7 @@ impl eframe::App for IboardApp {
         // `⌘,` opens Settings on the last tab used; `⌘⇧R` reviews the open
         // issue or draft.
         if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma)) {
-            if self.settings.is_some() {
-                self.settings = None;
-            } else {
-                self.open_settings(self.settings_tab);
-            }
+            self.open_settings(self.settings_tab);
         }
         if ctx.input(|i| i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::R))
             && let Screen::Detail(path) = self.screen.clone()

@@ -119,7 +119,7 @@ pub fn palette(ui: &egui::Ui) -> &'static Palette {
 }
 
 /// The relative luminance of a colour (WCAG 2.x), 0 (black) to 1 (white).
-pub fn luminance(color: Color32) -> f32 {
+fn luminance(color: Color32) -> f32 {
     let channel = |value: u8| {
         let c = value as f32 / 255.0;
         if c <= 0.03928 {
@@ -225,7 +225,7 @@ pub fn edit_body() -> FontId {
 
 /// Registers IBM Plex Sans and Mono, keeping egui's own fonts as fallbacks for
 /// glyphs Plex lacks.
-pub fn install_fonts(ctx: &egui::Context) {
+fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     let faces: [(&str, &'static [u8]); 5] = [
         (

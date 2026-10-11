@@ -49,7 +49,7 @@ pub enum Action {
 
 /// One section of the browser, mirroring Claude Design's sidebar.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Category {
+enum Category {
     Overview,
     Colors,
     Typography,

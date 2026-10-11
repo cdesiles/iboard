@@ -676,7 +676,7 @@ fn component_group(component: &Component) -> String {
 
 /// Parse the `<!-- @dsCard group="…" height=N [subtitle="…"] [page] -->` line
 /// a preview fragment leads with. Unknown or malformed keys are ignored.
-pub fn parse_card_meta(text: &str) -> CardMeta {
+fn parse_card_meta(text: &str) -> CardMeta {
     let mut meta = CardMeta::default();
     let Some(at) = text.find("@dsCard") else {
         return meta;

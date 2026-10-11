@@ -10,7 +10,7 @@ use crate::design::{DesignSystem, css};
 
 /// The design context: the brief, the token contract and the component
 /// inventory, ready to splice into a prompt or to show as-is.
-pub fn design_context(system: &DesignSystem, theme: &str) -> String {
+fn design_context(system: &DesignSystem, theme: &str) -> String {
     let mut out = format!("## Active design system — {}\n\n", system.meta.title);
     out.push_str(
         "Treat this as authoritative for colour, typography, spacing and components. \
