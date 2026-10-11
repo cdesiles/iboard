@@ -77,9 +77,12 @@ fn icon(paths: &str) -> String {
     format!("<svg class=\"ds-ico\" viewBox=\"0 0 24 24\" aria-hidden=\"true\">{paths}</svg>")
 }
 
-/// The full catalog document for `theme` (`light`'s values become the default).
-pub fn html(system: &DesignSystem, _theme: &str) -> Result<String, String> {
+/// The full catalog document. It opens in `theme` when that is `dark` and the
+/// system has one; otherwise in light, or in the theme last picked with its
+/// switch.
+pub fn html(system: &DesignSystem, theme: &str) -> Result<String, String> {
     let has_dark = system.tokens.themes.iter().any(|t| t.id == "dark");
+    let dark = has_dark && theme == "dark";
 
     let faces = fonts::faces(system);
     let mut style = fonts::font_face_css(&faces);
@@ -93,21 +96,25 @@ pub fn html(system: &DesignSystem, _theme: &str) -> Result<String, String> {
     style.push_str(CATALOG_CSS);
 
     let toggle = if has_dark {
-        "<label class=\"ds-theme\"><input type=\"checkbox\" id=\"ds-theme\"> Dark</label>"
+        format!(
+            "<label class=\"ds-theme\"><input type=\"checkbox\" id=\"ds-theme\"{}> Dark</label>",
+            if dark { " checked" } else { "" }
+        )
     } else {
-        ""
+        String::new()
     };
 
     Ok(format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
+        "<!doctype html>\n<html lang=\"en\"{opens}>\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <title>{title} — design catalog</title>\n<style>\n{style}</style>\n</head>\n\
          <body>\n<div class=\"ds-shell\">\n{side}\n\
          <main class=\"ds-main\">\n{main}</main>\n</div>\n\
          <script>\n{script}</script>\n</body>\n</html>\n",
+        opens = if dark { " data-theme=\"dark\"" } else { "" },
         title = escape(&system.meta.title),
         style = style,
-        side = sidebar(system, toggle),
+        side = sidebar(system, &toggle),
         main = main_panes(system, &faces),
         script = SCRIPT,
     ))
@@ -1092,6 +1099,19 @@ mod tests {
 
     fn repo() -> DesignSystem {
         DesignSystem::discover(Path::new(env!("CARGO_MANIFEST_DIR"))).expect("repo design")
+    }
+
+    #[test]
+    fn the_catalog_opens_in_the_theme_asked_for() {
+        let dark = html(&repo(), "dark").expect("compose");
+        assert!(dark.contains("<html lang=\"en\" data-theme=\"dark\">"));
+        assert!(
+            dark.contains("id=\"ds-theme\" checked"),
+            "the switch agrees"
+        );
+        let light = html(&repo(), "light").expect("compose");
+        assert!(light.contains("<html lang=\"en\">"));
+        assert!(!light.contains("id=\"ds-theme\" checked"));
     }
 
     #[test]
