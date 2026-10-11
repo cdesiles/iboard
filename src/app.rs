@@ -3913,6 +3913,7 @@ impl IboardApp {
             Err(err) => format!("{name}: {err}"),
         };
         if let Some(panel) = self.design.as_mut() {
+            panel.forget_preview(&name);
             panel.status = Some(message);
         }
     }

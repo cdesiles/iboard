@@ -163,6 +163,19 @@ impl Panel {
             .insert(name.to_string(), Preview::Failed(error));
     }
 
+    /// Drops what the panel knows of `name`'s preview, so it renders again:
+    /// its `preview.html` changed.
+    pub fn forget_preview(&mut self, name: &str) {
+        self.previews.remove(name);
+        if self
+            .running
+            .as_ref()
+            .is_some_and(|(running, _)| running == name)
+        {
+            self.running = None;
+        }
+    }
+
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -1381,6 +1394,23 @@ mod tests {
         });
         panel.start_render("Button".to_string(), running);
         assert!(matches!(frame(&mut panel, &system, true), Action::Keep));
+    }
+
+    #[test]
+    fn a_redrafted_preview_is_rendered_again() {
+        let mut panel = Panel::default();
+        panel.fail_render("Toast", "old fragment".to_string());
+        panel.start_render("Toast".to_string(), Job::done(Err("old".to_string())));
+        panel.fail_render("Button", "unrelated".to_string());
+
+        panel.forget_preview("Toast");
+
+        assert!(!panel.previews.contains_key("Toast"));
+        assert!(
+            panel.running.is_none(),
+            "the render of the old fragment is dropped"
+        );
+        assert!(panel.previews.contains_key("Button"));
     }
 
     #[test]
