@@ -7422,6 +7422,18 @@ mod tests {
         ctx
     }
 
+    /// Polls `done` until it holds, for as long as a loaded machine may need.
+    fn until(mut done: impl FnMut() -> bool) -> bool {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(30) {
+            if done() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        false
+    }
+
     fn scratch_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "iboard-{tag}-{}-{:?}",
@@ -8853,6 +8865,13 @@ mod tests {
         let todo = dir.join("issues/todo");
         std::fs::create_dir_all(&todo).unwrap();
         let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+        // A stand-in that answers at once: no test ever runs a real agent.
+        app.agent = AgentConfig {
+            tool: agent::Tool::Custom,
+            command: "true # {prompt}".to_string(),
+            configured: true,
+            ..AgentConfig::default()
+        };
         app.open_composer();
         let composer = app.composer.as_mut().unwrap();
         composer.engine = Some(Engine::Agent);
@@ -9574,13 +9593,10 @@ mod tests {
         app.start_review(&file, false);
         assert!(app.review_is_running(&file));
 
-        for _ in 0..200 {
+        until(|| {
             app.poll_review();
-            if !app.review_is_running(&file) {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
+            !app.review_is_running(&file)
+        });
 
         match &app.review.as_ref().unwrap().status {
             ReviewStatus::Done { raw, report } => {
@@ -10129,16 +10145,12 @@ mod tests {
 
         let (ctx, _raw) = panel_ctx();
         let preview = dir.join("design/components/Toast/preview.html");
-        for _ in 0..300 {
+        until(|| {
             app.poll_design_draft(&ctx);
-            if std::fs::read_to_string(&preview)
+            std::fs::read_to_string(&preview)
                 .unwrap_or_default()
                 .contains("ib-btn")
-            {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        });
 
         let written = std::fs::read_to_string(&preview).unwrap();
         assert!(
@@ -10182,15 +10194,21 @@ mod tests {
 
         let (ctx, raw) = panel_ctx();
         let artifact = todo.join("assets/01-demo/ui.html");
-        for _ in 0..300 {
+        until(|| {
             app.poll_enrichment(&ctx);
-            if artifact.is_file() {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
+            artifact.is_file()
+        });
 
-        let html = std::fs::read_to_string(&artifact).expect("artifact written");
+        let html = std::fs::read_to_string(&artifact).unwrap_or_else(|err| {
+            let status = match app.enrichment.as_ref().map(|e| &e.status) {
+                Some(EnrichStatus::Failed(why)) => format!("failed: {why}"),
+                Some(EnrichStatus::Running(_)) => "still running".to_string(),
+                Some(EnrichStatus::Rendering(_)) => "rendering".to_string(),
+                Some(EnrichStatus::Done) => "done".to_string(),
+                None => "gone".to_string(),
+            };
+            panic!("no artifact ({err}); the enrichment is {status}")
+        });
         assert!(html.contains("<h1>Demo</h1>"), "mockup saved: {html}");
 
         // The window renders without a display, loader and all.

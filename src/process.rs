@@ -15,12 +15,20 @@ use crate::job::Cancel;
 /// How often a running process is checked on.
 const TICK: Duration = Duration::from_millis(20);
 
-/// How long a process asked to stop gets before it is killed, and how long a
-/// finished one's output may stay open.
-const GRACE: Duration = Duration::from_secs(2);
+/// How long a process asked to stop gets before it is killed.
+const STOP_GRACE: Duration = Duration::from_secs(2);
+
+/// How long a finished process's output may stay open; see [`Drain::finish`].
+const DRAIN_GRACE: Duration = Duration::from_millis(250);
 
 /// The processes still running, so quitting can stop them.
 static RUNNING: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// Held while spawning. On macOS the standard library opens a child's pipes
+/// and only then marks them close-on-exec, so a process another thread starts
+/// in between inherits them, and the first child's output then stays open
+/// until that unrelated process exits.
+static SPAWNING: Mutex<()> = Mutex::new(());
 
 /// What a finished process printed, and how it ended.
 #[derive(Debug)]
@@ -61,9 +69,11 @@ pub fn run(
         .stderr(Stdio::piped());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let mut child = command
-        .spawn()
-        .map_err(|err| format!("Couldn't run {what}: {err}"))?;
+    let spawned = {
+        let _one_at_a_time = SPAWNING.lock().unwrap_or_else(PoisonError::into_inner);
+        command.spawn()
+    };
+    let mut child = spawned.map_err(|err| format!("Couldn't run {what}: {err}"))?;
     running().push(child.id());
     let stdout = child.stdout.take().map(Drain::start);
     let stderr = child.stderr.take().map(Drain::start);
@@ -122,10 +132,10 @@ fn reap(child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
 }
 
 /// Asks the process and its group to stop, kills them when they have not after
-/// [`GRACE`], and reaps the process.
+/// [`STOP_GRACE`], and reaps the process.
 fn stop(child: &mut Child) {
     signal(child, Signal::Terminate);
-    let deadline = Instant::now() + GRACE;
+    let deadline = Instant::now() + STOP_GRACE;
     while Instant::now() < deadline {
         match reap(child) {
             Ok(Some(_)) => return,
@@ -203,10 +213,12 @@ impl Drain {
         Self { bytes, closed }
     }
 
-    /// What was read, once the pipe closed. Something the process left behind
-    /// may hold it open: after [`GRACE`], what is in is the answer.
+    /// What was read, once the pipe closed. Something else may hold it open:
+    /// a process the child left behind, or one that inherited it while it was
+    /// being spawned. The child has exited, so all it wrote is already in the
+    /// pipe, and after [`DRAIN_GRACE`] what was read is the whole output.
     fn finish(self) -> String {
-        let _ = self.closed.recv_timeout(GRACE);
+        let _ = self.closed.recv_timeout(DRAIN_GRACE);
         let bytes = std::mem::take(&mut *self.bytes.lock().unwrap_or_else(PoisonError::into_inner));
         String::from_utf8_lossy(&bytes).into_owned()
     }
