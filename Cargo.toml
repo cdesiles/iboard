@@ -45,4 +45,6 @@ objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
 
 [dev-dependencies]
+egui_kittest = "0.36.2"
+insta = "1"
 tempfile = "3.27"

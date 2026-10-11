@@ -1,0 +1,13 @@
+---
+source: src/prompts.rs
+expression: "enrichment_prompt(ISSUE, None, None, \"light\")"
+---
+You are a product designer. Produce a single static HTML mockup of the change described by the ticket below — a visual answer, not prose. Return only the HTML of one self-contained page. No <script>. No Markdown fence.
+
+## Ticket
+
+# Taller header
+
+The header should be 48pt.
+
+This project has no design system; choose a clean, restrained set of colours, type and spacing and keep it consistent.

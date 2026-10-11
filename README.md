@@ -92,6 +92,12 @@ $ make help
   help       Show this help
 ```
 
+`make check` is the bar for every change. The Rust version is pinned in
+`rust-toolchain.toml`, and the limits on function length (`clippy.toml`) and
+file length (`tests/layout.rs`) only ever go down. The agent prompts are
+snapshot-tested with `insta`: after a deliberate change, run
+`INSTA_UPDATE=always cargo test` and review the `.snap` diff.
+
 ## Issues format 
 
 The format is intentionally free.

@@ -9461,6 +9461,36 @@ mod tests {
         assert!(app.review.is_some(), "and leaves the review alone");
     }
 
+    /// The same flow through egui_kittest: widgets found by their label, as a
+    /// screen reader sees them.
+    #[test]
+    fn settings_save_by_clicking_its_labelled_button() {
+        let (_dir, _file, mut app) = open_issue_with_review("kittest-save");
+        app.open_title_settings();
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(window().size())
+            .build_ui_state(
+                |ui, (themed, app): &mut (bool, IboardApp)| {
+                    // Plex is registered on the first frame and usable from the next.
+                    if !*themed {
+                        theme::install(ui.ctx());
+                        *themed = true;
+                        return;
+                    }
+                    app.frame_logic(ui.ctx());
+                    app.draw(ui);
+                },
+                (false, app),
+            );
+        harness.run_steps(2);
+        assert!(harness.state().1.settings.is_some());
+
+        egui_kittest::kittest::Queryable::get_by_label(&harness, "Save").click();
+        harness.run_steps(2);
+
+        assert!(harness.state().1.settings.is_none(), "Save closed Settings");
+    }
+
     /// Save writes only the sections that changed, keeps the rest of the file
     /// as written, and never writes over a file that does not parse.
     #[test]

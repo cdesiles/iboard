@@ -218,6 +218,9 @@ pub fn button(
     let content = button_content(ui, kind, icon, label, shortcut);
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(content.width, theme::CONTROL_H), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
+    });
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     paint_button(
         ui,
@@ -479,6 +482,10 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
         .interact(rect, id, Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(hover);
+    // The tooltip ends with its key ("Delete  Del"); the name is what comes first.
+    let name = hover.split("  ").next().unwrap_or(hover);
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), name));
     if ui.is_rect_visible(rect) {
         let p = theme::palette(ui);
         let hovered = response.hovered() || tone == Tone::Open;

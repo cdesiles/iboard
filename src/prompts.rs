@@ -183,6 +183,24 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    const ISSUE: &str = "# Taller header\n\nThe header should be 48pt.\n";
+
+    #[test]
+    fn the_review_prompt() {
+        insta::assert_snapshot!(review_prompt(ISSUE));
+    }
+
+    #[test]
+    fn the_enrichment_prompt_without_a_design_system() {
+        insta::assert_snapshot!(enrichment_prompt(ISSUE, None, None, "light"));
+    }
+
+    #[test]
+    fn the_enrichment_prompt_refining_a_draft() {
+        let previous = ("<!doctype html><h1>Header</h1>", "make it taller");
+        insta::assert_snapshot!(enrichment_prompt(ISSUE, None, Some(previous), "light"));
+    }
+
     fn repo() -> DesignSystem {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("design");
         DesignSystem::load(&dir).expect("load")
