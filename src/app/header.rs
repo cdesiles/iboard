@@ -299,6 +299,7 @@ impl IboardApp {
                 }
                 if self.detail_mode == DetailMode::Preview
                     && exists
+                    && !done
                     && widgets::button(ui, ButtonKind::Secondary, None, "Draft design", None)
                         .on_hover_text("Ask the agent for a static mockup of this change")
                         .clicked()
