@@ -1,6 +1,14 @@
 # GeneralSettings
 
-The **General** tab of the Settings dialog (`⌘,`), first of four: *General*, *AI review*, *Titles*, *Labels*. Today it holds one choice.
+The **General** tab of the Settings dialog (`⌘,`), first of four: *General*, *AI review*, *Titles*, *Labels*. It holds two choices: the theme, then whether deleting asks first.
+
+## Theme
+
+- A segmented control under the label "Theme": **Light** (the default), **Dark**, **System**.
+- **Light** and **Dark** draw every window in that theme, whatever macOS uses. **System** follows the system's appearance, and switches with it.
+- The help line under it says what the choice does: "Light, whatever the system's appearance.", "Dark, whatever the system's appearance.", "Follows the system's appearance, light or dark."
+- Applied on Save, at once: the board and Settings itself redraw in the new theme. `idesign` reads the same setting when it opens.
+- Both themes draw from the `light` and `dark` values of `design/tokens.json`; nothing is tuned per theme in code.
 
 ## Ask before deleting an issue
 
@@ -14,8 +22,13 @@ The **General** tab of the Settings dialog (`⌘,`), first of four: *General*, *
 ## Stored as
 
 ```toml
+[appearance]
+theme = "light"  # "dark", or "system" to follow macOS
+
 [delete]
 confirm = true   # false: delete without asking
 ```
+
+An unknown `theme` is reported in Settings and reads as light.
 
 The consumer provides the current value and a `trash(path) -> Result<TrashedItem>` plus `restore(TrashedItem)` for undo. Emits SettingsOpened, DeleteConfirmToggled, SettingsSaved.

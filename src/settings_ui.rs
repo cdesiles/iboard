@@ -1,5 +1,5 @@
-//! The Settings dialog (`⌘,`), with four tabs: General (whether deleting
-//! asks first), AI review (which agent runs the review, and with which model),
+//! The Settings dialog (`⌘,`), with four tabs: General (the theme, and
+//! whether deleting asks first), AI review (which agent runs the review, and with which model),
 //! Titles (which engine names new issues) and Labels (label colours). See
 //! `design/components/{GeneralSettings,ReviewSettings,TitleSettings}`.
 //!
@@ -13,9 +13,10 @@ mod labels;
 mod review;
 mod titles;
 
-use egui::{Color32, CornerRadius, Frame, Id, Key, Margin, Modifiers, RichText, Stroke, Vec2};
+use egui::{Color32, Frame, Id, Key, Margin, Modifiers, Vec2};
 
 use crate::agent::AgentConfig;
+use crate::general::Appearance;
 use crate::job;
 use crate::labels::Labels;
 use crate::theme;
@@ -66,6 +67,8 @@ pub struct Dialog {
     pub engine: Engine,
     /// Settings › General: deleting an issue asks first.
     pub confirm_delete: bool,
+    /// Settings › General: the theme.
+    pub appearance: Appearance,
     /// Settings › Labels: every label and its `#rrggbb` colour (empty: none).
     pub label_rows: Vec<(String, String)>,
     /// The Labels tab was shown, so Save writes `[labels]`.
@@ -110,6 +113,7 @@ impl Dialog {
             form: config.clone(),
             engine,
             confirm_delete,
+            appearance: Appearance::default(),
             label_rows: Vec::new(),
             labels_seen: false,
             renames: Vec::new(),
@@ -142,6 +146,12 @@ impl Dialog {
         }
         rows.sort_by(|a, b| a.0.cmp(&b.0));
         self.label_rows = rows;
+        self
+    }
+
+    /// Starts Settings › General on the current theme.
+    pub fn with_appearance(mut self, appearance: Appearance) -> Self {
+        self.appearance = appearance;
         self
     }
 
@@ -227,46 +237,16 @@ impl Dialog {
 
 /// The segmented control in the header; returns the tab clicked, if any.
 fn tabs(ui: &mut egui::Ui, current: Tab) -> Option<Tab> {
-    let p = theme::palette(ui);
-    let mut picked = None;
-    Frame::new()
-        .fill(p.surface_sunken)
-        .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-        .inner_margin(Margin::same(2))
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            for (tab, name) in [
-                (Tab::General, "General"),
-                (Tab::Review, "AI review"),
-                (Tab::Titles, "Titles"),
-                (Tab::Labels, "Labels"),
-            ] {
-                let active = tab == current;
-                let text = RichText::new(name)
-                    .font(theme::ui_button())
-                    .color(if active { p.ink } else { p.ink_muted });
-                let button = egui::Button::new(text)
-                    .fill(if active {
-                        p.surface
-                    } else {
-                        Color32::TRANSPARENT
-                    })
-                    .stroke(Stroke::new(
-                        1.0,
-                        if active {
-                            p.line_strong
-                        } else {
-                            Color32::TRANSPARENT
-                        },
-                    ))
-                    .corner_radius(CornerRadius::same(theme::RADIUS_SM - 1))
-                    .min_size(Vec2::new(0.0, theme::CONTROL_H - 4.0));
-                if ui.add(button).clicked() {
-                    picked = Some(tab);
-                }
-            }
-        });
-    picked
+    widgets::segmented(
+        ui,
+        current,
+        &[
+            (Tab::General, "General"),
+            (Tab::Review, "AI review"),
+            (Tab::Titles, "Titles"),
+            (Tab::Labels, "Labels"),
+        ],
+    )
 }
 
 #[cfg(test)]

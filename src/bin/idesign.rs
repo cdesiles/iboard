@@ -570,6 +570,9 @@ fn run_gui(start: PathBuf) -> ExitCode {
         options,
         Box::new(move |cc| {
             iboard::theme::install(&cc.egui_ctx);
+            let file = iboard::settings::config_file();
+            let mut config = iboard::settings::UserConfig::load(file.as_deref());
+            iboard::theme::apply(&cc.egui_ctx, iboard::general::load_appearance(&mut config));
             egui_extras::install_image_loaders(&cc.egui_ctx);
             #[cfg(target_os = "macos")]
             {

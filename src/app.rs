@@ -19,7 +19,7 @@ use crate::discovery::{self, Board, Column, Located};
 use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_name};
 use crate::filter::{self, Filter};
 use crate::format::{card_date, display_path, relative_time};
-use crate::general;
+use crate::general::{self, Appearance};
 use crate::issue::Issue;
 use crate::job::{self, Job};
 use crate::label_picker::{self, LabelPicker};
@@ -537,6 +537,8 @@ pub struct IboardApp {
     notice: Option<(String, Instant)>,
     /// Settings › General: deleting an issue asks first.
     confirm_delete: bool,
+    /// Settings › General: the theme the window draws in.
+    appearance: Appearance,
     /// The last issue deleted without asking, for `⌘Z`.
     undo: Option<Undo>,
     /// Where deleted issues go: the user's Trash in the app, a folder of its
@@ -689,6 +691,8 @@ impl IboardApp {
         app.suggestions = filter::load_suggestions(&mut config);
         app.title_engine = titles::load_engine(&mut config);
         app.confirm_delete = general::load_confirm_delete(&mut config);
+        app.appearance = general::load_appearance(&mut config);
+        theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
         if !config.problems.is_empty() {
             let problem = config.problems.join(" ");
@@ -731,6 +735,7 @@ impl IboardApp {
             pending_front: None,
             notice: None,
             confirm_delete: true,
+            appearance: Appearance::default(),
             undo: None,
             trash: Trash::Folder(std::env::temp_dir().join("iboard-trash")),
             past_reviews,

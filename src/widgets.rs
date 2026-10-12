@@ -21,7 +21,7 @@ mod tabs;
 pub use button::{ButtonKind, CARD_ACTION, Tone, button, icon_button, split_button};
 pub use dialog::{
     FooterClick, field_label, focus_ring, help, modal_footer, modal_header, paint_focus_ring,
-    popover_frame, rule, text_field,
+    popover_frame, rule, segmented, text_field,
 };
 pub use menu::{MenuOption, menu_group, menu_note, menu_option, menu_row, menu_separator};
 pub use pill::{chip, filter_token, label_pill, pill, tag};

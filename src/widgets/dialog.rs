@@ -142,3 +142,43 @@ pub fn text_field(ui: &mut Ui, text: &mut String, hint: &str) -> Response {
             .desired_width(f32::INFINITY),
     )
 }
+
+/// A segmented control on a `surface-sunken` track: the current option is
+/// raised on `surface`. Returns the option clicked this frame.
+pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &str)]) -> Option<T> {
+    let p = theme::palette(ui);
+    let mut picked = None;
+    Frame::new()
+        .fill(p.surface_sunken)
+        .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+        .inner_margin(Margin::same(2))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                for &(option, name) in options {
+                    let active = option == current;
+                    let text = RichText::new(name)
+                        .font(theme::ui_button())
+                        .color(if active { p.ink } else { p.ink_muted });
+                    let edge = if active {
+                        p.line_strong
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+                    let button = egui::Button::new(text)
+                        .fill(if active {
+                            p.surface
+                        } else {
+                            Color32::TRANSPARENT
+                        })
+                        .stroke(Stroke::new(1.0, edge))
+                        .corner_radius(CornerRadius::same(theme::RADIUS_SM - 1))
+                        .min_size(Vec2::new(0.0, theme::CONTROL_H - 4.0));
+                    if ui.add(button).clicked() {
+                        picked = Some(option);
+                    }
+                }
+            });
+        });
+    picked
+}

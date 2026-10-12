@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use crate::general::Appearance;
 use crate::labels::Rgb;
 
 use egui::epaint::Shadow;
@@ -291,13 +292,23 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-/// Applies the tokens to both of egui's themes; eframe follows the system
-/// appearance.
+/// Applies the tokens to both of egui's themes, and draws in the light one
+/// until [`apply`] says otherwise.
 pub fn install(ctx: &egui::Context) {
     install_fonts(ctx);
     for (theme, palette) in [(Theme::Light, &LIGHT), (Theme::Dark, &DARK)] {
         ctx.set_style_of(theme, style(theme, palette));
     }
+    apply(ctx, Appearance::default());
+}
+
+/// Draws in the chosen theme from the next frame on.
+pub fn apply(ctx: &egui::Context, appearance: Appearance) {
+    ctx.set_theme(match appearance {
+        Appearance::Light => egui::ThemePreference::Light,
+        Appearance::Dark => egui::ThemePreference::Dark,
+        Appearance::System => egui::ThemePreference::System,
+    });
 }
 
 fn style(theme: Theme, p: &Palette) -> egui::Style {

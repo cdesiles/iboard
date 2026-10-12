@@ -227,6 +227,7 @@ impl IboardApp {
                 config.configured = self.agent.configured() || save_review;
                 let engine = dialog.engine;
                 let confirm_delete = dialog.confirm_delete;
+                let appearance = dialog.appearance;
                 // `[labels]` is rewritten only once its tab was looked at.
                 let label_table = dialog
                     .labels_seen
@@ -244,6 +245,9 @@ impl IboardApp {
                     }
                     if confirm_delete != self.confirm_delete {
                         sections.push(general::section(confirm_delete)?);
+                    }
+                    if appearance != self.appearance {
+                        sections.push(general::appearance_section(appearance)?);
                     }
                     if let Some(table) = &label_table
                         && *table != labels::table(&self.labels.entries())
@@ -264,6 +268,8 @@ impl IboardApp {
                         }
                         self.title_engine = engine;
                         self.confirm_delete = confirm_delete;
+                        self.appearance = appearance;
+                        theme::apply(ui.ctx(), appearance);
                         if let Some(table) = &label_table {
                             self.rename_labels(&renames);
                             self.labels = Labels::with(table);
@@ -301,7 +307,8 @@ impl IboardApp {
             .collect();
         let mut dialog =
             settings_ui::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
-                .with_labels(&self.labels, used);
+                .with_labels(&self.labels, used)
+                .with_appearance(self.appearance);
         dialog.save_error = self.config_problem.clone();
         self.settings = Some(dialog);
     }
