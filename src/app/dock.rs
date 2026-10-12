@@ -12,8 +12,8 @@ impl IboardApp {
         if let Some(drag) = &drag {
             self.dock_archivable = drag.archivable;
         }
-        let shown =
-            ctx.animate_bool_with_time(egui::Id::new("drop_dock"), drag.is_some(), DOCK_SLIDE);
+        let slide = theme::motion(&ctx, DOCK_SLIDE);
+        let shown = ctx.animate_bool_with_time(egui::Id::new("drop_dock"), drag.is_some(), slide);
         if shown <= 0.0 {
             return;
         }

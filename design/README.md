@@ -131,8 +131,13 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Reader, Editor | Review (`⌘⇧R`) | ReviewRequested → ReviewReceived | Review panel opens beside the page |
 | Any | Settings (`⌘,`, Review menu, composer engine tag) | SettingsOpened | Settings dialog on the matching tab |
 | Settings › AI review | Pick tool, pick model, Save (`⌘↩`) | ReviewToolChosen, ReviewModelChosen → SettingsSaved | Back to the screen; Review menu shows the new tool and model |
+| Settings › General | Pick a theme, Save (`⌘↩`) | ThemeChosen → SettingsSaved | Back to the screen, drawn in the new theme |
 | Settings › General | Toggle "Ask before deleting an issue", Save (`⌘↩`) | DeleteConfirmToggled → SettingsSaved | Back to the screen; deletes ask or not |
 | Settings › Titles | Pick engine, Save (`⌘↩`) | TitleEngineChosen → SettingsSaved | Back to the screen; composer tag shows the engine |
+
+## Motion
+
+Motion is short and only ever says where something went: the filter field widening (120ms), the drop zones sliding up (140ms), the Design panel's rail sliding to its components (220ms), the naming dot's pulse. When macOS asks for reduced motion (Accessibility › Display › Reduce motion), every one of them is skipped: states change in one frame and the dot stays still. The app reads the setting once at launch (`theme::reduced_motion`); `bundle.css` gates the same transitions behind `prefers-reduced-motion`, which reads the same setting in WebKit.
 
 ## Iconography
 

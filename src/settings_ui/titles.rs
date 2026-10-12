@@ -3,7 +3,7 @@
 use egui::{Align, Color32, CornerRadius, Frame, Id, Layout, Margin, RichText, Stroke, Vec2};
 
 use super::{Dialog, Tab};
-use crate::theme::{self};
+use crate::theme;
 use crate::titles::{Availability, Engine};
 use crate::widgets::{self, ButtonKind, field_label, help};
 

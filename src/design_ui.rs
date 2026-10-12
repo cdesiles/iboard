@@ -326,9 +326,10 @@ impl Panel {
 
         // 0 = categories, 1 = the component list; the pages stay a width apart.
         let target = if self.components_open { 1.0 } else { 0.0 };
-        let progress =
-            ui.ctx()
-                .animate_value_with_time(ui.id().with("rail-slide"), target, RAIL_SLIDE_SECS);
+        let secs = theme::motion(ui.ctx(), RAIL_SLIDE_SECS);
+        let progress = ui
+            .ctx()
+            .animate_value_with_time(ui.id().with("rail-slide"), target, secs);
         let slide = egui::emath::ease_in_ease_out(progress);
 
         let area = ui.available_rect_before_wrap();

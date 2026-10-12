@@ -1,0 +1,91 @@
+<!-- @dsCard group="Board" height=640 subtitle="Add labels to one issue: empty, typing, matches, no match" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>LabelPicker</title>
+<style>
+.lp{width:264px;box-sizing:border-box;padding:8px;display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-popover)}
+.lp__field{height:24px;box-sizing:border-box;padding:0 6px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);font:12px/22px var(--font-mono);color:var(--ink)}
+.lp__field.is-focus{outline:2px solid var(--focus);outline-offset:1px}
+.lp__field .ph{color:var(--ink-faint)}
+.lp__hint{font:11px/14px var(--font-mono);color:var(--ink-muted)}
+.lp__hint b{font-weight:600;color:var(--ink)}
+.lp__hint.is-error{color:var(--danger)}
+.lp__head{display:flex;gap:8px;align-items:baseline;font:600 11px/14px var(--font-sans);letter-spacing:.06em;color:var(--ink-muted)}
+.lp__head span:last-child{font:11px/14px var(--font-mono);letter-spacing:0}
+.lp__pills{display:flex;flex-wrap:wrap;gap:4px}
+.lp__pill{display:inline-flex;align-items:center;gap:4px;height:18px;box-sizing:border-box;padding:0 7px;border-radius:var(--radius-pill);font:500 11px/14px var(--font-sans);border:0;cursor:pointer}
+.lp__pill--plain{background:var(--surface-sunken);color:var(--ink-muted)}
+.lp__pill--on{padding-left:6px;background:var(--surface);border:1px solid var(--line);color:var(--ink-muted)}
+.lp__pill--on.is-flash{border-color:var(--status-done)}
+.lp__pill--on svg{width:10px;height:10px;stroke:var(--status-done);fill:none;stroke-width:2}
+.lp__pill.is-focus{outline:2px solid var(--focus);outline-offset:2px}
+.lp__empty{font:12px/17px var(--font-sans);color:var(--ink-muted)}
+.lp__keys{display:flex;gap:12px;font:11px/14px var(--font-sans);color:var(--ink-muted)}
+.lp__keys .ib-kbd{margin-right:4px}
+</style></head>
+<body>
+<div class="ib-pad" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;align-items:start">
+
+<div class="ib-stack"><span class="ib-cap">Empty: the board's labels, most used first; bug is on the issue</span>
+<div class="lp" role="dialog" aria-label="Add a label">
+<div class="lp__field is-focus"><span class="ph">Add a label</span></div>
+<div class="lp__hint">Type a new label, or pick one below</div>
+<div class="lp__head"><span>ON THIS BOARD</span><span>6</span></div>
+<div class="lp__pills">
+<button class="lp__pill lp__pill--on" title="Remove bug"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>bug</button>
+<button class="lp__pill" style="background:color-mix(in srgb,#1a6e42 14%,var(--surface));color:color-mix(in srgb,#1a6e42 60%,var(--ink))" title="Add feature">feature</button>
+<button class="lp__pill" style="background:color-mix(in srgb,#0b6076 14%,var(--surface));color:color-mix(in srgb,#0b6076 60%,var(--ink))" title="Add discovery">discovery</button>
+<button class="lp__pill lp__pill--plain" title="Add ux">ux</button>
+<button class="lp__pill" style="background:color-mix(in srgb,#5b6472 14%,var(--surface));color:color-mix(in srgb,#5b6472 60%,var(--ink))" title="Add chore">chore</button>
+<button class="lp__pill lp__pill--plain" title="Add perf">perf</button>
+</div>
+<div class="lp__keys"><span><span class="ib-kbd">↩</span>add</span><span><span class="ib-kbd">↓</span>pick</span><span><span class="ib-kbd">esc</span>close</span></div>
+</div></div>
+
+<div class="ib-stack"><span class="ib-cap">Typing: suggestions narrow to the matches</span>
+<div class="lp" role="dialog" aria-label="Add a label">
+<div class="lp__field is-focus">dis</div>
+<div class="lp__hint">↩ adds <b>dis</b> · new on this board</div>
+<div class="lp__head"><span>ON THIS BOARD</span><span>1</span></div>
+<div class="lp__pills">
+<button class="lp__pill is-focus" style="background:color-mix(in srgb,#0b6076 14%,var(--surface));color:color-mix(in srgb,#0b6076 60%,var(--ink))" title="Add discovery">discovery</button>
+</div>
+<div class="lp__keys"><span><span class="ib-kbd">↩</span>add</span><span><span class="ib-kbd">↓</span>pick</span><span><span class="ib-kbd">esc</span>close</span></div>
+</div></div>
+
+<div class="ib-stack"><span class="ib-cap">Just added: the pill turns on and flashes</span>
+<div class="lp" role="dialog" aria-label="Add a label">
+<div class="lp__field is-focus"><span class="ph">Add a label</span></div>
+<div class="lp__hint">Added <b>ux</b> to todo/ai-assist.md</div>
+<div class="lp__head"><span>ON THIS BOARD</span><span>6</span></div>
+<div class="lp__pills">
+<button class="lp__pill lp__pill--on" title="Remove bug"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>bug</button>
+<button class="lp__pill" style="background:color-mix(in srgb,#1a6e42 14%,var(--surface));color:color-mix(in srgb,#1a6e42 60%,var(--ink))" title="Add feature">feature</button>
+<button class="lp__pill" style="background:color-mix(in srgb,#0b6076 14%,var(--surface));color:color-mix(in srgb,#0b6076 60%,var(--ink))" title="Add discovery">discovery</button>
+<button class="lp__pill lp__pill--on is-flash" title="Remove ux"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>ux</button>
+<button class="lp__pill" style="background:color-mix(in srgb,#5b6472 14%,var(--surface));color:color-mix(in srgb,#5b6472 60%,var(--ink))" title="Add chore">chore</button>
+<button class="lp__pill lp__pill--plain" title="Add perf">perf</button>
+</div>
+<div class="lp__keys"><span><span class="ib-kbd">↩</span>add</span><span><span class="ib-kbd">↓</span>pick</span><span><span class="ib-kbd">esc</span>close</span></div>
+</div></div>
+
+<div class="ib-stack"><span class="ib-cap">No match: ↩ still adds the typed label</span>
+<div class="lp" role="dialog" aria-label="Add a label">
+<div class="lp__field is-focus">tech debt</div>
+<div class="lp__hint">↩ adds <b>tech-debt</b> · new on this board</div>
+<div class="lp__head"><span>ON THIS BOARD</span><span>0</span></div>
+<div class="lp__keys"><span><span class="ib-kbd">↩</span>add</span><span><span class="ib-kbd">↓</span>pick</span><span><span class="ib-kbd">esc</span>close</span></div>
+</div></div>
+
+<div class="ib-stack"><span class="ib-cap">A board with no labels yet</span>
+<div class="lp" role="dialog" aria-label="Add a label">
+<div class="lp__field is-focus"><span class="ph">Add a label</span></div>
+<div class="lp__hint">Type a new label, or pick one below</div>
+<div class="lp__head"><span>ON THIS BOARD</span><span>0</span></div>
+<div class="lp__empty">No labels on this board yet. Type one above.</div>
+<div class="lp__keys"><span><span class="ib-kbd">↩</span>add</span><span><span class="ib-kbd">↓</span>pick</span><span><span class="ib-kbd">esc</span>close</span></div>
+</div></div>
+
+</div>
+</body>
+</html>

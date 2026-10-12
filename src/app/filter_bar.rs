@@ -23,7 +23,11 @@ impl IboardApp {
             FILTER_REST
         };
         let width = ctx
-            .animate_value_with_time(id.with("width"), target, FILTER_GROW_SECS)
+            .animate_value_with_time(
+                id.with("width"),
+                target,
+                theme::motion(&ctx, FILTER_GROW_SECS),
+            )
             .min(ui.available_width() - CRUMB_KEEP)
             .max(FILTER_REST);
         let (rect, frame) =

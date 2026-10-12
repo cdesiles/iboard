@@ -300,6 +300,41 @@ pub fn install(ctx: &egui::Context) {
         ctx.set_style_of(theme, style(theme, palette));
     }
     apply(ctx, Appearance::default());
+    set_reduced_motion(ctx, system_reduces_motion());
+}
+
+/// Whether macOS asks for reduced motion (Accessibility › Display).
+pub fn system_reduces_motion() -> bool {
+    #[cfg(target_os = "macos")]
+    return objc2_app_kit::NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion();
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+
+fn reduced_motion_id() -> egui::Id {
+    egui::Id::new("theme-reduced-motion")
+}
+
+/// With `reduce`, every animation ends at once: [`motion`] gives zero
+/// seconds, and egui's own transitions (collapsing, scrolling) are skipped.
+pub fn set_reduced_motion(ctx: &egui::Context, reduce: bool) {
+    ctx.data_mut(|d| d.insert_temp(reduced_motion_id(), reduce));
+    let time = if reduce {
+        0.0
+    } else {
+        egui::Style::default().animation_time
+    };
+    ctx.all_styles_mut(|style| style.animation_time = time);
+}
+
+/// Whether animations are off for this window.
+pub fn reduced_motion(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp(reduced_motion_id()).unwrap_or(false))
+}
+
+/// How long an animation of `secs` lasts here: none with reduced motion.
+pub fn motion(ctx: &egui::Context, secs: f32) -> f32 {
+    if reduced_motion(ctx) { 0.0 } else { secs }
 }
 
 /// Draws in the chosen theme from the next frame on.
@@ -800,5 +835,33 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn reduced_motion_ends_every_animation_at_once() {
+        let slide = |reduce: bool| {
+            let ctx = egui::Context::default();
+            install(&ctx);
+            set_reduced_motion(&ctx, reduce);
+            let id = egui::Id::new("slide");
+            let mut value = 0.0;
+            for target in [0.0, 1.0] {
+                let raw = egui::RawInput::default();
+                ctx.run_ui(raw, |ui| {
+                    value = ui
+                        .ctx()
+                        .animate_value_with_time(id, target, motion(ui.ctx(), 0.5));
+                })
+                .textures_delta
+                .clear();
+            }
+            (value, ctx.global_style().animation_time)
+        };
+        let (value, egui_time) = slide(true);
+        assert_eq!(value, 1.0, "reduced: the change lands in one frame");
+        assert_eq!(egui_time, 0.0, "and egui's own transitions are off");
+        let (value, egui_time) = slide(false);
+        assert!(value < 1.0, "otherwise it eases in");
+        assert!(egui_time > 0.0);
     }
 }

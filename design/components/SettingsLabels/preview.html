@@ -1,0 +1,49 @@
+<!-- @dsCard group="Board" height=560 subtitle="Settings › Labels: colours, rename, remove, add, empty" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>SettingsLabels</title>
+<style>
+.sl{border:1px solid var(--line-strong);border-radius:var(--radius-md);padding:4px 16px;display:flex;flex-direction:column;gap:4px}
+.sl__row{display:flex;align-items:center;gap:8px;min-height:28px}
+.sl__row .sl__right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.sl__hex{width:80px;white-space:nowrap;overflow:hidden;height:24px;box-sizing:border-box;padding:0 8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);font:12px/22px var(--font-mono);color:var(--ink)}
+.sl__hex .ph{color:var(--ink-faint)}
+.sl__hex.is-invalid{border-color:var(--danger)}
+.sl__name.ib-input{width:140px}
+.sl__pill{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:var(--radius-pill);font:500 11px/14px var(--font-sans);border:0}
+.sl__pill--plain{background:var(--surface-sunken);color:var(--ink-muted)}
+.sl__add{display:flex;align-items:center;gap:8px}
+</style></head>
+<body>
+<div class="ib-pad" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(440px,1fr));gap:24px;align-items:start">
+
+<div class="ib-stack"><span class="ib-cap">Rest: a changed preset, a label with no colour, a rename in progress</span>
+<section class="ib-dialog" role="dialog" aria-label="Settings, Labels"><header class="ib-dialog__head"><span class="ib-dialog__title">Settings</span><span class="ib-tabs" role="tablist"><button class="ib-tab" role="tab" aria-selected="false">General</button><button class="ib-tab" role="tab" aria-selected="false">AI review</button><button class="ib-tab" role="tab" aria-selected="false">Titles</button><button class="ib-tab is-active" role="tab" aria-selected="true">Labels</button></span><button class="ib-btn ib-btn--ghost ib-btn--icon" aria-label="Close (esc)"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></header>
+<div class="ib-dialog__body">
+<div class="ib-formrow"><span class="ib-label">Label colours</span>
+<div class="sl">
+<div class="sl__row"><span class="sl__pill" style="background:color-mix(in srgb,#ff0000 14%,var(--surface));color:color-mix(in srgb,#c00000 60%,var(--ink))">bug</span><span class="sl__right"><span class="sl__hex">#ff0000</span><button class="ib-btn ib-btn--ghost" title="Back to #b12f22">Reset</button><button class="ib-act ib-act--danger" aria-label="Remove this label"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></span></div>
+<div class="sl__row"><span class="sl__pill" style="background:color-mix(in srgb,#5b6472 14%,var(--surface));color:color-mix(in srgb,#5b6472 60%,var(--ink))">chore</span><span class="sl__right"><span class="sl__hex">#5b6472</span><button class="ib-act ib-act--danger" aria-label="Remove this label"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></span></div>
+<div class="sl__row"><span class="sl__pill" style="background:color-mix(in srgb,#0b6076 14%,var(--surface));color:color-mix(in srgb,#0b6076 60%,var(--ink))">discovery</span><span class="sl__right"><span class="sl__hex">#0b6076</span><button class="ib-act ib-act--danger" aria-label="Remove this label"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></span></div>
+<div class="sl__row"><input class="ib-input ib-input--mono sl__name is-focus" value="tech-debt" aria-label="Rename ux"><span class="sl__right"><span class="sl__hex"><span class="ph">no colour</span></span><button class="ib-act ib-act--danger" aria-label="Remove this label"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></span></div>
+<div class="sl__row"><span class="sl__pill sl__pill--plain">perf</span><span class="sl__right"><span class="sl__hex is-invalid">#12zz</span><button class="ib-act ib-act--danger" aria-label="Remove this label"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></span></div>
+</div></div>
+<div class="ib-formrow"><span class="ib-label">Add a label</span>
+<div class="sl__add"><input class="ib-input ib-input--mono sl__name" value="spike" aria-label="name"><span class="sl__hex">#123456</span><span class="sl__pill" style="background:color-mix(in srgb,#123456 14%,var(--surface));color:color-mix(in srgb,#123456 60%,var(--ink))">spike</span><button class="ib-btn"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add</button></div>
+<span class="ib-help">A label is the [word] at the start of an issue's title. Only changes to iboard's presets are written to [labels].</span></div>
+</div>
+<footer class="ib-dialog__foot"><span class="ib-cap">Saved to ~/.config/iboard/iboard.toml</span><button class="ib-btn">Cancel</button><button class="ib-btn ib-btn--primary">Save <span class="ib-btn__key">⌘↩</span></button></footer></section></div>
+
+<div class="ib-stack"><span class="ib-cap">Empty: every label removed, an Add with no name</span>
+<section class="ib-dialog" role="dialog" aria-label="Settings, Labels"><header class="ib-dialog__head"><span class="ib-dialog__title">Settings</span><span class="ib-tabs" role="tablist"><button class="ib-tab" role="tab" aria-selected="false">General</button><button class="ib-tab" role="tab" aria-selected="false">AI review</button><button class="ib-tab" role="tab" aria-selected="false">Titles</button><button class="ib-tab is-active" role="tab" aria-selected="true">Labels</button></span><button class="ib-btn ib-btn--ghost ib-btn--icon" aria-label="Close (esc)"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></header>
+<div class="ib-dialog__body">
+<div class="ib-formrow"><span class="ib-label">Label colours</span><span class="ib-help">No labels yet. Add one below.</span></div>
+<div class="ib-formrow"><span class="ib-label">Add a label</span>
+<div class="sl__add"><input class="ib-input ib-input--mono sl__name" placeholder="name" aria-label="name"><span class="sl__hex"><span class="ph">#rrggbb</span></span><button class="ib-btn"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add</button></div>
+<span class="ib-help ib-help--error">Name the label first.</span></div>
+</div>
+<footer class="ib-dialog__foot"><span class="ib-cap">Saved to ~/.config/iboard/iboard.toml</span><button class="ib-btn">Cancel</button><button class="ib-btn ib-btn--primary">Save <span class="ib-btn__key">⌘↩</span></button></footer></section></div>
+
+</div>
+</body>
+</html>

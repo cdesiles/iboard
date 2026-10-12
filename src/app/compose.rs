@@ -318,7 +318,11 @@ pub(super) fn composer_ui(
                 row_ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     let (dot, _) = ui.allocate_exact_size(Vec2::splat(6.0), Sense::hover());
-                    let pulse = (ui.input(|i| i.time) * std::f64::consts::TAU).sin() as f32;
+                    let pulse = if theme::reduced_motion(ui.ctx()) {
+                        1.0
+                    } else {
+                        (ui.input(|i| i.time) * std::f64::consts::TAU).sin() as f32
+                    };
                     ui.painter().circle_filled(
                         dot.center(),
                         3.0,

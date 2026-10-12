@@ -1,0 +1,78 @@
+<!-- @dsCard group="Board" height=1120 subtitle="Browse the design system, a component, the new-component form" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>DesignPanel</title>
+<style>
+.dp{display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--line-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-popover);padding:8px 12px;gap:8px;max-width:760px}
+.dp__bar{display:flex;align-items:center;gap:8px;font:13px/18px var(--font-sans)}
+.dp__bar b{color:var(--ink);font-weight:600}
+.dp__bar span{color:var(--ink-muted)}
+.dp__bar .ib-btn:first-of-type{margin-left:auto}
+.dp__split{display:flex;gap:12px;border-top:1px solid var(--line);padding-top:8px;min-height:300px}
+.dp__rail{width:200px;flex:none;display:flex;flex-direction:column;gap:0;border-right:1px solid var(--line);padding-right:8px}
+.dp__rail .ib-input{width:100%;margin-bottom:8px}
+.dp__row{display:flex;align-items:center;height:26px;padding:0 8px;border-radius:var(--radius-sm);font:13px/18px var(--font-sans);color:var(--ink-muted)}
+.dp__row.is-open{background:var(--accent-soft);color:var(--ink)}
+.dp__row.is-hover{background:var(--surface-hover)}
+.dp__row em{margin-left:auto;font:normal 11px/14px var(--font-mono);color:var(--ink-faint)}
+.dp__back{font-weight:600;color:var(--ink);gap:4px}
+.dp__back svg{width:14px;height:14px;stroke:var(--ink-muted);fill:none;stroke-width:1.6}
+.dp__pane{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;font:13px/18px var(--font-sans);color:var(--ink)}
+.dp__h{font:600 11px/14px var(--font-sans);letter-spacing:.06em;color:var(--ink-faint);margin-top:12px}
+.dp__swatches{display:flex;flex-wrap:wrap;gap:8px}
+.dp__sw{display:flex;align-items:center;gap:8px;width:150px;font:11px/14px var(--font-mono);color:var(--ink-muted)}
+.dp__sw i{width:20px;height:20px;border-radius:var(--radius-sm);border:1px solid var(--line)}
+.dp__head{display:flex;align-items:center;gap:8px}
+.dp__head b{font-weight:600}
+.dp__head em{font:normal 11px/14px var(--font-mono);color:var(--ink-faint)}
+.dp__head .ib-btn{margin-left:auto}
+.dp__muted{font-size:11px;color:var(--ink-muted)}
+.dp__card{height:130px;display:grid;place-items:center;background:var(--surface-sunken);border:1px solid var(--line);border-radius:var(--radius-md);color:var(--ink-muted)}
+.dp__card.is-failed{color:var(--danger)}
+.dp__form{display:grid;grid-template-columns:auto 240px;justify-content:start;gap:6px 8px;align-items:center}
+.dp__form label{font-size:11px;color:var(--ink-muted)}
+.dp__form .ib-input{width:240px}
+</style></head>
+<body>
+<div class="ib-pad ib-stack" style="gap:24px">
+
+<div class="ib-stack"><span class="ib-cap">Browse: Colors open in the pane</span>
+<div class="dp" role="dialog" aria-label="Design system">
+<div class="dp__bar"><b>iboard</b><span>· iboard</span><button class="ib-btn"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>Live catalog</button><button class="ib-btn">Close</button></div>
+<div class="dp__split">
+<nav class="dp__rail" aria-label="Categories"><input class="ib-input" placeholder="Search">
+<span class="dp__row">Overview</span><span class="dp__row is-open">Colors</span><span class="dp__row is-hover">Typography</span><span class="dp__row">Spacing</span><span class="dp__row">Corner radius</span><span class="dp__row">Shadows</span><span class="dp__row">Size</span><span class="dp__row">Components<em>27</em></span><span class="dp__row">Assets</span><span class="dp__row">Files<em>61</em></span></nav>
+<div class="dp__pane"><span class="dp__h">SURFACES</span>
+<div class="dp__swatches"><span class="dp__sw"><i style="background:var(--bg)"></i>bg</span><span class="dp__sw"><i style="background:var(--surface)"></i>surface</span><span class="dp__sw"><i style="background:var(--surface-sunken)"></i>surface-sunken</span><span class="dp__sw"><i style="background:var(--line-strong)"></i>line-strong</span></div>
+<span class="dp__h">INK</span>
+<div class="dp__swatches"><span class="dp__sw"><i style="background:var(--ink)"></i>ink</span><span class="dp__sw"><i style="background:var(--ink-muted)"></i>ink-muted</span><span class="dp__sw"><i style="background:var(--ink-faint)"></i>ink-faint</span></div>
+<span class="dp__h">STATE</span>
+<div class="dp__swatches"><span class="dp__sw"><i style="background:var(--accent)"></i>accent</span><span class="dp__sw"><i style="background:var(--status-done)"></i>status-done</span><span class="dp__sw"><i style="background:var(--review)"></i>review</span><span class="dp__sw"><i style="background:var(--danger)"></i>danger</span></div>
+</div></div></div></div>
+
+<div class="ib-stack"><span class="ib-cap">A component, with the new-component form open; and its preview states</span>
+<div class="dp" role="dialog" aria-label="Design system">
+<div class="dp__bar"><b>iboard</b><span>· iboard</span><button class="ib-btn"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>Live catalog</button><button class="ib-btn">Close</button></div>
+<div class="dp__split">
+<nav class="dp__rail" aria-label="Components"><input class="ib-input" placeholder="Search">
+<span class="dp__row dp__back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Components</span>
+<span class="dp__row">Button</span><span class="dp__row">Checkbox</span><span class="dp__row">ConfirmDialog</span><span class="dp__row is-open">LabelPicker</span><span class="dp__row">Label</span><span class="dp__row">Reader</span></nav>
+<div class="dp__pane">
+<div class="dp__head"><b>LabelPicker</b><em>27</em><button class="ib-btn"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Cancel</button></div>
+<div class="dp__form"><label>Name</label><input class="ib-input" placeholder="Toast" value="Toast"><label>Group</label><input class="ib-input" value="Board"><label>Intent</label><input class="ib-input" placeholder="Transient confirmation"></div>
+<label class="ib-check"><input type="checkbox" checked>Draft the preview with the agent</label>
+<div><button class="ib-btn">Create component</button></div>
+<div class="dp__muted">Board · Add labels to one issue: empty, typing, matches, no match</div>
+<div class="dp__card">Rendering…</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="dp__card" style="height:64px">No preview.html</div><div class="dp__card is-failed" style="height:64px">render: WebKit helper exited (1)</div></div>
+</div></div></div></div>
+
+<div class="ib-stack"><span class="ib-cap">No design system in this project</span>
+<div class="dp" role="dialog" aria-label="Design system" style="max-width:520px">
+<div class="dp__bar"><b>No design system</b><button class="ib-btn">Close</button></div>
+<div style="border-top:1px solid var(--line);padding-top:8px;font:13px/18px var(--font-sans);color:var(--ink-muted)">No design system in this project.<br><span style="font-size:11px;color:var(--ink-faint)">Add design/design-system.json, or <span class="ib-mono">idesign import &lt;package&gt;</span>.</span></div>
+</div></div>
+
+</div>
+</body>
+</html>
