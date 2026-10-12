@@ -39,6 +39,7 @@ use iboard::prompts;
 
 mod board;
 mod card;
+mod comments;
 mod compose;
 mod design_panel;
 mod dock;
@@ -568,6 +569,8 @@ pub struct IboardApp {
     config_problem: Option<String>,
     /// The AI review of the open issue, if any.
     review: Option<ReviewState>,
+    /// The reader's comments on the open issue.
+    notes: Option<comments::Notes>,
     /// The ReviewSettings dialog, while it is open.
     settings: Option<review_settings::Dialog>,
     /// The installed agents and their models, for the settings dialog.
@@ -724,6 +727,7 @@ impl IboardApp {
             config_file: None,
             config_problem: None,
             review: None,
+            notes: None,
             settings: None,
             catalog: Catalog::default(),
             labels: Labels::presets(),
@@ -765,6 +769,7 @@ impl IboardApp {
                 self.leave_prompt = None;
                 self.cancel_review();
                 self.past_reviews.clear();
+                self.notes = None;
                 self.selected = None;
                 self.scroll_to_selected = false;
                 self.focused_column = None;

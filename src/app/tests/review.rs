@@ -191,3 +191,70 @@ fn a_deep_review_says_so_and_is_kept_as_deep() {
     assert_eq!(app.past_reviews[&file].raw, "deep");
     assert_eq!(app.past_reviews[&file].mode, ReviewMode::Deep);
 }
+
+/// A comment written in the reader's margin is kept beside the issue and
+/// reaches the next review, which marks it seen.
+#[test]
+fn a_margin_comment_reaches_the_review() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("margin-comment");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("demo.md");
+    std::fs::write(&file, "# Demo\n\nThree files over 1,100 lines.\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "grep -q 'Only design.rs matters' {prompt} && printf noted".to_string(),
+        configured: true,
+    };
+    app.open_issue(file.clone());
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+
+    let buttons: Vec<_> = harness.get_all_by_label("Add a comment").collect();
+    assert_eq!(
+        buttons.len(),
+        2,
+        "one per block: the title and the paragraph"
+    );
+    buttons[1].click();
+    harness.run_steps(2);
+    harness
+        .get_by_role(egui::accesskit::Role::MultilineTextInput)
+        .type_text("Only design.rs matters now.");
+    harness.run_steps(1);
+    harness.get_by_label("Comment").click();
+    harness.run_steps(2);
+
+    let sidecar = reviews::load(&dir.join("issues"), &file);
+    assert_eq!(sidecar.comments.len(), 1);
+    assert_eq!(sidecar.comments[0].anchor, "Three files over 1,100 lines.");
+    assert!(!sidecar.comments[0].sent);
+
+    let app = &mut harness.state_mut().1;
+    app.start_review(&file, false);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&file)
+    }));
+    assert_eq!(
+        app.past_reviews[&file].raw, "noted",
+        "the prompt quoted the note"
+    );
+    assert!(reviews::load(&dir.join("issues"), &file).comments[0].sent);
+}

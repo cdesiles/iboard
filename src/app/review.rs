@@ -24,6 +24,7 @@ impl IboardApp {
         }
         let (answer, progress) =
             agent::start_review(&self.agent, &prompt, &target.path, target.mode);
+        self.mark_notes_sent(&target.path);
         self.review = Some(ReviewState {
             path: target.path,
             draft: target.draft,
@@ -48,7 +49,8 @@ impl IboardApp {
         let Some(content) = self.review_content(path, draft) else {
             return;
         };
-        let prompt = prompts::review_prompt(&content, mode);
+        let notes = self.reviewer_notes(path);
+        let prompt = prompts::review_prompt(&content, mode, &notes);
         let target = ReviewTarget {
             path: path.to_path_buf(),
             draft,
@@ -74,8 +76,13 @@ impl IboardApp {
         let Some(content) = self.review_content(&target.path, target.draft) else {
             return;
         };
-        let mut prompt = prompts::review_prompt(&content, target.mode);
-        if let ReviewStatus::Done { raw, .. } = &review.status {
+        let previous = match &review.status {
+            ReviewStatus::Done { raw, .. } => Some(raw.clone()),
+            _ => None,
+        };
+        let notes = self.reviewer_notes(&target.path);
+        let mut prompt = prompts::review_prompt(&content, target.mode, &notes);
+        if let Some(raw) = previous {
             prompt.push_str(&format!("\n\nA previous review said:\n{raw}"));
         }
         prompt.push_str(&format!("\n\nFollow-up: {follow_up}"));

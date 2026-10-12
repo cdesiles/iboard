@@ -105,7 +105,9 @@ impl IboardApp {
         // Escape steps back one level, but a review consumes it first: it
         // cancels a run, or closes a finished panel.
         if !confirming && ctx.input(|i| i.key_pressed(Key::Escape)) {
-            if self.review.is_some() {
+            if let Some(notes) = self.notes.as_mut().filter(|notes| notes.draft.is_some()) {
+                notes.draft = None;
+            } else if self.review.is_some() {
                 self.cancel_review();
             } else {
                 match self.screen.clone() {
@@ -261,6 +263,7 @@ impl IboardApp {
                 && !typing
                 && ctx.input(|i| i.key_pressed(Key::E) && i.modifiers.is_none());
             let double_clicked_page = editable
+                && !self.writing_note()
                 && ctx.input(|i| {
                     i.pointer
                         .button_double_clicked(egui::PointerButton::Primary)

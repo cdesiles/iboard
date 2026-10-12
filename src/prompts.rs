@@ -67,8 +67,9 @@ pub fn component_prompt(
 /// The instruction sent to the agent for a review. It carries only the issue,
 /// by design: if that is not enough context, the issue is the problem. It stays
 /// issue-only on purpose, unlike the design-aware prompts below. A Deep review
-/// may check the issue against the repository; a Quick one must not.
-pub fn review_prompt(content: &str, mode: ReviewMode) -> String {
+/// may check the issue against the repository; a Quick one must not. `notes`
+/// are the author's comments, each on the passage it quotes.
+pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]) -> String {
     let scope = match mode {
         ReviewMode::Quick => "Read only the issue: do not open files or run tools.",
         ReviewMode::Deep => {
@@ -76,7 +77,7 @@ pub fn review_prompt(content: &str, mode: ReviewMode) -> String {
              (sizes, existing code, duplicates); keep the answer short."
         }
     };
-    format!(
+    let mut prompt = format!(
         "You review software issues before they are implemented. {scope} Judge the \
          issue below on three axes and answer with nothing but this exact format:\n\
          \n\
@@ -95,7 +96,22 @@ pub fn review_prompt(content: &str, mode: ReviewMode) -> String {
          \n\
          ---\n\
          {content}"
-    )
+    );
+    if !notes.is_empty() {
+        prompt.push_str(
+            "\n\n---\nThe author's notes on the issue, each under the passage it is about. \
+             Take them into account:\n",
+        );
+        for (passage, note) in notes {
+            prompt.push('\n');
+            for line in passage.lines() {
+                prompt.push_str(&format!("> {line}\n"));
+            }
+            prompt.push_str(note.trim());
+            prompt.push('\n');
+        }
+    }
+    prompt
 }
 
 /// A prompt asking an agent to draft a static HTML mockup of a ticket.
@@ -196,7 +212,7 @@ mod tests {
 
     #[test]
     fn the_review_prompt() {
-        insta::assert_snapshot!(review_prompt(ISSUE, ReviewMode::Quick));
+        insta::assert_snapshot!(review_prompt(ISSUE, ReviewMode::Quick, &[]));
     }
 
     #[test]
@@ -258,10 +274,24 @@ mod tests {
     }
 
     #[test]
+    fn review_prompt_quotes_the_authors_notes() {
+        let notes = [(
+            "Three files.\nOver 1,100 lines.".to_string(),
+            "Only design.rs matters now.".to_string(),
+        )];
+        let prompt = review_prompt("# Split", ReviewMode::Quick, &notes);
+        assert!(
+            prompt.ends_with("> Three files.\n> Over 1,100 lines.\nOnly design.rs matters now.\n")
+        );
+        assert!(!review_prompt("# Split", ReviewMode::Quick, &[]).contains("notes"));
+    }
+
+    #[test]
     fn review_prompt_stays_issue_only() {
         let prompt = review_prompt(
             "# Fix the filter\n\nIt forgets the chips.",
             ReviewMode::Deep,
+            &[],
         );
         assert!(prompt.contains("RELEVANCE: Pass|Challenge|Block"));
         assert!(prompt.contains("PROPOSAL:"));

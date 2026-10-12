@@ -1,6 +1,10 @@
 //! The reader: an issue's page, its sheet head, and what it still lacks.
 
+use std::ops::Range;
+
+use super::comments::{NoteAction, Notes, block_notes, outdated_notes};
 use super::*;
+use iboard::markdown;
 
 impl IboardApp {
     pub(super) fn detail_ui(&mut self, ui: &mut egui::Ui, path: &Path) {
@@ -121,8 +125,16 @@ impl IboardApp {
         let mut add_section: Option<String> = None;
         let mut draft_review = false;
         let mut edit_at_end = false;
-        let mut changed = false;
         let mut label_clicked: Option<String> = None;
+        let mut edits: Vec<(Range<usize>, String)> = Vec::new();
+        // Only Todo issues are reviewed, so only they take comments.
+        let mut notes = if todo_issue {
+            self.notes_for(path);
+            self.notes.take()
+        } else {
+            None
+        };
+        let mut note_actions: Vec<NoteAction> = Vec::new();
         {
             let cache = &mut self.cache;
             let labels = &self.labels;
@@ -175,14 +187,12 @@ impl IboardApp {
                             styles
                                 .insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.5));
                             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                            CommonMarkViewer::new()
-                                .default_implicit_uri_scheme(image_base_uri(path))
-                                .show_mut(ui, cache, &mut text)
-                                .response
-                                .changed()
+                            let (block_edits, actions) =
+                                issue_blocks(ui, cache, path, &text, notes.as_mut());
+                            edits = block_edits;
+                            note_actions = actions;
                         });
                         body_rect = body.response.rect;
-                        changed = body.inner;
 
                         // The rest of the sheet: empty, and a click edits at
                         // the end of the file.
@@ -267,7 +277,16 @@ impl IboardApp {
         }
         self.preview_rect = outline;
 
-        if changed {
+        if notes.is_some() {
+            self.notes = notes;
+        }
+        for action in note_actions {
+            self.apply_note_action(path, action);
+        }
+        if !edits.is_empty() {
+            for (range, block) in edits.into_iter().rev() {
+                text.replace_range(range, &block);
+            }
             if let Some((index, line)) = &title_line {
                 text = sheet::restore_line(&text, *index, line);
             }
@@ -285,6 +304,48 @@ impl IboardApp {
             self.start_review(path, false);
         }
     }
+}
+
+/// The issue's text, one top-level block at a time so each has a margin to
+/// hang comments on (`notes`, for an issue that takes them). Returns the
+/// blocks a ticked checkbox changed, and what was asked of the comments.
+fn issue_blocks(
+    ui: &mut egui::Ui,
+    cache: &mut CommonMarkCache,
+    path: &Path,
+    text: &str,
+    mut notes: Option<&mut Notes>,
+) -> (Vec<(Range<usize>, String)>, Vec<NoteAction>) {
+    let blocks = markdown::blocks(text);
+    let mut edits = Vec::new();
+    let mut actions = Vec::new();
+    for (index, range) in blocks.iter().enumerate() {
+        // Drawn together, the viewer would put a blank line between blocks.
+        if index > 0 {
+            ui.add_space(ui.text_style_height(&egui::TextStyle::Body));
+        }
+        let mut block = text[range.clone()].to_string();
+        let shown = ui
+            .push_id(("block", index), |ui| {
+                CommonMarkViewer::new()
+                    .default_implicit_uri_scheme(image_base_uri(path))
+                    .show_mut(ui, cache, &mut block)
+                    .response
+            })
+            .inner;
+        if shown.changed() {
+            edits.push((range.clone(), block));
+        }
+        if let Some(notes) = notes.as_deref_mut() {
+            let anchor = text[range.clone()].trim();
+            let row = shown.rect.with_max_x(ui.max_rect().right());
+            actions.extend(block_notes(ui, notes, anchor, row, index));
+        }
+    }
+    if let Some(notes) = notes {
+        actions.extend(outdated_notes(ui, notes, text, &blocks));
+    }
+    (edits, actions)
 }
 
 /// The `file://` base a relative image link in `issue` resolves against: the

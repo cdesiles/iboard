@@ -1,0 +1,26 @@
+<!-- @dsCard group="AI review" height=260 subtitle="A note on one block, for the next review" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>MarginComment</title>
+<style>
+.mc{display:grid;grid-template-columns:1fr 32px;gap:8px 0;max-width:560px;font:14px/22px var(--font-sans);color:var(--ink)}
+.mc p{margin:0}
+.mc__icon{justify-self:center;align-self:start;color:var(--review)}
+.mc__note{grid-column:1;background:var(--review-soft);border-radius:4px;padding:8px 12px}
+.mc__meta{display:flex;justify-content:space-between;align-items:center;font:11px/16px var(--font-mono);color:var(--ink-muted)}
+.mc__field{grid-column:1;border:1px solid var(--review);border-radius:4px;padding:8px;background:var(--surface)}
+.mc__hint{color:var(--ink-faint)}
+.mc__actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+</style></head>
+<body>
+<div class="ib-pad mc">
+  <p>Details: <code>docs/quality/0.2.md</code> §6.4.</p><svg class="mc__icon" aria-label="Add a comment" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2 3h10v6H6l-3 2.5V9H2z"/></svg>
+  <div class="mc__note">That section was rewritten last week; read it before splitting.
+    <div class="mc__meta"><span>seen by a review</span><button class="ib-btn ib-btn--ghost">Resolve</button></div>
+  </div>
+  <div class="mc__field"><span class="mc__hint">What should the review know?</span>
+    <div class="mc__actions"><button class="ib-btn ib-btn--ghost">Cancel <span class="ib-kbd">esc</span></button><button class="ib-btn ib-btn--review">Comment <span class="ib-kbd">⌘↩</span></button></div>
+  </div>
+</div>
+</body>
+</html>

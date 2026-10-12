@@ -4,6 +4,8 @@
 
 use std::ops::Range;
 
+use pulldown_cmark::{Event, Options, Parser};
+
 /// The lines between the `---` that opens a file and the `---` that closes
 /// that block, as indices into `lines`. `None` when there is none, or when it
 /// is never closed.
@@ -57,6 +59,32 @@ pub fn is_title(line: &str) -> bool {
     line.trim_start().starts_with("# ")
 }
 
+/// The byte ranges of the top-level blocks of `text`: paragraphs, headings,
+/// whole lists, fences and tables, in order. The reader draws them one by one,
+/// so each has a place a comment can hang on.
+pub fn blocks(text: &str) -> Vec<Range<usize>> {
+    let options = Options::ENABLE_TABLES
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_FOOTNOTES;
+    let mut depth = 0usize;
+    let mut blocks = Vec::new();
+    for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
+        match event {
+            Event::Start(_) => {
+                if depth == 0 {
+                    blocks.push(range);
+                }
+                depth += 1;
+            }
+            Event::End(_) => depth = depth.saturating_sub(1),
+            _ if depth == 0 => blocks.push(range),
+            _ => {}
+        }
+    }
+    blocks
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,5 +126,24 @@ mod tests {
         );
         assert_eq!(title_line(&lines("---\n# not this\n---\nbody\n")), None);
         assert_eq!(title_line(&lines("## Sub\n#NoSpace\n# Yes\n")), Some(2));
+    }
+
+    #[test]
+    fn blocks_keep_lists_and_fences_whole() {
+        let text = "# Title\n\nOne paragraph\nwrapped.\n\n- a\n\n- b\n\n```\nx\n\ny\n```\n\n---\n";
+        let blocks: Vec<&str> = blocks(text)
+            .into_iter()
+            .map(|range| text[range].trim_end())
+            .collect();
+        assert_eq!(
+            blocks,
+            [
+                "# Title",
+                "One paragraph\nwrapped.",
+                "- a\n\n- b",
+                "```\nx\n\ny\n```",
+                "---"
+            ]
+        );
     }
 }

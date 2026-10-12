@@ -860,7 +860,7 @@ mod tests {
         let report = parse(answer).expect("a report");
         assert_eq!(report.findings[0].body, "Size: the issue is large");
         assert_eq!(report.proposal, None);
-        let echoed = crate::prompts::review_prompt("# An issue", ReviewMode::Quick);
+        let echoed = crate::prompts::review_prompt("# An issue", ReviewMode::Quick, &[]);
         assert!(parse(&echoed).is_none(), "an agent repeating the prompt");
     }
 
