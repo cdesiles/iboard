@@ -1256,7 +1256,7 @@ mod tests {
 
     #[test]
     fn card_meta_parses_keys_and_the_page_flag() {
-        let meta = super::super::parse_card_meta(
+        let meta = super::super::card::parse_card_meta(
             "<!-- @dsCard group=\"Screens\" height=640 page subtitle=\"Click a column\" -->",
         );
         assert_eq!(meta.group.as_deref(), Some("Screens"));
@@ -1264,11 +1264,11 @@ mod tests {
         assert!(meta.page);
         assert_eq!(meta.subtitle.as_deref(), Some("Click a column"));
 
-        let minimal = super::super::parse_card_meta("<!-- @dsCard height=56 -->");
+        let minimal = super::super::card::parse_card_meta("<!-- @dsCard height=56 -->");
         assert_eq!(minimal.height, Some(56));
         assert!(!minimal.page);
         assert!(
-            super::super::parse_card_meta("no card here")
+            super::super::card::parse_card_meta("no card here")
                 .group
                 .is_none()
         );

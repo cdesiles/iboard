@@ -17,17 +17,12 @@ impl IboardApp {
         let pad = 20.0;
         let mut confirmed = false;
         let mut cancelled = false;
-        let frame = Frame::new()
-            .fill(p.surface)
-            .stroke(Stroke::new(1.0, p.line_strong))
-            .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-            .shadow(ui.visuals().popup_shadow)
-            .inner_margin(Margin {
-                left: pad as i8,
-                right: pad as i8,
-                top: pad as i8,
-                bottom: theme::SPACE_5 as i8,
-            });
+        let frame = widgets::popover_frame(ui).inner_margin(Margin {
+            left: pad as i8,
+            right: pad as i8,
+            top: pad as i8,
+            bottom: theme::SPACE_5 as i8,
+        });
         let modal = egui::Modal::new(egui::Id::new("confirm-delete"))
             .frame(frame)
             .backdrop_color(p.scrim)
@@ -82,12 +77,7 @@ impl IboardApp {
                         "Delete",
                         Some("↩"),
                     );
-                    ui.painter().rect_stroke(
-                        delete.rect.expand(2.0),
-                        CornerRadius::same(theme::RADIUS_SM + 2),
-                        Stroke::new(2.0, p.accent),
-                        StrokeKind::Outside,
-                    );
+                    widgets::paint_focus_ring(ui, delete.rect, theme::RADIUS_SM);
                     confirmed = delete.clicked();
                     cancelled =
                         widgets::button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc"))
@@ -112,17 +102,12 @@ impl IboardApp {
         let width = 460.0;
         let pad = 20.0;
         let mut close = false;
-        let frame = Frame::new()
-            .fill(p.surface)
-            .stroke(Stroke::new(1.0, p.line_strong))
-            .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-            .shadow(ui.visuals().popup_shadow)
-            .inner_margin(Margin {
-                left: pad as i8,
-                right: pad as i8,
-                top: pad as i8,
-                bottom: theme::SPACE_5 as i8,
-            });
+        let frame = widgets::popover_frame(ui).inner_margin(Margin {
+            left: pad as i8,
+            right: pad as i8,
+            top: pad as i8,
+            bottom: theme::SPACE_5 as i8,
+        });
         let modal = egui::Modal::new(egui::Id::new("commits"))
             .frame(frame)
             .backdrop_color(p.scrim)
@@ -225,17 +210,17 @@ impl IboardApp {
             None => "Saved for this session".to_string(),
         };
         match dialog.show(ui, &mut self.catalog, &saved_to) {
-            review_settings::Action::Keep => {}
-            review_settings::Action::Close => {
+            settings_ui::Action::Keep => {}
+            settings_ui::Action::Close => {
                 self.settings_tab = dialog.tab;
                 self.settings = None;
             }
-            review_settings::Action::Save => {
+            settings_ui::Action::Save => {
                 // The AI review settings are written once they were seen, so
                 // saving a title engine never marks an agent as set up.
                 let save_review = dialog.review_seen || self.agent.configured();
                 if save_review && !dialog.validate() {
-                    dialog.tab = review_settings::Tab::Review;
+                    dialog.tab = settings_ui::Tab::Review;
                     return;
                 }
                 let mut config = dialog.form.clone();
@@ -298,15 +283,15 @@ impl IboardApp {
 
     /// Opens the ReviewSettings dialog on the current settings.
     pub(super) fn open_config(&mut self) {
-        self.open_settings(review_settings::Tab::Review);
+        self.open_settings(settings_ui::Tab::Review);
     }
 
     /// Settings › Titles, from the composer's engine tag.
     pub(super) fn open_title_settings(&mut self) {
-        self.open_settings(review_settings::Tab::Titles);
+        self.open_settings(settings_ui::Tab::Titles);
     }
 
-    pub(super) fn open_settings(&mut self, tab: review_settings::Tab) {
+    pub(super) fn open_settings(&mut self, tab: settings_ui::Tab) {
         let used: Vec<String> = self
             .board
             .columns
@@ -315,7 +300,7 @@ impl IboardApp {
             .flat_map(|issue| issue.labels.iter().cloned())
             .collect();
         let mut dialog =
-            review_settings::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
+            settings_ui::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
                 .with_labels(&self.labels, used);
         dialog.save_error = self.config_problem.clone();
         self.settings = Some(dialog);

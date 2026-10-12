@@ -26,9 +26,9 @@ use crate::label_picker::{self, LabelPicker};
 use crate::labels::{self, Labels};
 use crate::order::{Sort, default_sort, focus_issues, group_issues};
 use crate::process;
-use crate::review_settings::{self, Catalog};
 use crate::reviews;
 use crate::settings::{self, UserConfig};
+use crate::settings_ui::{self, Catalog};
 use crate::theme::{self, Icon, Palette};
 use crate::titles::{self, Engine};
 use crate::trash::{self, Trash};
@@ -514,7 +514,7 @@ pub struct IboardApp {
     /// What names the composer's new issues.
     title_engine: Engine,
     /// The Settings tab `⌘,` reopens.
-    settings_tab: review_settings::Tab,
+    settings_tab: settings_ui::Tab,
     /// The suggestion chip reached with `↓`, while the filter has focus.
     chip_cursor: Option<usize>,
     /// The filter is in use: focused, or being clicked (a click on a chip
@@ -602,7 +602,7 @@ pub struct IboardApp {
     /// The reader's comments on the open issue.
     notes: Option<comments::Notes>,
     /// The ReviewSettings dialog, while it is open.
-    settings: Option<review_settings::Dialog>,
+    settings: Option<settings_ui::Dialog>,
     /// The installed agents and their models, for the settings dialog.
     catalog: Catalog,
     /// The label colours: the built-in preset, overridden by `[labels]` in the
@@ -720,7 +720,7 @@ impl IboardApp {
             focus_filter: false,
             suggestions: None,
             title_engine: Engine::Manual,
-            settings_tab: review_settings::Tab::General,
+            settings_tab: settings_ui::Tab::General,
             chip_cursor: None,
             filter_open: false,
             error: None,

@@ -5,7 +5,7 @@ mod app;
 mod dialog;
 mod label_picker;
 mod recents;
-mod review_settings;
+mod settings_ui;
 
 // The shared modules live in the `iboard` library. Re-export them at this crate
 // root so the view modules keep addressing them as `crate::…`.

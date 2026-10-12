@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use egui::text::LayoutJob;
 use egui::{
-    Color32, CornerRadius, FontId, Frame, Key, Margin, Pos2, Rect, Response, Sense, Stroke,
-    StrokeKind, TextFormat, Vec2,
+    Color32, CornerRadius, FontId, Key, Margin, Pos2, Rect, Response, Sense, Stroke, StrokeKind,
+    TextFormat, Vec2,
 };
 
 use crate::labels::{self, Labels};
@@ -170,11 +170,7 @@ pub fn show(
         .fixed_pos(pos)
         .constrain(false)
         .show(&ctx, |ui| {
-            Frame::new()
-                .fill(p.surface)
-                .stroke(Stroke::new(1.0, p.line_strong))
-                .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-                .shadow(ui.visuals().popup_shadow)
+            widgets::popover_frame(ui)
                 .inner_margin(Margin::same(8))
                 .show(ui, |ui| {
                     let inner = WIDTH - 16.0 - 2.0;
