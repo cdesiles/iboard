@@ -139,21 +139,42 @@ impl IboardApp {
         Some(result.unwrap_or_else(|| moved.to_path_buf()))
     }
 
-    /// Follows renamed files in the selection, the reader and the editor.
+    /// Follows renamed files in everything that holds an issue: the
+    /// selection, the reader and editor, and every panel open on one.
     pub(super) fn apply_renames(&mut self, renames: &[(PathBuf, PathBuf)]) {
         for (old, new) in renames {
-            if self.selected.as_deref() == Some(old.as_path()) {
-                self.selected = Some(new.clone());
+            let follow = |path: &mut PathBuf| {
+                if path == old {
+                    *path = new.clone();
+                }
+            };
+            if let Some(selected) = self.selected.as_mut() {
+                follow(selected);
             }
-            if let Some(editor) = self.editor.as_mut()
-                && editor.path == *old
-            {
-                editor.path = new.clone();
+            if let Screen::Detail(open) = &mut self.screen {
+                follow(open);
             }
-            if let Screen::Detail(open) = &mut self.screen
-                && open == old
-            {
-                *open = new.clone();
+            if let Some(Confirm::Delete(path)) = self.confirm.as_mut() {
+                follow(path);
+            }
+            if let Some((path, _)) = self.new_card.as_mut() {
+                follow(path);
+            }
+            if let Some((_, path)) = self.pending_front.as_mut() {
+                follow(path);
+            }
+            let paths = [
+                self.editor.as_mut().map(|editor| &mut editor.path),
+                self.label_picker.as_mut().map(|picker| &mut picker.path),
+                self.commits.as_mut().map(|panel| &mut panel.path),
+                self.review.as_mut().map(|review| &mut review.path),
+                self.notes.as_mut().map(|notes| &mut notes.path),
+                self.enrichment
+                    .as_mut()
+                    .map(|enrichment| &mut enrichment.path),
+            ];
+            for path in paths.into_iter().flatten() {
+                follow(path);
             }
         }
     }
@@ -352,15 +373,6 @@ impl IboardApp {
         let Some(anchor) = anchor else {
             return;
         };
-        let Some(new_path) = self.reorder_column(&dir, &path, Some(&anchor)) else {
-            return;
-        };
-        if self
-            .new_card
-            .as_ref()
-            .is_some_and(|(card, _)| card == &path)
-        {
-            self.new_card = Some((new_path, Instant::now()));
-        }
+        self.reorder_column(&dir, &path, Some(&anchor));
     }
 }

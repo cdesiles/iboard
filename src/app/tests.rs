@@ -3,6 +3,7 @@
 use super::nav::step_selection;
 use super::*;
 
+mod compose;
 mod enrich;
 mod review;
 mod settings;
