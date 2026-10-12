@@ -18,6 +18,15 @@ pub(super) enum Intent {
     ToggleLabels(PathBuf),
     /// A label was clicked: filter the board by it.
     FilterBy(String),
+    /// A label was clicked in the reader: the board, filtered by it.
+    ShowLabel(String),
+    /// The reader's "Add a section": the editor, with the heading appended.
+    AddSection {
+        path: PathBuf,
+        section: String,
+    },
+    /// The empty rest of the reader's sheet: the editor, at the end.
+    EditAtEnd(PathBuf),
     /// A dragged card was dropped in `column`, in front of `anchor` (last
     /// without one).
     Place {
@@ -84,6 +93,15 @@ impl IboardApp {
                 Intent::ArchiveAll(paths) => self.archive_all(&paths),
                 Intent::ToggleLabels(path) => self.toggle_label_picker(path),
                 Intent::FilterBy(label) => self.filter_bar.filter.pick(&label),
+                Intent::ShowLabel(label) => {
+                    self.filter_bar.filter.pick(&label);
+                    self.back_to_board();
+                }
+                Intent::AddSection { path, section } => self.add_section(&path, &section),
+                Intent::EditAtEnd(path) => {
+                    self.start_editing(&path);
+                    self.focus_editor = true;
+                }
                 Intent::Place {
                     path,
                     column,

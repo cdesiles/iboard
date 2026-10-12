@@ -6,6 +6,23 @@ use super::comments::{NoteAction, Notes, block_notes, outdated_notes};
 use super::*;
 use iboard::markdown;
 
+/// The reader's own state.
+pub(super) struct Reader {
+    pub(super) cache: CommonMarkCache,
+    /// The rendered issue content, used to tell a double-click on the page
+    /// from one on the header when deciding whether to start editing.
+    pub(super) preview_rect: Rect,
+}
+
+impl Default for Reader {
+    fn default() -> Self {
+        Self {
+            cache: CommonMarkCache::default(),
+            preview_rect: Rect::NOTHING,
+        }
+    }
+}
+
 impl IboardApp {
     pub(super) fn detail_ui(&mut self, ui: &mut egui::Ui, path: &Path) {
         if self.board.find(path).is_none() {
@@ -55,11 +72,9 @@ impl IboardApp {
             return;
         };
         // The title's `[label]` groups show as tags above it, not as text.
-        let (mut text, title_line) = sheet::hide_title_labels(&issue.markdown);
-        let modified = issue.modified;
-        let issue_labels = issue.labels.clone();
+        let (text, title_line) = sheet::hide_title_labels(&issue.markdown);
         let p = theme::palette(ui);
-        let (column_name, status, todo_issue) = self
+        let (column, status, todo_issue) = self
             .board
             .column_of(path)
             .map(|column| {
@@ -70,45 +85,203 @@ impl IboardApp {
                 )
             })
             .unwrap_or_else(|| (String::new(), p.status_todo, false));
-        let review_ready = self.agent.configured();
-        // Doing and Done tickets open read-only: no click-to-edit affordance.
-        let editable = self.can_edit(path);
-        let relative = self.relative(path);
-        let (ticked, tasks) = sheet::checklist(&text);
-        let words = sheet::word_count(&text);
         let sections = &self.board.reader_sections;
         // Only Todo issues are still being written: Ready, Doing and Done
         // ones never get the "Not written yet" block.
-        let missing: Vec<String> = if !todo_issue {
-            Vec::new()
-        } else {
+        let missing: Vec<String> = if todo_issue {
             sheet::missing_sections(&text, sections)
                 .into_iter()
                 .map(str::to_string)
                 .collect()
+        } else {
+            Vec::new()
         };
-        let none_written = !missing.is_empty() && missing.len() == sections.len();
+        let layout = ReaderLayout::new(
+            ui.available_rect_before_wrap(),
+            missing.len(),
+            !missing.is_empty() && missing.len() == sections.len(),
+        );
+        let sheet = SheetView {
+            path,
+            head: SheetHead {
+                column: &column,
+                status,
+                path: &self.relative(path),
+                modified: issue.modified,
+                checklist: sheet::checklist(&text),
+                words: sheet::word_count(&text),
+            },
+            labels: issue.labels.clone(),
+            text: &text,
+            // Doing and Done tickets open read-only: no click-to-edit affordance.
+            editable: self.can_edit(path),
+            // Only Todo issues are reviewed, so only they take comments.
+            comments: todo_issue,
+        };
 
         // The rendered reader is not a text surface: keep labels inert so a
         // double-click reliably opens the editor instead of selecting a word.
         ui.style_mut().interaction.selectable_labels = false;
+        let mut intents = Vec::new();
+        let outcome = self.reader_sheet(ui, &sheet, &layout, &mut intents);
+        if let Some(picked) = layout.not_written(ui, &missing, self.agent.configured()) {
+            intents.push(match picked {
+                NotWritten::Section(section) => Intent::AddSection {
+                    path: path.to_path_buf(),
+                    section,
+                },
+                NotWritten::Review => Intent::Review(path.to_path_buf()),
+            });
+        }
+        let outline = outcome.body.expand(theme::SPACE_3);
+        if sheet.editable && ui.rect_contains_pointer(outline) {
+            paint_edit_outline(ui, outline);
+        }
+        self.reader.preview_rect = outline;
 
-        // Two blocks: the sheet, and under it the "Not written yet" block,
-        // docked at the bottom of the window. The sheet takes the spare
-        // height; the block stays put while a long issue scrolls.
-        let full = ui.available_rect_before_wrap();
+        if !outcome.edits.is_empty() {
+            let mut text = text.clone();
+            for (range, block) in outcome.edits.into_iter().rev() {
+                text.replace_range(range, &block);
+            }
+            if let Some((index, line)) = &title_line {
+                text = sheet::restore_line(&text, *index, line);
+            }
+            self.write_issue(path, &text);
+        }
+        // One of them at most: they all come from clicks.
+        intents.truncate(1);
+        self.apply(intents);
+    }
+
+    /// The scrolling sheet: its head, the labels, the issue's blocks with
+    /// their comments, and the empty rest that edits at the end of the file.
+    fn reader_sheet(
+        &mut self,
+        ui: &mut egui::Ui,
+        sheet: &SheetView,
+        layout: &ReaderLayout,
+        intents: &mut Vec<Intent>,
+    ) -> SheetOutcome {
+        let path = sheet.path;
+        let mut notes = if sheet.comments {
+            self.notes_for(path);
+            self.notes.take()
+        } else {
+            None
+        };
+        let mut outcome = SheetOutcome {
+            body: Rect::NOTHING,
+            edits: Vec::new(),
+        };
+        let mut note_actions = Vec::new();
+        let cache = &mut self.reader.cache;
+        let labels = &self.labels;
+        egui::ScrollArea::vertical()
+            .id_salt(("detail", path))
+            .auto_shrink([false, false])
+            .max_height(layout.scroll_height)
+            .show(ui, |ui| {
+                page(ui, |ui| {
+                    let top = ui.cursor().min.y;
+                    let inner_height = layout.sheet_height - 2.0 * theme::SPACE_6 - 2.0;
+                    sheet_head(ui, sheet.head);
+                    if let Some(label) = label_row(ui, &sheet.labels, labels) {
+                        intents.push(Intent::ShowLabel(label));
+                    }
+                    let body = ui.vertical(|ui| {
+                        // The body spans the sheet, so a short issue still
+                        // gets an outline wide enough for its legend.
+                        ui.set_min_width(ui.available_width());
+                        // Reading sizes: `read-body` 14, `read-h1` 20.
+                        let styles = &mut ui.style_mut().text_styles;
+                        styles.insert(egui::TextStyle::Body, theme::read_body());
+                        styles.insert(egui::TextStyle::Heading, theme::read_h1());
+                        styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.5));
+                        ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+                        let (edits, actions) =
+                            issue_blocks(ui, cache, path, sheet.text, notes.as_mut());
+                        outcome.edits = edits;
+                        note_actions = actions;
+                    });
+                    outcome.body = body.response.rect;
+
+                    // The rest of the sheet: empty, and a click edits at the
+                    // end of the file.
+                    let used = ui.cursor().min.y - top;
+                    let rest_height = (inner_height - used).max(56.0);
+                    let (rest, response) = ui.allocate_exact_size(
+                        Vec2::new(ui.available_width(), rest_height),
+                        Sense::click(),
+                    );
+                    if sheet.editable {
+                        let response = response.on_hover_cursor(egui::CursorIcon::Text);
+                        if response.clicked() {
+                            intents.push(Intent::EditAtEnd(path.to_path_buf()));
+                        }
+                        paint_rest_hint(ui, rest);
+                    }
+                });
+            });
+        if notes.is_some() {
+            self.notes = notes;
+        }
+        for action in note_actions {
+            self.apply_note_action(path, action);
+        }
+        outcome
+    }
+}
+
+/// What the reader sheet shows of one issue.
+struct SheetView<'a> {
+    path: &'a Path,
+    head: SheetHead<'a>,
+    labels: Vec<String>,
+    /// The issue's text, its title's labels hidden.
+    text: &'a str,
+    editable: bool,
+    /// The issue takes margin comments.
+    comments: bool,
+}
+
+/// What one frame of the sheet did.
+struct SheetOutcome {
+    /// Where the issue's text was drawn, for the edit outline.
+    body: Rect,
+    /// The blocks a ticked checkbox changed.
+    edits: Vec<(Range<usize>, String)>,
+}
+
+/// The reader's two blocks: the sheet, and under it the "Not written yet"
+/// block, docked at the bottom of the window. The sheet takes the spare
+/// height; the block stays put while a long issue scrolls.
+struct ReaderLayout {
+    full: Rect,
+    page_left: f32,
+    page_width: f32,
+    tiles_across: usize,
+    none_written: bool,
+    block_height: f32,
+    scroll_height: f32,
+    /// The sheet fills its share between the header and the block.
+    sheet_height: f32,
+}
+
+impl ReaderLayout {
+    fn new(full: Rect, missing: usize, none_written: bool) -> Self {
         let gutter = theme::SPACE_5;
         let page_width = (full.width() - 2.0 * gutter).min(theme::READER_MAX);
         let page_left = full.min.x + ((full.width() - page_width) / 2.0).max(gutter);
-        let tiles_across = if page_width >= 560.0 { 4 } else { 2 }.min(missing.len().max(1));
+        let tiles_across = if page_width >= 560.0 { 4 } else { 2 }.min(missing.max(1));
         let block_height = if none_written {
-            let rows = missing.len().div_ceil(tiles_across) as f32;
+            let rows = missing.div_ceil(tiles_across) as f32;
             2.0 * theme::SPACE_4
                 + theme::CONTROL_H
                 + theme::SPACE_3
                 + rows * GHOST_TILE_H
                 + (rows - 1.0) * theme::SPACE_3
-        } else if !missing.is_empty() {
+        } else if missing > 0 {
             40.0
         } else {
             0.0
@@ -119,191 +292,111 @@ impl IboardApp {
             0.0
         };
         let scroll_height = (full.height() - block_height - block_gap).max(120.0);
-        // The sheet fills its share between the header and the block.
-        let sheet_height = scroll_height - 2.0 * gutter;
-        let mut body_rect = Rect::NOTHING;
-        let mut add_section: Option<String> = None;
-        let mut draft_review = false;
-        let mut edit_at_end = false;
-        let mut label_clicked: Option<String> = None;
-        let mut edits: Vec<(Range<usize>, String)> = Vec::new();
-        // Only Todo issues are reviewed, so only they take comments.
-        let mut notes = if todo_issue {
-            self.notes_for(path);
-            self.notes.take()
-        } else {
-            None
-        };
-        let mut note_actions: Vec<NoteAction> = Vec::new();
-        {
-            let cache = &mut self.cache;
-            let labels = &self.labels;
-            egui::ScrollArea::vertical()
-                .id_salt(("detail", path))
-                .auto_shrink([false, false])
-                .max_height(scroll_height)
-                .show(ui, |ui| {
-                    page(ui, |ui| {
-                        let top = ui.cursor().min.y;
-                        let inner_height = sheet_height - 2.0 * theme::SPACE_6 - 2.0;
-
-                        sheet_head(
-                            ui,
-                            SheetHead {
-                                column: &column_name,
-                                status,
-                                path: &relative,
-                                modified,
-                                checklist: (ticked, tasks),
-                                words,
-                            },
-                        );
-
-                        // The labels, on their own row between the head and
-                        // the title; a click filters the board by one.
-                        if !issue_labels.is_empty() {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
-                                for name in &issue_labels {
-                                    if widgets::label_pill(ui, name, labels.color(name))
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .on_hover_text(format!("Filter by {name}"))
-                                        .clicked()
-                                    {
-                                        label_clicked = Some(name.clone());
-                                    }
-                                }
-                            });
-                        }
-
-                        let body = ui.vertical(|ui| {
-                            // The body spans the sheet, so a short issue still
-                            // gets an outline wide enough for its legend.
-                            ui.set_min_width(ui.available_width());
-                            // Reading sizes: `read-body` 14, `read-h1` 20.
-                            let styles = &mut ui.style_mut().text_styles;
-                            styles.insert(egui::TextStyle::Body, theme::read_body());
-                            styles.insert(egui::TextStyle::Heading, theme::read_h1());
-                            styles
-                                .insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.5));
-                            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                            let (block_edits, actions) =
-                                issue_blocks(ui, cache, path, &text, notes.as_mut());
-                            edits = block_edits;
-                            note_actions = actions;
-                        });
-                        body_rect = body.response.rect;
-
-                        // The rest of the sheet: empty, and a click edits at
-                        // the end of the file.
-                        let used = ui.cursor().min.y - top;
-                        let rest_height = (inner_height - used).max(56.0);
-                        let (rest, response) = ui.allocate_exact_size(
-                            Vec2::new(ui.available_width(), rest_height),
-                            Sense::click(),
-                        );
-                        if editable {
-                            let response = response.on_hover_cursor(egui::CursorIcon::Text);
-                            edit_at_end = response.clicked();
-                            paint_rest_hint(ui, rest);
-                        }
-                    });
-                });
-        }
-
-        if block_height > 0.0 {
-            let rect = Rect::from_min_size(
-                Pos2::new(page_left, full.max.y - gutter - block_height),
-                Vec2::new(page_width, block_height),
-            );
-            let mut block = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(rect)
-                    .layout(Layout::top_down(Align::Min)),
-            );
-            let picked = not_written_block(
-                &mut block,
-                rect,
-                &missing,
-                none_written,
-                tiles_across,
-                review_ready,
-            );
-            match picked {
-                Some(NotWritten::Section(section)) => add_section = Some(section),
-                Some(NotWritten::Review) => draft_review = true,
-                None => {}
-            }
-        }
-
-        // Hovering the text shows that it is one edit target: a `line-strong`
-        // outline with the hint on its top edge.
-        let outline = body_rect.expand(theme::SPACE_3);
-        if editable && ui.rect_contains_pointer(outline) {
-            let painter = ui.painter();
-            painter.rect_stroke(
-                outline,
-                CornerRadius::same(theme::RADIUS_SM),
-                Stroke::new(1.0, p.line_strong),
-                StrokeKind::Outside,
-            );
-            let hint = egui::RichText::new("Double-click to edit")
-                .font(egui::FontId::new(11.0, theme::ui_button().family))
-                .color(p.ink_muted);
-            let galley = egui::WidgetText::from(hint).into_galley(
-                ui,
-                Some(egui::TextWrapMode::Extend),
-                f32::INFINITY,
-                egui::FontSelection::Default,
-            );
-            let kbd_width = 18.0;
-            let right = outline.max.x - theme::SPACE_3;
-            let y = outline.min.y;
-            let legend = Rect::from_min_max(
-                Pos2::new(
-                    right - kbd_width - theme::SPACE_2 - galley.size().x - theme::SPACE_2,
-                    y - 8.0,
-                ),
-                Pos2::new(right + theme::SPACE_2, y + 8.0),
-            );
-            painter.rect_filled(legend, CornerRadius::ZERO, p.surface);
-            let kbd_left = right - kbd_width;
-            widgets::paint_kbd(ui, "E", Pos2::new(kbd_left, y));
-            let text_pos = Pos2::new(
-                kbd_left - theme::SPACE_2 - galley.size().x,
-                y - galley.size().y / 2.0,
-            );
-            ui.painter().galley(text_pos, galley, p.ink_muted);
-        }
-        self.preview_rect = outline;
-
-        if notes.is_some() {
-            self.notes = notes;
-        }
-        for action in note_actions {
-            self.apply_note_action(path, action);
-        }
-        if !edits.is_empty() {
-            for (range, block) in edits.into_iter().rev() {
-                text.replace_range(range, &block);
-            }
-            if let Some((index, line)) = &title_line {
-                text = sheet::restore_line(&text, *index, line);
-            }
-            self.write_issue(path, &text);
-        }
-        if let Some(label) = label_clicked {
-            self.filter_bar.filter.pick(&label);
-            self.back_to_board();
-        } else if let Some(section) = add_section {
-            self.add_section(path, &section);
-        } else if edit_at_end {
-            self.start_editing(path);
-            self.focus_editor = true;
-        } else if draft_review {
-            self.start_review(path, false);
+        Self {
+            full,
+            page_left,
+            page_width,
+            tiles_across,
+            none_written,
+            block_height,
+            scroll_height,
+            sheet_height: scroll_height - 2.0 * gutter,
         }
     }
+
+    /// The "Not written yet" block, when sections are missing; what it picked.
+    fn not_written(
+        &self,
+        ui: &mut egui::Ui,
+        missing: &[String],
+        review_ready: bool,
+    ) -> Option<NotWritten> {
+        if self.block_height <= 0.0 {
+            return None;
+        }
+        let rect = Rect::from_min_size(
+            Pos2::new(
+                self.page_left,
+                self.full.max.y - theme::SPACE_5 - self.block_height,
+            ),
+            Vec2::new(self.page_width, self.block_height),
+        );
+        let mut block = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(Layout::top_down(Align::Min)),
+        );
+        not_written_block(
+            &mut block,
+            rect,
+            missing,
+            self.none_written,
+            self.tiles_across,
+            review_ready,
+        )
+    }
+}
+
+/// The labels, on their own row between the head and the title. Returns the
+/// one clicked, to filter the board by.
+fn label_row(ui: &mut egui::Ui, names: &[String], labels: &Labels) -> Option<String> {
+    if names.is_empty() {
+        return None;
+    }
+    let mut clicked = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
+        for name in names {
+            if widgets::label_pill(ui, name, labels.color(name))
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(format!("Filter by {name}"))
+                .clicked()
+            {
+                clicked = Some(name.clone());
+            }
+        }
+    });
+    clicked
+}
+
+/// Hovering the text shows that it is one edit target: a `line-strong`
+/// outline with the hint on its top edge.
+fn paint_edit_outline(ui: &egui::Ui, outline: Rect) {
+    let p = theme::palette(ui);
+    let painter = ui.painter();
+    painter.rect_stroke(
+        outline,
+        CornerRadius::same(theme::RADIUS_SM),
+        Stroke::new(1.0, p.line_strong),
+        StrokeKind::Outside,
+    );
+    let hint = egui::RichText::new("Double-click to edit")
+        .font(egui::FontId::new(11.0, theme::ui_button().family))
+        .color(p.ink_muted);
+    let galley = egui::WidgetText::from(hint).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::FontSelection::Default,
+    );
+    let kbd_width = 18.0;
+    let right = outline.max.x - theme::SPACE_3;
+    let y = outline.min.y;
+    let legend = Rect::from_min_max(
+        Pos2::new(
+            right - kbd_width - theme::SPACE_2 - galley.size().x - theme::SPACE_2,
+            y - 8.0,
+        ),
+        Pos2::new(right + theme::SPACE_2, y + 8.0),
+    );
+    painter.rect_filled(legend, CornerRadius::ZERO, p.surface);
+    let kbd_left = right - kbd_width;
+    widgets::paint_kbd(ui, "E", Pos2::new(kbd_left, y));
+    let text_pos = Pos2::new(
+        kbd_left - theme::SPACE_2 - galley.size().x,
+        y - galley.size().y / 2.0,
+    );
+    painter.galley(text_pos, galley, p.ink_muted);
 }
 
 /// The issue's text, one top-level block at a time so each has a margin to

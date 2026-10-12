@@ -464,7 +464,8 @@ enum ReviewStatus {
 pub struct IboardApp {
     located: Located,
     board: Board,
-    cache: CommonMarkCache,
+    /// The reader's markdown cache, and where its text was drawn.
+    reader: Reader,
     screen: Screen,
     detail_mode: DetailMode,
     editor: Option<EditorState>,
@@ -532,9 +533,6 @@ pub struct IboardApp {
     closing: bool,
     /// Ask the window to close on the next frame (after the save prompt).
     send_close: bool,
-    /// The rendered issue content, used to tell a double-click on the page
-    /// from one on the header when deciding whether to start editing.
-    preview_rect: Rect,
     /// Set when a freshly created issue should receive keyboard focus.
     focus_editor: bool,
     /// Projects opened recently, most recent first, shown in the header menu.
@@ -667,7 +665,7 @@ impl IboardApp {
         Self {
             located,
             board,
-            cache: CommonMarkCache::default(),
+            reader: Reader::default(),
             screen: Screen::Board,
             detail_mode: DetailMode::Preview,
             editor: None,
@@ -700,7 +698,6 @@ impl IboardApp {
             leave_prompt: None,
             closing: false,
             send_close: false,
-            preview_rect: Rect::NOTHING,
             focus_editor: false,
             recents: Vec::new(),
             recents_file: None,
@@ -1006,6 +1003,7 @@ enum NotWritten {
 }
 
 /// What the reader sheet's head strip shows.
+#[derive(Clone, Copy)]
 struct SheetHead<'a> {
     column: &'a str,
     status: Color32,

@@ -261,7 +261,7 @@ impl IboardApp {
                         .button_double_clicked(egui::PointerButton::Primary)
                         && i.pointer
                             .interact_pos()
-                            .map(|pos| self.preview_rect.contains(pos))
+                            .map(|pos| self.reader.preview_rect.contains(pos))
                             .unwrap_or(false)
                 });
             if edit_key || double_clicked_page {
