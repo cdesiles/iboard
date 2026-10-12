@@ -996,8 +996,9 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
 
     std::fs::write(todo.join("b.md"), "# B\n").unwrap();
     app.last_refresh = Instant::now() - RESCAN_EVERY;
+    // A fast scan may land within the call that started it, so only its
+    // outcome is checked.
     app.background(&ctx);
-    assert!(app.scan.is_some(), "the rescan runs in the background");
     assert!(until(|| {
         app.background(&ctx);
         app.scan.is_none()
