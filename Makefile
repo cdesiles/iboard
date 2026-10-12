@@ -21,10 +21,11 @@ check: toolchain lint test
 test:
 	cargo test
 
-## Check formatting, run clippy and swift-format (fails on warnings)
+## Check formatting, clippy, an egui-free core and swift-format (fails on warnings)
 lint:
 	cargo fmt --all --check
 	cargo clippy --all-targets -- -D warnings
+	cargo check --lib --no-default-features
 ifneq ($(SWIFT_FORMAT),)
 	$(SWIFT_FORMAT) lint --strict macos/*.swift
 endif

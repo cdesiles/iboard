@@ -6,6 +6,8 @@
 
 use std::sync::Arc;
 
+use crate::labels::Rgb;
+
 use egui::epaint::Shadow;
 use egui::{
     Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Margin, Painter, Pos2,
@@ -129,6 +131,11 @@ fn luminance(color: Color32) -> f32 {
         }
     };
     0.2126 * channel(color.r()) + 0.7152 * channel(color.g()) + 0.0722 * channel(color.b())
+}
+
+/// A label colour, as egui draws it.
+pub fn rgb(Rgb(r, g, b): Rgb) -> Color32 {
+    Color32::from_rgb(r, g, b)
 }
 
 /// The WCAG contrast ratio between two colours, 1 (identical) to 21.

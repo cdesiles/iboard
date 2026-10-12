@@ -10,23 +10,29 @@ autobins = false
 [[bin]]
 name = "iboard"
 path = "src/main.rs"
+required-features = ["gui"]
 
 [[bin]]
 name = "idesign"
 path = "src/bin/idesign.rs"
+required-features = ["gui"]
+
+[features]
+default = ["gui"]
+gui = ["dep:eframe", "dep:egui", "dep:egui_commonmark", "dep:egui_extras", "dep:image", "dep:objc2-app-kit"]
 
 [dependencies]
 anyhow = "1.0.104"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
-eframe = "0.36.2"
-egui = "0.36.2"
-egui_commonmark = "0.25.0"
+eframe = { version = "0.36.2", optional = true }
+egui = { version = "0.36.2", optional = true }
+egui_commonmark = { version = "0.25.0", optional = true }
 pulldown-cmark = { version = "0.13.4", default-features = false }
-egui_extras = { version = "0.36.2", default-features = false, features = ["image", "file"] }
+egui_extras = { version = "0.36.2", optional = true, default-features = false, features = ["image", "file"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.6"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
 toml_edit = "0.25.15"
 
 [lints.clippy]
@@ -42,7 +48,7 @@ libc = "0.2.189"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
-objc2-app-kit = "0.3.2"
+objc2-app-kit = { version = "0.3.2", optional = true }
 objc2-foundation = "0.3.2"
 
 [dev-dependencies]

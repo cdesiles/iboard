@@ -16,3 +16,4 @@ rsync --recursive --checksum --delete "$staged/" "$snapshot/"
 cd "$snapshot"
 cargo fmt --all --check
 CARGO_TARGET_DIR="$root/target" cargo clippy --all-targets --quiet -- -D warnings
+CARGO_TARGET_DIR="$root/target" cargo check --lib --no-default-features --quiet

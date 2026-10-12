@@ -12,8 +12,6 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use egui::Color32;
-
 use crate::files;
 use crate::markdown;
 use crate::settings::{Section, UserConfig};
@@ -29,10 +27,14 @@ const PRESETS: [(&str, &str); 5] = [
     ("question", "#8a5006"),
 ];
 
+/// A label colour, independent of any drawing toolkit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rgb(pub u8, pub u8, pub u8);
+
 /// The resolved label colours: lowercased name → colour.
 #[derive(Debug, Clone, Default)]
 pub struct Labels {
-    colors: BTreeMap<String, Color32>,
+    colors: BTreeMap<String, Rgb>,
 }
 
 impl Labels {
@@ -79,7 +81,7 @@ impl Labels {
 
     /// The colour mapped to `name`, or `None` when the label is unknown (it
     /// still shows, in the neutral style).
-    pub fn color(&self, name: &str) -> Option<Color32> {
+    pub fn color(&self, name: &str) -> Option<Rgb> {
         self.colors.get(&name.to_lowercase()).copied()
     }
 }
@@ -93,8 +95,8 @@ pub fn preset_hex(name: &str) -> Option<&'static str> {
 }
 
 /// `#rrggbb` for a colour.
-fn to_hex(color: Color32) -> String {
-    format!("#{:02x}{:02x}{:02x}", color.r(), color.g(), color.b())
+fn to_hex(Rgb(r, g, b): Rgb) -> String {
+    format!("#{r:02x}{g:02x}{b:02x}")
 }
 
 impl Labels {
@@ -144,13 +146,13 @@ pub fn section(table: &BTreeMap<String, String>) -> Result<Section, String> {
 }
 
 /// Parses `#rrggbb` (or a bare `rrggbb`). `None` for anything else.
-pub fn parse_hex(value: &str) -> Option<Color32> {
+pub fn parse_hex(value: &str) -> Option<Rgb> {
     let value = value.trim().trim_start_matches('#');
     if value.len() != 6 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     let byte = |i: usize| u8::from_str_radix(&value[i..i + 2], 16).ok();
-    Some(Color32::from_rgb(byte(0)?, byte(2)?, byte(4)?))
+    Some(Rgb(byte(0)?, byte(2)?, byte(4)?))
 }
 
 /// The longest label kept, in characters.
@@ -562,8 +564,8 @@ mod tests {
 
     #[test]
     fn hex_parses_with_or_without_the_hash() {
-        assert_eq!(parse_hex("#0b6076"), Some(Color32::from_rgb(11, 96, 118)));
-        assert_eq!(parse_hex("0b6076"), Some(Color32::from_rgb(11, 96, 118)));
+        assert_eq!(parse_hex("#0b6076"), Some(Rgb(11, 96, 118)));
+        assert_eq!(parse_hex("0b6076"), Some(Rgb(11, 96, 118)));
         assert_eq!(parse_hex("#fff"), None);
         assert_eq!(parse_hex("nope"), None);
     }
@@ -592,8 +594,8 @@ mod tests {
 
         // With it, a preset is overridden and a name is added.
         let (labels, problems) = load("[labels]\nbug = \"#ff0000\"\nspike = \"#123456\"\n");
-        assert_eq!(labels.color("bug"), Some(Color32::from_rgb(255, 0, 0)));
-        assert_eq!(labels.color("spike"), Some(Color32::from_rgb(18, 52, 86)));
+        assert_eq!(labels.color("bug"), Some(Rgb(255, 0, 0)));
+        assert_eq!(labels.color("spike"), Some(Rgb(18, 52, 86)));
         assert_eq!(
             labels.color("feature"),
             parse_hex("#1a6e42"),

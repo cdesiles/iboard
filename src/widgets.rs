@@ -8,6 +8,7 @@ use egui::{
 };
 use std::sync::Arc;
 
+use crate::labels::Rgb;
 use crate::theme::{self, Icon};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -747,10 +748,10 @@ pub fn pill(ui: &mut Ui, text: &str, color: Color32) -> Response {
 /// name, in `meta`. A colour too faint to read on the tint falls back to `ink`;
 /// a `None` colour (an unknown label) is neutral: `surface-sunken` on
 /// `ink-muted`, so the chip is legible in both themes.
-pub fn label_pill(ui: &mut Ui, name: &str, color: Option<Color32>) -> Response {
+pub fn label_pill(ui: &mut Ui, name: &str, color: Option<Rgb>) -> Response {
     let p = theme::palette(ui);
     let name = name.to_lowercase();
-    let (fill, ink) = match color {
+    let (fill, ink) = match color.map(theme::rgb) {
         Some(color) => {
             let fill = theme::tint(color, p.surface);
             let ink = if theme::contrast_ratio(color, fill) >= 4.5 {
@@ -1135,9 +1136,9 @@ mod tests {
             // A preset colour, an unknown label and a nearly-white colour that
             // must fall back to readable ink all draw at the same 18pt size.
             for (name, color) in [
-                ("bug", Some(Color32::from_rgb(0xb1, 0x2f, 0x22))),
+                ("bug", Some(Rgb(0xb1, 0x2f, 0x22))),
                 ("spike", None),
-                ("faint", Some(Color32::from_rgb(0xf5, 0xf5, 0xf5))),
+                ("faint", Some(Rgb(0xf5, 0xf5, 0xf5))),
             ] {
                 let response = label_pill(ui, name, color);
                 assert_eq!(response.rect.height(), 18.0);
