@@ -29,6 +29,7 @@ pub mod menu;
 pub mod order;
 pub mod process;
 pub mod prompts;
+pub mod reviews;
 pub mod settings;
 pub mod sheet;
 pub mod theme;

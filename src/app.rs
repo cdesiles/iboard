@@ -27,6 +27,7 @@ use crate::labels::{self, Labels};
 use crate::order::{Sort, default_sort, focus_issues, group_issues};
 use crate::process;
 use crate::review_settings::{self, Catalog};
+use crate::reviews;
 use crate::settings::{self, UserConfig};
 use crate::theme::{self, Icon, Palette};
 use crate::titles::{self, Engine};
@@ -142,7 +143,8 @@ enum CardAction {
 /// whether the selected card offers Review.
 #[derive(Clone, Copy, Default)]
 struct CardExtras<'a> {
-    review_pill: Option<(&'a str, Color32)>,
+    /// The last verdict, and whether the issue changed since.
+    review_pill: Option<(&'a str, Color32, bool)>,
     review_button: bool,
     /// In ColumnFocus: show more of the description.
     wide: bool,
@@ -150,15 +152,29 @@ struct CardExtras<'a> {
     sections: &'a [String],
 }
 
-/// A finished review kept for the session, so its card pill can reopen it.
+/// An issue's last review, read from its sidecar, so its card pill can
+/// reopen it.
+#[derive(Clone)]
 struct PastReview {
     draft: bool,
     agent: String,
     raw: String,
     report: Option<Report>,
+    /// The issue changed since the agent read it.
+    stale: bool,
 }
 
 impl PastReview {
+    fn new(stored: &reviews::StoredReview, markdown: &str) -> Self {
+        Self {
+            draft: stored.draft,
+            agent: stored.agent.clone(),
+            raw: stored.raw.clone(),
+            report: agent::parse(&stored.raw),
+            stale: stored.is_stale(markdown),
+        }
+    }
+
     /// The pill: the worst verdict of the three, or "Reviewed" when the
     /// answer did not parse.
     fn pill(&self, p: &Palette) -> (&'static str, Color32) {
@@ -177,6 +193,14 @@ impl PastReview {
             Some(agent::Verdict::Block) => ("Block", p.danger),
             None => ("Reviewed", p.review),
         }
+    }
+}
+
+impl PastReview {
+    /// The card's pill: the verdict, and whether the issue changed since.
+    fn card_pill(&self, p: &Palette) -> (&'static str, Color32, bool) {
+        let (word, color) = self.pill(p);
+        (word, color, self.stale)
     }
 }
 
@@ -410,6 +434,8 @@ struct ReviewState {
     /// The configured tool (and model), shown in the panel header.
     agent: String,
     status: ReviewStatus,
+    /// [`reviews::content_hash`] of the text the agent reads.
+    hash: String,
     /// The "Ask again" follow-up, kept between renders.
     follow_up: String,
 }
@@ -484,7 +510,7 @@ pub struct IboardApp {
     last_refresh: Instant,
     /// The rescan Auto runs in the background, and the board generation it
     /// started from.
-    scan: Option<(Job<Result<Board, String>>, u64)>,
+    scan: Option<(Job<Result<Scanned, String>>, u64)>,
     /// Counts the boards adopted, so a background scan that started before
     /// a newer board never replaces it.
     board_generation: u64,
@@ -624,10 +650,11 @@ impl IboardApp {
     }
 
     fn from_located(located: Located) -> Self {
-        let (board, scan_error) = match discovery::build(&located) {
-            Ok(board) => (board, None),
-            Err(err) => (Board::empty(&located), Some(format!("{err:#}"))),
+        let ((board, sidecars), scan_error) = match scan(&located) {
+            Ok(scanned) => (scanned, None),
+            Err(err) => ((Board::empty(&located), HashMap::new()), Some(err)),
         };
+        let past_reviews = past_reviews(&board, &sidecars);
         Self {
             located,
             board,
@@ -654,7 +681,7 @@ impl IboardApp {
             confirm_delete: true,
             undo: None,
             trash: Trash::Folder(std::env::temp_dir().join("iboard-trash")),
-            past_reviews: HashMap::new(),
+            past_reviews,
             focused_column: None,
             column_sorts: HashMap::new(),
             group_by_label: false,
@@ -754,10 +781,11 @@ impl IboardApp {
     }
 
     /// Takes a fresh scan of the board, or why it could not be read.
-    fn adopt(&mut self, scanned: Result<Board, String>) {
+    fn adopt(&mut self, scanned: Result<Scanned, String>) {
         self.board_generation += 1;
         match scanned {
-            Ok(board) => {
+            Ok((board, sidecars)) => {
+                self.past_reviews = past_reviews(&board, &sidecars);
                 self.board = board;
                 self.scan_error = None;
             }
@@ -848,9 +876,30 @@ impl IboardApp {
     }
 }
 
-/// Reads the board of `located`, or says why it could not.
-fn scan(located: &Located) -> Result<Board, String> {
-    discovery::build(located).map_err(|err| format!("{err:#}"))
+/// A board and the review sidecars beside it, by slug.
+type Scanned = (Board, HashMap<String, reviews::Sidecar>);
+
+/// Reads the board of `located` and its reviews, or says why it could not.
+fn scan(located: &Located) -> Result<Scanned, String> {
+    let board = discovery::build(located).map_err(|err| format!("{err:#}"))?;
+    let sidecars = reviews::load_all(&board.root);
+    Ok((board, sidecars))
+}
+
+/// The last review of every issue on `board` that has one.
+fn past_reviews(
+    board: &Board,
+    sidecars: &HashMap<String, reviews::Sidecar>,
+) -> HashMap<PathBuf, PastReview> {
+    board
+        .columns
+        .iter()
+        .flat_map(|column| &column.issues)
+        .filter_map(|issue| {
+            let stored = sidecars.get(&reviews::slug(&issue.path))?.review.as_ref()?;
+            Some((issue.path.clone(), PastReview::new(stored, &issue.markdown)))
+        })
+        .collect()
 }
 
 impl eframe::App for IboardApp {

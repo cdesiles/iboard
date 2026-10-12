@@ -323,11 +323,16 @@ pub(super) fn card_body(
                         }
                     });
                     // The last review's verdict: a click reopens it.
-                    if let Some((word, color)) = extras.review_pill {
+                    if let Some((word, color, stale)) = extras.review_pill {
+                        let (color, hint) = if stale {
+                            (p.ink_faint, "Reviewed before the last edit: show it")
+                        } else {
+                            (color, "Show the last review")
+                        };
                         let pill = widgets::pill(ui, word, color)
                             .interact(Sense::click())
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .on_hover_text("Show the last review");
+                            .on_hover_text(hint);
                         action_rects.push(pill.rect);
                         if pill.clicked() {
                             action = Some(CardAction::ShowReview);

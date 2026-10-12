@@ -402,8 +402,10 @@ pub(super) fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> FocusGridAction
                                     } else {
                                         CardLook::Plain
                                     };
-                                    let pill =
-                                        view.past_reviews.get(&issue.path).map(|past| past.pill(p));
+                                    let pill = view
+                                        .past_reviews
+                                        .get(&issue.path)
+                                        .map(|past| past.card_pill(p));
                                     let extras = CardExtras {
                                         review_pill: pill,
                                         review_button: view.can_review

@@ -415,7 +415,7 @@ pub fn is_editable_column(dir: &Path) -> bool {
 const PRIORITY_DIGITS: usize = 3;
 
 /// The file name without its Ready priority prefix, if it has one.
-fn strip_priority(name: &str) -> &str {
+pub fn strip_priority(name: &str) -> &str {
     let bytes = name.as_bytes();
     let numbered = bytes.len() > PRIORITY_DIGITS
         && bytes[..PRIORITY_DIGITS].iter().all(u8::is_ascii_digit)

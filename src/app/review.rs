@@ -16,8 +16,8 @@ impl IboardApp {
         }
     }
 
-    /// Stores a running review and hands the prompt to the agent.
-    pub(super) fn run_review(&mut self, path: PathBuf, draft: bool, prompt: String) {
+    /// Stores a running review of `content` and hands the prompt to the agent.
+    pub(super) fn run_review(&mut self, path: PathBuf, draft: bool, content: &str, prompt: String) {
         if !self.agent.configured() {
             self.open_config();
             return;
@@ -28,6 +28,7 @@ impl IboardApp {
             draft,
             agent: self.agent.label(),
             status: ReviewStatus::Running { answer },
+            hash: reviews::content_hash(content),
             follow_up: String::new(),
         });
     }
@@ -40,7 +41,8 @@ impl IboardApp {
         let Some(content) = self.review_content(path, draft) else {
             return;
         };
-        self.run_review(path.to_path_buf(), draft, prompts::review_prompt(&content));
+        let prompt = prompts::review_prompt(&content);
+        self.run_review(path.to_path_buf(), draft, &content, prompt);
     }
 
     /// Sends a follow-up ("make it smaller") with the previous answer attached.
@@ -72,37 +74,19 @@ impl IboardApp {
                 prompts::review_prompt(&content)
             )
         };
-        self.run_review(path, draft, prompt);
+        self.run_review(path, draft, &content, prompt);
     }
 
-    /// Cancels a running review, or closes a finished one.
+    /// Cancels a running review (dropping the job stops the agent), or closes
+    /// a finished one, which stays behind the card's pill.
     pub(super) fn cancel_review(&mut self) {
-        let Some(review) = self.review.take() else {
-            return;
-        };
-        match review.status {
-            // Dropping the job stops the agent.
-            ReviewStatus::Running { .. } => {}
-            // A finished review stays reachable from the card's pill.
-            ReviewStatus::Done { raw, report } => {
-                self.past_reviews.insert(
-                    review.path,
-                    PastReview {
-                        draft: review.draft,
-                        agent: review.agent,
-                        raw,
-                        report,
-                    },
-                );
-            }
-            ReviewStatus::Failed { .. } => {}
-        }
+        self.review = None;
     }
 
     /// The card's verdict pill: opens the issue with its last review.
     pub(super) fn show_past_review(&mut self, path: PathBuf) {
         self.open_issue(path.clone());
-        if let Some(past) = self.past_reviews.remove(&path) {
+        if let Some(past) = self.past_reviews.get(&path).cloned() {
             self.review = Some(ReviewState {
                 path,
                 draft: past.draft,
@@ -111,6 +95,8 @@ impl IboardApp {
                     raw: past.raw,
                     report: past.report,
                 },
+                // Only a running review is saved, so this one needs none.
+                hash: String::new(),
                 follow_up: String::new(),
             });
         }
@@ -127,13 +113,32 @@ impl IboardApp {
         let Some(result) = answer.answer() else {
             return;
         };
-        review.status = match result {
-            Ok(raw) => {
-                let report = agent::parse(&raw);
-                ReviewStatus::Done { raw, report }
+        let raw = match result {
+            Ok(raw) => raw,
+            Err(error) => {
+                review.status = ReviewStatus::Failed { error };
+                return;
             }
-            Err(error) => ReviewStatus::Failed { error },
         };
+        let stored = reviews::StoredReview {
+            hash: review.hash.clone(),
+            agent: review.agent.clone(),
+            draft: review.draft,
+            at: chrono::Local::now().to_rfc3339(),
+            raw: raw.clone(),
+        };
+        review.status = ReviewStatus::Done {
+            report: agent::parse(&raw),
+            raw,
+        };
+        let path = review.path.clone();
+        if let Err(err) = reviews::save_review(&self.board.root, &path, stored.clone()) {
+            self.error = Some(err);
+        }
+        if let Some(issue) = self.board.find(&path) {
+            let past = PastReview::new(&stored, &issue.markdown);
+            self.past_reviews.insert(path, past);
+        }
     }
 
     /// Whether a review is running for the issue currently in the reader.

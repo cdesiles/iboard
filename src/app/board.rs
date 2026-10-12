@@ -375,7 +375,7 @@ pub(super) fn column_ui(
                         } else {
                             CardLook::Plain
                         };
-                        let pill = past_reviews.get(&issue.path).map(|past| past.pill(p));
+                        let pill = past_reviews.get(&issue.path).map(|past| past.card_pill(p));
                         let extras = CardExtras {
                             review_pill: pill,
                             review_button: can_review
