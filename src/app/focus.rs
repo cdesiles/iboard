@@ -75,8 +75,8 @@ impl IboardApp {
         let Some(column) = self.board.columns.iter().find(|column| column.dir == dir) else {
             return;
         };
-        let selected = self.selected.clone();
-        let scroll_to_selected = std::mem::take(&mut self.scroll_to_selected);
+        let selected = self.session.selected.clone();
+        let scroll_to_selected = std::mem::take(&mut self.session.scroll_to_selected);
         let new_card = self.flashing_card();
         let view = FocusGrid {
             column,

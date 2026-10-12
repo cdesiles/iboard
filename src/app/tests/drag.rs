@@ -123,7 +123,7 @@ fn dropping_a_done_card_on_archive_archives_it() {
     assert!(!file.exists(), "the card left done/");
     assert!(dir.join("issues/.archive/01-demo.md").exists());
     assert_eq!(
-        app.notice.as_ref().map(|(text, _)| text.as_str()),
+        app.session.notice.as_ref().map(|(text, _)| text.as_str()),
         Some("Archived 01-demo.md")
     );
 }
@@ -194,14 +194,14 @@ fn dropping_a_card_on_delete_asks_first() {
     drag_card_to_zone(&mut app, &file, Some("drop_zone_delete"));
 
     assert!(
-        matches!(&app.confirm, Some(Confirm::Delete(path)) if *path == file),
+        matches!(&app.session.confirm, Some(Confirm::Delete(path)) if *path == file),
         "the drop opens the confirmation"
     );
     assert!(file.exists(), "nothing is removed until confirmed");
     app.delete_issue(&file);
     assert!(!file.exists());
     assert_eq!(
-        app.notice.as_ref().map(|(text, _)| text.as_str()),
+        app.session.notice.as_ref().map(|(text, _)| text.as_str()),
         Some("Deleted 01-demo.md")
     );
 }
@@ -218,7 +218,7 @@ fn esc_cancels_a_drag_and_leaves_the_card() {
     drag_card_to_zone(&mut app, &file, None);
 
     assert!(file.exists());
-    assert!(app.confirm.is_none());
+    assert!(app.session.confirm.is_none());
 }
 
 #[test]
@@ -229,7 +229,7 @@ fn a_archives_the_selected_done_card() {
     let file = done.join("01-demo.md");
     std::fs::write(&file, "# Demo\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.selected = Some(file.clone());
+    app.session.selected = Some(file.clone());
 
     let ctx = themed_ctx();
     let input = egui::RawInput {
@@ -397,9 +397,9 @@ fn the_card_delete_icon_asks_to_delete_without_opening() {
         }],
     );
 
-    assert!(app.confirm.is_some(), "the icon asks to delete");
+    assert!(app.session.confirm.is_some(), "the icon asks to delete");
     assert!(
-        matches!(app.screen, Screen::Board),
+        matches!(app.session.screen, Screen::Board),
         "and does not open the issue"
     );
 }

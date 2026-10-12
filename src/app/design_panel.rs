@@ -7,34 +7,34 @@ impl IboardApp {
     pub(super) fn open_design(&mut self) {
         match DesignSystem::discover(&self.located.project_dir) {
             Ok(system) => {
-                self.design_system = Some(system);
-                self.design_error = None;
+                self.session.design_system = Some(system);
+                self.session.design_error = None;
             }
             Err(err) => {
-                self.design_system = None;
-                self.design_error = Some(err);
+                self.session.design_system = None;
+                self.session.design_error = Some(err);
             }
         }
-        self.design = Some(design_ui::Panel::default());
+        self.session.design = Some(design_ui::Panel::default());
     }
 
     /// The Design panel, and the actions it asks for: scaffold a component, or
     /// render a preview on a background thread. Taking the panel out for the
     /// frame keeps the borrows simple and lets a `Close` drop it.
     pub(super) fn design_window(&mut self, ui: &mut egui::Ui) {
-        let Some(mut panel) = self.design.take() else {
+        let Some(mut panel) = self.session.design.take() else {
             return;
         };
         let action = panel.show(
             ui.ctx(),
-            self.design_system.as_ref(),
-            self.design_error.as_deref(),
+            self.session.design_system.as_ref(),
+            self.session.design_error.as_deref(),
             design::render::available(),
             self.agent.configured(),
         );
         let keep = self.handle_design_action(&mut panel, action);
         if keep {
-            self.design = Some(panel);
+            self.session.design = Some(panel);
         }
     }
 
@@ -55,7 +55,7 @@ impl IboardApp {
                 draft,
             } => {
                 let mut created = false;
-                if let Some(system) = self.design_system.as_mut() {
+                if let Some(system) = self.session.design_system.as_mut() {
                     match system.add_component(&name, &group, Some(intent.as_str())) {
                         Ok(dir) => {
                             panel.status = Some(format!("Created {}", dir.display()));
@@ -71,7 +71,7 @@ impl IboardApp {
                 true
             }
             design_ui::Action::Render(name) => {
-                if let Some(system) = self.design_system.as_ref() {
+                if let Some(system) = self.session.design_system.as_ref() {
                     match design::render::component_preview(system, &name) {
                         Ok(receiver) => panel.start_render(name, receiver),
                         Err(err) => panel.fail_render(&name, err),
@@ -80,7 +80,7 @@ impl IboardApp {
                 true
             }
             design_ui::Action::OpenCatalog => {
-                if let Some(system) = self.design_system.as_ref() {
+                if let Some(system) = self.session.design_system.as_ref() {
                     match design::catalog::show(system, "light") {
                         Ok(path) => panel.status = Some(format!("Opened {}", path.display())),
                         Err(err) => panel.status = Some(err),
@@ -94,7 +94,7 @@ impl IboardApp {
     /// Ask the configured agent to draft a component's preview fragment. The
     /// prompt is built from the just-scaffolded component and the system.
     pub(super) fn start_design_draft(&mut self, name: &str, group: &str, intent: &str) {
-        let Some(system) = self.design_system.as_ref() else {
+        let Some(system) = self.session.design_system.as_ref() else {
             return;
         };
         let prompt = prompts::component_prompt(system, name, group, intent, "light");
@@ -103,7 +103,7 @@ impl IboardApp {
             .join("components")
             .join(name)
             .join("preview.html");
-        self.design_draft = Some(DraftJob {
+        self.session.design_draft = Some(DraftJob {
             name: name.to_string(),
             job: agent::start(&self.agent, &prompt, &preview),
         });
@@ -112,7 +112,7 @@ impl IboardApp {
     /// Adopt a drafted component as soon as the agent answers. Runs every frame,
     /// so a draft started before the panel closed still lands.
     pub(super) fn poll_design_draft(&mut self, ctx: &egui::Context) {
-        let Some(draft) = self.design_draft.as_ref() else {
+        let Some(draft) = self.session.design_draft.as_ref() else {
             return;
         };
         let Some(result) = draft.job.answer() else {
@@ -120,7 +120,7 @@ impl IboardApp {
             return;
         };
         let name = draft.name.clone();
-        self.design_draft = None;
+        self.session.design_draft = None;
 
         let message = match result {
             Ok(reply) => {
@@ -133,7 +133,7 @@ impl IboardApp {
             }
             Err(err) => format!("{name}: {err}"),
         };
-        if let Some(panel) = self.design.as_mut() {
+        if let Some(panel) = self.session.design.as_mut() {
             panel.forget_preview(&name);
             panel.status = Some(message);
         }
@@ -141,7 +141,7 @@ impl IboardApp {
 
     /// Write a drafted fragment into the component and reload the system.
     pub(super) fn write_drafted_component(&mut self, name: &str, html: &str) -> String {
-        let Some(system) = self.design_system.as_ref() else {
+        let Some(system) = self.session.design_system.as_ref() else {
             return format!("{name}: no design system");
         };
         let root = system.root.clone();
@@ -150,7 +150,7 @@ impl IboardApp {
             return format!("Couldn't write {}: {err}", path.display());
         }
         if let Ok(reloaded) = DesignSystem::load(&root) {
-            self.design_system = Some(reloaded);
+            self.session.design_system = Some(reloaded);
         }
         format!("Drafted {name}.")
     }

@@ -15,9 +15,9 @@ fn a_ticket_clicked_while_it_is_renumbered_stays_open() {
     app.open_composer();
     app.write_composed("Fresh", "", false);
     let written = todo.join("fresh.md");
-    assert_eq!(app.selected.as_deref(), Some(written.as_path()));
+    assert_eq!(app.session.selected.as_deref(), Some(written.as_path()));
     assert!(
-        app.pending_front.is_some(),
+        app.session.pending_front.is_some(),
         "renumbered at the end of the frame"
     );
 
@@ -27,16 +27,20 @@ fn a_ticket_clicked_while_it_is_renumbered_stays_open() {
 
     let renamed = todo.join("001-fresh.md");
     assert!(renamed.is_file() && !written.exists());
-    assert!(matches!(&app.screen, Screen::Detail(path) if *path == renamed));
+    assert!(matches!(&app.session.screen, Screen::Detail(path) if *path == renamed));
     assert!(app.board.find(&renamed).is_some(), "the reader finds it");
     assert_eq!(
-        app.label_picker
+        app.session
+            .label_picker
             .as_ref()
             .map(|picker| picker.path.as_path()),
         Some(renamed.as_path()),
         "the LabelPicker stays open on it"
     );
-    assert_eq!(app.new_card.as_ref().map(|(path, _)| path), Some(&renamed));
+    assert_eq!(
+        app.session.new_card.as_ref().map(|(path, _)| path),
+        Some(&renamed)
+    );
 }
 
 #[test]
@@ -49,7 +53,7 @@ fn the_composer_creates_issues_and_stays_open() {
     let mut app = IboardApp::from_located(located);
 
     app.open_composer();
-    app.composer.as_mut().unwrap().title = "Fix login redirect".to_string();
+    app.session.composer.as_mut().unwrap().title = "Fix login redirect".to_string();
     app.submit_composer(false);
 
     let created = todo.join("fix-login-redirect.md");
@@ -57,12 +61,16 @@ fn the_composer_creates_issues_and_stays_open() {
         std::fs::read_to_string(&created).unwrap(),
         "# Fix login redirect\n"
     );
-    let composer = app.composer.as_ref().expect("the composer stays open");
+    let composer = app
+        .session
+        .composer
+        .as_ref()
+        .expect("the composer stays open");
     assert!(
         composer.title.is_empty(),
         "the field clears for the next idea"
     );
-    assert!(matches!(app.screen, Screen::Board));
+    assert!(matches!(app.session.screen, Screen::Board));
     assert!(app.board.find(&created).is_some(), "the board sees it");
 
     // An empty title never creates a file.
@@ -80,14 +88,17 @@ fn clicking_away_adds_the_issue_and_closes_the_composer() {
     let mut app = IboardApp::from_located(located);
 
     app.open_composer();
-    app.composer.as_mut().unwrap().title = "Export board".to_string();
+    app.session.composer.as_mut().unwrap().title = "Export board".to_string();
     app.submit_composer(true);
 
     let created = todo.join("export-board.md");
     assert!(created.exists(), "the new issue is written to Todo");
-    assert!(app.composer.is_none(), "the composer closes");
-    assert!(matches!(app.screen, Screen::Board), "the board stays");
-    assert_eq!(app.selected.as_deref(), Some(created.as_path()));
+    assert!(app.session.composer.is_none(), "the composer closes");
+    assert!(
+        matches!(app.session.screen, Screen::Board),
+        "the board stays"
+    );
+    assert_eq!(app.session.selected.as_deref(), Some(created.as_path()));
 }
 
 /// The composer's keys, as typed: `⇧↩` and `⌘↩` are new lines, `↩` and
@@ -126,7 +137,7 @@ fn composer_keys_and_clicking_away() {
     frame(&ctx, &mut app, key(Key::Enter, egui::Modifiers::COMMAND));
     frame(&ctx, &mut app, text("third"));
     assert_eq!(
-        app.composer.as_ref().unwrap().description,
+        app.session.composer.as_ref().unwrap().description,
         "First line\nsecond\nthird"
     );
     assert_eq!(files(), 1, "new lines never add");
@@ -136,7 +147,10 @@ fn composer_keys_and_clicking_away() {
         std::fs::read_to_string(todo.join("first-line.md")).unwrap(),
         "# First line\n\nFirst line\nsecond\nthird\n"
     );
-    assert!(app.composer.is_some(), "↩ keeps it open for the next one");
+    assert!(
+        app.session.composer.is_some(),
+        "↩ keeps it open for the next one"
+    );
 
     frame(
         &ctx,
@@ -147,7 +161,7 @@ fn composer_keys_and_clicking_away() {
     frame(&ctx, &mut app, key(Key::S, egui::Modifiers::COMMAND));
     // Adding a ticket at the top renumbers Todo's files.
     assert!(todo.join("001-saved-with-command-s.md").exists(), "⌘S adds");
-    assert!(app.composer.is_some());
+    assert!(app.session.composer.is_some());
     let other = todo.join("003-other.md");
     assert!(other.exists(), "the older card was renumbered too");
 
@@ -179,9 +193,9 @@ fn composer_keys_and_clicking_away() {
         todo.join("001-clicked-away.md").exists(),
         "the click adds it"
     );
-    assert!(app.composer.is_none(), "and closes the composer");
+    assert!(app.session.composer.is_none(), "and closes the composer");
     let opened = todo.join("004-other.md");
-    let got = match &app.screen {
+    let got = match &app.session.screen {
         Screen::Detail(path) => Some(path.clone()),
         _ => None,
     };
@@ -202,7 +216,7 @@ fn composer_with_engine(tag: &str) -> (Scratch, PathBuf, IboardApp) {
         ..AgentConfig::default()
     };
     app.open_composer();
-    let composer = app.composer.as_mut().unwrap();
+    let composer = app.session.composer.as_mut().unwrap();
     composer.engine = Some(Engine::Agent);
     composer.description = "When I export the board I want a checklist.\nOne per column.".into();
     (dir, todo, app)
@@ -210,7 +224,7 @@ fn composer_with_engine(tag: &str) -> (Scratch, PathBuf, IboardApp) {
 
 /// Stands in for the engine: the answer is already waiting.
 fn answer_with(app: &mut IboardApp, answer: Result<String, String>) {
-    let composer = app.composer.as_mut().unwrap();
+    let composer = app.session.composer.as_mut().unwrap();
     let run = composer.naming.as_mut().expect("naming started");
     run.answer = Job::done(answer);
 }
@@ -221,7 +235,7 @@ fn enter_names_the_issue_then_adds_it() {
     let ctx = egui::Context::default();
 
     app.submit_composer(false);
-    assert!(app.composer.as_ref().unwrap().stage == TitleStage::Naming);
+    assert!(app.session.composer.as_ref().unwrap().stage == TitleStage::Naming);
     assert_eq!(
         std::fs::read_dir(&todo).unwrap().count(),
         0,
@@ -230,7 +244,7 @@ fn enter_names_the_issue_then_adds_it() {
 
     answer_with(&mut app, Ok("Export the board as checklists".into()));
     app.poll_naming(&ctx);
-    let composer = app.composer.as_ref().unwrap();
+    let composer = app.session.composer.as_ref().unwrap();
     assert!(
         composer.stage == TitleStage::Inferred,
         "it stops on the suggestion"
@@ -244,7 +258,11 @@ fn enter_names_the_issue_then_adds_it() {
         std::fs::read_to_string(&created).unwrap(),
         "# Export the board as checklists\n\nWhen I export the board I want a checklist.\nOne per column.\n"
     );
-    let composer = app.composer.as_ref().expect("the composer stays open");
+    let composer = app
+        .session
+        .composer
+        .as_ref()
+        .expect("the composer stays open");
     assert!(composer.title.is_empty() && composer.description.is_empty());
     assert!(composer.stage == TitleStage::Idle);
 }
@@ -257,7 +275,7 @@ fn a_failed_name_falls_back_to_the_first_line() {
     app.submit_composer(false);
     answer_with(&mut app, Err("model unavailable".into()));
     app.poll_naming(&ctx);
-    let composer = app.composer.as_ref().unwrap();
+    let composer = app.session.composer.as_ref().unwrap();
     assert!(composer.stage == TitleStage::Failed);
     assert!(
         composer.focus == Some(ComposerField::Title),
@@ -287,7 +305,7 @@ fn clicking_away_while_naming_writes_once_named() {
         created.exists(),
         "a click away never stops on the suggestion"
     );
-    assert!(app.composer.is_none(), "and closes the composer");
+    assert!(app.session.composer.is_none(), "and closes the composer");
 }
 
 #[test]
@@ -296,17 +314,18 @@ fn esc_while_naming_lets_you_type_the_title() {
     app.submit_composer(false);
     app.composer_escape();
     let composer = app
+        .session
         .composer
         .as_ref()
         .expect("esc does not close while naming");
     assert!(composer.stage == TitleStage::Skipped);
     assert!(composer.naming.is_none());
 
-    app.composer.as_mut().unwrap().title = "Board export".into();
+    app.session.composer.as_mut().unwrap().title = "Board export".into();
     app.submit_composer(false);
     assert!(todo.join("board-export.md").exists());
     app.composer_escape();
-    assert!(app.composer.is_none(), "esc closes it otherwise");
+    assert!(app.session.composer.is_none(), "esc closes it otherwise");
 }
 
 #[test]
@@ -317,10 +336,10 @@ fn without_an_engine_the_first_line_names_the_issue() {
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
     assert!(
-        app.composer.as_ref().unwrap().engine.is_none(),
+        app.session.composer.as_ref().unwrap().engine.is_none(),
         "Off in tests"
     );
-    app.composer.as_mut().unwrap().description =
+    app.session.composer.as_mut().unwrap().description =
         "  Fix the login redirect\nIt loses the deep link.".into();
     app.submit_composer(false);
     assert_eq!(
@@ -340,16 +359,22 @@ fn opening_an_issue_keeps_an_unsaved_composer() {
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
     app.open_composer();
-    app.composer.as_mut().unwrap().description = "Half a thought".into();
+    app.session.composer.as_mut().unwrap().description = "Half a thought".into();
     app.open_issue(other.clone());
     app.back_to_board();
     assert_eq!(
-        app.composer.as_ref().map(|c| c.description.as_str()),
+        app.session
+            .composer
+            .as_ref()
+            .map(|c| c.description.as_str()),
         Some("Half a thought"),
         "the draft waits on the board"
     );
 
-    app.composer.as_mut().unwrap().description.clear();
+    app.session.composer.as_mut().unwrap().description.clear();
     app.open_issue(other);
-    assert!(app.composer.is_none(), "an empty composer still closes");
+    assert!(
+        app.session.composer.is_none(),
+        "an empty composer still closes"
+    );
 }

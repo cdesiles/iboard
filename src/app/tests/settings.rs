@@ -39,7 +39,7 @@ fn the_settings_dialog_saves_with_command_enter() {
     app.open_config();
     frame(&mut app, vec![key(Key::Escape, egui::Modifiers::NONE)]);
     assert!(app.settings.is_none(), "esc closes the dialog");
-    assert!(app.review.is_some(), "and leaves the review alone");
+    assert!(app.session.review.is_some(), "and leaves the review alone");
 }
 
 /// The same flow through egui_kittest: widgets found by their label, as a

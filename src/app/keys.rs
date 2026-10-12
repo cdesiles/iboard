@@ -188,7 +188,7 @@ impl IboardApp {
             self.run(command);
         }
         // Saved some other way while the prompt was up: carry on leaving.
-        if let Some(to) = self.leave_prompt
+        if let Some(to) = self.session.leave_prompt
             && !self.has_unsaved_edits()
         {
             self.go(to);
@@ -239,11 +239,11 @@ impl IboardApp {
     /// The delete confirmation owns Escape and Enter while it is up. True
     /// while it is.
     fn confirm_keys(&mut self, ctx: &egui::Context) -> bool {
-        let Some(Confirm::Delete(path)) = self.confirm.clone() else {
+        let Some(Confirm::Delete(path)) = self.session.confirm.clone() else {
             return false;
         };
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
-            self.confirm = None;
+            self.session.confirm = None;
         } else if ctx.input(|i| i.key_pressed(Key::Enter)) {
             self.delete_issue(&path);
         }
@@ -255,47 +255,56 @@ impl IboardApp {
     /// written, a review (cancelled, or its panel closed), and the screens.
     fn escape_keys(&mut self, ctx: &egui::Context) {
         let take = || ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
-        if self.label_picker.is_some() && take() {
-            self.label_picker = None;
+        if self.session.label_picker.is_some() && take() {
+            self.session.label_picker = None;
         }
-        if matches!(self.screen, Screen::Board) && self.filter_bar.open && take() {
+        if matches!(self.session.screen, Screen::Board) && self.filter_bar.open && take() {
             self.filter_bar.escape(ctx);
         }
         if !ctx.input(|i| i.key_pressed(Key::Escape)) {
             return;
         }
-        if let Some(notes) = self.notes.as_mut().filter(|notes| notes.draft.is_some()) {
+        if let Some(notes) = self
+            .session
+            .notes
+            .as_mut()
+            .filter(|notes| notes.draft.is_some())
+        {
             notes.draft = None;
-        } else if self.review.is_some() {
+        } else if self.session.review.is_some() {
             self.cancel_review();
         } else {
-            match self.screen.clone() {
-                _ if self.leave_prompt.is_some() => self.answer_leave(LeaveChoice::KeepEditing),
-                Screen::Board if self.composer.is_some() => self.composer_escape(),
+            match self.session.screen.clone() {
+                _ if self.session.leave_prompt.is_some() => {
+                    self.answer_leave(LeaveChoice::KeepEditing)
+                }
+                Screen::Board if self.session.composer.is_some() => self.composer_escape(),
                 Screen::Board if !self.filter_bar.filter.is_empty() => {
                     self.filter_bar.filter.clear()
                 }
                 Screen::Board if self.column_focus.column.is_some() => self.unfocus_column(),
-                Screen::Board => self.selected = None,
-                Screen::Detail(_) if self.detail_mode == DetailMode::Edit => self.show_preview(),
+                Screen::Board => self.session.selected = None,
+                Screen::Detail(_) if self.session.detail_mode == DetailMode::Edit => {
+                    self.show_preview()
+                }
                 Screen::Detail(_) => self.back_to_board(),
             }
         }
     }
 
     fn key_context(&self, ctx: &egui::Context, confirming: bool) -> KeyContext {
-        let open = match &self.screen {
+        let open = match &self.session.screen {
             Screen::Detail(path) if self.board.find(path).is_some() => Some(path.clone()),
             _ => None,
         };
         KeyContext {
             typing: ctx.memory(|m| m.focused().is_some()),
             confirming,
-            board: matches!(self.screen, Screen::Board),
+            board: matches!(self.session.screen, Screen::Board),
             editable: open.as_deref().is_some_and(|path| self.can_edit(path)),
             open,
-            editing: self.detail_mode == DetailMode::Edit,
-            composer: self.composer.is_some(),
+            editing: self.session.detail_mode == DetailMode::Edit,
+            composer: self.session.composer.is_some(),
             selected: self.selected_issue().map(|path| {
                 let done = self
                     .board
@@ -326,19 +335,19 @@ impl IboardApp {
                 if self.review_is_running(&path) {
                     self.cancel_review();
                 } else {
-                    let draft = self.detail_mode == DetailMode::Edit;
+                    let draft = self.session.detail_mode == DetailMode::Edit;
                     self.start_review(&path, draft);
                 }
             }
-            Command::Back if self.detail_mode == DetailMode::Edit => self.show_preview(),
+            Command::Back if self.session.detail_mode == DetailMode::Edit => self.show_preview(),
             Command::Back => self.back_to_board(),
             // `⌘S` is the header's Save: it forces a save (overwriting a
             // conflict) and, when it went through, shows the issue again. On
             // the board it adds the composer's issue, as `↩` does.
             Command::Save => {
-                if matches!(self.screen, Screen::Board) && self.composer.is_some() {
+                if matches!(self.session.screen, Screen::Board) && self.session.composer.is_some() {
                     self.submit_composer(false);
-                } else if self.detail_mode == DetailMode::Edit {
+                } else if self.session.detail_mode == DetailMode::Edit {
                     self.save_and_preview();
                 } else {
                     self.flush_autosave(true);
@@ -360,6 +369,7 @@ impl IboardApp {
         // Debounced autosave, while Auto is on.
         let due = self.auto
             && self
+                .session
                 .editor
                 .as_ref()
                 .map(|e| {
@@ -376,19 +386,19 @@ impl IboardApp {
 
         // Auto reads the board again every RESCAN_EVERY, off the UI thread.
         if self.auto {
-            if self.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
+            if self.session.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
                 self.last_refresh = Instant::now();
                 let located = self.located.clone();
                 let rescan = Job::spawn(move |_| scan(&located));
-                self.scan = Some((rescan, self.board_generation));
+                self.session.scan = Some((rescan, self.board_generation));
             }
             ctx.request_repaint_after(RESCAN_EVERY);
         }
-        if let Some((rescan, generation)) = &self.scan {
+        if let Some((rescan, generation)) = &self.session.scan {
             match rescan.answer() {
                 Some(scanned) => {
                     let current = *generation == self.board_generation;
-                    self.scan = None;
+                    self.session.scan = None;
                     if current {
                         self.adopt(scanned);
                     }
@@ -397,7 +407,7 @@ impl IboardApp {
             }
         }
         // Poll a running review a few times a second.
-        if self.review.as_ref().is_some_and(|review| {
+        if self.session.review.as_ref().is_some_and(|review| {
             matches!(
                 review.status,
                 ReviewStatus::Running { .. } | ReviewStatus::Splitting { .. }

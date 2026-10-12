@@ -32,6 +32,7 @@ impl IboardApp {
     /// open before.
     pub(super) fn notes_for(&mut self, path: &Path) -> &mut Notes {
         let notes = self
+            .session
             .notes
             .take()
             .filter(|notes| notes.path == path)
@@ -40,12 +41,12 @@ impl IboardApp {
                 comments: reviews::load(&self.board.root, path).comments,
                 draft: None,
             });
-        self.notes.insert(notes)
+        self.session.notes.insert(notes)
     }
 
     /// Writes the comments of the open issue back into its sidecar.
     fn save_notes(&mut self) {
-        let Some(notes) = self.notes.as_ref() else {
+        let Some(notes) = self.session.notes.as_ref() else {
             return;
         };
         let mut sidecar = reviews::load(&self.board.root, &notes.path);
@@ -114,7 +115,8 @@ impl IboardApp {
 
     /// Whether a note is being written, which then owns esc and double-clicks.
     pub(super) fn writing_note(&self) -> bool {
-        self.notes
+        self.session
+            .notes
             .as_ref()
             .is_some_and(|notes| notes.draft.is_some())
     }

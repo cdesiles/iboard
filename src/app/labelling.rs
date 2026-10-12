@@ -7,13 +7,14 @@ impl IboardApp {
     /// there (the trigger again).
     pub(super) fn toggle_label_picker(&mut self, path: PathBuf) {
         if self
+            .session
             .label_picker
             .as_ref()
             .is_some_and(|picker| picker.path == path)
         {
-            self.label_picker = None;
+            self.session.label_picker = None;
         } else {
-            self.label_picker = Some(LabelPicker::new(path));
+            self.session.label_picker = Some(LabelPicker::new(path));
         }
     }
 
@@ -22,25 +23,26 @@ impl IboardApp {
     /// title instead).
     pub(super) fn label_picker_ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        let on_screen = self.label_picker.as_ref().is_some_and(|picker| {
+        let on_screen = self.session.label_picker.as_ref().is_some_and(|picker| {
             self.board.find(&picker.path).is_some()
-                && match &self.screen {
+                && match &self.session.screen {
                     Screen::Board => true,
                     Screen::Detail(path) => {
-                        *path == picker.path && self.detail_mode == DetailMode::Preview
+                        *path == picker.path && self.session.detail_mode == DetailMode::Preview
                     }
                 }
         });
         if !on_screen {
-            self.label_picker = None;
+            self.session.label_picker = None;
         }
         label_picker::set_open(
             &ctx,
-            self.label_picker
+            self.session
+                .label_picker
                 .as_ref()
                 .map(|picker| picker.path.as_path()),
         );
-        let Some(picker) = self.label_picker.as_mut() else {
+        let Some(picker) = self.session.label_picker.as_mut() else {
             return;
         };
         let has = self
@@ -53,7 +55,7 @@ impl IboardApp {
             usize::MAX,
         );
         match label_picker::show(ui, picker, &has, &board, &self.labels) {
-            Some(label_picker::Outcome::Close) => self.label_picker = None,
+            Some(label_picker::Outcome::Close) => self.session.label_picker = None,
             Some(label_picker::Outcome::Add(label)) => {
                 self.add_label(&label, ctx.input(|i| i.time));
             }
@@ -67,7 +69,12 @@ impl IboardApp {
     /// Writes `label` into the picker's issue, then reloads so the pill shows
     /// on the card and in the Reader.
     pub(super) fn add_label(&mut self, label: &str, now: f64) {
-        let Some(path) = self.label_picker.as_ref().map(|picker| picker.path.clone()) else {
+        let Some(path) = self
+            .session
+            .label_picker
+            .as_ref()
+            .map(|picker| picker.path.clone())
+        else {
             return;
         };
         let shown = path
@@ -78,12 +85,12 @@ impl IboardApp {
         match labels::add_label_to_file(&path, label) {
             Ok(_) => {
                 self.refresh();
-                if let Some(picker) = self.label_picker.as_mut() {
+                if let Some(picker) = self.session.label_picker.as_mut() {
                     picker.added(label.to_string(), shown, now);
                 }
             }
             Err(message) => {
-                if let Some(picker) = self.label_picker.as_mut() {
+                if let Some(picker) = self.session.label_picker.as_mut() {
                     picker.failed(message);
                 }
             }
@@ -93,7 +100,12 @@ impl IboardApp {
     /// Takes `label` off the picker's issue, then reloads so the pill goes
     /// from the card and the Reader.
     pub(super) fn remove_label(&mut self, label: &str, now: f64) {
-        let Some(path) = self.label_picker.as_ref().map(|picker| picker.path.clone()) else {
+        let Some(path) = self
+            .session
+            .label_picker
+            .as_ref()
+            .map(|picker| picker.path.clone())
+        else {
             return;
         };
         let shown = path
@@ -104,12 +116,12 @@ impl IboardApp {
         match labels::remove_label_from_file(&path, label) {
             Ok(_) => {
                 self.refresh();
-                if let Some(picker) = self.label_picker.as_mut() {
+                if let Some(picker) = self.session.label_picker.as_mut() {
                     picker.removed(label.to_string(), shown, now);
                 }
             }
             Err(message) => {
-                if let Some(picker) = self.label_picker.as_mut() {
+                if let Some(picker) = self.session.label_picker.as_mut() {
                     picker.failed(message);
                 }
             }

@@ -25,7 +25,7 @@ pub(super) struct SplitDone {
 impl IboardApp {
     /// Asks the agent to cut the reviewed issue, giving it the Size finding.
     pub(super) fn start_split(&mut self) {
-        let Some(review) = self.review.as_ref() else {
+        let Some(review) = self.session.review.as_ref() else {
             return;
         };
         let ReviewStatus::Done {
@@ -49,7 +49,7 @@ impl IboardApp {
         let notes = self.reviewer_notes(&path);
         let prompt = prompts::split_prompt(&content, &reason, &notes);
         let (answer, progress) = agent::start_review(&self.agent, &prompt, &path, mode);
-        if let Some(review) = self.review.as_mut() {
+        if let Some(review) = self.session.review.as_mut() {
             review.status = ReviewStatus::Splitting {
                 answer,
                 progress,
@@ -61,7 +61,7 @@ impl IboardApp {
 
     /// Adopts the agent's tickets once they are in; called every frame.
     pub(super) fn poll_split(&mut self) {
-        let Some(review) = self.review.as_mut() else {
+        let Some(review) = self.session.review.as_mut() else {
             return;
         };
         let ReviewStatus::Splitting { answer, .. } = &review.status else {
@@ -101,7 +101,7 @@ impl IboardApp {
 
     /// "Back to review": the findings the split started from.
     pub(super) fn back_to_review(&mut self) {
-        let Some(review) = self.review.as_mut() else {
+        let Some(review) = self.session.review.as_mut() else {
             return;
         };
         if let ReviewStatus::SplitReady { raw, report, .. }
@@ -116,7 +116,7 @@ impl IboardApp {
 
     /// "Create N tickets": writes the kept drafts in place of the issue.
     pub(super) fn create_split(&mut self) {
-        let Some(review) = self.review.as_ref() else {
+        let Some(review) = self.session.review.as_ref() else {
             return;
         };
         let ReviewStatus::SplitReady { drafts, .. } = &review.status else {
@@ -131,7 +131,7 @@ impl IboardApp {
             return;
         }
         let original = review.path.clone();
-        self.review = None;
+        self.session.review = None;
         self.split_issue(&original, &drafts);
     }
 
@@ -218,9 +218,9 @@ impl IboardApp {
             ));
         }
         self.refresh();
-        self.selected = children.first().cloned();
-        self.scroll_to_selected = true;
-        self.undo = Some(Undo::Split(SplitDone {
+        self.session.selected = children.first().cloned();
+        self.session.scroll_to_selected = true;
+        self.session.undo = Some(Undo::Split(SplitDone {
             original: original.to_path_buf(),
             content,
             archived,
@@ -247,13 +247,13 @@ impl IboardApp {
             .and_then(|()| atomic_write(&split.original, &split.content));
         match restored {
             Ok(()) => {
-                self.notice = Some((
+                self.session.notice = Some((
                     format!("Restored {}", self.relative(&split.original)),
                     Instant::now(),
                 ));
                 self.refresh();
-                self.selected = Some(split.original);
-                self.scroll_to_selected = true;
+                self.session.selected = Some(split.original);
+                self.session.scroll_to_selected = true;
             }
             Err(err) => {
                 self.error = Some(format!(

@@ -100,7 +100,7 @@ impl IboardApp {
                 Intent::AddSection { path, section } => self.add_section(&path, &section),
                 Intent::EditAtEnd(path) => {
                     self.start_editing(&path);
-                    self.focus_editor = true;
+                    self.session.focus_editor = true;
                 }
                 Intent::Place {
                     path,
@@ -119,7 +119,7 @@ impl IboardApp {
                 }
                 Intent::Compose => self.open_composer(),
                 Intent::SubmitComposer { close } => self.submit_composer(close),
-                Intent::CloseComposer if !submitting => self.composer = None,
+                Intent::CloseComposer if !submitting => self.session.composer = None,
                 Intent::CloseComposer => {}
                 Intent::TitleSettings => self.open_title_settings(),
             }

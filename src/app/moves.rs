@@ -26,18 +26,18 @@ impl IboardApp {
         match std::fs::rename(path, &target) {
             Ok(()) => {
                 // Keep the reader/editor pointed at the issue's new home.
-                if let Some(editor) = self.editor.as_mut()
+                if let Some(editor) = self.session.editor.as_mut()
                     && editor.path == path
                 {
                     editor.path = target.clone();
                 }
-                if let Screen::Detail(open) = &mut self.screen
+                if let Screen::Detail(open) = &mut self.session.screen
                     && open == path
                 {
                     *open = target.clone();
                 }
-                if self.selected.as_deref() == Some(path) {
-                    self.selected = Some(target.clone());
+                if self.session.selected.as_deref() == Some(path) {
+                    self.session.selected = Some(target.clone());
                 }
                 self.refresh();
                 Some(target)
@@ -148,28 +148,32 @@ impl IboardApp {
                     *path = new.clone();
                 }
             };
-            if let Some(selected) = self.selected.as_mut() {
+            if let Some(selected) = self.session.selected.as_mut() {
                 follow(selected);
             }
-            if let Screen::Detail(open) = &mut self.screen {
+            if let Screen::Detail(open) = &mut self.session.screen {
                 follow(open);
             }
-            if let Some(Confirm::Delete(path)) = self.confirm.as_mut() {
+            if let Some(Confirm::Delete(path)) = self.session.confirm.as_mut() {
                 follow(path);
             }
-            if let Some((path, _)) = self.new_card.as_mut() {
+            if let Some((path, _)) = self.session.new_card.as_mut() {
                 follow(path);
             }
-            if let Some((_, path)) = self.pending_front.as_mut() {
+            if let Some((_, path)) = self.session.pending_front.as_mut() {
                 follow(path);
             }
             let paths = [
-                self.editor.as_mut().map(|editor| &mut editor.path),
-                self.label_picker.as_mut().map(|picker| &mut picker.path),
-                self.commits.as_mut().map(|panel| &mut panel.path),
-                self.review.as_mut().map(|review| &mut review.path),
-                self.notes.as_mut().map(|notes| &mut notes.path),
-                self.enrichment
+                self.session.editor.as_mut().map(|editor| &mut editor.path),
+                self.session
+                    .label_picker
+                    .as_mut()
+                    .map(|picker| &mut picker.path),
+                self.session.commits.as_mut().map(|panel| &mut panel.path),
+                self.session.review.as_mut().map(|review| &mut review.path),
+                self.session.notes.as_mut().map(|notes| &mut notes.path),
+                self.session
+                    .enrichment
                     .as_mut()
                     .map(|enrichment| &mut enrichment.path),
             ];
@@ -184,15 +188,15 @@ impl IboardApp {
     /// not to; then the file goes at once and `⌘Z` can bring it back.
     pub(super) fn request_delete(&mut self, path: PathBuf) {
         if self.confirm_delete {
-            self.confirm = Some(Confirm::Delete(path));
+            self.session.confirm = Some(Confirm::Delete(path));
         } else {
             let content = std::fs::read(&path).unwrap_or_default();
             if let Some(trashed) = self.delete_issue(&path) {
-                self.notice = Some((
+                self.session.notice = Some((
                     format!("Moved {} to the Trash", self.relative(&path)),
                     Instant::now(),
                 ));
-                self.undo = Some(Undo::Deleted(Deleted {
+                self.session.undo = Some(Undo::Deleted(Deleted {
                     path,
                     trashed,
                     content,
@@ -206,6 +210,7 @@ impl IboardApp {
     /// or the last split.
     pub(super) fn undo_last(&mut self) {
         match self
+            .session
             .undo
             .take()
             .filter(|undo| undo.at().elapsed() < UNDO_FOR)
@@ -231,13 +236,13 @@ impl IboardApp {
         };
         match restored {
             Ok(()) => {
-                self.notice = Some((
+                self.session.notice = Some((
                     format!("Restored {}", self.relative(&deleted.path)),
                     Instant::now(),
                 ));
                 self.refresh();
-                self.selected = Some(deleted.path);
-                self.scroll_to_selected = true;
+                self.session.selected = Some(deleted.path);
+                self.session.scroll_to_selected = true;
             }
             Err(err) => {
                 self.error = Some(format!(
@@ -250,7 +255,8 @@ impl IboardApp {
 
     /// Whether `⌘Z` can still take something back.
     pub(super) fn can_undo(&self) -> bool {
-        self.undo
+        self.session
+            .undo
             .as_ref()
             .is_some_and(|undo| undo.at().elapsed() < UNDO_FOR)
     }
@@ -259,9 +265,10 @@ impl IboardApp {
     /// up. Returns where the Trash put it (`Some(None)` when it can't say),
     /// or `None` when the delete failed.
     pub(super) fn delete_issue(&mut self, path: &Path) -> Option<Option<PathBuf>> {
-        self.confirm = None;
-        self.undo = None;
+        self.session.confirm = None;
+        self.session.undo = None;
         if self
+            .session
             .review
             .as_ref()
             .is_some_and(|review| review.path == path)
@@ -270,16 +277,17 @@ impl IboardApp {
         }
         match self.trash.delete(path) {
             Ok(trashed) => {
-                self.notice = Some((format!("Deleted {}", file_name(path)), Instant::now()));
-                if self.selected.as_deref() == Some(path) {
-                    self.selected = None;
+                self.session.notice =
+                    Some((format!("Deleted {}", file_name(path)), Instant::now()));
+                if self.session.selected.as_deref() == Some(path) {
+                    self.session.selected = None;
                 }
-                if self.editor.as_ref().is_some_and(|e| e.path == path) {
-                    self.editor = None;
+                if self.session.editor.as_ref().is_some_and(|e| e.path == path) {
+                    self.session.editor = None;
                 }
-                if matches!(&self.screen, Screen::Detail(open) if open == path) {
-                    self.detail_mode = DetailMode::Preview;
-                    self.screen = Screen::Board;
+                if matches!(&self.session.screen, Screen::Detail(open) if open == path) {
+                    self.session.detail_mode = DetailMode::Preview;
+                    self.session.screen = Screen::Board;
                 }
                 self.refresh();
                 Some(trashed)
@@ -295,7 +303,7 @@ impl IboardApp {
     /// discovery ignores. Never overwrites an archived file.
     pub(super) fn archive_issue(&mut self, path: &Path) {
         if self.move_to_archive(path).is_some() {
-            self.notice = Some((format!("Archived {}", file_name(path)), Instant::now()));
+            self.session.notice = Some((format!("Archived {}", file_name(path)), Instant::now()));
             self.refresh();
         }
     }
@@ -310,7 +318,7 @@ impl IboardApp {
         self.refresh();
         if archived > 0 {
             let noun = if archived == 1 { "issue" } else { "issues" };
-            self.notice = Some((format!("Archived {archived} {noun}"), Instant::now()));
+            self.session.notice = Some((format!("Archived {archived} {noun}"), Instant::now()));
         }
     }
 
@@ -319,6 +327,7 @@ impl IboardApp {
     /// the reason in `self.error`, when it could not.
     pub(super) fn move_to_archive(&mut self, path: &Path) -> Option<PathBuf> {
         if self
+            .session
             .review
             .as_ref()
             .is_some_and(|review| review.path == path)
@@ -338,15 +347,15 @@ impl IboardApp {
             self.error = Some(format!("Couldn't archive {}: {err}", self.relative(path)));
             return None;
         }
-        if self.selected.as_deref() == Some(path) {
-            self.selected = None;
+        if self.session.selected.as_deref() == Some(path) {
+            self.session.selected = None;
         }
-        if self.editor.as_ref().is_some_and(|e| e.path == path) {
-            self.editor = None;
+        if self.session.editor.as_ref().is_some_and(|e| e.path == path) {
+            self.session.editor = None;
         }
-        if matches!(&self.screen, Screen::Detail(open) if open == path) {
-            self.detail_mode = DetailMode::Preview;
-            self.screen = Screen::Board;
+        if matches!(&self.session.screen, Screen::Detail(open) if open == path) {
+            self.session.detail_mode = DetailMode::Preview;
+            self.session.screen = Screen::Board;
         }
         Some(target)
     }
@@ -355,13 +364,13 @@ impl IboardApp {
     /// Renumbering changes the cards' ids, so doing it while a click is still
     /// down would steal that click from the card underneath it.
     pub(super) fn flush_pending_front(&mut self, ctx: &egui::Context) {
-        let Some((dir, path)) = self.pending_front.clone() else {
+        let Some((dir, path)) = self.session.pending_front.clone() else {
             return;
         };
         if ctx.input(|i| i.pointer.any_down()) {
             return;
         }
-        self.pending_front = None;
+        self.session.pending_front = None;
         if self.board.find(&path).is_none() {
             return;
         }

@@ -114,15 +114,15 @@ fn opening_an_issue_from_focus_returns_to_the_focused_column() {
         .path
         .clone();
     app.open_issue(file.clone());
-    assert!(matches!(app.screen, Screen::Detail(_)));
+    assert!(matches!(app.session.screen, Screen::Detail(_)));
     app.back_to_board();
-    assert!(matches!(app.screen, Screen::Board));
+    assert!(matches!(app.session.screen, Screen::Board));
     assert_eq!(
         app.column_focus.column.as_deref(),
         Some(todo.as_path()),
         "the focused column is kept"
     );
-    assert_eq!(app.selected.as_deref(), Some(file.as_path()));
+    assert_eq!(app.session.selected.as_deref(), Some(file.as_path()));
 
     // The active column, and `esc`, leave ColumnFocus.
     app.unfocus_column();

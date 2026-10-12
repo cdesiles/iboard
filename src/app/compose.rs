@@ -8,7 +8,7 @@ impl IboardApp {
         if self.board.todo_column().is_none() {
             return;
         }
-        if matches!(self.screen, Screen::Board) {
+        if matches!(self.session.screen, Screen::Board) {
             self.show_composer();
         } else {
             self.leave(Leave::Composer);
@@ -26,7 +26,7 @@ impl IboardApp {
         if let Some(engine) = engine {
             titles::prewarm(engine);
         }
-        let composer = self.composer.get_or_insert_with(Composer::default);
+        let composer = self.session.composer.get_or_insert_with(Composer::default);
         composer.engine = engine;
         composer.focus = Some(if composer.stage == TitleStage::Idle {
             ComposerField::Description
@@ -71,7 +71,7 @@ impl IboardApp {
     /// elsewhere (`close`) never stops: it names if needed, writes, and
     /// closes the composer.
     pub(super) fn submit_composer(&mut self, close: bool) {
-        let Some(composer) = self.composer.as_mut() else {
+        let Some(composer) = self.session.composer.as_mut() else {
             return;
         };
         if composer.stage == TitleStage::Naming {
@@ -115,22 +115,22 @@ impl IboardApp {
                 // The renumbering is deferred to the end of the frame so a
                 // click that added the ticket still reaches the card under it.
                 if self.board.find(&path).is_some() {
-                    self.pending_front = Some((dir.clone(), path.clone()));
+                    self.session.pending_front = Some((dir.clone(), path.clone()));
                 }
                 if close {
-                    self.composer = None;
-                } else if let Some(composer) = self.composer.as_mut() {
+                    self.session.composer = None;
+                } else if let Some(composer) = self.session.composer.as_mut() {
                     *composer = Composer {
                         engine: composer.engine,
                         focus: Some(ComposerField::Description),
                         ..Composer::default()
                     };
                 }
-                self.selected = Some(path.clone());
-                self.new_card = Some((path, Instant::now()));
+                self.session.selected = Some(path.clone());
+                self.session.new_card = Some((path, Instant::now()));
             }
             Err(err) => {
-                if let Some(composer) = self.composer.as_mut() {
+                if let Some(composer) = self.session.composer.as_mut() {
                     composer.error = Some(err);
                     composer.focus = Some(ComposerField::Description);
                 }
@@ -141,7 +141,12 @@ impl IboardApp {
     /// Adopts the engine's title when it lands, or gives up after
     /// [`NAMING_BUDGET`] and lets the user type it.
     pub(super) fn poll_naming(&mut self, ctx: &egui::Context) {
-        let Some(run) = self.composer.as_ref().and_then(|c| c.naming.as_ref()) else {
+        let Some(run) = self
+            .session
+            .composer
+            .as_ref()
+            .and_then(|c| c.naming.as_ref())
+        else {
             return;
         };
         let result = match run.answer.answer() {
@@ -152,7 +157,7 @@ impl IboardApp {
             }
             None => Err("the engine took too long".to_string()),
         };
-        let Some(composer) = self.composer.as_mut() else {
+        let Some(composer) = self.session.composer.as_mut() else {
             return;
         };
         let then_close = composer.naming.take().is_some_and(|run| run.then_close);
@@ -180,13 +185,13 @@ impl IboardApp {
     /// `esc` in the composer: while naming, stop and type the title instead;
     /// otherwise close it.
     pub(super) fn composer_escape(&mut self) {
-        match self.composer.as_mut() {
+        match self.session.composer.as_mut() {
             Some(composer) if composer.stage == TitleStage::Naming => {
                 composer.naming = None;
                 composer.stage = TitleStage::Skipped;
                 composer.focus = Some(ComposerField::Title);
             }
-            _ => self.composer = None,
+            _ => self.session.composer = None,
         }
     }
 }

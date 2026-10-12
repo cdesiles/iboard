@@ -42,7 +42,7 @@ impl IboardApp {
         let p = theme::palette(ui);
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
         let project = self.board.name();
-        match self.screen.clone() {
+        match self.session.screen.clone() {
             Screen::Board if self.column_focus.column.is_some() => {
                 // ColumnFocus: `project / Column`, the project linking back.
                 let dir = self.column_focus.column.clone().unwrap_or_default();
@@ -97,7 +97,7 @@ impl IboardApp {
     fn detail_breadcrumb(&mut self, ui: &mut egui::Ui, path: &Path, project: &str) {
         let p = theme::palette(ui);
         // The visible way out, for whoever does not know the shortcuts.
-        let hint = if self.detail_mode == DetailMode::Edit {
+        let hint = if self.session.detail_mode == DetailMode::Edit {
             "Back to the board (asks if unsaved)"
         } else {
             "Back to the board (esc)"
@@ -204,7 +204,7 @@ impl IboardApp {
 
     /// The header's buttons, laid out right to left.
     pub(super) fn header_controls(&mut self, ui: &mut egui::Ui) {
-        match self.screen.clone() {
+        match self.session.screen.clone() {
             Screen::Board => self.board_controls(ui),
             Screen::Detail(path) => self.detail_controls(ui, &path),
         }
@@ -249,13 +249,13 @@ impl IboardApp {
             .column_of(&path)
             .map(Column::is_done)
             .unwrap_or(false);
-        let reading = self.detail_mode == DetailMode::Preview && exists;
+        let reading = self.session.detail_mode == DetailMode::Preview && exists;
         // Reviewing refines an issue, so only Todo issues offer it.
         if self.is_todo_issue(&path) {
             self.review_button(ui, &path);
         }
         // In the Editor, Save and Discard take Edit's place.
-        if self.detail_mode == DetailMode::Edit && exists {
+        if self.session.detail_mode == DetailMode::Edit && exists {
             if widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S")).clicked() {
                 self.save_and_preview();
             }
@@ -296,6 +296,7 @@ impl IboardApp {
     /// Commits, `Open` while its popup shows, and the newest commit's hash.
     fn commits_button(&mut self, ui: &mut egui::Ui, path: &Path) {
         let open = self
+            .session
             .commits
             .as_ref()
             .is_some_and(|panel| panel.path == *path);
@@ -332,7 +333,7 @@ impl IboardApp {
         self.refresh_button(ui);
         // Labelled, and the one control drawn in `danger` at rest. In
         // the Editor `Del` edits text, so the key hint goes.
-        let delete_key = (self.detail_mode == DetailMode::Preview).then_some("Del");
+        let delete_key = (self.session.detail_mode == DetailMode::Preview).then_some("Del");
         if exists
             && widgets::button(
                 ui,
@@ -351,8 +352,9 @@ impl IboardApp {
             self.request_delete(path.clone());
         }
         // Add label sits first in the right group, before Delete.
-        if exists && self.detail_mode == DetailMode::Preview {
+        if exists && self.session.detail_mode == DetailMode::Preview {
             let open = self
+                .session
                 .label_picker
                 .as_ref()
                 .is_some_and(|picker| picker.path == path);
@@ -375,7 +377,7 @@ impl IboardApp {
         }
         if exists
             && done
-            && self.detail_mode == DetailMode::Preview
+            && self.session.detail_mode == DetailMode::Preview
             && widgets::button(
                 ui,
                 ButtonKind::Secondary,

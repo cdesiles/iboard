@@ -466,12 +466,6 @@ pub struct IboardApp {
     board: Board,
     /// The reader's markdown cache, and where its text was drawn.
     reader: Reader,
-    screen: Screen,
-    detail_mode: DetailMode,
-    editor: Option<EditorState>,
-    composer: Option<Composer>,
-    /// The issue the composer just wrote, highlighted for a moment.
-    new_card: Option<(PathBuf, Instant)>,
     /// The filter field in the header, and the filter it holds.
     filter_bar: FilterBar,
     /// What names the composer's new issues.
@@ -482,23 +476,10 @@ pub struct IboardApp {
     error: Option<String>,
     /// Why the board could not be read; the next good scan clears it.
     scan_error: Option<String>,
-    /// A destructive action waiting for the user to confirm it.
-    confirm: Option<Confirm>,
-    /// The LabelPicker, open on one issue.
-    label_picker: Option<LabelPicker>,
-    /// The commits popup, open on one issue.
-    commits: Option<CommitsPanel>,
-    /// A just-composed ticket to move to position 1 once the pointer is up:
-    /// the Todo folder and the new file.
-    pending_front: Option<(PathBuf, PathBuf)>,
-    /// A short outcome for the status bar ("Archived x.md"), and when it came.
-    notice: Option<(String, Instant)>,
     /// Settings › General: deleting an issue asks first.
     confirm_delete: bool,
     /// Settings › General: the theme the window draws in.
     appearance: Appearance,
-    /// The last issue deleted without asking, for `⌘Z`.
-    undo: Option<Undo>,
     /// Where deleted issues go: the user's Trash in the app, a folder of its
     /// own for a board built in tests.
     trash: Trash,
@@ -514,27 +495,13 @@ pub struct IboardApp {
     /// leaving the editor. Off, the editor asks before dropping unsaved edits.
     auto: bool,
     last_refresh: Instant,
-    /// The rescan Auto runs in the background, and the board generation it
-    /// started from.
-    scan: Option<(Job<Result<Scanned, String>>, u64)>,
     /// Counts the boards adopted, so a background scan that started before
     /// a newer board never replaces it.
     board_generation: u64,
-    /// The newest commit naming the open issue's file, looked up off the UI
-    /// thread.
-    commit_hash: Option<CommitHash>,
-    /// The card selected on the board, moved with the arrow keys.
-    selected: Option<PathBuf>,
-    /// Scroll the selected card into view on the next frame.
-    scroll_to_selected: bool,
-    /// Leaving the editor is on hold until the user answers the save prompt.
-    leave_prompt: Option<Leave>,
     /// The window may close: unsaved edits were saved, discarded or absent.
     closing: bool,
     /// Ask the window to close on the next frame (after the save prompt).
     send_close: bool,
-    /// Set when a freshly created issue should receive keyboard focus.
-    focus_editor: bool,
     /// Projects opened recently, most recent first, shown in the header menu.
     recents: Vec<PathBuf>,
     /// Where `recents` is persisted; `None` in tests, so they never touch the
@@ -550,10 +517,6 @@ pub struct IboardApp {
     /// What the user configuration holds that iboard could not use, shown in
     /// Settings until the next save.
     config_problem: Option<String>,
-    /// The AI review of the open issue, if any.
-    review: Option<ReviewState>,
-    /// The reader's comments on the open issue.
-    notes: Option<comments::Notes>,
     /// The ReviewSettings dialog, while it is open.
     settings: Option<settings_ui::Dialog>,
     /// The installed agents and their models, for the settings dialog.
@@ -561,6 +524,51 @@ pub struct IboardApp {
     /// The label colours: the built-in preset, overridden by `[labels]` in the
     /// user configuration.
     labels: Labels,
+    /// What belongs to the open project, rebuilt when another one opens.
+    session: Session,
+}
+
+/// What belongs to the open project and goes with it: the screen, the
+/// editor and composer, the panels open on its issues, its undo and its
+/// background work. Opening another project starts a new one.
+struct Session {
+    screen: Screen,
+    detail_mode: DetailMode,
+    editor: Option<EditorState>,
+    composer: Option<Composer>,
+    /// The issue the composer just wrote, highlighted for a moment.
+    new_card: Option<(PathBuf, Instant)>,
+    /// A destructive action waiting for the user to confirm it.
+    confirm: Option<Confirm>,
+    /// The LabelPicker, open on one issue.
+    label_picker: Option<LabelPicker>,
+    /// The commits popup, open on one issue.
+    commits: Option<CommitsPanel>,
+    /// A just-composed ticket to move to position 1 once the pointer is up:
+    /// the Todo folder and the new file.
+    pending_front: Option<(PathBuf, PathBuf)>,
+    /// A short outcome for the status bar ("Archived x.md"), and when it came.
+    notice: Option<(String, Instant)>,
+    /// The last issue deleted without asking, for `⌘Z`.
+    undo: Option<Undo>,
+    /// The rescan Auto runs in the background, and the board generation it
+    /// started from.
+    scan: Option<(Job<Result<Scanned, String>>, u64)>,
+    /// The newest commit naming the open issue's file, looked up off the UI
+    /// thread.
+    commit_hash: Option<CommitHash>,
+    /// The card selected on the board, moved with the arrow keys.
+    selected: Option<PathBuf>,
+    /// Scroll the selected card into view on the next frame.
+    scroll_to_selected: bool,
+    /// Leaving the editor is on hold until the user answers the save prompt.
+    leave_prompt: Option<Leave>,
+    /// Set when a freshly created issue should receive keyboard focus.
+    focus_editor: bool,
+    /// The AI review of the open issue, if any.
+    review: Option<ReviewState>,
+    /// The reader's comments on the open issue.
+    notes: Option<comments::Notes>,
     /// The Design panel, while it is open.
     design: Option<design_ui::Panel>,
     /// The project's design system, loaded when the panel first opens.
@@ -571,6 +579,37 @@ pub struct IboardApp {
     design_draft: Option<DraftJob>,
     /// A UX enrichment: an agent drafting a static mockup of an issue.
     enrichment: Option<Enrichment>,
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self {
+            screen: Screen::Board,
+            detail_mode: DetailMode::Preview,
+            editor: None,
+            composer: None,
+            confirm: None,
+            new_card: None,
+            leave_prompt: None,
+            notes: None,
+            selected: None,
+            scroll_to_selected: false,
+            focus_editor: false,
+            label_picker: None,
+            commits: None,
+            pending_front: None,
+            notice: None,
+            undo: None,
+            design: None,
+            design_system: None,
+            design_error: None,
+            design_draft: None,
+            enrichment: None,
+            scan: None,
+            commit_hash: None,
+            review: None,
+        }
+    }
 }
 
 /// A component whose preview an agent is drafting.
@@ -664,57 +703,34 @@ impl IboardApp {
         let past_reviews = past_reviews(&board, &sidecars);
         Self {
             located,
+            session: Session::default(),
             board,
             reader: Reader::default(),
-            screen: Screen::Board,
-            detail_mode: DetailMode::Preview,
-            editor: None,
-            composer: None,
-            new_card: None,
             filter_bar: FilterBar::default(),
             title_engine: Engine::Manual,
             settings_tab: settings_ui::Tab::General,
             error: None,
             scan_error,
-            confirm: None,
-            label_picker: None,
-            commits: None,
-            pending_front: None,
-            notice: None,
             confirm_delete: true,
             appearance: Appearance::default(),
-            undo: None,
             trash: Trash::Folder(std::env::temp_dir().join("iboard-trash")),
             past_reviews,
             column_focus: ColumnFocus::default(),
             dock_archivable: false,
             auto: true,
             last_refresh: Instant::now(),
-            scan: None,
             board_generation: 0,
-            commit_hash: None,
-            selected: None,
-            scroll_to_selected: false,
-            leave_prompt: None,
             closing: false,
             send_close: false,
-            focus_editor: false,
             recents: Vec::new(),
             recents_file: None,
             pending_title: None,
             agent: AgentConfig::default(),
             config_file: None,
             config_problem: None,
-            review: None,
-            notes: None,
             settings: None,
             catalog: Catalog::default(),
             labels: Labels::presets(),
-            design: None,
-            design_system: None,
-            design_error: None,
-            design_draft: None,
-            enrichment: None,
         }
     }
 
@@ -739,35 +755,13 @@ impl IboardApp {
                 self.pending_title = Some(discovery::window_title(&located));
                 let project_dir = located.project_dir.clone();
                 self.located = located;
-                self.screen = Screen::Board;
-                self.detail_mode = DetailMode::Preview;
-                self.editor = None;
-                self.composer = None;
-                self.confirm = None;
-                self.new_card = None;
-                self.leave_prompt = None;
                 self.cancel_review();
+                self.session = Session::default();
                 self.past_reviews.clear();
-                self.notes = None;
-                self.selected = None;
-                self.scroll_to_selected = false;
                 self.column_focus.column = None;
-                self.focus_editor = false;
-                self.label_picker = None;
-                self.commits = None;
-                self.pending_front = None;
-                self.notice = None;
-                self.undo = None;
-                self.design = None;
-                self.design_system = None;
-                self.design_error = None;
-                self.design_draft = None;
-                self.enrichment = None;
                 self.filter_bar.filter.clear();
                 self.error = None;
                 self.scan_error = None;
-                self.scan = None;
-                self.commit_hash = None;
                 // Remember the project root discovery settled on, not the
                 // folder the user happened to pick inside it.
                 self.remember(&project_dir);
@@ -849,7 +843,7 @@ impl IboardApp {
                 if let Some(error) = self.scan_error.clone().or_else(|| self.error.clone()) {
                     self.error_strip(ui, &error);
                 }
-                match self.screen.clone() {
+                match self.session.screen.clone() {
                     Screen::Board => {
                         // A focused column (ColumnFocus) is a board mode: the
                         // header and status bar stay, the board is replaced.
@@ -870,7 +864,7 @@ impl IboardApp {
                 }
             });
         self.label_picker_ui(ui);
-        if let Some(Confirm::Delete(path)) = self.confirm.clone() {
+        if let Some(Confirm::Delete(path)) = self.session.confirm.clone() {
             self.confirm_dialog(ui, &path);
         }
         self.config_window(ui);

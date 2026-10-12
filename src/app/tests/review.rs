@@ -15,7 +15,10 @@ fn only_todo_issues_are_reviewed() {
     app.agent.configured = true;
     assert!(!app.is_todo_issue(&file));
     app.start_review(&file, false);
-    assert!(app.review.is_none(), "a Ready issue is not reviewed");
+    assert!(
+        app.session.review.is_none(),
+        "a Ready issue is not reviewed"
+    );
 }
 
 /// A finished review is kept beside the issue: it stays behind the card's
@@ -53,8 +56,12 @@ fn a_review_is_kept_beside_the_issue() {
         .expect("kept across restarts");
     assert!(!past.stale);
     restarted.show_past_review(file.clone());
-    assert!(matches!(&restarted.screen, Screen::Detail(path) if *path == file));
-    let review = restarted.review.as_ref().expect("the panel is back");
+    assert!(matches!(&restarted.session.screen, Screen::Detail(path) if *path == file));
+    let review = restarted
+        .session
+        .review
+        .as_ref()
+        .expect("the panel is back");
     assert!(matches!(review.status, ReviewStatus::Done { .. }));
 
     std::fs::write(&file, "# Demo\n\nContext, edited.\n").unwrap();
@@ -78,7 +85,7 @@ pub(super) fn open_issue_with_review(tag: &str) -> (Scratch, PathBuf, IboardApp)
     app.open_issue(file.clone());
     let raw = "RELEVANCE: Pass\nStill needed.\nSIZE: Challenge\nSplit it.\n\
                    CLARITY: Block\nWhich tool runs it?\nPROPOSAL:\n# Demo\n\nBetter.";
-    app.review = Some(ReviewState {
+    app.session.review = Some(ReviewState {
         path: file.clone(),
         draft: false,
         mode: ReviewMode::Quick,
@@ -99,14 +106,20 @@ fn applying_a_review_opens_the_editor_with_an_unsaved_draft() {
 
     app.apply_review_proposal();
 
-    assert_eq!(app.detail_mode, DetailMode::Edit);
-    assert_eq!(app.editor.as_ref().unwrap().path, file);
-    assert_eq!(app.editor.as_ref().unwrap().text, "# Demo\n\nBetter.");
+    assert_eq!(app.session.detail_mode, DetailMode::Edit);
+    assert_eq!(app.session.editor.as_ref().unwrap().path, file);
+    assert_eq!(
+        app.session.editor.as_ref().unwrap().text,
+        "# Demo\n\nBetter."
+    );
     assert!(
-        app.editor.as_ref().unwrap().is_dirty(),
+        app.session.editor.as_ref().unwrap().is_dirty(),
         "the draft is unsaved"
     );
-    assert!(app.review.is_none(), "the panel closes once applied");
+    assert!(
+        app.session.review.is_none(),
+        "the panel closes once applied"
+    );
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
         "# Demo\n\nContext.\n",
@@ -129,7 +142,7 @@ fn reviewing_without_a_configured_agent_opens_the_configuration() {
     app.start_review(&todo.join("01-demo.md"), false);
 
     assert!(app.settings.is_some(), "the settings dialog opens instead");
-    assert!(app.review.is_none(), "no review was started");
+    assert!(app.session.review.is_none(), "no review was started");
 }
 
 /// A configured tool (here `echo`) is spawned, polled and adopted, so the
@@ -159,7 +172,7 @@ fn polling_a_running_review_adopts_the_answer() {
         !app.review_is_running(&file)
     });
 
-    match &app.review.as_ref().unwrap().status {
+    match &app.session.review.as_ref().unwrap().status {
         ReviewStatus::Done { raw, report } => {
             assert!(raw.contains("You review software issues"), "got: {raw:?}");
             assert!(report.is_none(), "prose that is not a report stays raw");
@@ -290,7 +303,7 @@ fn a_size_block_splits_the_issue_in_place() {
     assert!(until(|| {
         app.poll_review();
         matches!(
-            app.review.as_ref().unwrap().status,
+            app.session.review.as_ref().unwrap().status,
             ReviewStatus::Done { .. }
         )
     }));
@@ -298,11 +311,12 @@ fn a_size_block_splits_the_issue_in_place() {
     assert!(until(|| {
         app.poll_split();
         !matches!(
-            app.review.as_ref().unwrap().status,
+            app.session.review.as_ref().unwrap().status,
             ReviewStatus::Splitting { .. }
         )
     }));
-    let ReviewStatus::SplitReady { drafts, .. } = &app.review.as_ref().unwrap().status else {
+    let ReviewStatus::SplitReady { drafts, .. } = &app.session.review.as_ref().unwrap().status
+    else {
         panic!("the tickets are proposed");
     };
     assert_eq!(drafts.len(), 2);
@@ -339,7 +353,7 @@ fn a_size_block_splits_the_issue_in_place() {
         archived,
         "# Big\n\nSplit into `002-part-a.md`, `003-part-b.md`.\n"
     );
-    assert!(matches!(app.screen, Screen::Board));
+    assert!(matches!(app.session.screen, Screen::Board));
 
     app.undo_last();
     assert_eq!(names(&todo), ["001-first.md", "002-big.md", "004-last.md"]);

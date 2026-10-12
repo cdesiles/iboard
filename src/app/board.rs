@@ -29,8 +29,8 @@ impl IboardApp {
         if new_card.is_some() {
             ui.ctx().request_repaint_after(Duration::from_millis(200));
         }
-        let selected = self.selected.clone();
-        let scroll_to_selected = std::mem::take(&mut self.scroll_to_selected);
+        let selected = self.session.selected.clone();
+        let scroll_to_selected = std::mem::take(&mut self.session.scroll_to_selected);
 
         let mut intents = Vec::new();
         egui::ScrollArea::horizontal()
@@ -45,7 +45,7 @@ impl IboardApp {
                     ui.add_space(gutter);
                     for (index, column) in self.board.columns.iter().enumerate() {
                         let composer = if column.accepts_new_issues() {
-                            self.composer.as_mut()
+                            self.session.composer.as_mut()
                         } else {
                             None
                         };
@@ -74,7 +74,8 @@ impl IboardApp {
 
     /// The issue the composer just wrote, while its card is still highlighted.
     pub(super) fn flashing_card(&self) -> Option<PathBuf> {
-        self.new_card
+        self.session
+            .new_card
             .as_ref()
             .filter(|(_, at)| at.elapsed() < NEW_CARD_FLASH)
             .map(|(path, _)| path.clone())

@@ -38,6 +38,7 @@ impl IboardApp {
         }
 
         if self
+            .session
             .review
             .as_ref()
             .is_some_and(|review| review.path == path)
@@ -55,7 +56,7 @@ impl IboardApp {
                 .show(ui, |ui| self.review_panel(ui));
         }
 
-        match self.detail_mode {
+        match self.session.detail_mode {
             DetailMode::Preview => self.detail_preview(ui, path),
             DetailMode::Edit => self.detail_edit(ui, path),
         }
@@ -166,7 +167,7 @@ impl IboardApp {
         let path = sheet.path;
         let mut notes = if sheet.comments {
             self.notes_for(path);
-            self.notes.take()
+            self.session.notes.take()
         } else {
             None
         };
@@ -224,7 +225,7 @@ impl IboardApp {
                 });
             });
         if notes.is_some() {
-            self.notes = notes;
+            self.session.notes = notes;
         }
         for action in note_actions {
             self.apply_note_action(path, action);

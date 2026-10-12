@@ -8,27 +8,32 @@ impl IboardApp {
     pub(super) fn open_issue(&mut self, path: PathBuf) {
         // A composer with text is an unsaved issue: it waits on the board
         // until the user adds or closes it. Only an empty one goes.
-        if self.composer.as_ref().is_some_and(Composer::is_empty) {
-            self.composer = None;
+        if self
+            .session
+            .composer
+            .as_ref()
+            .is_some_and(Composer::is_empty)
+        {
+            self.session.composer = None;
         }
         self.cancel_review();
-        self.selected = Some(path.clone());
-        self.screen = Screen::Detail(path);
-        self.detail_mode = DetailMode::Preview;
+        self.session.selected = Some(path.clone());
+        self.session.screen = Screen::Detail(path);
+        self.session.detail_mode = DetailMode::Preview;
     }
 
     /// Leaves the current screen for `to`. From the editor, unsaved edits are
     /// saved when Auto is on; otherwise, or when saving fails, the editor bar
     /// asks first and nothing moves until the user answers.
     pub(super) fn leave(&mut self, to: Leave) {
-        let editing =
-            matches!(self.screen, Screen::Detail(_)) && self.detail_mode == DetailMode::Edit;
+        let editing = matches!(self.session.screen, Screen::Detail(_))
+            && self.session.detail_mode == DetailMode::Edit;
         if editing {
             if self.auto {
                 self.save_pending();
             }
             if self.has_unsaved_edits() {
-                self.leave_prompt = Some(to);
+                self.session.leave_prompt = Some(to);
                 return;
             }
         }
@@ -36,16 +41,16 @@ impl IboardApp {
     }
 
     pub(super) fn go(&mut self, to: Leave) {
-        self.leave_prompt = None;
+        self.session.leave_prompt = None;
         match to {
-            Leave::Reader => self.detail_mode = DetailMode::Preview,
+            Leave::Reader => self.session.detail_mode = DetailMode::Preview,
             Leave::Board => {
-                self.detail_mode = DetailMode::Preview;
-                self.screen = Screen::Board;
+                self.session.detail_mode = DetailMode::Preview;
+                self.session.screen = Screen::Board;
             }
             Leave::Composer => {
-                self.detail_mode = DetailMode::Preview;
-                self.screen = Screen::Board;
+                self.session.detail_mode = DetailMode::Preview;
+                self.session.screen = Screen::Board;
                 self.show_composer();
             }
             Leave::Quit => {
@@ -73,7 +78,7 @@ impl IboardApp {
 
     /// Applies the answer to the save prompt.
     pub(super) fn answer_leave(&mut self, choice: LeaveChoice) {
-        let Some(to) = self.leave_prompt.take() else {
+        let Some(to) = self.session.leave_prompt.take() else {
             return;
         };
         match choice {
@@ -123,7 +128,7 @@ impl IboardApp {
             return;
         }
         let grid = self.visible_grid();
-        let at = self.selected.as_ref().and_then(|selected| {
+        let at = self.session.selected.as_ref().and_then(|selected| {
             grid.iter().enumerate().find_map(|(column, paths)| {
                 paths
                     .iter()
@@ -132,8 +137,8 @@ impl IboardApp {
             })
         });
         if let Some((column, row)) = step_selection(&grid, at, key) {
-            self.selected = Some(grid[column][row].clone());
-            self.scroll_to_selected = true;
+            self.session.selected = Some(grid[column][row].clone());
+            self.session.scroll_to_selected = true;
         }
     }
 
@@ -160,6 +165,7 @@ impl IboardApp {
                     return;
                 }
                 let at = self
+                    .session
                     .selected
                     .as_ref()
                     .and_then(|selected| paths.iter().position(|path| path == selected));
@@ -172,8 +178,8 @@ impl IboardApp {
                     },
                 };
                 if let Some(next) = next {
-                    self.selected = Some(paths[next].clone());
-                    self.scroll_to_selected = true;
+                    self.session.selected = Some(paths[next].clone());
+                    self.session.scroll_to_selected = true;
                 }
             }
         }
@@ -202,7 +208,8 @@ impl IboardApp {
 
     /// The selected issue, if it is still on the board.
     pub(super) fn selected_issue(&self) -> Option<PathBuf> {
-        self.selected
+        self.session
+            .selected
             .clone()
             .filter(|path| self.board.find(path).is_some())
     }

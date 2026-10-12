@@ -5,7 +5,7 @@ use super::*;
 impl IboardApp {
     /// Notices external changes to the file being edited.
     pub(super) fn reconcile_editor(&mut self) {
-        let Some(editor) = self.editor.as_mut() else {
+        let Some(editor) = self.session.editor.as_mut() else {
             return;
         };
         let Some(issue) = self.board.find(&editor.path) else {
@@ -32,7 +32,7 @@ impl IboardApp {
     pub(super) fn flush_autosave(&mut self, force: bool) {
         let mut renamed_to: Option<PathBuf> = None;
         let saved = {
-            let Some(editor) = self.editor.as_mut() else {
+            let Some(editor) = self.session.editor.as_mut() else {
                 return;
             };
             if !editor.is_dirty() {
@@ -91,8 +91,8 @@ impl IboardApp {
         };
         if let Some(target) = renamed_to {
             // Keep the reader and the selection on the issue's new file name.
-            self.selected = Some(target.clone());
-            if let Screen::Detail(open) = &mut self.screen
+            self.session.selected = Some(target.clone());
+            if let Screen::Detail(open) = &mut self.session.screen
                 && open != &target
             {
                 *open = target;
@@ -104,7 +104,7 @@ impl IboardApp {
     }
 
     pub(super) fn reload_editor_from_disk(&mut self) {
-        let Some(editor) = self.editor.as_mut() else {
+        let Some(editor) = self.session.editor.as_mut() else {
             return;
         };
         let Some(issue) = self.board.find(&editor.path) else {
@@ -119,14 +119,14 @@ impl IboardApp {
 
     /// Drops unsaved edits (content and file name) and returns to the reader.
     pub(super) fn discard_edits(&mut self) {
-        if let Some(editor) = self.editor.as_mut() {
+        if let Some(editor) = self.session.editor.as_mut() {
             editor.text = editor.baseline.clone();
             editor.name = editor.baseline_name.clone();
             editor.conflict = None;
             editor.last_edit = None;
             editor.error = None;
         }
-        self.detail_mode = DetailMode::Preview;
+        self.session.detail_mode = DetailMode::Preview;
     }
 
     pub(super) fn start_editing(&mut self, path: &Path) {
@@ -134,12 +134,13 @@ impl IboardApp {
             return;
         }
         if self
+            .session
             .editor
             .as_ref()
             .map(|e| e.path == path)
             .unwrap_or(false)
         {
-            self.detail_mode = DetailMode::Edit;
+            self.session.detail_mode = DetailMode::Edit;
             return;
         }
         // Persist any pending edits of another issue before switching.
@@ -149,14 +150,15 @@ impl IboardApp {
             return;
         };
         let content = issue.markdown.clone();
-        self.editor = Some(EditorState::new(path.to_path_buf(), content));
-        self.screen = Screen::Detail(path.to_path_buf());
-        self.detail_mode = DetailMode::Edit;
+        self.session.editor = Some(EditorState::new(path.to_path_buf(), content));
+        self.session.screen = Screen::Detail(path.to_path_buf());
+        self.session.detail_mode = DetailMode::Edit;
     }
 
     /// Saves unsaved edits unless they conflict with the file on disk.
     pub(super) fn save_pending(&mut self) {
         let should_save = self
+            .session
             .editor
             .as_ref()
             .map(|e| e.is_dirty() && e.conflict.is_none())
@@ -167,7 +169,10 @@ impl IboardApp {
     }
 
     pub(super) fn has_unsaved_edits(&self) -> bool {
-        self.editor.as_ref().is_some_and(EditorState::is_dirty)
+        self.session
+            .editor
+            .as_ref()
+            .is_some_and(EditorState::is_dirty)
     }
 
     /// Writes an issue the reader changed via a checkbox.
@@ -191,7 +196,7 @@ impl IboardApp {
     /// Saved / Unsaved / Save failed for the issue being edited.
     pub(super) fn save_pill(&self, ui: &mut egui::Ui, path: &Path) {
         let p = theme::palette(ui);
-        let Some(editor) = self.editor.as_ref().filter(|e| e.path == path) else {
+        let Some(editor) = self.session.editor.as_ref().filter(|e| e.path == path) else {
             return;
         };
         let (word, color) = save_state(editor, p);
@@ -202,8 +207,13 @@ impl IboardApp {
     /// went through, shows the issue again.
     pub(super) fn save_and_preview(&mut self) {
         self.flush_autosave(true);
-        if self.editor.as_ref().is_some_and(|e| e.error.is_none()) {
-            self.detail_mode = DetailMode::Preview;
+        if self
+            .session
+            .editor
+            .as_ref()
+            .is_some_and(|e| e.error.is_none())
+        {
+            self.session.detail_mode = DetailMode::Preview;
         }
     }
 
@@ -211,25 +221,30 @@ impl IboardApp {
     /// The draft stays unsaved until the user saves or Auto does.
     pub(super) fn add_section(&mut self, path: &Path, section: &str) {
         self.start_editing(path);
-        if let Some(editor) = self.editor.as_mut().filter(|editor| editor.path == path) {
+        if let Some(editor) = self
+            .session
+            .editor
+            .as_mut()
+            .filter(|editor| editor.path == path)
+        {
             editor.text = sheet::append_section(&editor.text, section);
-            self.focus_editor = true;
+            self.session.focus_editor = true;
         }
     }
 
     /// The editor: the same page as the reader, in plain text, framed in
     /// `accent`. Above it: the file name, save state, Discard and Save.
     pub(super) fn detail_edit(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let focus_editor = std::mem::take(&mut self.focus_editor);
+        let focus_editor = std::mem::take(&mut self.session.focus_editor);
         let folder = path
             .parent()
             .map(|dir| self.relative(dir))
             .unwrap_or_default();
-        let prompting = self.leave_prompt.is_some();
+        let prompting = self.session.leave_prompt.is_some();
         let mut conflict = (false, false);
         let mut answer = None;
         page_column(ui, |ui| {
-            let Some(editor) = self.editor.as_mut() else {
+            let Some(editor) = self.session.editor.as_mut() else {
                 ui.label("Nothing is being edited.");
                 return;
             };

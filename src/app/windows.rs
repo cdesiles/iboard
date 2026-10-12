@@ -87,7 +87,7 @@ impl IboardApp {
         if confirmed {
             self.delete_issue(path);
         } else if cancelled || modal.should_close() {
-            self.confirm = None;
+            self.session.confirm = None;
         }
     }
 
@@ -96,7 +96,7 @@ impl IboardApp {
     /// closes it.
     pub(super) fn commits_window(&mut self, ui: &egui::Ui) {
         let p = theme::palette(ui);
-        let Some(panel) = self.commits.as_ref() else {
+        let Some(panel) = self.session.commits.as_ref() else {
             return;
         };
         let width = 460.0;
@@ -158,7 +158,7 @@ impl IboardApp {
                 });
             });
         if close || modal.should_close() {
-            self.commits = None;
+            self.session.commits = None;
         }
     }
 
@@ -240,7 +240,7 @@ impl IboardApp {
                         self.config_problem = None;
                         self.settings = None;
                         // The composer follows the new engine at once.
-                        if self.composer.is_some() {
+                        if self.session.composer.is_some() {
                             self.show_composer();
                         }
                     }
@@ -280,12 +280,13 @@ impl IboardApp {
     /// lookup off the UI thread has found it. The lookup runs again when the
     /// issue or the board changes, showing the last hash meanwhile.
     pub(super) fn latest_commit(&mut self, path: &Path, ctx: &egui::Context) -> Option<String> {
-        let current = self
-            .commit_hash
-            .as_ref()
-            .is_some_and(|known| known.path == path && known.generation == self.board_generation);
+        let current =
+            self.session.commit_hash.as_ref().is_some_and(|known| {
+                known.path == path && known.generation == self.board_generation
+            });
         if !current {
             let hash = self
+                .session
                 .commit_hash
                 .take()
                 .filter(|known| known.path == path)
@@ -297,14 +298,14 @@ impl IboardApp {
                     .first()
                     .map(|commit| commit.hash.clone())
             });
-            self.commit_hash = Some(CommitHash {
+            self.session.commit_hash = Some(CommitHash {
                 path: path.to_path_buf(),
                 generation: self.board_generation,
                 lookup: Some(lookup),
                 hash,
             });
         }
-        let known = self.commit_hash.as_mut()?;
+        let known = self.session.commit_hash.as_mut()?;
         if let Some(lookup) = &known.lookup {
             match lookup.poll() {
                 job::Poll::Ready(hash) => {
@@ -329,7 +330,7 @@ impl IboardApp {
             .find(path)
             .map(|issue| issue.title.clone())
             .unwrap_or_else(|| file.clone());
-        self.commits = Some(CommitsPanel {
+        self.session.commits = Some(CommitsPanel {
             path: path.to_path_buf(),
             title,
             list,

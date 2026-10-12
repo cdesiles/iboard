@@ -17,11 +17,12 @@ impl IboardApp {
             return;
         };
         let system = self
+            .session
             .design_system
             .clone()
             .or_else(|| DesignSystem::discover(&self.located.project_dir).ok());
         let prompt = prompts::enrichment_prompt(&issue, system.as_ref(), None, "light");
-        self.enrichment = Some(Enrichment {
+        self.session.enrichment = Some(Enrichment {
             path: path.to_path_buf(),
             html: None,
             png: None,
@@ -34,7 +35,7 @@ impl IboardApp {
 
     /// Re-draft the artifact with the typed refinement attached.
     pub(super) fn refine_enrichment(&mut self) {
-        let Some(enrichment) = self.enrichment.as_ref() else {
+        let Some(enrichment) = self.session.enrichment.as_ref() else {
             return;
         };
         let instruction = enrichment.refine.trim().to_string();
@@ -49,6 +50,7 @@ impl IboardApp {
             return;
         };
         let system = self
+            .session
             .design_system
             .clone()
             .or_else(|| DesignSystem::discover(&self.located.project_dir).ok());
@@ -59,7 +61,7 @@ impl IboardApp {
             "light",
         );
         let answer = agent::start(&self.agent, &prompt, &path);
-        if let Some(enrichment) = self.enrichment.as_mut() {
+        if let Some(enrichment) = self.session.enrichment.as_mut() {
             enrichment.status = EnrichStatus::Running(answer);
             enrichment.refine.clear();
             enrichment.note = None;
@@ -68,7 +70,7 @@ impl IboardApp {
 
     /// Adopt the agent's mockup, then its render, as they land.
     pub(super) fn poll_enrichment(&mut self, ctx: &egui::Context) {
-        let Some(enrichment) = self.enrichment.as_mut() else {
+        let Some(enrichment) = self.session.enrichment.as_mut() else {
             return;
         };
         let outcome = match &enrichment.status {
@@ -120,7 +122,7 @@ impl IboardApp {
     /// The enrichment window: the loader, the rendered mockup, and the refine
     /// field. Taking the job out for the frame keeps the borrows simple.
     pub(super) fn enrichment_window(&mut self, ui: &mut egui::Ui) {
-        let Some(mut enrichment) = self.enrichment.take() else {
+        let Some(mut enrichment) = self.session.enrichment.take() else {
             return;
         };
         let ctx = ui.ctx().clone();
@@ -204,10 +206,10 @@ impl IboardApp {
             });
 
         if refine {
-            self.enrichment = Some(enrichment);
+            self.session.enrichment = Some(enrichment);
             self.refine_enrichment();
         } else if !close {
-            self.enrichment = Some(enrichment);
+            self.session.enrichment = Some(enrichment);
         }
     }
 }

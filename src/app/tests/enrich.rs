@@ -31,7 +31,7 @@ fn enrichment_drafts_an_artifact_for_an_issue() {
     };
 
     app.start_enrichment(&file);
-    assert!(app.enrichment.is_some(), "an enrichment started");
+    assert!(app.session.enrichment.is_some(), "an enrichment started");
 
     let (ctx, raw) = panel_ctx();
     let artifact = todo.join("assets/01-demo/ui.html");
@@ -41,7 +41,7 @@ fn enrichment_drafts_an_artifact_for_an_issue() {
     });
 
     let html = std::fs::read_to_string(&artifact).unwrap_or_else(|err| {
-        let status = match app.enrichment.as_ref().map(|e| &e.status) {
+        let status = match app.session.enrichment.as_ref().map(|e| &e.status) {
             Some(EnrichStatus::Failed(why)) => format!("failed: {why}"),
             Some(EnrichStatus::Running(_)) => "still running".to_string(),
             Some(EnrichStatus::Rendering(_)) => "rendering".to_string(),
@@ -67,7 +67,7 @@ fn enrichment_without_an_agent_opens_the_settings_instead() {
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
     app.start_enrichment(&file);
-    assert!(app.enrichment.is_none(), "nothing started");
+    assert!(app.session.enrichment.is_none(), "nothing started");
     assert!(app.settings.is_some(), "the settings dialog opened");
 }
 
@@ -112,5 +112,8 @@ fn done_issues_offer_no_draft_design() {
     assert!(!offered, "a Done issue does not");
 
     app.start_enrichment(&shipped);
-    assert!(app.enrichment.is_none(), "nor starts one any other way");
+    assert!(
+        app.session.enrichment.is_none(),
+        "nor starts one any other way"
+    );
 }

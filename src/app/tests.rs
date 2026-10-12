@@ -161,18 +161,18 @@ fn renders_board_reader_and_editor() {
     app.start_editing(&file);
     draw(&ctx, &mut app, vec![]); // editor
 
-    app.screen = Screen::Board;
+    app.session.screen = Screen::Board;
     app.open_composer();
-    app.composer.as_mut().unwrap().title = "Export board".to_string();
+    app.session.composer.as_mut().unwrap().title = "Export board".to_string();
     draw(&ctx, &mut app, vec![]); // board with the quick-add composer open
 
-    app.composer = None;
+    app.session.composer = None;
     app.move_selection(Key::ArrowDown);
     draw(&ctx, &mut app, vec![]); // board with a selected card
 
     app.auto = false;
     app.start_editing(&file);
-    app.editor.as_mut().unwrap().text.push_str("more\n");
+    app.session.editor.as_mut().unwrap().text.push_str("more\n");
     app.show_preview();
     draw(&ctx, &mut app, vec![]); // editor asking before leaving
 }
@@ -235,9 +235,12 @@ fn reader_sheet_offers_missing_sections() {
     draw(&ctx, &mut app, vec![]); // "Add a section" chips and checklist progress
 
     app.add_section(&partial, "Acceptance criteria");
-    assert_eq!(app.detail_mode, DetailMode::Edit);
-    assert!(app.focus_editor, "the caret goes under the new heading");
-    let editor = app.editor.as_ref().unwrap();
+    assert_eq!(app.session.detail_mode, DetailMode::Edit);
+    assert!(
+        app.session.focus_editor,
+        "the caret goes under the new heading"
+    );
+    let editor = app.session.editor.as_ref().unwrap();
     assert!(
         editor
             .text
@@ -293,12 +296,12 @@ fn an_issue_is_numbered_in_ready_and_unnumbered_when_taken() {
 
     let located = discovery::locate(&dir).unwrap();
     let mut app = IboardApp::from_located(located);
-    app.selected = Some(file.clone());
+    app.session.selected = Some(file.clone());
 
     app.move_issue(&file, &ready);
     let queued = ready.join("001-make-colour-green.md");
     assert!(queued.exists(), "entering Ready adds the priority number");
-    assert_eq!(app.selected.as_deref(), Some(queued.as_path()));
+    assert_eq!(app.session.selected.as_deref(), Some(queued.as_path()));
 
     app.move_issue(&queued, &doing);
     assert!(
@@ -321,22 +324,25 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
     let mut app = IboardApp::from_located(located);
     // What belongs to alpha must not follow the switch.
     let a = alpha.join("issues/todo/a.md");
-    app.undo = Some(Undo::Deleted(Deleted {
+    app.session.undo = Some(Undo::Deleted(Deleted {
         path: a.clone(),
         trashed: None,
         content: Vec::new(),
         at: Instant::now(),
     }));
-    app.notice = Some(("Archived a.md".to_string(), Instant::now()));
-    app.pending_front = Some((alpha.join("issues/todo"), a.clone()));
-    app.design_error = Some("alpha has no design".to_string());
+    app.session.notice = Some(("Archived a.md".to_string(), Instant::now()));
+    app.session.pending_front = Some((alpha.join("issues/todo"), a.clone()));
+    app.session.design_error = Some("alpha has no design".to_string());
     app.column_focus.column = Some(alpha.join("issues/todo"));
 
     app.open_project(beta.to_path_buf());
 
-    assert!(app.undo.is_none(), "⌘Z cannot restore into the old project");
-    assert!(app.notice.is_none() && app.pending_front.is_none());
-    assert!(app.design_error.is_none() && app.design_system.is_none());
+    assert!(
+        app.session.undo.is_none(),
+        "⌘Z cannot restore into the old project"
+    );
+    assert!(app.session.notice.is_none() && app.session.pending_front.is_none());
+    assert!(app.session.design_error.is_none() && app.session.design_system.is_none());
     assert!(app.column_focus.column.is_none());
     assert!(app.error.is_none());
     assert_eq!(
@@ -344,7 +350,7 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
         recents::canonical(&beta.join("issues")),
         "the board now belongs to the target project"
     );
-    assert!(matches!(app.screen, Screen::Board));
+    assert!(matches!(app.session.screen, Screen::Board));
     assert_eq!(app.recents, vec![recents::canonical(&beta)]);
     assert_eq!(
         app.pending_title.as_deref(),
@@ -485,7 +491,7 @@ fn the_label_picker_adds_labels_from_the_keyboard() {
     std::fs::write(&login, "# [Bug] Fix login\n\nA bug.\n").unwrap();
     std::fs::write(todo.join("export.md"), "# [Feature] Export\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.selected = Some(login.clone());
+    app.session.selected = Some(login.clone());
 
     let ctx = themed_ctx();
     let key = |key: Key| egui::Event::Key {
@@ -499,7 +505,7 @@ fn the_label_picker_adds_labels_from_the_keyboard() {
 
     frame(&ctx, &mut app, vec![]);
     frame(&ctx, &mut app, vec![key(Key::L)]);
-    assert!(app.label_picker.is_some(), "L opens the picker");
+    assert!(app.session.label_picker.is_some(), "L opens the picker");
     frame(&ctx, &mut app, vec![]);
     assert!(ctx.memory(|m| m.has_focus(field)), "the field takes focus");
 
@@ -509,7 +515,11 @@ fn the_label_picker_adds_labels_from_the_keyboard() {
         std::fs::read_to_string(&login).unwrap(),
         "# [Bug] [tech-debt] Fix login\n\nA bug.\n"
     );
-    let picker = app.label_picker.as_ref().expect("the picker stays open");
+    let picker = app
+        .session
+        .label_picker
+        .as_ref()
+        .expect("the picker stays open");
     assert!(picker.text.is_empty(), "the field is cleared");
     frame(&ctx, &mut app, vec![]);
     assert!(
@@ -530,7 +540,7 @@ fn the_label_picker_adds_labels_from_the_keyboard() {
     frame(&ctx, &mut app, vec![]);
     frame(&ctx, &mut app, vec![egui::Event::Text("left over".into())]);
     frame(&ctx, &mut app, vec![key(Key::Escape)]);
-    assert!(app.label_picker.is_none(), "esc closes the picker");
+    assert!(app.session.label_picker.is_none(), "esc closes the picker");
     assert!(!std::fs::read_to_string(&login).unwrap().contains("left"));
     assert!(login.exists(), "the file name never changes");
 }
@@ -579,7 +589,7 @@ fn clicking_a_card_still_opens_it() {
     );
 
     assert!(
-        matches!(app.screen, Screen::Detail(path) if path == file),
+        matches!(app.session.screen, Screen::Detail(path) if path == file),
         "a plain click should open the issue"
     );
 }
@@ -748,21 +758,21 @@ fn selection_follows_the_filter_and_survives_opening() {
     let mut app = IboardApp::from_located(located);
 
     app.move_selection(Key::ArrowDown);
-    assert_eq!(app.selected, Some(todo.join("01-alpha.md")));
+    assert_eq!(app.session.selected, Some(todo.join("01-alpha.md")));
     app.move_selection(Key::ArrowDown);
     app.move_selection(Key::ArrowRight);
-    assert_eq!(app.selected, Some(doing.join("01-gamma.md")));
+    assert_eq!(app.session.selected, Some(doing.join("01-gamma.md")));
 
     // Filtered out cards are skipped.
     app.filter_bar.filter.text = "beta".to_string();
-    app.selected = None;
+    app.session.selected = None;
     app.move_selection(Key::ArrowDown);
-    assert_eq!(app.selected, Some(todo.join("02-beta.md")));
+    assert_eq!(app.session.selected, Some(todo.join("02-beta.md")));
 
     // Back from the reader, the card is still selected.
     app.open_issue(todo.join("02-beta.md"));
     app.back_to_board();
-    assert_eq!(app.selected, Some(todo.join("02-beta.md")));
+    assert_eq!(app.session.selected, Some(todo.join("02-beta.md")));
 }
 
 #[test]
@@ -776,13 +786,13 @@ fn with_asking_off_delete_is_immediate_and_command_z_restores() {
     assert!(app.confirm_delete, "asking is on by default");
 
     app.request_delete(file.clone());
-    assert!(app.confirm.is_some(), "on: the dialog opens");
+    assert!(app.session.confirm.is_some(), "on: the dialog opens");
     assert!(file.exists());
-    app.confirm = None;
+    app.session.confirm = None;
 
     app.confirm_delete = false;
     app.request_delete(file.clone());
-    assert!(app.confirm.is_none(), "off: no dialog");
+    assert!(app.session.confirm.is_none(), "off: no dialog");
     assert!(!file.exists(), "off: deleted at once");
     assert!(app.can_undo());
 
@@ -793,7 +803,7 @@ fn with_asking_off_delete_is_immediate_and_command_z_restores() {
         "⌘Z puts it back as it was"
     );
     assert!(app.board.find(&file).is_some(), "and on the board");
-    assert_eq!(app.selected.as_deref(), Some(file.as_path()));
+    assert_eq!(app.session.selected.as_deref(), Some(file.as_path()));
     assert!(!app.can_undo(), "once");
 }
 
@@ -815,7 +825,7 @@ fn archive_all_clears_done() {
     assert!(!a.exists() && !b.exists());
     assert!(dir.join("issues/.archive/a.md").exists());
     assert_eq!(
-        app.notice.as_ref().map(|(text, _)| text.as_str()),
+        app.session.notice.as_ref().map(|(text, _)| text.as_str()),
         Some("Archived 2 issues")
     );
 }
@@ -852,19 +862,22 @@ fn deleting_an_issue_asks_first_then_removes_the_file() {
 
     let located = discovery::locate(&dir).unwrap();
     let mut app = IboardApp::from_located(located);
-    app.selected = Some(file.clone());
+    app.session.selected = Some(file.clone());
     app.open_issue(file.clone());
 
     app.request_delete(file.clone());
-    assert!(app.confirm.is_some(), "the delete waits for confirmation");
+    assert!(
+        app.session.confirm.is_some(),
+        "the delete waits for confirmation"
+    );
     assert!(file.exists(), "nothing is removed until confirmed");
 
     app.delete_issue(&file);
     assert!(!file.exists(), "the file is gone");
-    assert!(app.confirm.is_none());
-    assert!(app.selected.is_none());
+    assert!(app.session.confirm.is_none());
+    assert!(app.session.selected.is_none());
     assert!(
-        matches!(app.screen, Screen::Board),
+        matches!(app.session.screen, Screen::Board),
         "deleting the open issue returns to the board"
     );
 }
@@ -1001,7 +1014,7 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
     app.background(&ctx);
     assert!(until(|| {
         app.background(&ctx);
-        app.scan.is_none()
+        app.session.scan.is_none()
     }));
     assert!(app.board.find(&todo.join("b.md")).is_some());
 
@@ -1011,7 +1024,7 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
     let newer = app.board_generation;
     assert!(until(|| {
         app.background(&ctx);
-        app.scan.is_none()
+        app.session.scan.is_none()
     }));
     assert_eq!(app.board_generation, newer, "the older scan was dropped");
 }

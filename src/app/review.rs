@@ -7,7 +7,8 @@ impl IboardApp {
     /// the review is of the current work.
     pub(super) fn review_content(&self, path: &Path, draft: bool) -> Option<String> {
         if draft {
-            self.editor
+            self.session
+                .editor
                 .as_ref()
                 .filter(|editor| editor.path == path)
                 .map(|editor| editor.text.clone())
@@ -25,7 +26,7 @@ impl IboardApp {
         let (answer, progress) =
             agent::start_review(&self.agent, &prompt, &target.path, target.mode);
         self.mark_notes_sent(&target.path);
-        self.review = Some(ReviewState {
+        self.session.review = Some(ReviewState {
             path: target.path,
             draft: target.draft,
             mode: target.mode,
@@ -61,7 +62,7 @@ impl IboardApp {
 
     /// Sends a follow-up ("make it smaller") with the previous answer attached.
     pub(super) fn ask_again(&mut self) {
-        let Some(review) = self.review.as_ref() else {
+        let Some(review) = self.session.review.as_ref() else {
             return;
         };
         let target = ReviewTarget {
@@ -92,14 +93,14 @@ impl IboardApp {
     /// Cancels a running review (dropping the job stops the agent), or closes
     /// a finished one, which stays behind the card's pill.
     pub(super) fn cancel_review(&mut self) {
-        self.review = None;
+        self.session.review = None;
     }
 
     /// The card's verdict pill: opens the issue with its last review.
     pub(super) fn show_past_review(&mut self, path: PathBuf) {
         self.open_issue(path.clone());
         if let Some(past) = self.past_reviews.get(&path).cloned() {
-            self.review = Some(ReviewState {
+            self.session.review = Some(ReviewState {
                 path,
                 draft: past.draft,
                 mode: past.mode,
@@ -117,7 +118,7 @@ impl IboardApp {
 
     /// Adopts the agent's answer once it is in; called every frame.
     pub(super) fn poll_review(&mut self) {
-        let Some(review) = self.review.as_mut() else {
+        let Some(review) = self.session.review.as_mut() else {
             return;
         };
         let ReviewStatus::Running { answer, .. } = &review.status else {
@@ -157,7 +158,7 @@ impl IboardApp {
 
     /// Whether a review is running for the issue currently in the reader.
     pub(super) fn review_is_running(&self, path: &Path) -> bool {
-        self.review.as_ref().is_some_and(|review| {
+        self.session.review.as_ref().is_some_and(|review| {
             review.path == path && matches!(review.status, ReviewStatus::Running { .. })
         })
     }
@@ -165,7 +166,7 @@ impl IboardApp {
     /// The proposed rewrite, when the agent offered one: the editor opens with
     /// it as an unsaved draft, so saving or discarding is the accept or refuse.
     pub(super) fn apply_review_proposal(&mut self) {
-        let Some(review) = self.review.as_ref() else {
+        let Some(review) = self.session.review.as_ref() else {
             return;
         };
         let path = review.path.clone();
@@ -180,20 +181,21 @@ impl IboardApp {
             return;
         };
         if !self
+            .session
             .editor
             .as_ref()
             .is_some_and(|editor| editor.path == path)
         {
             self.start_editing(&path);
         }
-        if let Some(editor) = self.editor.as_mut()
+        if let Some(editor) = self.session.editor.as_mut()
             && editor.path == path
         {
             editor.text = proposal;
             editor.last_edit = Some(Instant::now());
         }
-        self.detail_mode = DetailMode::Edit;
-        self.review = None;
+        self.session.detail_mode = DetailMode::Edit;
+        self.session.review = None;
     }
 
     /// The Review split button, rightmost in the Reader and Editor header: the
@@ -219,7 +221,7 @@ impl IboardApp {
             Some(if running { "esc" } else { "⌘⇧R" }),
             running || configured,
         );
-        let draft = self.detail_mode == DetailMode::Edit;
+        let draft = self.session.detail_mode == DetailMode::Edit;
         if main.on_hover_text(review_hint).clicked() {
             if running {
                 self.cancel_review();
@@ -303,7 +305,7 @@ impl IboardApp {
     /// proposes; Apply opens the editor, Create writes the tickets.
     pub(super) fn review_panel(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette(ui);
-        let Some(review) = self.review.as_ref() else {
+        let Some(review) = self.session.review.as_ref() else {
             return;
         };
         let name = file_name(&review.path);
@@ -364,7 +366,7 @@ impl IboardApp {
                     });
             });
 
-        if let Some(review) = self.review.as_mut() {
+        if let Some(review) = self.session.review.as_mut() {
             review.follow_up = follow_up;
             if let (Some(drafts), ReviewStatus::SplitReady { drafts: kept, .. }) =
                 (drafts, &mut review.status)
@@ -378,9 +380,10 @@ impl IboardApp {
     fn apply_panel_action(&mut self, action: Option<PanelAction>) {
         match action {
             Some(PanelAction::Cancel) => self.cancel_review(),
-            Some(PanelAction::Dismiss) => self.review = None,
+            Some(PanelAction::Dismiss) => self.session.review = None,
             Some(PanelAction::Retry) => {
                 let target = self
+                    .session
                     .review
                     .as_ref()
                     .map(|review| (review.path.clone(), review.draft, review.mode));

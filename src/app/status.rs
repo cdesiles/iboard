@@ -9,7 +9,7 @@ impl IboardApp {
         ui.style_mut().interaction.selectable_labels = false;
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = theme::SPACE_5;
-            let hints = match self.screen.clone() {
+            let hints = match self.session.screen.clone() {
                 Screen::Board => self.board_status(ui),
                 Screen::Detail(path) => self.detail_status(ui, &path),
             };
@@ -50,6 +50,7 @@ impl IboardApp {
     fn board_message(&mut self, ui: &mut egui::Ui) -> Vec<Hint> {
         let p = theme::palette(ui);
         let notice = self
+            .session
             .notice
             .as_ref()
             .filter(|(_, at)| at.elapsed() < NOTICE_FOR)
@@ -59,7 +60,7 @@ impl IboardApp {
             ui.label(status_meta(ui, self.relative(&drag.path)));
             return vec![("esc", "cancel drag")];
         }
-        if let Some(undo) = self.undo.as_ref().filter(|_| self.can_undo()) {
+        if let Some(undo) = self.session.undo.as_ref().filter(|_| self.can_undo()) {
             let text = match undo {
                 Undo::Deleted(deleted) => {
                     format!("Moved {} to the Trash", self.relative(&deleted.path))
@@ -96,7 +97,7 @@ impl IboardApp {
             ui.label(status_meta(ui, text));
             return vec![("↩", "open"), ("⌘1–4", "column"), ("esc", "board")];
         }
-        if self.composer.is_some()
+        if self.session.composer.is_some()
             && let Some(todo) = self.board.todo_column()
         {
             ui.label(status_meta(ui, self.relative(&todo.dir)));
@@ -128,9 +129,9 @@ impl IboardApp {
     /// or when it was modified in the Reader. Returns its key hints.
     fn detail_status(&mut self, ui: &mut egui::Ui, path: &Path) -> Vec<Hint> {
         ui.label(status_meta(ui, self.relative(path)));
-        if self.detail_mode == DetailMode::Edit {
+        if self.session.detail_mode == DetailMode::Edit {
             self.save_pill(ui, path);
-            return if self.leave_prompt.is_some() {
+            return if self.session.leave_prompt.is_some() {
                 vec![("esc", "keep editing")]
             } else {
                 vec![("⌘S", "save"), ("esc", "leave")]

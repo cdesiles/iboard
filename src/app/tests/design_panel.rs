@@ -46,18 +46,18 @@ fn design_panel_loads_and_creates_a_component() {
 
     app.open_design();
     assert!(
-        app.design_system.is_some(),
+        app.session.design_system.is_some(),
         "loaded: {:?}",
-        app.design_error
+        app.session.design_error
     );
-    assert!(app.design.is_some());
+    assert!(app.session.design.is_some());
 
     let (ctx, raw) = panel_ctx();
     let mut output = ctx.run_ui(raw.clone(), |ui| app.draw(ui));
     output.textures_delta.clear();
 
     // The same path the Create button drives.
-    let mut panel = app.design.take().expect("panel open");
+    let mut panel = app.session.design.take().expect("panel open");
     let keep = app.handle_design_action(
         &mut panel,
         design_ui::Action::Create {
@@ -70,7 +70,8 @@ fn design_panel_loads_and_creates_a_component() {
     assert!(keep);
     assert!(dir.join("design/components/Toast/README.md").is_file());
     assert!(
-        app.design_system
+        app.session
+            .design_system
             .as_ref()
             .unwrap()
             .components
@@ -78,7 +79,7 @@ fn design_panel_loads_and_creates_a_component() {
             .any(|c| c.name == "Toast")
     );
 
-    app.design = Some(panel);
+    app.session.design = Some(panel);
     let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
     output.textures_delta.clear();
 }
@@ -90,8 +91,11 @@ fn design_panel_reports_a_missing_system() {
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
     app.open_design();
-    assert!(app.design_system.is_none());
-    assert!(app.design.is_some(), "the panel opens even with no system");
+    assert!(app.session.design_system.is_none());
+    assert!(
+        app.session.design.is_some(),
+        "the panel opens even with no system"
+    );
 
     let (ctx, raw) = panel_ctx();
     let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
@@ -130,7 +134,7 @@ fn design_panel_drafts_a_component_with_the_agent() {
         configured: true,
     };
 
-    let mut panel = app.design.take().expect("panel open");
+    let mut panel = app.session.design.take().expect("panel open");
     let keep = app.handle_design_action(
         &mut panel,
         design_ui::Action::Create {
@@ -141,8 +145,8 @@ fn design_panel_drafts_a_component_with_the_agent() {
         },
     );
     assert!(keep);
-    app.design = Some(panel);
-    assert!(app.design_draft.is_some(), "a draft was started");
+    app.session.design = Some(panel);
+    assert!(app.session.design_draft.is_some(), "a draft was started");
 
     let (ctx, _raw) = panel_ctx();
     let preview = dir.join("design/components/Toast/preview.html");
@@ -159,5 +163,5 @@ fn design_panel_drafts_a_component_with_the_agent() {
         "drafted fragment written: {written}"
     );
     assert!(!written.contains("```"), "code fences stripped: {written}");
-    assert!(app.design_draft.is_none(), "the draft finished");
+    assert!(app.session.design_draft.is_none(), "the draft finished");
 }
