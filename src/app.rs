@@ -42,6 +42,7 @@ mod card;
 mod comments;
 mod compose;
 mod design_panel;
+mod diff_view;
 mod dock;
 mod editor;
 mod enrich;
@@ -229,6 +230,8 @@ enum DetailMode {
 enum Screen {
     Board,
     Detail(PathBuf),
+    /// The commits of an issue, as a diff ([`Session::diff`]).
+    Diff,
 }
 
 /// Where the user asked to go when leaving the editor.
@@ -582,6 +585,8 @@ struct Session {
     design_draft: Option<DraftJob>,
     /// A UX enrichment: an agent drafting a static mockup of an issue.
     enrichment: Option<Enrichment>,
+    /// The Diff screen's commits, while it shows.
+    diff: Option<diff_view::DiffView>,
 }
 
 impl Default for Session {
@@ -612,6 +617,7 @@ impl Default for Session {
             scan: None,
             commit_hash: None,
             review: None,
+            diff: None,
         }
     }
 }
@@ -865,6 +871,7 @@ impl IboardApp {
                         self.drop_dock(ui);
                     }
                     Screen::Detail(path) => self.detail_ui(ui, &path),
+                    Screen::Diff => self.diff_ui(ui),
                 }
             });
         self.label_picker_ui(ui);

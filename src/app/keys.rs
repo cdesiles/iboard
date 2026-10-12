@@ -188,6 +188,9 @@ impl IboardApp {
         if !confirming {
             self.escape_keys(ctx);
         }
+        if matches!(self.session.screen, Screen::Diff) && !confirming {
+            self.diff_keys(ctx);
+        }
         let cx = self.key_context(ctx, confirming);
         let mut commands = ctx.input(|i| keymap(i, &cx));
         if !confirming && (!cx.board || cx.focused) && self.swiped_back(ctx) {
@@ -257,6 +260,20 @@ impl IboardApp {
         true
     }
 
+    /// The Diff screen's own keys: `⌘F` finds, and the moves between files,
+    /// hunks and lines while the find field does not have the keyboard.
+    fn diff_keys(&mut self, ctx: &egui::Context) {
+        let Some(view) = self.session.diff.as_mut() else {
+            return;
+        };
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::F)) {
+            view.open_find();
+        }
+        if ctx.memory(|m| m.focused().is_none()) {
+            view.keys(ctx);
+        }
+    }
+
     /// The window's own requests: a quit or Settings picked from the macOS
     /// menu, and closing the window, one more way of leaving the editor.
     fn window_requests(&mut self, ctx: &egui::Context) {
@@ -321,6 +338,12 @@ impl IboardApp {
             self.cancel_review();
         } else {
             match self.session.screen.clone() {
+                Screen::Diff if self.session.diff.as_ref().is_some_and(|v| v.find.is_some()) => {
+                    if let Some(view) = self.session.diff.as_mut() {
+                        view.find = None;
+                    }
+                }
+                Screen::Diff => self.close_diff(),
                 _ if self.session.leave_prompt.is_some() => {
                     self.answer_leave(LeaveChoice::KeepEditing)
                 }
@@ -388,6 +411,7 @@ impl IboardApp {
             }
             Command::Back if self.session.detail_mode == DetailMode::Edit => self.show_preview(),
             Command::Back if matches!(self.session.screen, Screen::Board) => self.unfocus_column(),
+            Command::Back if matches!(self.session.screen, Screen::Diff) => self.close_diff(),
             Command::Back => self.back_to_board(),
             // `⌘S` is the header's Save: it forces a save (overwriting a
             // conflict) and, when it went through, shows the issue again. On

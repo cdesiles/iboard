@@ -12,6 +12,7 @@ impl IboardApp {
             let hints = match self.session.screen.clone() {
                 Screen::Board => self.board_status(ui),
                 Screen::Detail(path) => self.detail_status(ui, &path),
+                Screen::Diff => self.diff_status(ui),
             };
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_4;
@@ -123,6 +124,19 @@ impl IboardApp {
         } else {
             vec![("↩", "open"), ("Del", "delete")]
         }
+    }
+
+    /// The Diff screen's status: its commits and their size.
+    fn diff_status(&mut self, ui: &mut egui::Ui) -> Vec<Hint> {
+        if let Some(view) = &self.session.diff {
+            ui.label(status_meta(ui, view.summary()));
+        }
+        vec![
+            ("⌘F", "find"),
+            ("n p", "file"),
+            ("] [", "hunk"),
+            ("esc", "back"),
+        ]
     }
 
     /// The open issue's status: its file, then the save state in the Editor

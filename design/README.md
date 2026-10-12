@@ -109,6 +109,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Reader | Click the empty sheet below the text | EditStarted | Editor, cursor at the end of the file |
 | Reader | Draft them with Review | ReviewRequested → ReviewReceived | Review panel; proposed sections apply to the draft |
 | Reader (Done) | Click Commits | CommitsOpened | Popup lists the commits whose message names the file (`closes <file>.md`) |
+| Commits popup | Click a commit, or All | DiffOpened | Diff: the changed files on the left, the unified diff on the right; `⌘F` finds, `n p` and `] [` move by file and hunk, `esc` goes back to the issue |
 | Editor | Type | DraftChanged | Editor, Unsaved pill |
 | Editor | Save (`⌘S`, or auto on leave when Auto is on) | IssueSaved / SaveFailed | Reader / Editor with error |
 | Any | Refresh, or file watcher fires | IssuesReloaded | Same screen; open draft kept, conflict flagged |

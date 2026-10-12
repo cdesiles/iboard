@@ -16,6 +16,7 @@ pub mod config;
 pub mod design;
 #[cfg(feature = "gui")]
 pub mod design_ui;
+pub mod diff;
 pub mod discovery;
 pub mod files;
 pub mod filter;

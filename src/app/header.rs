@@ -89,6 +89,13 @@ impl IboardApp {
                 self.project_menu(&response);
             }
             Screen::Detail(path) => self.detail_breadcrumb(ui, &path, &project),
+            Screen::Diff => {
+                if let Some(path) = self.session.diff.as_ref().map(|view| view.issue.clone()) {
+                    self.detail_breadcrumb(ui, &path, &project);
+                    ui.label(RichText::new("/").color(p.ink_faint));
+                    ui.label(RichText::new("Diff").font(theme::ui_strong()).color(p.ink));
+                }
+            }
         }
     }
 
@@ -207,6 +214,7 @@ impl IboardApp {
         match self.session.screen.clone() {
             Screen::Board => self.board_controls(ui),
             Screen::Detail(path) => self.detail_controls(ui, &path),
+            Screen::Diff => self.refresh_button(ui),
         }
     }
 

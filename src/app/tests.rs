@@ -5,6 +5,7 @@ use super::*;
 
 mod compose;
 mod design_panel;
+mod diff;
 mod drag;
 mod editor;
 mod enrich;

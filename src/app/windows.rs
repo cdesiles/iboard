@@ -102,6 +102,7 @@ impl IboardApp {
         let width = 460.0;
         let pad = 20.0;
         let mut close = false;
+        let mut picked = None;
         let frame = widgets::popover_frame(ui).inner_margin(Margin {
             left: pad as i8,
             right: pad as i8,
@@ -139,7 +140,7 @@ impl IboardApp {
                     .color(p.ink_muted),
                 );
                 ui.add_space(theme::SPACE_2);
-                commit_list(ui, &panel.list);
+                picked = commit_list(ui, &panel.list);
                 ui.add_space(theme::SPACE_2);
                 ui.label(
                     RichText::new(
@@ -157,7 +158,10 @@ impl IboardApp {
                     }
                 });
             });
-        if close || modal.should_close() {
+        if let Some(hashes) = picked {
+            let path = panel.path.clone();
+            self.open_diff(&path, hashes);
+        } else if close || modal.should_close() {
             self.session.commits = None;
         }
     }
@@ -339,8 +343,9 @@ impl IboardApp {
 }
 
 /// The commits naming a ticket, newest first: hash, day and subject; or
-/// that there are none.
-fn commit_list(ui: &mut egui::Ui, list: &[commits::Commit]) {
+/// that there are none. A click on one asks for its diff, `All` for every
+/// one's, newest first.
+fn commit_list(ui: &mut egui::Ui, list: &[commits::Commit]) -> Option<Vec<String>> {
     let p = theme::palette(ui);
     if list.is_empty() {
         ui.label(
@@ -348,36 +353,83 @@ fn commit_list(ui: &mut egui::Ui, list: &[commits::Commit]) {
                 .font(theme::ui_small())
                 .color(p.ink_muted),
         );
-    } else {
-        egui::ScrollArea::vertical()
-            .id_salt("commits-list")
-            .max_height(260.0)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-                for commit in list {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                        ui.label(
-                            RichText::new(&commit.hash)
-                                .font(egui::FontId::monospace(12.0))
-                                .color(p.accent),
-                        );
-                        ui.label(
-                            RichText::new(commit.day())
-                                .font(theme::meta())
-                                .color(p.ink_muted),
-                        );
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&commit.subject)
-                                    .font(theme::ui_small())
-                                    .color(p.ink),
-                            )
-                            .truncate(),
-                        );
-                    });
-                }
-            });
+        return None;
     }
+    let mut picked = None;
+    egui::ScrollArea::vertical()
+        .id_salt("commits-list")
+        .max_height(260.0)
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_1;
+            for commit in list {
+                if commit_row(ui, commit).clicked() {
+                    picked = Some(vec![commit.hash.clone()]);
+                }
+            }
+        });
+    if list.len() > 1
+        && widgets::button(
+            ui,
+            ButtonKind::Secondary,
+            None,
+            &format!("All {} commits", list.len()),
+            None,
+        )
+        .on_hover_text("Every closing commit's diff, newest first")
+        .clicked()
+    {
+        picked = Some(list.iter().map(|commit| commit.hash.clone()).collect());
+    }
+    picked
+}
+
+/// A commit as a clickable row: its hash in `accent`, its day, its subject;
+/// `surface-hover` under the pointer.
+fn commit_row(ui: &mut egui::Ui, commit: &commits::Commit) -> egui::Response {
+    let p = theme::palette(ui);
+    // The hover fill goes under the row, drawn once its rect is known.
+    let fill = ui.painter().add(egui::Shape::Noop);
+    let row = ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+        ui.add_space(theme::SPACE_1);
+        ui.label(
+            RichText::new(&commit.hash)
+                .font(egui::FontId::monospace(12.0))
+                .color(p.accent),
+        );
+        ui.label(
+            RichText::new(commit.day())
+                .font(theme::meta())
+                .color(p.ink_muted),
+        );
+        ui.add(
+            egui::Label::new(
+                RichText::new(&commit.subject)
+                    .font(theme::ui_small())
+                    .color(p.ink),
+            )
+            .truncate(),
+        );
+    });
+    let rect = row.response.rect.expand2(Vec2::new(0.0, 2.0));
+    let response = ui
+        .interact(
+            rect,
+            egui::Id::new(("commit", &commit.hash)),
+            Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Show this commit's diff");
+    response.widget_info(|| {
+        let label = format!("Diff of {}", commit.hash);
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label)
+    });
+    if response.hovered() {
+        ui.painter().set(
+            fill,
+            egui::Shape::rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_hover),
+        );
+    }
+    response
 }
