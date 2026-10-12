@@ -202,48 +202,7 @@ pub(super) fn composer_ui(
     intents: &mut Vec<Intent>,
 ) {
     let p = theme::palette(ui);
-    let title_id = egui::Id::new("composer");
-    let description_id = egui::Id::new("composer-description");
-    let naming = composer.stage == TitleStage::Naming;
-
-    // `↩` adds, from either field. `⇧↩` and `⌘↩` are a new line: the
-    // description's own return key (as `⇧↩`), or a step down from the title.
-    // Taken before the fields see the key.
-    let in_title = ui.memory(|m| m.has_focus(title_id));
-    let in_description = ui.memory(|m| m.has_focus(description_id));
-    if in_title || in_description {
-        let (mut add, mut new_line) = (false, false);
-        ui.input_mut(|i| {
-            i.events.retain_mut(|event| match event {
-                egui::Event::Key {
-                    key: Key::Enter,
-                    pressed: true,
-                    modifiers,
-                    ..
-                } if modifiers.shift || modifiers.command => {
-                    new_line = true;
-                    *modifiers = egui::Modifiers::SHIFT;
-                    in_description
-                }
-                egui::Event::Key {
-                    key: Key::Enter,
-                    pressed: true,
-                    ..
-                } => {
-                    add = true;
-                    false
-                }
-                _ => true,
-            })
-        });
-        if !naming && add {
-            intents.push(Intent::SubmitComposer { close: false });
-        }
-        if in_title && new_line && !naming {
-            composer.focus = Some(ComposerField::Description);
-        }
-    }
-
+    composer_enter(ui, composer, intents);
     let frame = Frame::new()
         .fill(p.surface)
         .stroke(Stroke::new(2.0, p.accent))
@@ -255,166 +214,8 @@ pub(super) fn composer_ui(
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-            let width = ui.available_width();
-
-            // Title row: always 22pt, so no state makes the card jump.
-            let (row, _) = ui.allocate_exact_size(Vec2::new(width, 22.0), Sense::hover());
-            let rule_y = row.max.y - 0.5;
-            let rule = [Pos2::new(row.min.x, rule_y), Pos2::new(row.max.x, rule_y)];
-            // A title typed by hand is Manual, whatever the engine: `↩` won't
-            // infer one.
-            let manual =
-                composer.stage != TitleStage::Inferred && !composer.title.trim().is_empty();
-            let engine = if manual { None } else { composer.engine };
-            match (composer.stage, engine) {
-                (TitleStage::Failed | TitleStage::Skipped, _) => {
-                    ui.painter()
-                        .line_segment(rule, Stroke::new(1.0, p.status_doing));
-                }
-                (_, None) => {
-                    ui.painter().extend(Shape::dashed_line(
-                        &rule,
-                        Stroke::new(1.0, p.line_strong),
-                        4.0,
-                        3.0,
-                    ));
-                }
-                _ => {
-                    ui.painter().line_segment(rule, Stroke::new(1.0, p.line));
-                }
-            }
-            let mut row_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(row.with_max_y(row.max.y - 4.0))
-                    .layout(Layout::right_to_left(Align::Center)),
-            );
-            row_ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-            let (tag, inferred) = match (composer.stage, engine) {
-                (TitleStage::Inferred, _) => (Some("Inferred"), true),
-                (TitleStage::Failed | TitleStage::Skipped, _) => (None, false),
-                (_, Some(engine)) => (Some(engine.tag()), false),
-                (_, None) => (Some(Engine::Manual.tag()), false),
-            };
-            if let Some(tag) = tag {
-                let response = widgets::tag(&mut row_ui, tag, inferred);
-                if !inferred {
-                    let response = response
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text("Title inference (⌘, › Titles)");
-                    if response.clicked() {
-                        intents.push(Intent::TitleSettings);
-                    }
-                }
-            }
-            let chars = composer.title.chars().count();
-            if chars >= titles::MAX_TITLE_CHARS - 10 {
-                row_ui.label(
-                    RichText::new(format!("{chars}/{}", titles::MAX_TITLE_CHARS))
-                        .font(theme::meta())
-                        .color(p.ink_muted),
-                );
-            }
-            if naming {
-                row_ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    let (dot, _) = ui.allocate_exact_size(Vec2::splat(6.0), Sense::hover());
-                    let pulse = if theme::reduced_motion(ui.ctx()) {
-                        1.0
-                    } else {
-                        (ui.input(|i| i.time) * std::f64::consts::TAU).sin() as f32
-                    };
-                    ui.painter().circle_filled(
-                        dot.center(),
-                        3.0,
-                        p.status_doing.gamma_multiply(0.65 + 0.35 * pulse),
-                    );
-                    ui.label(
-                        RichText::new("Naming…")
-                            .font(theme::ui_body())
-                            .color(p.ink_muted),
-                    );
-                    ui.ctx().request_repaint();
-                });
-            } else {
-                let hint = match (composer.stage, composer.engine) {
-                    (TitleStage::Failed | TitleStage::Skipped, _) => "Type a title",
-                    (_, None) => "Add a title",
-                    _ => "Title is named from the description",
-                };
-                let mut output = egui::TextEdit::singleline(&mut composer.title)
-                    .id(title_id)
-                    .font(theme::ui_strong())
-                    .hint_text(
-                        RichText::new(hint)
-                            .font(theme::ui_body())
-                            .color(p.ink_faint),
-                    )
-                    .char_limit(titles::MAX_TITLE_CHARS)
-                    .frame(Frame::NONE)
-                    .margin(Margin::ZERO)
-                    .desired_width(row_ui.available_width())
-                    .show(&mut row_ui);
-                if composer.focus == Some(ComposerField::Title) {
-                    composer.focus = None;
-                    output.response.request_focus();
-                    if std::mem::take(&mut composer.select_title) {
-                        let end = CCursor::new(composer.title.chars().count());
-                        output
-                            .state
-                            .cursor
-                            .set_char_range(Some(CCursorRange::two(CCursor::new(0), end)));
-                        output.state.store(ui.ctx(), title_id);
-                    }
-                }
-                // Editing a suggestion makes it the user's own title.
-                if output.response.changed() && composer.stage == TitleStage::Inferred {
-                    composer.stage = TitleStage::Idle;
-                }
-            }
-
-            // Description: 3 lines to start, 8 at most, then it scrolls with
-            // its last line fading out.
-            let line = 18.0;
-            let scroll = egui::ScrollArea::vertical()
-                .id_salt("composer-description-scroll")
-                .max_height(8.0 * line)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    ui.add_enabled(
-                        !naming,
-                        egui::TextEdit::multiline(&mut composer.description)
-                            .id(description_id)
-                            .font(theme::ui_body())
-                            .text_color(if naming { p.ink_muted } else { p.ink })
-                            .hint_text(RichText::new("Describe the issue").color(p.ink_faint))
-                            .frame(Frame::NONE)
-                            .margin(Margin::ZERO)
-                            .desired_rows(3)
-                            .desired_width(f32::INFINITY)
-                            .return_key(Some(egui::KeyboardShortcut::new(
-                                egui::Modifiers::SHIFT,
-                                Key::Enter,
-                            ))),
-                    )
-                });
-            let capped = scroll.content_size.y > scroll.inner_rect.height() + 1.0;
-            if capped
-                && scroll.state.offset.y + scroll.inner_rect.height() < scroll.content_size.y - 1.0
-            {
-                fade_out(ui, scroll.inner_rect, p.surface);
-            }
-            let description = scroll.inner;
-            if composer.focus == Some(ComposerField::Description) {
-                composer.focus = None;
-                description.request_focus();
-            }
-            // Clicking elsewhere closes an empty composer; one with text stays.
-            let empty = composer.title.trim().is_empty() && composer.description.trim().is_empty();
-            let still_focused = ui.memory(|m| m.has_focus(title_id) || m.has_focus(description_id));
-            if empty && description.lost_focus() && !still_focused && composer.focus.is_none() {
-                intents.push(Intent::CloseComposer);
-            }
-
+            title_row(ui, composer, intents);
+            description_field(ui, composer, intents);
             composer_meta(ui, composer, column, folder);
         });
 
@@ -429,11 +230,236 @@ pub(super) fn composer_ui(
         !frame.response.rect.contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id())
     });
     if clicked_away {
-        if composer.is_empty() {
-            intents.push(Intent::CloseComposer);
+        intents.push(if composer.is_empty() {
+            Intent::CloseComposer
         } else {
-            intents.push(Intent::SubmitComposer { close: true });
+            Intent::SubmitComposer { close: true }
+        });
+    }
+}
+
+const TITLE_ID: &str = "composer";
+const DESCRIPTION_ID: &str = "composer-description";
+
+/// `↩` adds, from either field. `⇧↩` and `⌘↩` are a new line: the
+/// description's own return key (as `⇧↩`), or a step down from the title.
+/// Taken before the fields see the key.
+fn composer_enter(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut Vec<Intent>) {
+    let in_title = ui.memory(|m| m.has_focus(egui::Id::new(TITLE_ID)));
+    let in_description = ui.memory(|m| m.has_focus(egui::Id::new(DESCRIPTION_ID)));
+    if !in_title && !in_description {
+        return;
+    }
+    let (mut add, mut new_line) = (false, false);
+    ui.input_mut(|i| {
+        i.events.retain_mut(|event| match event {
+            egui::Event::Key {
+                key: Key::Enter,
+                pressed: true,
+                modifiers,
+                ..
+            } if modifiers.shift || modifiers.command => {
+                new_line = true;
+                *modifiers = egui::Modifiers::SHIFT;
+                in_description
+            }
+            egui::Event::Key {
+                key: Key::Enter,
+                pressed: true,
+                ..
+            } => {
+                add = true;
+                false
+            }
+            _ => true,
+        })
+    });
+    let naming = composer.stage == TitleStage::Naming;
+    if !naming && add {
+        intents.push(Intent::SubmitComposer { close: false });
+    }
+    if in_title && new_line && !naming {
+        composer.focus = Some(ComposerField::Description);
+    }
+}
+
+/// The title row, always 22pt so no state makes the card jump: the title
+/// (or "Naming…"), the character count near the limit, and the engine tag,
+/// over a rule that says how the title will be named.
+fn title_row(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut Vec<Intent>) {
+    let p = theme::palette(ui);
+    let width = ui.available_width();
+    let (row, _) = ui.allocate_exact_size(Vec2::new(width, 22.0), Sense::hover());
+    let rule_y = row.max.y - 0.5;
+    let rule = [Pos2::new(row.min.x, rule_y), Pos2::new(row.max.x, rule_y)];
+    // A title typed by hand is Manual, whatever the engine: `↩` won't infer
+    // one.
+    let manual = composer.stage != TitleStage::Inferred && !composer.title.trim().is_empty();
+    let engine = if manual { None } else { composer.engine };
+    match (composer.stage, engine) {
+        (TitleStage::Failed | TitleStage::Skipped, _) => {
+            ui.painter()
+                .line_segment(rule, Stroke::new(1.0, p.status_doing));
         }
+        (_, None) => {
+            ui.painter().extend(Shape::dashed_line(
+                &rule,
+                Stroke::new(1.0, p.line_strong),
+                4.0,
+                3.0,
+            ));
+        }
+        _ => {
+            ui.painter().line_segment(rule, Stroke::new(1.0, p.line));
+        }
+    }
+    let mut row_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(row.with_max_y(row.max.y - 4.0))
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    row_ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+    let (tag, inferred) = match (composer.stage, engine) {
+        (TitleStage::Inferred, _) => (Some("Inferred"), true),
+        (TitleStage::Failed | TitleStage::Skipped, _) => (None, false),
+        (_, Some(engine)) => (Some(engine.tag()), false),
+        (_, None) => (Some(Engine::Manual.tag()), false),
+    };
+    if let Some(tag) = tag {
+        let response = widgets::tag(&mut row_ui, tag, inferred);
+        if !inferred
+            && response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Title inference (⌘, › Titles)")
+                .clicked()
+        {
+            intents.push(Intent::TitleSettings);
+        }
+    }
+    let chars = composer.title.chars().count();
+    if chars >= titles::MAX_TITLE_CHARS - 10 {
+        row_ui.label(
+            RichText::new(format!("{chars}/{}", titles::MAX_TITLE_CHARS))
+                .font(theme::meta())
+                .color(p.ink_muted),
+        );
+    }
+    if composer.stage == TitleStage::Naming {
+        row_ui.with_layout(Layout::left_to_right(Align::Center), naming_dot);
+    } else {
+        title_field(&mut row_ui, composer);
+    }
+}
+
+/// "Naming…" with its pulsing `status-doing` dot, steady with reduced motion.
+fn naming_dot(ui: &mut egui::Ui) {
+    let p = theme::palette(ui);
+    ui.spacing_mut().item_spacing.x = 6.0;
+    let (dot, _) = ui.allocate_exact_size(Vec2::splat(6.0), Sense::hover());
+    let pulse = if theme::reduced_motion(ui.ctx()) {
+        1.0
+    } else {
+        (ui.input(|i| i.time) * std::f64::consts::TAU).sin() as f32
+    };
+    ui.painter().circle_filled(
+        dot.center(),
+        3.0,
+        p.status_doing.gamma_multiply(0.65 + 0.35 * pulse),
+    );
+    ui.label(
+        RichText::new("Naming…")
+            .font(theme::ui_body())
+            .color(p.ink_muted),
+    );
+    ui.ctx().request_repaint();
+}
+
+/// The title's text field; focused on request, with the whole suggestion
+/// selected so typing replaces it.
+fn title_field(row: &mut egui::Ui, composer: &mut Composer) {
+    let p = theme::palette(row);
+    let title_id = egui::Id::new(TITLE_ID);
+    let hint = match (composer.stage, composer.engine) {
+        (TitleStage::Failed | TitleStage::Skipped, _) => "Type a title",
+        (_, None) => "Add a title",
+        _ => "Title is named from the description",
+    };
+    let width = row.available_width();
+    let mut output = egui::TextEdit::singleline(&mut composer.title)
+        .id(title_id)
+        .font(theme::ui_strong())
+        .hint_text(
+            RichText::new(hint)
+                .font(theme::ui_body())
+                .color(p.ink_faint),
+        )
+        .char_limit(titles::MAX_TITLE_CHARS)
+        .frame(Frame::NONE)
+        .margin(Margin::ZERO)
+        .desired_width(width)
+        .show(row);
+    if composer.focus == Some(ComposerField::Title) {
+        composer.focus = None;
+        output.response.request_focus();
+        if std::mem::take(&mut composer.select_title) {
+            let end = CCursor::new(composer.title.chars().count());
+            output
+                .state
+                .cursor
+                .set_char_range(Some(CCursorRange::two(CCursor::new(0), end)));
+            output.state.store(row.ctx(), title_id);
+        }
+    }
+    // Editing a suggestion makes it the user's own title.
+    if output.response.changed() && composer.stage == TitleStage::Inferred {
+        composer.stage = TitleStage::Idle;
+    }
+}
+
+/// The description: 3 lines to start, 8 at most, then it scrolls with its
+/// last line fading out. Leaving an empty composer closes it.
+fn description_field(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut Vec<Intent>) {
+    let p = theme::palette(ui);
+    let naming = composer.stage == TitleStage::Naming;
+    let line = 18.0;
+    let scroll = egui::ScrollArea::vertical()
+        .id_salt("composer-description-scroll")
+        .max_height(8.0 * line)
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            ui.add_enabled(
+                !naming,
+                egui::TextEdit::multiline(&mut composer.description)
+                    .id(egui::Id::new(DESCRIPTION_ID))
+                    .font(theme::ui_body())
+                    .text_color(if naming { p.ink_muted } else { p.ink })
+                    .hint_text(RichText::new("Describe the issue").color(p.ink_faint))
+                    .frame(Frame::NONE)
+                    .margin(Margin::ZERO)
+                    .desired_rows(3)
+                    .desired_width(f32::INFINITY)
+                    .return_key(Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::SHIFT,
+                        Key::Enter,
+                    ))),
+            )
+        });
+    let capped = scroll.content_size.y > scroll.inner_rect.height() + 1.0;
+    if capped && scroll.state.offset.y + scroll.inner_rect.height() < scroll.content_size.y - 1.0 {
+        fade_out(ui, scroll.inner_rect, p.surface);
+    }
+    let description = scroll.inner;
+    if composer.focus == Some(ComposerField::Description) {
+        composer.focus = None;
+        description.request_focus();
+    }
+    // Clicking elsewhere closes an empty composer; one with text stays.
+    let empty = composer.title.trim().is_empty() && composer.description.trim().is_empty();
+    let still_focused = ui.memory(|m| {
+        m.has_focus(egui::Id::new(TITLE_ID)) || m.has_focus(egui::Id::new(DESCRIPTION_ID))
+    });
+    if empty && description.lost_focus() && !still_focused && composer.focus.is_none() {
+        intents.push(Intent::CloseComposer);
     }
 }
 

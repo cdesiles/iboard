@@ -13,7 +13,6 @@ pub(super) fn issue_card(
     labels: &Labels,
     extras: CardExtras,
 ) -> (Option<CardAction>, Rect) {
-    let p = theme::palette(ui);
     let card_id = egui::Id::new(("issue_card", &issue.path));
 
     // The card is one click-and-drag surface. Labels must not steal the pointer
@@ -78,33 +77,8 @@ pub(super) fn issue_card(
     if response.dragged() && dragging_self {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
 
-        // Paint a copy of the card under the pointer, so the issue stays
-        // visible for the whole move instead of only at its ends. Anchoring it
-        // to the original card position plus the total drag delta keeps the
-        // pointer at the same spot on the card where it was grabbed.
         if let Some(delta) = response.total_drag_delta() {
-            egui::Area::new(egui::Id::new(("issue_ghost", &issue.path)))
-                .order(egui::Order::Tooltip)
-                .fixed_pos(response.rect.min + delta)
-                .constrain(false)
-                .interactable(false)
-                .show(ui.ctx(), |ui| {
-                    ui.style_mut().interaction.selectable_labels = false;
-                    ui.set_max_width(width);
-                    // The lifted copy: `shadow-popover` and a `line-strong` edge.
-                    let lifted = Frame::new()
-                        .shadow(ui.visuals().popup_shadow)
-                        .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-                        .show(ui, |ui| {
-                            card_body(ui, issue, width, false, None, labels, CardExtras::default())
-                        });
-                    ui.painter().rect_stroke(
-                        lifted.response.rect,
-                        CornerRadius::same(theme::RADIUS_MD),
-                        Stroke::new(1.0, p.line_strong),
-                        StrokeKind::Inside,
-                    );
-                });
+            drag_ghost(ui, issue, width, labels, response.rect.min + delta);
         }
     } else if response.hovered() && drag.is_none() && !over_action {
         // Grab cursor: this card can be clicked or picked up, but an action
@@ -112,6 +86,17 @@ pub(super) fn issue_card(
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
 
+    card_edge(ui, &response, look);
+    let clicked_open = (response.clicked() || response.double_clicked()) && !over_action;
+    let action = body.action.or(clicked_open.then_some(CardAction::Open));
+
+    (action, response.rect)
+}
+
+/// The card's edge: 2pt `accent` when selected (scrolled into view when
+/// asked), `line-strong` under the pointer.
+fn card_edge(ui: &egui::Ui, response: &egui::Response, look: CardLook) {
+    let p = theme::palette(ui);
     let edge = match look {
         CardLook::Selected { .. } => Some(Stroke::new(2.0, p.accent)),
         _ if response.hovered() && !response.dragged() => Some(Stroke::new(1.0, p.line_strong)),
@@ -128,11 +113,36 @@ pub(super) fn issue_card(
     if look == (CardLook::Selected { scroll: true }) {
         response.scroll_to_me(None);
     }
+}
 
-    let clicked_open = (response.clicked() || response.double_clicked()) && !over_action;
-    let action = body.action.or(clicked_open.then_some(CardAction::Open));
-
-    (action, response.rect)
+/// A copy of the dragged card under the pointer, so the issue stays visible
+/// for the whole move instead of only at its ends. Anchored to the card's
+/// position plus the total drag delta, the pointer keeps the spot on the card
+/// where it was grabbed.
+fn drag_ghost(ui: &egui::Ui, issue: &Issue, width: f32, labels: &Labels, at: Pos2) {
+    let p = theme::palette(ui);
+    egui::Area::new(egui::Id::new(("issue_ghost", &issue.path)))
+        .order(egui::Order::Tooltip)
+        .fixed_pos(at)
+        .constrain(false)
+        .interactable(false)
+        .show(ui.ctx(), |ui| {
+            ui.style_mut().interaction.selectable_labels = false;
+            ui.set_max_width(width);
+            // The lifted copy: `shadow-popover` and a `line-strong` edge.
+            let lifted = Frame::new()
+                .shadow(ui.visuals().popup_shadow)
+                .corner_radius(CornerRadius::same(theme::RADIUS_MD))
+                .show(ui, |ui| {
+                    card_body(ui, issue, width, false, None, labels, CardExtras::default())
+                });
+            ui.painter().rect_stroke(
+                lifted.response.rect,
+                CornerRadius::same(theme::RADIUS_MD),
+                Stroke::new(1.0, p.line_strong),
+                StrokeKind::Inside,
+            );
+        });
 }
 
 /// One entry of a wide card's facts row: a small `meta` label, with a check
@@ -210,169 +220,16 @@ pub(super) fn card_body(
         .show(ui, |ui| {
             ui.set_width(inner);
             ui.spacing_mut().item_spacing.y = if extras.wide { 6.0 } else { theme::SPACE_2 };
-            // Labels sit on their own row above the title, 4pt apart and
-            // wrapping; no labels, no row.
-            let mut label_clicks: Vec<(String, Rect, bool)> = Vec::new();
-            if !issue.labels.is_empty() {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
-                    for label in &issue.labels {
-                        let pill = widgets::label_pill(ui, label, labels.color(label))
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .on_hover_text(format!("Filter by {label}"));
-                        label_clicks.push((label.clone(), pill.rect, pill.clicked()));
-                    }
-                });
-            }
-            ui.add(
-                egui::Label::new(
-                    RichText::new(&issue.title)
-                        .font(theme::ui_strong())
-                        .color(p.ink),
-                )
-                .wrap(),
-            );
-            if !issue.summary.is_empty() {
-                let mut job =
-                    LayoutJob::simple(issue.summary.clone(), theme::ui_small(), p.ink_muted, inner);
-                // Wider cards show twice the summary: six lines, not three.
-                job.wrap.max_rows = if extras.wide { 6 } else { 3 };
-                ui.add(egui::Label::new(job));
-            }
-            if extras.wide {
-                fact_row(ui, issue, extras.sections);
-            }
-            let meta = ui.horizontal(|ui| {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let mut action = None;
-                    let mut action_rects = Vec::new();
-                    // Add label, Review and Delete, plus Archive on Done:
-                    // 70pt, or 94pt on Done.
-                    let slots = if issue.done_at.is_some() { 4.0 } else { 3.0 };
-                    let slot = Vec2::new(
-                        slots * widgets::CARD_ACTION + (slots - 1.0) * theme::SPACE_1,
-                        widgets::CARD_ACTION,
-                    );
-                    ui.allocate_ui_with_layout(slot, Layout::right_to_left(Align::Center), |ui| {
-                        ui.set_min_size(slot);
-                        ui.spacing_mut().item_spacing.x = theme::SPACE_1;
-                        let Some(visible) = actions else {
-                            return;
-                        };
-                        // Hidden actions are also disabled, so a click
-                        // there opens the card instead.
-                        if !visible {
-                            ui.set_invisible();
-                        }
-                        let delete = widgets::icon_button(
-                            ui,
-                            Icon::Trash,
-                            egui::Id::new(("card_delete", &issue.path)),
-                            "Delete  Del",
-                            widgets::Tone::Danger,
-                        );
-                        action_rects.push(delete.rect);
-                        if delete.clicked() {
-                            action = Some(CardAction::Delete);
-                        }
-                        if issue.done_at.is_some() {
-                            let archive = widgets::icon_button(
-                                ui,
-                                Icon::Archive,
-                                egui::Id::new(("card_archive", &issue.path)),
-                                "Archive  A",
-                                widgets::Tone::Plain,
-                            );
-                            action_rects.push(archive.rect);
-                            if archive.clicked() {
-                                action = Some(CardAction::Archive);
-                            }
-                        }
-                        // The selected Todo card can be reviewed from here.
-                        if extras.review_button {
-                            let review = widgets::icon_button(
-                                ui,
-                                Icon::Review,
-                                egui::Id::new(("card_review", &issue.path)),
-                                "Review  ⌘⇧R",
-                                widgets::Tone::Review,
-                            );
-                            action_rects.push(review.rect);
-                            if review.clicked() {
-                                action = Some(CardAction::Review);
-                            }
-                        }
-                        // First of the cluster: Add label, which opens the
-                        // LabelPicker under it.
-                        let picking = label_picker_open(ui.ctx()).as_deref() == Some(&issue.path);
-                        let add_label = widgets::icon_button(
-                            ui,
-                            Icon::TagPlus,
-                            egui::Id::new(("card_add_label", &issue.path)),
-                            "Add label  L",
-                            if picking {
-                                widgets::Tone::Open
-                            } else {
-                                widgets::Tone::Plain
-                            },
-                        );
-                        action_rects.push(add_label.rect);
-                        set_label_anchor(ui.ctx(), &issue.path, add_label.rect);
-                        if add_label.clicked() {
-                            action = Some(CardAction::AddLabel);
-                        }
-                    });
-                    // The last review's verdict: a click reopens it.
-                    if let Some((word, color, stale)) = extras.review_pill {
-                        let (color, hint) = if stale {
-                            (p.ink_faint, "Reviewed before the last edit: show it")
-                        } else {
-                            (color, "Show the last review")
-                        };
-                        let pill = widgets::pill(ui, word, color)
-                            .interact(Sense::click())
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .on_hover_text(hint);
-                        action_rects.push(pill.rect);
-                        if pill.clicked() {
-                            action = Some(CardAction::ShowReview);
-                        }
-                    }
-                    // Wide cards always show the modified date, as on the
-                    // board's Done cards: "today 18:02", "yesterday", "2 Oct".
-                    if extras.wide {
-                        if let Some(modified) = issue.modified {
-                            ui.add(egui::Label::new(
-                                RichText::new(card_date(modified))
-                                    .font(theme::meta())
-                                    .color(p.ink_muted),
-                            ))
-                            .on_hover_text(relative_time(modified));
-                        }
-                    } else if let Some(done_at) = issue.done_at {
-                        // Done issues: the day on the right, the exact time on hover.
-                        ui.add(egui::Label::new(
-                            RichText::new(done_at.format("%Y-%m-%d").to_string())
-                                .font(theme::meta())
-                                .color(p.ink_muted),
-                        ))
-                        .on_hover_text(done_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false));
-                    }
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(issue.file_name())
-                                    .font(theme::meta())
-                                    .color(p.ink_muted),
-                            )
-                            .truncate(),
-                        );
-                    });
-                    (action, action_rects)
+            let label_clicks = card_labels(ui, issue, labels);
+            card_text(ui, issue, inner, &extras);
+            let (mut action, mut action_rects) = ui
+                .horizontal(|ui| {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        card_meta(ui, issue, actions, &extras)
+                    })
+                    .inner
                 })
-                .inner
-            });
-            let (mut action, mut action_rects) = meta.inner;
+                .inner;
             // Each label is its own click target: it filters the board.
             for (label, rect, clicked) in label_clicks {
                 action_rects.push(rect);
@@ -386,4 +243,196 @@ pub(super) fn card_body(
         action: shown.inner.0,
         action_rects: shown.inner.1,
     }
+}
+
+/// The labels, on their own row above the title, 4pt apart and wrapping; no
+/// labels, no row. Each with its rect and whether it was clicked.
+fn card_labels(ui: &mut egui::Ui, issue: &Issue, labels: &Labels) -> Vec<(String, Rect, bool)> {
+    let mut clicks = Vec::new();
+    if issue.labels.is_empty() {
+        return clicks;
+    }
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
+        for label in &issue.labels {
+            let pill = widgets::label_pill(ui, label, labels.color(label))
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(format!("Filter by {label}"));
+            clicks.push((label.clone(), pill.rect, pill.clicked()));
+        }
+    });
+    clicks
+}
+
+/// The title, the summary (six lines on a wide card, three otherwise) and,
+/// on a wide card, its facts row.
+fn card_text(ui: &mut egui::Ui, issue: &Issue, inner: f32, extras: &CardExtras) {
+    let p = theme::palette(ui);
+    ui.add(
+        egui::Label::new(
+            RichText::new(&issue.title)
+                .font(theme::ui_strong())
+                .color(p.ink),
+        )
+        .wrap(),
+    );
+    if !issue.summary.is_empty() {
+        let mut job =
+            LayoutJob::simple(issue.summary.clone(), theme::ui_small(), p.ink_muted, inner);
+        job.wrap.max_rows = if extras.wide { 6 } else { 3 };
+        ui.add(egui::Label::new(job));
+    }
+    if extras.wide {
+        fact_row(ui, issue, extras.sections);
+    }
+}
+
+/// The card's last row, right to left: its actions, the review verdict, the
+/// date, then the file name. The action clicked, and every action's rect.
+fn card_meta(
+    ui: &mut egui::Ui,
+    issue: &Issue,
+    actions: Option<bool>,
+    extras: &CardExtras,
+) -> (Option<CardAction>, Vec<Rect>) {
+    let p = theme::palette(ui);
+    let mut action = None;
+    let mut action_rects = Vec::new();
+    // Add label, Review and Delete, plus Archive on Done: 70pt, or 94pt on
+    // Done.
+    let slots = if issue.done_at.is_some() { 4.0 } else { 3.0 };
+    let slot = Vec2::new(
+        slots * widgets::CARD_ACTION + (slots - 1.0) * theme::SPACE_1,
+        widgets::CARD_ACTION,
+    );
+    ui.allocate_ui_with_layout(slot, Layout::right_to_left(Align::Center), |ui| {
+        ui.set_min_size(slot);
+        ui.spacing_mut().item_spacing.x = theme::SPACE_1;
+        let Some(visible) = actions else {
+            return;
+        };
+        // Hidden actions are also disabled, so a click there opens the card
+        // instead.
+        if !visible {
+            ui.set_invisible();
+        }
+        card_actions(ui, issue, extras, &mut action, &mut action_rects);
+    });
+    // The last review's verdict: a click reopens it.
+    if let Some((word, color, stale)) = extras.review_pill {
+        let (color, hint) = if stale {
+            (p.ink_faint, "Reviewed before the last edit: show it")
+        } else {
+            (color, "Show the last review")
+        };
+        let pill = widgets::pill(ui, word, color)
+            .interact(Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(hint);
+        action_rects.push(pill.rect);
+        if pill.clicked() {
+            action = Some(CardAction::ShowReview);
+        }
+    }
+    card_date_label(ui, issue, extras.wide);
+    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+        ui.add(
+            egui::Label::new(
+                RichText::new(issue.file_name())
+                    .font(theme::meta())
+                    .color(p.ink_muted),
+            )
+            .truncate(),
+        );
+    });
+    (action, action_rects)
+}
+
+/// The icon actions, right to left: Delete, Archive on Done, Review on the
+/// selected Todo card, and Add label first of the cluster.
+fn card_actions(
+    ui: &mut egui::Ui,
+    issue: &Issue,
+    extras: &CardExtras,
+    action: &mut Option<CardAction>,
+    rects: &mut Vec<Rect>,
+) {
+    let mut button = |ui: &mut egui::Ui, icon, id: &str, hover: &str, tone, picked| {
+        let response =
+            widgets::icon_button(ui, icon, egui::Id::new((id, &issue.path)), hover, tone);
+        rects.push(response.rect);
+        if response.clicked() {
+            *action = Some(picked);
+        }
+        response
+    };
+    button(
+        ui,
+        Icon::Trash,
+        "card_delete",
+        "Delete  Del",
+        widgets::Tone::Danger,
+        CardAction::Delete,
+    );
+    if issue.done_at.is_some() {
+        button(
+            ui,
+            Icon::Archive,
+            "card_archive",
+            "Archive  A",
+            widgets::Tone::Plain,
+            CardAction::Archive,
+        );
+    }
+    if extras.review_button {
+        button(
+            ui,
+            Icon::Review,
+            "card_review",
+            "Review  ⌘⇧R",
+            widgets::Tone::Review,
+            CardAction::Review,
+        );
+    }
+    // Add label opens the LabelPicker under it.
+    let picking = label_picker_open(ui.ctx()).as_deref() == Some(&issue.path);
+    let tone = if picking {
+        widgets::Tone::Open
+    } else {
+        widgets::Tone::Plain
+    };
+    let add_label = button(
+        ui,
+        Icon::TagPlus,
+        "card_add_label",
+        "Add label  L",
+        tone,
+        CardAction::AddLabel,
+    );
+    set_label_anchor(ui.ctx(), &issue.path, add_label.rect);
+}
+
+/// Wide cards always show the modified date, as on the board's Done cards:
+/// "today 18:02", "yesterday", "2 Oct". Done issues on the board show the
+/// day they were done, the exact time on hover.
+fn card_date_label(ui: &mut egui::Ui, issue: &Issue, wide: bool) {
+    let p = theme::palette(ui);
+    let (text, hover) = if wide {
+        let Some(modified) = issue.modified else {
+            return;
+        };
+        (card_date(modified), relative_time(modified))
+    } else {
+        let Some(done_at) = issue.done_at else {
+            return;
+        };
+        (
+            done_at.format("%Y-%m-%d").to_string(),
+            done_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
+        )
+    };
+    ui.add(egui::Label::new(
+        RichText::new(text).font(theme::meta()).color(p.ink_muted),
+    ))
+    .on_hover_text(hover);
 }
