@@ -1028,3 +1028,58 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
     }));
     assert_eq!(app.board_generation, newer, "the older scan was dropped");
 }
+
+/// Two fingers swiping right go back one level, as in a browser: the reader
+/// to the board, then ColumnFocus to the whole board. Its momentum never
+/// goes back twice, and scrolling down never goes back.
+#[test]
+fn a_two_finger_swipe_right_goes_back() {
+    let dir = scratch_dir("swipe");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("a.md");
+    std::fs::write(&file, "# A\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let ctx = themed_ctx();
+    let wheel = |x: f32, y: f32| egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(x, y),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    };
+
+    app.focus_column(todo.clone());
+    app.open_issue(file.clone());
+    for _ in 0..4 {
+        frame(&ctx, &mut app, vec![wheel(0.0, -60.0)]);
+    }
+    assert!(
+        matches!(app.session.screen, Screen::Detail(_)),
+        "scrolling stays"
+    );
+
+    for _ in 0..3 {
+        frame(&ctx, &mut app, vec![wheel(50.0, 2.0)]);
+    }
+    assert!(
+        matches!(app.session.screen, Screen::Board),
+        "back to the board"
+    );
+    assert!(app.column_focus.column.is_some(), "in its focused column");
+    for _ in 0..5 {
+        frame(&ctx, &mut app, vec![wheel(50.0, 0.0)]);
+    }
+    assert!(
+        app.column_focus.column.is_some(),
+        "the momentum goes back once"
+    );
+
+    frame(&ctx, &mut app, vec![]);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, vec![wheel(50.0, 0.0)]);
+    }
+    assert!(
+        app.column_focus.column.is_none(),
+        "a new swipe leaves ColumnFocus"
+    );
+}

@@ -4,6 +4,9 @@
 
 use super::*;
 
+/// How far two fingers swipe right, in points, to go back.
+const SWIPE_BACK: f32 = 120.0;
+
 /// Where the keyboard is this frame, for the keymap.
 struct KeyContext {
     /// A text field has focus.
@@ -11,6 +14,8 @@ struct KeyContext {
     /// The delete confirmation is up.
     confirming: bool,
     board: bool,
+    /// The board shows one column full screen (ColumnFocus).
+    focused: bool,
     /// The issue open in the reader or the editor.
     open: Option<PathBuf>,
     editing: bool,
@@ -83,7 +88,7 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     {
         out.push(Command::ToggleReview(path.clone()));
     }
-    if command(Key::OpenBracket) && !cx.board {
+    if command(Key::OpenBracket) && (!cx.board || cx.focused) {
         out.push(Command::Back);
     }
     if command(Key::S) {
@@ -184,7 +189,11 @@ impl IboardApp {
             self.escape_keys(ctx);
         }
         let cx = self.key_context(ctx, confirming);
-        for command in ctx.input(|i| keymap(i, &cx)) {
+        let mut commands = ctx.input(|i| keymap(i, &cx));
+        if !confirming && (!cx.board || cx.focused) && self.swiped_back(ctx) {
+            commands.push(Command::Back);
+        }
+        for command in commands {
             self.run(command);
         }
         // Saved some other way while the prompt was up: carry on leaving.
@@ -209,6 +218,43 @@ impl IboardApp {
             self.start_editing(&path);
         }
         self.background(ctx);
+    }
+
+    /// A two-finger swipe to the right on the trackpad, as a browser's
+    /// back. It reaches egui as horizontal scrolling: added up while it lasts,
+    /// it goes back once past [`SWIPE_BACK`], then waits for the fingers to
+    /// lift so the momentum after it never goes back twice.
+    fn swiped_back(&mut self, ctx: &egui::Context) -> bool {
+        let delta = ctx.input(|i| {
+            i.events
+                .iter()
+                .filter_map(|event| match event {
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta,
+                        ..
+                    } => Some(*delta),
+                    _ => None,
+                })
+                .fold(Vec2::ZERO, |sum, delta| sum + delta)
+        });
+        if delta.x == 0.0 && delta.y == 0.0 {
+            self.session.swipe = Some(0.0);
+            return false;
+        }
+        let Some(swipe) = self.session.swipe.as_mut() else {
+            return false;
+        };
+        if delta.x.abs() < 2.0 * delta.y.abs() {
+            *swipe = 0.0;
+            return false;
+        }
+        *swipe += delta.x;
+        if *swipe < SWIPE_BACK {
+            return false;
+        }
+        self.session.swipe = None;
+        true
     }
 
     /// The window's own requests: a quit or Settings picked from the macOS
@@ -301,6 +347,7 @@ impl IboardApp {
             typing: ctx.memory(|m| m.focused().is_some()),
             confirming,
             board: matches!(self.session.screen, Screen::Board),
+            focused: self.column_focus.column.is_some(),
             editable: open.as_deref().is_some_and(|path| self.can_edit(path)),
             open,
             editing: self.session.detail_mode == DetailMode::Edit,
@@ -340,6 +387,7 @@ impl IboardApp {
                 }
             }
             Command::Back if self.session.detail_mode == DetailMode::Edit => self.show_preview(),
+            Command::Back if matches!(self.session.screen, Screen::Board) => self.unfocus_column(),
             Command::Back => self.back_to_board(),
             // `⌘S` is the header's Save: it forces a save (overwriting a
             // conflict) and, when it went through, shows the issue again. On

@@ -120,6 +120,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | ColumnFocus | Pick a sort, toggle Group by label | ColumnSortChanged / ColumnGroupingToggled | Same view, reordered; files untouched |
 | ColumnFocus | Click another column tab | ColumnFocused | That column full screen |
 | ColumnFocus | Click the active tab, Board button, `esc` | ColumnUnfocused | Board, same card selected |
+| Reader, Editor, ColumnFocus | Two-finger swipe right on the trackpad, or `⌘[` | NavigatedBack | One level up the breadcrumb: Editor to Reader, Reader to the board (or its focused column), ColumnFocus to the board |
 | Any | Move to column (drag, or menu) | IssueMoved | Same screen; file moved between folders |
 | Board | Start dragging a card | IssueDragStarted → DropZonesShown | Board, Archive and Delete zones slide up from the bottom |
 | Board | Drop on Archive (Done only), or card Archive button, `A` | IssueArchived | Board; file moved to `.archive/` |

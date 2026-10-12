@@ -561,6 +561,9 @@ struct Session {
     selected: Option<PathBuf>,
     /// Scroll the selected card into view on the next frame.
     scroll_to_selected: bool,
+    /// How far a two-finger swipe to the right has gone; `None` until the
+    /// fingers lift after one went back.
+    swipe: Option<f32>,
     /// Leaving the editor is on hold until the user answers the save prompt.
     leave_prompt: Option<Leave>,
     /// Set when a freshly created issue should receive keyboard focus.
@@ -594,6 +597,7 @@ impl Default for Session {
             notes: None,
             selected: None,
             scroll_to_selected: false,
+            swipe: Some(0.0),
             focus_editor: false,
             label_picker: None,
             commits: None,
