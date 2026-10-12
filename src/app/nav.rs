@@ -109,7 +109,7 @@ impl IboardApp {
                 column
                     .issues
                     .iter()
-                    .filter(|issue| self.filter.matches(issue))
+                    .filter(|issue| self.filter_bar.filter.matches(issue))
                     .map(|issue| issue.path.clone())
                     .collect()
             })
@@ -152,7 +152,7 @@ impl IboardApp {
                     return;
                 };
                 let paths: Vec<PathBuf> =
-                    focus_issues(column, &self.filter, self.column_sort(&dir))
+                    focus_issues(column, &self.filter_bar.filter, self.column_sort(&dir))
                         .into_iter()
                         .map(|issue| issue.path.clone())
                         .collect();

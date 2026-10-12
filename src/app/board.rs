@@ -25,7 +25,7 @@ impl IboardApp {
         let available = ui.available_width() - 2.0 * gutter - (count - 1.0) * gutter;
         let width = (available / count).clamp(theme::COLUMN_MIN, theme::COLUMN_MAX);
         let height = (ui.available_height() - 2.0 * gutter).max(120.0);
-        let filter = &self.filter;
+        let filter = &self.filter_bar.filter;
         let labels = &self.labels;
         let new_card = self
             .new_card
@@ -149,7 +149,7 @@ impl IboardApp {
             self.open_title_settings();
         }
         if let Some(label) = filter_label {
-            self.filter.pick(&label);
+            self.filter_bar.filter.pick(&label);
         }
         if let Some(dir) = focus_column {
             self.focus_column(dir);

@@ -100,7 +100,7 @@ impl IboardApp {
         let view = FocusGrid {
             column,
             root: &self.board.root,
-            filter: &self.filter,
+            filter: &self.filter_bar.filter,
             sort,
             group: self.group_by_label,
             labels: &self.labels,
@@ -123,7 +123,7 @@ impl IboardApp {
             self.archive_issue(&path);
         }
         if let Some(label) = actions.filter_label {
-            self.filter.pick(&label);
+            self.filter_bar.filter.pick(&label);
         }
         if let Some((path, anchor)) = actions.reorder {
             self.place_issue(&path, &dir, anchor);

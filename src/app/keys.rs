@@ -84,23 +84,12 @@ impl IboardApp {
             self.toggle_label_picker(path);
         }
 
-        // In the filter, `esc` leaves the chips, then clears, then leaves the
-        // field. egui drops focus on `esc` before we see it, so the field
-        // asks for it back unless this is the last step.
         if !confirming
             && matches!(self.screen, Screen::Board)
-            && self.filter_open
+            && self.filter_bar.open
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape))
         {
-            if self.chip_cursor.take().is_some() {
-                self.focus_filter = true;
-            } else if !self.filter.is_empty() {
-                self.filter.clear();
-                self.focus_filter = true;
-            } else {
-                ctx.memory_mut(|m| m.surrender_focus(filter_id()));
-                self.filter_open = false;
-            }
+            self.filter_bar.escape(ctx);
         }
 
         // Escape steps back one level, but a review consumes it first: it
@@ -114,7 +103,9 @@ impl IboardApp {
                 match self.screen.clone() {
                     _ if self.leave_prompt.is_some() => self.answer_leave(LeaveChoice::KeepEditing),
                     Screen::Board if self.composer.is_some() => self.composer_escape(),
-                    Screen::Board if !self.filter.is_empty() => self.filter.clear(),
+                    Screen::Board if !self.filter_bar.filter.is_empty() => {
+                        self.filter_bar.filter.clear()
+                    }
                     Screen::Board if self.focused_column.is_some() => self.unfocus_column(),
                     Screen::Board => self.selected = None,
                     Screen::Detail(_) if self.detail_mode == DetailMode::Edit => {
@@ -129,7 +120,7 @@ impl IboardApp {
             self.open_composer();
         }
         if command(Key::F) && matches!(self.screen, Screen::Board) {
-            self.focus_filter = true;
+            self.filter_bar.focus = true;
         }
         // `⌘1`–`⌘4` show a column full screen (ColumnFocus); again goes back.
         if matches!(self.screen, Screen::Board) && !typing {

@@ -660,7 +660,7 @@ fn the_filter_picks_suggestions_from_the_keyboard() {
 
     frame(&ctx, &mut app, vec![]);
     // What `⌘F` sets.
-    app.focus_filter = true;
+    app.filter_bar.focus = true;
     frame(&ctx, &mut app, vec![]);
     frame(&ctx, &mut app, vec![]);
     assert!(focused(&ctx), "the filter takes focus");
@@ -670,9 +670,13 @@ fn the_filter_picks_suggestions_from_the_keyboard() {
         &mut app,
         vec![key(Key::ArrowDown, egui::Modifiers::NONE)],
     );
-    assert_eq!(app.chip_cursor, Some(0), "↓ reaches the first chip");
+    assert_eq!(
+        app.filter_bar.chip_cursor,
+        Some(0),
+        "↓ reaches the first chip"
+    );
     frame(&ctx, &mut app, vec![key(Key::Enter, egui::Modifiers::NONE)]);
-    assert_eq!(app.filter.tokens, vec!["bug"]);
+    assert_eq!(app.filter_bar.filter.tokens, vec!["bug"]);
     assert!(focused(&ctx), "picking keeps focus in the field");
     assert_eq!(app.visible_grid().concat().len(), 1, "only the bug matches");
 
@@ -682,7 +686,7 @@ fn the_filter_picks_suggestions_from_the_keyboard() {
         vec![key(Key::Escape, egui::Modifiers::NONE)],
     );
     assert_eq!(
-        app.chip_cursor, None,
+        app.filter_bar.chip_cursor, None,
         "esc goes back from the chips to the text"
     );
     assert!(focused(&ctx), "leaving the chips keeps focus");
@@ -692,17 +696,17 @@ fn the_filter_picks_suggestions_from_the_keyboard() {
         vec![key(Key::Backspace, egui::Modifiers::NONE)],
     );
     assert!(
-        app.filter.tokens.is_empty(),
+        app.filter_bar.filter.tokens.is_empty(),
         "⌫ in an empty field drops the token"
     );
 
-    app.filter.pick("feature");
+    app.filter_bar.filter.pick("feature");
     frame(
         &ctx,
         &mut app,
         vec![key(Key::Escape, egui::Modifiers::NONE)],
     );
-    assert!(app.filter.is_empty(), "the first esc clears");
+    assert!(app.filter_bar.filter.is_empty(), "the first esc clears");
     assert!(focused(&ctx));
     frame(
         &ctx,
@@ -1049,7 +1053,7 @@ fn selection_follows_the_filter_and_survives_opening() {
     assert_eq!(app.selected, Some(doing.join("01-gamma.md")));
 
     // Filtered out cards are skipped.
-    app.filter.text = "beta".to_string();
+    app.filter_bar.filter.text = "beta".to_string();
     app.selected = None;
     app.move_selection(Key::ArrowDown);
     assert_eq!(app.selected, Some(todo.join("02-beta.md")));

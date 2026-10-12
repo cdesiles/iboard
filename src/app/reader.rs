@@ -293,7 +293,7 @@ impl IboardApp {
             self.write_issue(path, &text);
         }
         if let Some(label) = label_clicked {
-            self.filter.pick(&label);
+            self.filter_bar.filter.pick(&label);
             self.back_to_board();
         } else if let Some(section) = add_section {
             self.add_section(path, &section);

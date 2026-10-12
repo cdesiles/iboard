@@ -506,20 +506,12 @@ pub struct IboardApp {
     composer: Option<Composer>,
     /// The issue the composer just wrote, highlighted for a moment.
     new_card: Option<(PathBuf, Instant)>,
-    filter: Filter,
-    focus_filter: bool,
-    /// The filter's one-click label tokens pinned in the config; `None` offers
-    /// the board's three most used labels.
-    suggestions: Option<Vec<String>>,
+    /// The filter field in the header, and the filter it holds.
+    filter_bar: FilterBar,
     /// What names the composer's new issues.
     title_engine: Engine,
     /// The Settings tab `⌘,` reopens.
     settings_tab: settings_ui::Tab,
-    /// The suggestion chip reached with `↓`, while the filter has focus.
-    chip_cursor: Option<usize>,
-    /// The filter is in use: focused, or being clicked (a click on a chip
-    /// takes focus from the text for a frame).
-    filter_open: bool,
     /// The last action that failed, until it is dismissed.
     error: Option<String>,
     /// Why the board could not be read; the next good scan clears it.
@@ -688,7 +680,7 @@ impl IboardApp {
         app.config_file = settings::config_file();
         let mut config = UserConfig::load(app.config_file.as_deref());
         app.agent = agent::load(&mut config);
-        app.suggestions = filter::load_suggestions(&mut config);
+        app.filter_bar.suggestions = filter::load_suggestions(&mut config);
         app.title_engine = titles::load_engine(&mut config);
         app.confirm_delete = general::load_confirm_delete(&mut config);
         app.appearance = general::load_appearance(&mut config);
@@ -720,13 +712,9 @@ impl IboardApp {
             editor: None,
             composer: None,
             new_card: None,
-            filter: Filter::default(),
-            focus_filter: false,
-            suggestions: None,
+            filter_bar: FilterBar::default(),
             title_engine: Engine::Manual,
             settings_tab: settings_ui::Tab::General,
-            chip_cursor: None,
-            filter_open: false,
             error: None,
             scan_error,
             confirm: None,
@@ -819,7 +807,7 @@ impl IboardApp {
                 self.design_error = None;
                 self.design_draft = None;
                 self.enrichment = None;
-                self.filter.clear();
+                self.filter_bar.filter.clear();
                 self.error = None;
                 self.scan_error = None;
                 self.scan = None;
