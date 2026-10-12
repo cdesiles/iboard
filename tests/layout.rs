@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 /// The longest a source file may get. A ratchet: lower it whenever the longest
 /// file shrinks, never raise it.
-const MAX_LINES: usize = 2_207;
+const MAX_LINES: usize = 1_558;
 
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
