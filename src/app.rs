@@ -54,6 +54,7 @@ mod moves;
 mod nav;
 mod reader;
 mod review;
+mod split;
 mod status;
 mod windows;
 
@@ -290,6 +291,21 @@ struct CommitsPanel {
 }
 
 /// An issue deleted without asking, kept so `⌘Z` can put it back.
+/// What `⌘Z` on the board can still take back.
+enum Undo {
+    Deleted(Deleted),
+    Split(split::SplitDone),
+}
+
+impl Undo {
+    fn at(&self) -> Instant {
+        match self {
+            Undo::Deleted(deleted) => deleted.at,
+            Undo::Split(split) => split.at,
+        }
+    }
+}
+
 struct Deleted {
     path: PathBuf,
     /// Where the Trash put it, when it could say.
@@ -464,6 +480,20 @@ enum ReviewStatus {
     Failed {
         error: String,
     },
+    /// The agent is cutting the issue; `raw` and `report` are the review it
+    /// came from, to go back to.
+    Splitting {
+        answer: Job<Result<String, String>>,
+        progress: agent::Progress,
+        raw: String,
+        report: Option<Report>,
+    },
+    /// The tickets the agent proposed, waiting to be created.
+    SplitReady {
+        drafts: Vec<split::SplitDraft>,
+        raw: String,
+        report: Option<Report>,
+    },
 }
 
 pub struct IboardApp {
@@ -508,7 +538,7 @@ pub struct IboardApp {
     /// Settings › General: deleting an issue asks first.
     confirm_delete: bool,
     /// The last issue deleted without asking, for `⌘Z`.
-    undo: Option<Deleted>,
+    undo: Option<Undo>,
     /// Where deleted issues go: the user's Trash in the app, a folder of its
     /// own for a board built in tests.
     trash: Trash,

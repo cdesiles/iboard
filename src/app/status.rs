@@ -24,19 +24,20 @@ impl IboardApp {
                     if let Some(drag) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx()) {
                         ui.label(meta(self.relative(&drag.path)));
                         hints = vec![("esc", "cancel drag")];
-                    } else if let Some(deleted) =
-                        self.undo.as_ref().filter(|_| self.can_undo_delete())
-                    {
-                        ui.label(
-                            RichText::new(format!(
-                                "Moved {} to the Trash",
-                                self.relative(&deleted.path)
-                            ))
-                            .font(theme::meta())
-                            .color(p.ink),
-                        );
+                    } else if let Some(undo) = self.undo.as_ref().filter(|_| self.can_undo()) {
+                        let text = match undo {
+                            Undo::Deleted(deleted) => {
+                                format!("Moved {} to the Trash", self.relative(&deleted.path))
+                            }
+                            Undo::Split(split) => format!(
+                                "Split {} into {} tickets",
+                                file_name(&split.original),
+                                split.children.len()
+                            ),
+                        };
+                        ui.label(RichText::new(text).font(theme::meta()).color(p.ink));
                         ui.ctx()
-                            .request_repaint_after(UNDO_FOR.saturating_sub(deleted.at.elapsed()));
+                            .request_repaint_after(UNDO_FOR.saturating_sub(undo.at().elapsed()));
                         hints = vec![("⌘Z", "undo"), ("⌘,", "settings")];
                     } else if let Some((text, at)) = notice {
                         ui.label(RichText::new(text).font(theme::meta()).color(p.ink));

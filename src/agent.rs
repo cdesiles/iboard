@@ -687,6 +687,31 @@ fn final_answer(stdout: &str) -> String {
     texts.concat()
 }
 
+/// One ticket of a split: its `# ` title (labels included) and its body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Draft {
+    pub title: String,
+    pub body: String,
+}
+
+/// The tickets of a split answer, each after a [`crate::prompts::SPLIT_MARK`]
+/// line. `None` unless there are at least two, each with a title.
+pub fn parse_split(text: &str) -> Option<Vec<Draft>> {
+    let drafts = text
+        .split(crate::prompts::SPLIT_MARK)
+        .skip(1)
+        .map(|chunk| {
+            let lines: Vec<&str> = chunk.lines().collect();
+            let at = crate::markdown::title_line(&lines)?;
+            Some(Draft {
+                title: lines[at].trim_start_matches('#').trim().to_string(),
+                body: lines[at + 1..].join("\n").trim().to_string(),
+            })
+        })
+        .collect::<Option<Vec<Draft>>>()?;
+    (drafts.len() >= 2).then_some(drafts)
+}
+
 /// The verdict on one axis of the review.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
@@ -1150,6 +1175,19 @@ Some context.";
                 .unwrap()
                 .starts_with("# Better issue")
         );
+    }
+
+    #[test]
+    fn a_split_answer_parses_into_tickets() {
+        let answer = "Here you go.\n=== TICKET ===\n# [refactor] Split design.rs\n\nInto model and load.\n\
+                      === TICKET ===\n# [refactor] Split widgets.rs\nInto button and menu.\n";
+        let drafts = parse_split(answer).expect("two tickets");
+        assert_eq!(drafts[0].title, "[refactor] Split design.rs");
+        assert_eq!(drafts[0].body, "Into model and load.");
+        assert_eq!(drafts[1].body, "Into button and menu.");
+        assert!(parse_split("=== TICKET ===\n# Only one\n").is_none());
+        assert!(parse_split("=== TICKET ===\n# A\n=== TICKET ===\nno title\n").is_none());
+        assert!(parse_split("prose").is_none());
     }
 
     #[test]

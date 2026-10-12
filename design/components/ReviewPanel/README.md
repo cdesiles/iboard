@@ -6,3 +6,6 @@ The result of a review: a 360pt panel beside the Reader or Editor page with thre
 - When the issue is only a title, the panel instead proposes the missing sections (Context, Acceptance criteria, Out of scope, Open questions).
 - Apply to draft opens the Editor with the proposal merged into the draft, unsaved. The agent never writes the file.
 - Ask again sends a follow-up ("make it smaller", "assume CLI only"). Dismiss closes the panel; the last review stays reachable from the card's pill.
+- The header also says how far the review went: `quick` (the issue alone) or `deep` (it read the repository). While it runs, the body shows the elapsed time and the agent's current step.
+- A Size finding that is not a Pass offers "Split into tickets…". The body then lists the proposed tickets, each with a checkbox and an editable title. Create N tickets writes them in the original's place and archives it, Back to review returns to the findings, and `⌘Z` on the board takes the split back.
+- The last review is kept beside the issue, so the card's pill survives a restart. The pill turns muted once the issue has changed since.

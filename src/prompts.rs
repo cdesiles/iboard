@@ -97,21 +97,51 @@ pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]
          ---\n\
          {content}"
     );
-    if !notes.is_empty() {
-        prompt.push_str(
-            "\n\n---\nThe author's notes on the issue, each under the passage it is about. \
-             Take them into account:\n",
-        );
-        for (passage, note) in notes {
-            prompt.push('\n');
-            for line in passage.lines() {
-                prompt.push_str(&format!("> {line}\n"));
-            }
-            prompt.push_str(note.trim());
-            prompt.push('\n');
-        }
-    }
+    push_notes(&mut prompt, notes);
     prompt
+}
+
+/// The line each ticket of a split answer starts with.
+pub const SPLIT_MARK: &str = "=== TICKET ===";
+
+/// A prompt asking an agent to cut an issue too big for one sitting into
+/// smaller ones. `reason` is the review's Size finding.
+pub fn split_prompt(content: &str, reason: &str, notes: &[(String, String)]) -> String {
+    let mut prompt = format!(
+        "You split a software issue that is too big for one sitting into smaller issues. \
+         A review said about its size: {reason}\n\
+         \n\
+         Write 2 to 6 issues, in the order they should be done. Each one must be \
+         finishable and committable on its own, and together they must cover the whole \
+         original. Keep the original's [labels] in each title. Answer with nothing but \
+         the issues, each one starting with a line `{SPLIT_MARK}`, then a \
+         `# [kind] Title` line, then its body in markdown, 3 to 15 lines.\n\
+         \n\
+         ---\n\
+         {content}",
+        reason = reason.trim(),
+    );
+    push_notes(&mut prompt, notes);
+    prompt
+}
+
+/// The author's notes, each quoting the passage it is about.
+fn push_notes(prompt: &mut String, notes: &[(String, String)]) {
+    if notes.is_empty() {
+        return;
+    }
+    prompt.push_str(
+        "\n\n---\nThe author's notes on the issue, each under the passage it is about. \
+         Take them into account:\n",
+    );
+    for (passage, note) in notes {
+        prompt.push('\n');
+        for line in passage.lines() {
+            prompt.push_str(&format!("> {line}\n"));
+        }
+        prompt.push_str(note.trim());
+        prompt.push('\n');
+    }
 }
 
 /// A prompt asking an agent to draft a static HTML mockup of a ticket.
@@ -284,6 +314,14 @@ mod tests {
             prompt.ends_with("> Three files.\n> Over 1,100 lines.\nOnly design.rs matters now.\n")
         );
         assert!(!review_prompt("# Split", ReviewMode::Quick, &[]).contains("notes"));
+    }
+
+    #[test]
+    fn the_split_prompt_names_the_reason_and_the_shape() {
+        let prompt = split_prompt("# [refactor] Big", "Three files, cut per file.", &[]);
+        assert!(prompt.contains("A review said about its size: Three files, cut per file."));
+        assert!(prompt.contains(SPLIT_MARK));
+        assert!(prompt.ends_with("# [refactor] Big"));
     }
 
     #[test]

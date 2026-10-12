@@ -171,22 +171,32 @@ impl IboardApp {
                     format!("Moved {} to the Trash", self.relative(&path)),
                     Instant::now(),
                 ));
-                self.undo = Some(Deleted {
+                self.undo = Some(Undo::Deleted(Deleted {
                     path,
                     trashed,
                     content,
                     at: Instant::now(),
-                });
+                }));
             }
         }
     }
 
-    /// `⌘Z` on the board: puts the last issue deleted without asking back
-    /// where it was.
-    pub(super) fn undo_delete(&mut self) {
-        let Some(deleted) = self.undo.take().filter(|d| d.at.elapsed() < UNDO_FOR) else {
-            return;
-        };
+    /// `⌘Z` on the board: takes back the last delete made without asking,
+    /// or the last split.
+    pub(super) fn undo_last(&mut self) {
+        match self
+            .undo
+            .take()
+            .filter(|undo| undo.at().elapsed() < UNDO_FOR)
+        {
+            Some(Undo::Deleted(deleted)) => self.undo_delete(deleted),
+            Some(Undo::Split(split)) => self.undo_split(split),
+            None => {}
+        }
+    }
+
+    /// Puts an issue deleted without asking back where it was.
+    fn undo_delete(&mut self, deleted: Deleted) {
         if deleted.path.exists() {
             self.error = Some(format!(
                 "Couldn't restore {}: a file with that name exists now.",
@@ -217,11 +227,11 @@ impl IboardApp {
         }
     }
 
-    /// Whether `⌘Z` can still bring back a deleted issue.
-    pub(super) fn can_undo_delete(&self) -> bool {
+    /// Whether `⌘Z` can still take something back.
+    pub(super) fn can_undo(&self) -> bool {
         self.undo
             .as_ref()
-            .is_some_and(|d| d.at.elapsed() < UNDO_FOR)
+            .is_some_and(|undo| undo.at().elapsed() < UNDO_FOR)
     }
 
     /// Deletes an issue's file to `self.trash` and lets the board catch
@@ -263,7 +273,7 @@ impl IboardApp {
     /// Moves a done issue out of the board into `issues/.archive`, which
     /// discovery ignores. Never overwrites an archived file.
     pub(super) fn archive_issue(&mut self, path: &Path) {
-        if self.move_to_archive(path) {
+        if self.move_to_archive(path).is_some() {
             self.notice = Some((format!("Archived {}", file_name(path)), Instant::now()));
             self.refresh();
         }
@@ -274,7 +284,7 @@ impl IboardApp {
     pub(super) fn archive_all(&mut self, paths: &[PathBuf]) {
         let archived = paths
             .iter()
-            .filter(|path| self.move_to_archive(path))
+            .filter(|path| self.move_to_archive(path).is_some())
             .count();
         self.refresh();
         if archived > 0 {
@@ -284,9 +294,9 @@ impl IboardApp {
     }
 
     /// Moves `path` into `.archive/` and lets go of it wherever it is open,
-    /// without reading the board again. `false`, with the reason in
-    /// `self.error`, when it could not.
-    fn move_to_archive(&mut self, path: &Path) -> bool {
+    /// without reading the board again. Returns where it went; `None`, with
+    /// the reason in `self.error`, when it could not.
+    pub(super) fn move_to_archive(&mut self, path: &Path) -> Option<PathBuf> {
         if self
             .review
             .as_ref()
@@ -300,12 +310,12 @@ impl IboardApp {
                 "Couldn't create {}: {err}",
                 self.relative(&archive)
             ));
-            return false;
+            return None;
         }
         let target = archive.join(unique_name(&archive, &file_name(path)));
         if let Err(err) = std::fs::rename(path, &target) {
             self.error = Some(format!("Couldn't archive {}: {err}", self.relative(path)));
-            return false;
+            return None;
         }
         if self.selected.as_deref() == Some(path) {
             self.selected = None;
@@ -317,7 +327,7 @@ impl IboardApp {
             self.detail_mode = DetailMode::Preview;
             self.screen = Screen::Board;
         }
-        true
+        Some(target)
     }
 
     /// Moves a just-composed ticket to position 1, once the pointer has settled.

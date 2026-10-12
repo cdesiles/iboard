@@ -13,6 +13,7 @@ impl IboardApp {
         }
         // Adopt an agent's answer as soon as it lands.
         self.poll_review();
+        self.poll_split();
         self.poll_naming(ctx);
         self.poll_design_draft(ctx);
         self.poll_enrichment(ctx);
@@ -151,10 +152,10 @@ impl IboardApp {
         if command(Key::R) && !ctx.input(|i| i.modifiers.shift) {
             self.refresh();
         }
-        // `⌘Z` brings back an issue deleted without asking; in a text field
-        // it stays the field's own undo.
+        // `⌘Z` takes back a delete made without asking, or a split; in a
+        // text field it stays the field's own undo.
         if command(Key::Z) && !typing && matches!(self.screen, Screen::Board) {
-            self.undo_delete();
+            self.undo_last();
         }
         // `⌘,` opens Settings on the last tab used; `⌘⇧R` reviews the open
         // issue or draft.
@@ -323,11 +324,12 @@ impl IboardApp {
             }
         }
         // Poll a running review a few times a second.
-        if self
-            .review
-            .as_ref()
-            .is_some_and(|review| matches!(review.status, ReviewStatus::Running { .. }))
-        {
+        if self.review.as_ref().is_some_and(|review| {
+            matches!(
+                review.status,
+                ReviewStatus::Running { .. } | ReviewStatus::Splitting { .. }
+            )
+        }) {
             ctx.request_repaint_after(job::POLL_EVERY);
         }
     }

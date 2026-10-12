@@ -258,3 +258,90 @@ fn a_margin_comment_reaches_the_review() {
     );
     assert!(reviews::load(&dir.join("issues"), &file).comments[0].sent);
 }
+
+/// A Size finding that blocks offers a split: the agent's tickets take the
+/// original's place in Todo, the original is archived naming them, and one
+/// `⌘Z` takes it all back.
+#[test]
+fn a_size_block_splits_the_issue_in_place() {
+    let dir = scratch_dir("split");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    for (name, title) in [
+        ("001-first.md", "First"),
+        ("002-big.md", "Big"),
+        ("003-last.md", "Last"),
+    ] {
+        std::fs::write(todo.join(name), format!("# {title}\n")).unwrap();
+    }
+    let big = todo.join("002-big.md");
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "if grep -q '=== TICKET ===' {prompt}; then \
+                  printf '=== TICKET ===\\n# [refactor] Part A\\nDo a.\\n=== TICKET ===\\n# [refactor] Part B\\nDo b.\\n'; \
+                  else printf 'RELEVANCE: Pass\\nok\\nSIZE: Block\\ntoo big\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE'; fi"
+            .to_string(),
+        configured: true,
+    };
+    app.open_issue(big.clone());
+    app.start_review(&big, false);
+    assert!(until(|| {
+        app.poll_review();
+        matches!(
+            app.review.as_ref().unwrap().status,
+            ReviewStatus::Done { .. }
+        )
+    }));
+    app.start_split();
+    assert!(until(|| {
+        app.poll_split();
+        !matches!(
+            app.review.as_ref().unwrap().status,
+            ReviewStatus::Splitting { .. }
+        )
+    }));
+    let ReviewStatus::SplitReady { drafts, .. } = &app.review.as_ref().unwrap().status else {
+        panic!("the tickets are proposed");
+    };
+    assert_eq!(drafts.len(), 2);
+    let ctx = themed_ctx();
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, vec![]);
+    app.create_split();
+
+    let names = |dir: &Path| {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| !name.starts_with('.'))
+            .collect();
+        names.sort();
+        names
+    };
+    assert_eq!(
+        names(&todo),
+        [
+            "001-first.md",
+            "002-part-a.md",
+            "003-part-b.md",
+            "004-last.md"
+        ]
+    );
+    let part = std::fs::read_to_string(todo.join("002-part-a.md")).unwrap();
+    assert_eq!(
+        part,
+        "# [refactor] Part A\n\nDo a.\n\nSplit from `002-big.md`.\n"
+    );
+    let archived = std::fs::read_to_string(dir.join("issues/.archive/002-big.md")).unwrap();
+    assert_eq!(
+        archived,
+        "# Big\n\nSplit into `002-part-a.md`, `003-part-b.md`.\n"
+    );
+    assert!(matches!(app.screen, Screen::Board));
+
+    app.undo_last();
+    assert_eq!(names(&todo), ["001-first.md", "002-big.md", "004-last.md"]);
+    assert_eq!(std::fs::read_to_string(&big).unwrap(), "# Big\n");
+}

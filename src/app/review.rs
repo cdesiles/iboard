@@ -299,7 +299,8 @@ impl IboardApp {
     }
 
     /// The review panel beside the page: the agent's three findings and the
-    /// actions on them. The agent only ever proposes; Apply opens the editor.
+    /// actions on them, or the tickets of a split. The agent only ever
+    /// proposes; Apply opens the editor, Create writes the tickets.
     pub(super) fn review_panel(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette(ui);
         let Some(review) = self.review.as_ref() else {
@@ -309,12 +310,11 @@ impl IboardApp {
         let source = if review.draft { "draft" } else { "file" };
         let agent = format!("{} · {}", review.agent, review.mode.key());
         let mut follow_up = review.follow_up.clone();
-        let mut dismiss = false;
-        let mut again = false;
-        let mut apply = false;
-        let mut cancel = false;
-        let mut retry = false;
-        let running = matches!(review.status, ReviewStatus::Running { .. });
+        let mut drafts = match &review.status {
+            ReviewStatus::SplitReady { drafts, .. } => Some(drafts.clone()),
+            _ => None,
+        };
+        let mut action = None;
 
         Frame::new()
             .fill(p.surface)
@@ -371,43 +371,11 @@ impl IboardApp {
                     .inner_margin(Margin::same(theme::SPACE_4 as i8))
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        match &review.status {
-                            ReviewStatus::Running { answer, progress } => {
-                                running_line(ui, answer.elapsed(), agent::step(progress));
-                            }
-                            ReviewStatus::Failed { error } => {
-                                ui.label(RichText::new(error).color(p.danger));
-                            }
-                            ReviewStatus::Done { raw, report } => match report {
-                                Some(report) => {
-                                    for finding in &report.findings {
-                                        let (label, color) = match finding.verdict {
-                                            agent::Verdict::Pass => ("Pass", p.status_done),
-                                            agent::Verdict::Challenge => ("Challenge", p.review),
-                                            agent::Verdict::Block => ("Block", p.danger),
-                                        };
-                                        ui.horizontal(|ui| {
-                                            ui.label(
-                                                RichText::new(&finding.axis)
-                                                    .font(theme::ui_strong())
-                                                    .color(p.ink),
-                                            );
-                                            widgets::pill(ui, label, color);
-                                        });
-                                        if !finding.body.is_empty() {
-                                            ui.label(
-                                                RichText::new(&finding.body).color(p.ink_muted),
-                                            );
-                                        }
-                                        ui.add_space(theme::SPACE_4);
-                                    }
-                                }
-                                None => {
-                                    ui.label(RichText::new(raw).color(p.ink_muted));
-                                }
-                            },
-                        }
-                        if !running {
+                        action = review_body(ui, &review.status, drafts.as_deref_mut());
+                        if matches!(
+                            review.status,
+                            ReviewStatus::Done { .. } | ReviewStatus::Failed { .. }
+                        ) {
                             ui.add_space(theme::SPACE_2);
                             ui.add(
                                 egui::TextEdit::singleline(&mut follow_up)
@@ -426,98 +394,198 @@ impl IboardApp {
                         theme::SPACE_3 as i8,
                     ))
                     .show(ui, |ui| {
-                        ui.allocate_ui_with_layout(
-                            Vec2::new(ui.available_width(), theme::CONTROL_H),
-                            Layout::right_to_left(Align::Center),
-                            |ui| {
-                                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                                let has_proposal = matches!(
-                                    &review.status,
-                                    ReviewStatus::Done { report: Some(report), .. }
-                                        if report.proposal.is_some()
-                                );
-                                ui.add_enabled_ui(has_proposal, |ui| {
-                                    if widgets::button(
-                                        ui,
-                                        ButtonKind::Primary,
-                                        None,
-                                        "Apply to draft",
-                                        None,
-                                    )
-                                    .clicked()
-                                    {
-                                        apply = true;
-                                    }
-                                });
-                                if running {
-                                    if widgets::button(
-                                        ui,
-                                        ButtonKind::Secondary,
-                                        None,
-                                        "Cancel",
-                                        Some("esc"),
-                                    )
-                                    .clicked()
-                                    {
-                                        cancel = true;
-                                    }
-                                } else {
-                                    if matches!(review.status, ReviewStatus::Failed { .. })
-                                        && widgets::button(
-                                            ui,
-                                            ButtonKind::Secondary,
-                                            None,
-                                            "Retry",
-                                            None,
-                                        )
-                                        .clicked()
-                                    {
-                                        retry = true;
-                                    }
-                                    if !follow_up.trim().is_empty()
-                                        && widgets::button(
-                                            ui,
-                                            ButtonKind::Secondary,
-                                            None,
-                                            "Ask again",
-                                            None,
-                                        )
-                                        .clicked()
-                                    {
-                                        again = true;
-                                    }
-                                    if widgets::button(ui, ButtonKind::Ghost, None, "Dismiss", None)
-                                        .clicked()
-                                    {
-                                        dismiss = true;
-                                    }
-                                }
-                            },
-                        );
+                        let kept = drafts
+                            .iter()
+                            .flatten()
+                            .filter(|draft| draft.include)
+                            .count();
+                        let asked = !follow_up.trim().is_empty();
+                        action = review_footer(ui, &review.status, asked, kept).or(action.take());
                     });
             });
 
         if let Some(review) = self.review.as_mut() {
             review.follow_up = follow_up;
-        }
-        if cancel {
-            self.cancel_review();
-        } else if dismiss {
-            self.review = None;
-        } else if retry {
-            let target = self
-                .review
-                .as_ref()
-                .map(|review| (review.path.clone(), review.draft, review.mode));
-            if let Some((path, draft, mode)) = target {
-                self.start_review_in(&path, draft, mode);
+            if let (Some(drafts), ReviewStatus::SplitReady { drafts: kept, .. }) =
+                (drafts, &mut review.status)
+            {
+                *kept = drafts;
             }
-        } else if again {
-            self.ask_again();
-        } else if apply {
-            self.apply_review_proposal();
+        }
+        match action {
+            Some(PanelAction::Cancel) => self.cancel_review(),
+            Some(PanelAction::Dismiss) => self.review = None,
+            Some(PanelAction::Retry) => {
+                let target = self
+                    .review
+                    .as_ref()
+                    .map(|review| (review.path.clone(), review.draft, review.mode));
+                if let Some((path, draft, mode)) = target {
+                    self.start_review_in(&path, draft, mode);
+                }
+            }
+            Some(PanelAction::Again) => self.ask_again(),
+            Some(PanelAction::Apply) => self.apply_review_proposal(),
+            Some(PanelAction::Split) => self.start_split(),
+            Some(PanelAction::CreateSplit) => self.create_split(),
+            Some(PanelAction::BackToReview) => self.back_to_review(),
+            None => {}
         }
     }
+}
+
+/// What a click in the review panel asks for.
+enum PanelAction {
+    Apply,
+    Cancel,
+    Retry,
+    Again,
+    Dismiss,
+    Split,
+    CreateSplit,
+    BackToReview,
+}
+
+/// The panel's body: the run in progress, the error, the three findings
+/// (Size offering a split when it is not a Pass), or the split's tickets.
+fn review_body(
+    ui: &mut egui::Ui,
+    status: &ReviewStatus,
+    drafts: Option<&mut [split::SplitDraft]>,
+) -> Option<PanelAction> {
+    let p = theme::palette(ui);
+    let mut action = None;
+    match status {
+        ReviewStatus::Running { answer, progress } => {
+            running_line(ui, answer.elapsed(), agent::step(progress));
+        }
+        ReviewStatus::Splitting {
+            answer, progress, ..
+        } => {
+            let step = agent::step(progress).or(Some("The agent is cutting the issue…".into()));
+            running_line(ui, answer.elapsed(), step);
+        }
+        ReviewStatus::Failed { error } => {
+            ui.label(RichText::new(error).color(p.danger));
+        }
+        ReviewStatus::SplitReady { .. } => split::drafts_ui(ui, drafts.unwrap_or_default()),
+        ReviewStatus::Done { raw, report: None } => {
+            ui.label(RichText::new(raw).color(p.ink_muted));
+        }
+        ReviewStatus::Done {
+            report: Some(report),
+            ..
+        } => {
+            for finding in &report.findings {
+                let (label, color) = match finding.verdict {
+                    agent::Verdict::Pass => ("Pass", p.status_done),
+                    agent::Verdict::Challenge => ("Challenge", p.review),
+                    agent::Verdict::Block => ("Block", p.danger),
+                };
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(&finding.axis)
+                            .font(theme::ui_strong())
+                            .color(p.ink),
+                    );
+                    widgets::pill(ui, label, color);
+                });
+                if !finding.body.is_empty() {
+                    ui.label(RichText::new(&finding.body).color(p.ink_muted));
+                }
+                if finding.axis == "Size" && finding.verdict != agent::Verdict::Pass {
+                    ui.add_space(theme::SPACE_2);
+                    if widgets::button(ui, ButtonKind::Review, None, "Split into tickets…", None)
+                        .on_hover_text("Ask the agent to cut this issue into smaller ones")
+                        .clicked()
+                    {
+                        action = Some(PanelAction::Split);
+                    }
+                }
+                ui.add_space(theme::SPACE_4);
+            }
+        }
+    }
+    action
+}
+
+/// The panel's buttons, right to left: the main action first.
+fn review_footer(
+    ui: &mut egui::Ui,
+    status: &ReviewStatus,
+    asked: bool,
+    kept: usize,
+) -> Option<PanelAction> {
+    let mut action = None;
+    ui.allocate_ui_with_layout(
+        Vec2::new(ui.available_width(), theme::CONTROL_H),
+        Layout::right_to_left(Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+            let mut button = |ui: &mut egui::Ui, kind, label: &str, key, picked| {
+                if widgets::button(ui, kind, None, label, key).clicked() {
+                    action = Some(picked);
+                }
+            };
+            match status {
+                ReviewStatus::Running { .. } | ReviewStatus::Splitting { .. } => {
+                    button(
+                        ui,
+                        ButtonKind::Secondary,
+                        "Cancel",
+                        Some("esc"),
+                        PanelAction::Cancel,
+                    );
+                }
+                ReviewStatus::SplitReady { .. } => {
+                    let create = format!("Create {kept} tickets");
+                    let kind = if kept > 0 {
+                        ButtonKind::Primary
+                    } else {
+                        ButtonKind::Disabled
+                    };
+                    button(ui, kind, &create, None, PanelAction::CreateSplit);
+                    button(
+                        ui,
+                        ButtonKind::Secondary,
+                        "Back to review",
+                        None,
+                        PanelAction::BackToReview,
+                    );
+                    button(ui, ButtonKind::Ghost, "Dismiss", None, PanelAction::Dismiss);
+                }
+                ReviewStatus::Done { .. } | ReviewStatus::Failed { .. } => {
+                    let has_proposal = matches!(
+                        status,
+                        ReviewStatus::Done { report: Some(report), .. } if report.proposal.is_some()
+                    );
+                    ui.add_enabled_ui(has_proposal, |ui| {
+                        button(
+                            ui,
+                            ButtonKind::Primary,
+                            "Apply to draft",
+                            None,
+                            PanelAction::Apply,
+                        );
+                    });
+                    if matches!(status, ReviewStatus::Failed { .. }) {
+                        button(ui, ButtonKind::Secondary, "Retry", None, PanelAction::Retry);
+                    }
+                    if asked {
+                        button(
+                            ui,
+                            ButtonKind::Secondary,
+                            "Ask again",
+                            None,
+                            PanelAction::Again,
+                        );
+                    }
+                    button(ui, ButtonKind::Ghost, "Dismiss", None, PanelAction::Dismiss);
+                }
+            }
+        },
+    );
+    action
 }
 
 /// The spinner, the time the agent has taken, and the step it is on:

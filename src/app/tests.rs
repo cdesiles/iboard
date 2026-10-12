@@ -315,12 +315,12 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
     let mut app = IboardApp::from_located(located);
     // What belongs to alpha must not follow the switch.
     let a = alpha.join("issues/todo/a.md");
-    app.undo = Some(Deleted {
+    app.undo = Some(Undo::Deleted(Deleted {
         path: a.clone(),
         trashed: None,
         content: Vec::new(),
         at: Instant::now(),
-    });
+    }));
     app.notice = Some(("Archived a.md".to_string(), Instant::now()));
     app.pending_front = Some((alpha.join("issues/todo"), a.clone()));
     app.design_error = Some("alpha has no design".to_string());
@@ -1450,9 +1450,9 @@ fn with_asking_off_delete_is_immediate_and_command_z_restores() {
     app.request_delete(file.clone());
     assert!(app.confirm.is_none(), "off: no dialog");
     assert!(!file.exists(), "off: deleted at once");
-    assert!(app.can_undo_delete());
+    assert!(app.can_undo());
 
-    app.undo_delete();
+    app.undo_last();
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
         "# Sidebar\n\nCollapse it.\n",
@@ -1460,7 +1460,7 @@ fn with_asking_off_delete_is_immediate_and_command_z_restores() {
     );
     assert!(app.board.find(&file).is_some(), "and on the board");
     assert_eq!(app.selected.as_deref(), Some(file.as_path()));
-    assert!(!app.can_undo_delete(), "once");
+    assert!(!app.can_undo(), "once");
 }
 
 /// Bug: opening another issue dropped the composer and what was typed.
