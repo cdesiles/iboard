@@ -4,6 +4,28 @@ use super::*;
 
 impl IboardApp {
     /// Opens the Design panel on a fresh load of the project's design system.
+    /// The header's Design button: the live catalog, as `idesign` opens it,
+    /// where its window helper exists; the Design panel otherwise, or when the
+    /// project has no design system to show.
+    pub(super) fn design_button(&mut self, dark: bool) {
+        self.show_design(design::catalog::available(), dark);
+    }
+
+    pub(super) fn show_design(&mut self, live: bool, dark: bool) {
+        if live && let Ok(system) = DesignSystem::discover(&self.located.project_dir) {
+            let theme = if dark { "dark" } else { "light" };
+            match design::catalog::show(&system, theme) {
+                Ok(_) => {
+                    self.session.notice =
+                        Some(("Opened the design catalog".to_string(), Instant::now()));
+                }
+                Err(err) => self.error = Some(err),
+            }
+            return;
+        }
+        self.open_design();
+    }
+
     pub(super) fn open_design(&mut self) {
         match DesignSystem::discover(&self.located.project_dir) {
             Ok(system) => {

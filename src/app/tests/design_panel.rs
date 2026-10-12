@@ -165,3 +165,21 @@ fn design_panel_drafts_a_component_with_the_agent() {
     assert!(!written.contains("```"), "code fences stripped: {written}");
     assert!(app.session.design_draft.is_none(), "the draft finished");
 }
+
+/// Without the catalog's window helper, or without a design system to show,
+/// the Design button falls back to the panel, which says what is missing.
+#[test]
+fn the_design_button_falls_back_to_the_panel() {
+    let dir = scratch_dir("design-button");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.show_design(true, false);
+    assert!(app.session.design.is_some(), "no system: the panel says so");
+    assert!(app.session.design_error.is_some());
+
+    write_min_design(&dir);
+    app.session.design = None;
+    app.show_design(false, false);
+    assert!(app.session.design.is_some(), "no helper: the panel");
+    assert!(app.session.design_system.is_some());
+}

@@ -1,6 +1,6 @@
 # DesignPanel
 
-The project's design system, browsed from the board: the **Design** button in the HeaderBar opens it as a window over the board, and `idesign` shows the same panel as its whole window. It is laid out like Claude Design: a category rail on the left, the open category on the right.
+The project's design system, browsed in egui. The **Design** button in the HeaderBar, like a bare `idesign`, opens the live WebKit catalog where its window helper is built; the panel is the fallback (no helper, or no design system to show), opening as a window over the board, and `idesign --browser` shows it as its whole window. It is laid out like Claude Design: a category rail on the left, the open category on the right.
 
 ## Anatomy
 

@@ -231,7 +231,7 @@ impl IboardApp {
             .on_hover_text("Browse the project's design system")
             .clicked()
         {
-            self.open_design();
+            self.design_button(ui.visuals().dark_mode);
         }
         widgets::checkbox(ui, &mut self.auto, "Auto")
             .on_hover_text("Reload when files change on disk, and save edits as you type");
