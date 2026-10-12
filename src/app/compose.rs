@@ -17,7 +17,7 @@ impl IboardApp {
 
     pub(super) fn show_composer(&mut self) {
         // New issues belong to the board's Todo column, so leave ColumnFocus.
-        self.focused_column = None;
+        self.column_focus.column = None;
         // Checked on every open: Apple Intelligence or an agent may have been
         // set up meanwhile.
         let engine = Some(self.title_engine).filter(|engine| {
@@ -199,7 +199,7 @@ pub(super) fn composer_ui(
     composer: &mut Composer,
     column: &Column,
     folder: &str,
-    actions: &mut ColumnActions,
+    intents: &mut Vec<Intent>,
 ) {
     let p = theme::palette(ui);
     let title_id = egui::Id::new("composer");
@@ -237,7 +237,7 @@ pub(super) fn composer_ui(
             })
         });
         if !naming && add {
-            actions.submit = Some(false);
+            intents.push(Intent::SubmitComposer { close: false });
         }
         if in_title && new_line && !naming {
             composer.focus = Some(ComposerField::Description);
@@ -302,7 +302,7 @@ pub(super) fn composer_ui(
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Title inference (⌘, › Titles)");
                     if response.clicked() {
-                        actions.title_settings = true;
+                        intents.push(Intent::TitleSettings);
                     }
                 }
             }
@@ -412,7 +412,7 @@ pub(super) fn composer_ui(
             let empty = composer.title.trim().is_empty() && composer.description.trim().is_empty();
             let still_focused = ui.memory(|m| m.has_focus(title_id) || m.has_focus(description_id));
             if empty && description.lost_focus() && !still_focused && composer.focus.is_none() {
-                actions.close_composer = true;
+                intents.push(Intent::CloseComposer);
             }
 
             composer_meta(ui, composer, column, folder);
@@ -430,9 +430,9 @@ pub(super) fn composer_ui(
     });
     if clicked_away {
         if composer.is_empty() {
-            actions.close_composer = true;
+            intents.push(Intent::CloseComposer);
         } else {
-            actions.submit = Some(true);
+            intents.push(Intent::SubmitComposer { close: true });
         }
     }
 }

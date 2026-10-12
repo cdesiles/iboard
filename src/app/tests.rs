@@ -326,14 +326,14 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
     app.notice = Some(("Archived a.md".to_string(), Instant::now()));
     app.pending_front = Some((alpha.join("issues/todo"), a.clone()));
     app.design_error = Some("alpha has no design".to_string());
-    app.focused_column = Some(alpha.join("issues/todo"));
+    app.column_focus.column = Some(alpha.join("issues/todo"));
 
     app.open_project(beta.to_path_buf());
 
     assert!(app.undo.is_none(), "⌘Z cannot restore into the old project");
     assert!(app.notice.is_none() && app.pending_front.is_none());
     assert!(app.design_error.is_none() && app.design_system.is_none());
-    assert!(app.focused_column.is_none());
+    assert!(app.column_focus.column.is_none());
     assert!(app.error.is_none());
     assert_eq!(
         recents::canonical(&app.board.root),
@@ -1862,9 +1862,9 @@ fn column_focus_lays_wide_cards_in_a_grid() {
         ],
     );
     // Pin the file order so the grid is deterministic.
-    app.column_sorts.insert(todo.clone(), Sort::Board);
+    app.column_focus.sorts.insert(todo.clone(), Sort::Board);
     app.focus_column(todo.clone());
-    assert_eq!(app.focused_column.as_deref(), Some(todo.as_path()));
+    assert_eq!(app.column_focus.column.as_deref(), Some(todo.as_path()));
 
     let ctx = themed_ctx();
     render(&mut app, &ctx, 1280.0);
@@ -1931,7 +1931,7 @@ fn opening_an_issue_from_focus_returns_to_the_focused_column() {
     app.back_to_board();
     assert!(matches!(app.screen, Screen::Board));
     assert_eq!(
-        app.focused_column.as_deref(),
+        app.column_focus.column.as_deref(),
         Some(todo.as_path()),
         "the focused column is kept"
     );
@@ -1939,7 +1939,7 @@ fn opening_an_issue_from_focus_returns_to_the_focused_column() {
 
     // The active column, and `esc`, leave ColumnFocus.
     app.unfocus_column();
-    assert!(app.focused_column.is_none());
+    assert!(app.column_focus.column.is_none());
 }
 
 /// A focused column still accepts a card dropped on another tab, moving the

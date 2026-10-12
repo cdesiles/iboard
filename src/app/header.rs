@@ -43,9 +43,9 @@ impl IboardApp {
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
         let project = self.board.name();
         match self.screen.clone() {
-            Screen::Board if self.focused_column.is_some() => {
+            Screen::Board if self.column_focus.column.is_some() => {
                 // ColumnFocus: `project / Column`, the project linking back.
-                let dir = self.focused_column.clone().unwrap_or_default();
+                let dir = self.column_focus.column.clone().unwrap_or_default();
                 let column = self
                     .board
                     .columns

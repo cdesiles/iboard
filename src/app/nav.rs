@@ -118,7 +118,7 @@ impl IboardApp {
 
     /// Moves the board selection one step with an arrow key.
     pub(super) fn move_selection(&mut self, key: Key) {
-        if self.focused_column.is_some() {
+        if self.column_focus.column.is_some() {
             self.move_focus_selection(key);
             return;
         }
@@ -144,7 +144,7 @@ impl IboardApp {
             Key::ArrowLeft => self.focus_neighbor(-1),
             Key::ArrowRight => self.focus_neighbor(1),
             _ => {
-                let Some(dir) = self.focused_column.clone() else {
+                let Some(dir) = self.column_focus.column.clone() else {
                     return;
                 };
                 let Some(column) = self.board.columns.iter().find(|column| column.dir == dir)
@@ -181,7 +181,7 @@ impl IboardApp {
 
     /// Shows the column `delta` tabs away from the focused one, wrapping.
     pub(super) fn focus_neighbor(&mut self, delta: isize) {
-        let Some(dir) = self.focused_column.clone() else {
+        let Some(dir) = self.column_focus.column.clone() else {
             return;
         };
         let count = self.board.columns.len();
@@ -197,7 +197,7 @@ impl IboardApp {
             return;
         };
         let next = (index as isize + delta).rem_euclid(count as isize) as usize;
-        self.focused_column = Some(self.board.columns[next].dir.clone());
+        self.column_focus.column = Some(self.board.columns[next].dir.clone());
     }
 
     /// The selected issue, if it is still on the board.

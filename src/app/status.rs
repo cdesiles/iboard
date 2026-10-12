@@ -44,7 +44,7 @@ impl IboardApp {
                         ui.ctx()
                             .request_repaint_after(NOTICE_FOR.saturating_sub(at.elapsed()));
                         hints = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
-                    } else if let Some(dir) = self.focused_column.clone() {
+                    } else if let Some(dir) = self.column_focus.column.clone() {
                         // ColumnFocus: what is shown, and how it is sorted.
                         let sort = self.column_sort(&dir);
                         let n = self
@@ -89,7 +89,7 @@ impl IboardApp {
                     } else {
                         hints = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
                     }
-                    if self.focused_column.is_none() {
+                    if self.column_focus.column.is_none() {
                         ui.label(meta(format!("{count} {noun}")));
                     }
                     if !self.board.warnings.is_empty() {

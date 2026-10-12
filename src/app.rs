@@ -48,6 +48,7 @@ mod enrich;
 mod filter_bar;
 mod focus;
 mod header;
+mod intent;
 mod keys;
 mod labelling;
 mod moves;
@@ -62,6 +63,8 @@ use board::*;
 use card::*;
 use compose::*;
 use filter_bar::*;
+use focus::ColumnFocus;
+use intent::Intent;
 use labelling::*;
 use reader::*;
 
@@ -315,44 +318,6 @@ struct Deleted {
     at: Instant,
 }
 
-/// What the user did inside one column during a frame.
-#[derive(Default)]
-struct ColumnActions {
-    /// A card was clicked, opening it in the reader.
-    clicked: Option<PathBuf>,
-    /// A card was dropped onto this column: the path to move here.
-    dropped: Option<PathBuf>,
-    /// Where in the column the drop landed: insert before this card, or at the
-    /// end when it is `None`.
-    drop_anchor: Option<PathBuf>,
-    /// A card's delete icon was pressed.
-    delete: Option<PathBuf>,
-    /// A done card's archive icon was pressed.
-    archive: Option<PathBuf>,
-    /// The "+" button was pressed: open the composer.
-    compose: bool,
-    /// The composer asked to add its issue; `true` also closes it (a click
-    /// elsewhere on the board).
-    submit: Option<bool>,
-    /// The composer lost focus while empty.
-    close_composer: bool,
-    /// The composer's engine tag was clicked: open Settings › Titles.
-    title_settings: bool,
-    /// A card's label was clicked: filter by it.
-    filter_label: Option<String>,
-    /// The selected card's Review was clicked.
-    review: Option<PathBuf>,
-    /// A card's verdict pill was clicked.
-    show_review: Option<PathBuf>,
-    /// A card's Add label was clicked.
-    add_label: Option<PathBuf>,
-    /// The column title was clicked, or the column double-clicked: expand it
-    /// to the whole window.
-    focus_column: Option<PathBuf>,
-    /// "Archive all" at the foot of Done: these issues.
-    archive_all: Vec<PathBuf>,
-}
-
 /// The inline quick-add composer at the top of the Todo column: you describe
 /// the issue, and iboard names it from the description.
 #[derive(Default)]
@@ -539,12 +504,8 @@ pub struct IboardApp {
     /// The last finished review of each issue this session, behind the
     /// card's verdict pill.
     past_reviews: HashMap<PathBuf, PastReview>,
-    /// The column expanded to the whole window (ColumnFocus), by folder.
-    focused_column: Option<PathBuf>,
-    /// ColumnFocus's sort per folder, remembered for the session.
-    column_sorts: HashMap<PathBuf, Sort>,
-    /// ColumnFocus: split the grid into sections by label.
-    group_by_label: bool,
+    /// ColumnFocus: the column shown full screen, its sorts and grouping.
+    column_focus: ColumnFocus,
     /// The last drag's Archive eligibility, so the dock keeps its look while
     /// it slides away after the drop.
     dock_archivable: bool,
@@ -727,9 +688,7 @@ impl IboardApp {
             undo: None,
             trash: Trash::Folder(std::env::temp_dir().join("iboard-trash")),
             past_reviews,
-            focused_column: None,
-            column_sorts: HashMap::new(),
-            group_by_label: false,
+            column_focus: ColumnFocus::default(),
             dock_archivable: false,
             auto: true,
             last_refresh: Instant::now(),
@@ -795,7 +754,7 @@ impl IboardApp {
                 self.notes = None;
                 self.selected = None;
                 self.scroll_to_selected = false;
-                self.focused_column = None;
+                self.column_focus.column = None;
                 self.focus_editor = false;
                 self.label_picker = None;
                 self.commits = None;
@@ -897,11 +856,13 @@ impl IboardApp {
                     Screen::Board => {
                         // A focused column (ColumnFocus) is a board mode: the
                         // header and status bar stay, the board is replaced.
-                        self.focused_column = self
-                            .focused_column
-                            .clone()
-                            .filter(|dir| self.board.columns.iter().any(|c| &c.dir == dir));
-                        if self.focused_column.is_some() {
+                        let columns = &self.board.columns;
+                        self.column_focus.column = self
+                            .column_focus
+                            .column
+                            .take()
+                            .filter(|dir| columns.iter().any(|c| &c.dir == dir));
+                        if self.column_focus.column.is_some() {
                             self.column_focus_ui(ui);
                         } else {
                             self.board_ui(ui);
@@ -985,22 +946,10 @@ struct ColumnView<'a> {
 /// whether it is the column being shown.
 struct FocusTab {
     name: String,
+    dir: PathBuf,
     count: usize,
     color: Color32,
     active: bool,
-}
-
-/// What the ColumnFocus focus bar asked for.
-#[derive(Default)]
-struct FocusBarAction {
-    /// Another tab was clicked: show that column.
-    switch: Option<usize>,
-    /// The active tab was clicked (or Board): leave ColumnFocus.
-    unfocus: bool,
-    /// A sort was picked.
-    sort: Option<Sort>,
-    /// A card was dropped on a tab: its path and the tab's index.
-    drop: Option<(PathBuf, usize)>,
 }
 
 /// Everything `focus_grid` needs to know about the focused column.
@@ -1017,22 +966,6 @@ struct FocusGrid<'a> {
     selected: Option<&'a Path>,
     scroll_to_selected: bool,
     new_card: Option<&'a Path>,
-}
-
-/// What the ColumnFocus grid asked for (it mirrors [`ColumnActions`], plus a
-/// Board-order reorder).
-#[derive(Default)]
-struct FocusGridActions {
-    clicked: Option<PathBuf>,
-    delete: Option<PathBuf>,
-    archive: Option<PathBuf>,
-    filter_label: Option<String>,
-    review: Option<PathBuf>,
-    show_review: Option<PathBuf>,
-    add_label: Option<PathBuf>,
-    /// A card dropped in a Board-order column: it and the card to land in
-    /// front of.
-    reorder: Option<(PathBuf, Option<PathBuf>)>,
 }
 
 /// One of the DropZones in the dock.

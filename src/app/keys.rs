@@ -106,7 +106,7 @@ impl IboardApp {
                     Screen::Board if !self.filter_bar.filter.is_empty() => {
                         self.filter_bar.filter.clear()
                     }
-                    Screen::Board if self.focused_column.is_some() => self.unfocus_column(),
+                    Screen::Board if self.column_focus.column.is_some() => self.unfocus_column(),
                     Screen::Board => self.selected = None,
                     Screen::Detail(_) if self.detail_mode == DetailMode::Edit => {
                         self.show_preview();
@@ -132,7 +132,7 @@ impl IboardApp {
                     && let Some(column) = self.board.columns.get(at)
                 {
                     let dir = column.dir.clone();
-                    if self.focused_column.as_ref() == Some(&dir) {
+                    if self.column_focus.column.as_ref() == Some(&dir) {
                         self.unfocus_column();
                     } else {
                         self.focus_column(dir);

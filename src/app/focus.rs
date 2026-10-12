@@ -2,23 +2,35 @@
 
 use super::*;
 
+/// ColumnFocus's state, kept for the session.
+#[derive(Default)]
+pub(super) struct ColumnFocus {
+    /// The column expanded to the whole window, by folder.
+    pub(super) column: Option<PathBuf>,
+    /// The sort picked per folder.
+    pub(super) sorts: HashMap<PathBuf, Sort>,
+    /// Split the grid into sections by label.
+    pub(super) group_by_label: bool,
+}
+
 impl IboardApp {
     /// Expands a column to the whole window (ColumnFocus).
     pub(super) fn focus_column(&mut self, dir: PathBuf) {
         if self.board.columns.iter().any(|column| column.dir == dir) {
-            self.focused_column = Some(dir);
+            self.column_focus.column = Some(dir);
         }
     }
 
     /// Leaves ColumnFocus for the board, keeping the selection.
     pub(super) fn unfocus_column(&mut self) {
-        self.focused_column = None;
+        self.column_focus.column = None;
     }
 
     /// The sort a focused column uses: the one the user picked, or its
     /// default.
     pub(super) fn column_sort(&self, dir: &Path) -> Sort {
-        self.column_sorts
+        self.column_focus
+            .sorts
             .get(dir)
             .copied()
             .unwrap_or_else(|| default_sort(dir))
@@ -29,18 +41,17 @@ impl IboardApp {
     /// column tabs, the sort select, Group by label and Board, then the cards
     /// flow in a wide grid.
     pub(super) fn column_focus_ui(&mut self, ui: &mut egui::Ui) {
-        let Some(dir) = self.focused_column.clone() else {
+        let Some(dir) = self.column_focus.column.clone() else {
             return;
         };
         let p = theme::palette(ui);
-
-        // The focus bar, over the board's columns.
         let tabs: Vec<FocusTab> = self
             .board
             .columns
             .iter()
             .map(|column| FocusTab {
                 name: column.name.clone(),
+                dir: column.dir.clone(),
                 count: column.issues.len(),
                 color: status_color(p, column),
                 active: column.dir == dir,
@@ -53,56 +64,26 @@ impl IboardApp {
             .find(|column| column.dir == dir)
             .is_some_and(|column| column.name.eq_ignore_ascii_case("done"));
         let sort = self.column_sort(&dir);
-        let mut group = self.group_by_label;
-        let action = focus_bar(ui, &tabs, sort, &mut group, done);
-        self.group_by_label = group;
-
-        if let Some(at) = action.switch
-            && let Some(column) = self.board.columns.get(at)
-        {
-            if column.dir == dir {
-                self.unfocus_column();
-            } else {
-                self.focus_column(column.dir.clone());
-            }
-        }
-        if let Some((path, at)) = action.drop
-            && let Some(column) = self.board.columns.get(at)
-        {
-            let target = column.dir.clone();
-            if path.parent() != Some(target.as_path()) {
-                self.move_issue(&path, &target);
-            }
-        }
-        if let Some(sort) = action.sort {
-            self.column_sorts.insert(dir.clone(), sort);
-        }
-        if action.unfocus {
-            self.unfocus_column();
-        }
+        let intents = focus_bar(ui, &tabs, sort, &mut self.column_focus.group_by_label, done);
+        self.apply(intents);
 
         // The bar may have switched or left the focus; redraw with the state it
         // set. When it left, the next frame draws the board.
-        let Some(dir) = self.focused_column.clone() else {
+        let Some(dir) = self.column_focus.column.clone() else {
             return;
         };
         let Some(column) = self.board.columns.iter().find(|column| column.dir == dir) else {
             return;
         };
-        let sort = self.column_sort(&dir);
         let selected = self.selected.clone();
         let scroll_to_selected = std::mem::take(&mut self.scroll_to_selected);
-        let new_card = self
-            .new_card
-            .as_ref()
-            .filter(|(_, at)| at.elapsed() < NEW_CARD_FLASH)
-            .map(|(path, _)| path.clone());
+        let new_card = self.flashing_card();
         let view = FocusGrid {
             column,
             root: &self.board.root,
             filter: &self.filter_bar.filter,
-            sort,
-            group: self.group_by_label,
+            sort: self.column_sort(&dir),
+            group: self.column_focus.group_by_label,
             labels: &self.labels,
             sections: &self.board.reader_sections,
             past_reviews: &self.past_reviews,
@@ -111,32 +92,8 @@ impl IboardApp {
             scroll_to_selected,
             new_card: new_card.as_deref(),
         };
-        let actions = focus_grid(ui, &view);
-
-        if let Some(path) = actions.delete {
-            self.request_delete(path);
-        }
-        if let Some(path) = actions.add_label {
-            self.toggle_label_picker(path);
-        }
-        if let Some(path) = actions.archive {
-            self.archive_issue(&path);
-        }
-        if let Some(label) = actions.filter_label {
-            self.filter_bar.filter.pick(&label);
-        }
-        if let Some((path, anchor)) = actions.reorder {
-            self.place_issue(&path, &dir, anchor);
-        }
-        if let Some(path) = actions.review {
-            self.open_issue(path.clone());
-            self.start_review(&path, false);
-        } else if let Some(path) = actions.show_review {
-            self.show_past_review(path);
-        }
-        if let Some(path) = actions.clicked {
-            self.open_issue(path);
-        }
+        let intents = focus_grid(ui, &view);
+        self.apply(intents);
     }
 }
 
@@ -149,53 +106,23 @@ pub(super) fn focus_bar(
     sort: Sort,
     group: &mut bool,
     done: bool,
-) -> FocusBarAction {
+) -> Vec<Intent> {
     let p = theme::palette(ui);
-    let mut action = FocusBarAction::default();
-    let tabs: Vec<widgets::ColumnTab> = tabs
+    let mut intents = Vec::new();
+    let column = tabs
         .iter()
-        .map(|tab| widgets::ColumnTab {
-            name: &tab.name,
-            count: tab.count,
-            color: tab.color,
-            active: tab.active,
-        })
-        .collect();
-
+        .find(|tab| tab.active)
+        .map(|tab| tab.dir.clone());
     let bar = Frame::new()
-        .inner_margin(Margin {
-            left: theme::SPACE_5 as i8,
-            right: theme::SPACE_5 as i8,
-            top: theme::SPACE_4 as i8,
-            bottom: theme::SPACE_4 as i8,
-        })
+        .inner_margin(Margin::symmetric(
+            theme::SPACE_5 as i8,
+            theme::SPACE_4 as i8,
+        ))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                let shown = widgets::column_tabs(ui, &tabs);
-                if let Some(at) = shown.clicked {
-                    action.switch = Some(at);
-                }
-                // While a card is dragged, the tabs are drop targets: a drop
-                // moves it to that column without leaving the view.
-                if let Some(payload) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx()) {
-                    for (at, rect) in shown.tab_rects.iter().enumerate() {
-                        let response =
-                            ui.interact(*rect, egui::Id::new(("coltab_drop", at)), Sense::hover());
-                        if response.dnd_hover_payload::<IssueDrag>().is_some() {
-                            ui.painter().rect_stroke(
-                                *rect,
-                                CornerRadius::same(3),
-                                Stroke::new(2.0, p.accent),
-                                StrokeKind::Outside,
-                            );
-                        }
-                        if response.dnd_release_payload::<IssueDrag>().is_some() {
-                            action.drop = Some((payload.path.clone(), at));
-                        }
-                    }
-                }
+                focus_tabs(ui, tabs, &mut intents);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = theme::SPACE_4;
                     // Board, the visible way out (`esc`).
@@ -209,55 +136,13 @@ pub(super) fn focus_bar(
                     .on_hover_text("Back to the whole board (esc)")
                     .clicked()
                     {
-                        action.unfocus = true;
+                        intents.push(Intent::UnfocusColumn);
                     }
-                    if widgets::checkbox(ui, group, "Group by label").changed() {
-                        // `group` is mutated in place; nothing else to do.
-                    }
-                    let response = widgets::select_sized(
-                        ui,
-                        egui::Id::new("focus-sort"),
-                        sort.label(),
-                        None,
-                        false,
-                        170.0,
-                    );
-                    let options: Vec<Sort> = if done {
-                        let mut options = vec![Sort::Finished];
-                        options.extend(Sort::MENU);
-                        options
-                    } else {
-                        Sort::MENU.to_vec()
-                    };
-                    let picked = egui::Popup::menu(&response)
-                        .width(170.0)
-                        .align(egui::RectAlign::BOTTOM_START)
-                        .show(|ui| {
-                            ui.set_min_width(170.0);
-                            ui.spacing_mut().item_spacing = Vec2::ZERO;
-                            let mut picked = None;
-                            for option in &options {
-                                if widgets::menu_option(
-                                    ui,
-                                    widgets::MenuOption {
-                                        name: option.label(),
-                                        mono: false,
-                                        muted: false,
-                                        meta: "",
-                                        checked: *option == sort,
-                                        active: false,
-                                    },
-                                )
-                                .clicked()
-                                {
-                                    picked = Some(*option);
-                                }
-                            }
-                            picked
-                        })
-                        .and_then(|inner| inner.inner);
-                    if let Some(option) = picked {
-                        action.sort = Some(option);
+                    widgets::checkbox(ui, group, "Group by label");
+                    if let Some(sort) = sort_select(ui, sort, done)
+                        && let Some(column) = column.clone()
+                    {
+                        intents.push(Intent::Sort { column, sort });
                     }
                     let cap = RichText::new("Sort").font(theme::meta()).color(p.ink_muted);
                     ui.label(cap);
@@ -270,7 +155,96 @@ pub(super) fn focus_bar(
         bar.response.rect.max.y - 0.5,
         Stroke::new(1.0, p.line),
     );
-    action
+    intents
+}
+
+/// The column tabs: a click shows that column (the active one leaves
+/// ColumnFocus). While a card is dragged they are drop targets: a drop moves
+/// it to that column without leaving the view.
+fn focus_tabs(ui: &mut egui::Ui, tabs: &[FocusTab], intents: &mut Vec<Intent>) {
+    let p = theme::palette(ui);
+    let shown = widgets::column_tabs(
+        ui,
+        &tabs
+            .iter()
+            .map(|tab| widgets::ColumnTab {
+                name: &tab.name,
+                count: tab.count,
+                color: tab.color,
+                active: tab.active,
+            })
+            .collect::<Vec<_>>(),
+    );
+    if let Some(tab) = shown.clicked.and_then(|at| tabs.get(at)) {
+        intents.push(if tab.active {
+            Intent::UnfocusColumn
+        } else {
+            Intent::FocusColumn(tab.dir.clone())
+        });
+    }
+    let Some(payload) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx()) else {
+        return;
+    };
+    for (at, (rect, tab)) in shown.tab_rects.iter().zip(tabs).enumerate() {
+        let response = ui.interact(*rect, egui::Id::new(("coltab_drop", at)), Sense::hover());
+        if response.dnd_hover_payload::<IssueDrag>().is_some() {
+            ui.painter().rect_stroke(
+                *rect,
+                CornerRadius::same(3),
+                Stroke::new(2.0, p.accent),
+                StrokeKind::Outside,
+            );
+        }
+        if response.dnd_release_payload::<IssueDrag>().is_some() {
+            intents.push(Intent::Move {
+                path: payload.path.clone(),
+                to: tab.dir.clone(),
+            });
+        }
+    }
+}
+
+/// The 170pt Sort select and its menu; Done adds Finished first. Returns
+/// the sort picked.
+fn sort_select(ui: &mut egui::Ui, sort: Sort, done: bool) -> Option<Sort> {
+    let response = widgets::select_sized(
+        ui,
+        egui::Id::new("focus-sort"),
+        sort.label(),
+        None,
+        false,
+        170.0,
+    );
+    let options: Vec<Sort> = if done {
+        let mut options = vec![Sort::Finished];
+        options.extend(Sort::MENU);
+        options
+    } else {
+        Sort::MENU.to_vec()
+    };
+    egui::Popup::menu(&response)
+        .width(170.0)
+        .align(egui::RectAlign::BOTTOM_START)
+        .show(|ui| {
+            ui.set_min_width(170.0);
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            let mut picked = None;
+            for option in &options {
+                let row = widgets::MenuOption {
+                    name: option.label(),
+                    mono: false,
+                    muted: false,
+                    meta: "",
+                    checked: *option == sort,
+                    active: false,
+                };
+                if widgets::menu_option(ui, row).clicked() {
+                    picked = Some(*option);
+                }
+            }
+            picked
+        })
+        .and_then(|inner| inner.inner)
 }
 
 /// Where a card dropped at `pos` lands among `cards` (row-major): the index to
@@ -330,9 +304,8 @@ pub(super) fn section_heading(
 /// `SPACE_4`-apart columns, optionally split by label. Cards are the board's
 /// [`issue_card`] with the wide extras: more summary, a facts row and the
 /// modified date.
-pub(super) fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> FocusGridActions {
-    let p = theme::palette(ui);
-    let mut actions = FocusGridActions::default();
+pub(super) fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> Vec<Intent> {
+    let mut intents = Vec::new();
     let issues = focus_issues(view.column, view.filter, view.sort);
     let empty = issues.is_empty();
     let groups = if view.group {
@@ -360,22 +333,7 @@ pub(super) fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> FocusGridAction
                     ui.set_width(available);
                     ui.spacing_mut().item_spacing.y = gap;
                     if empty {
-                        let folder = match view.column.dir.strip_prefix(view.root) {
-                            Ok(relative) if !relative.as_os_str().is_empty() => {
-                                format!("{}/", relative.display())
-                            }
-                            _ => String::new(),
-                        };
-                        let message = if view.column.issues.is_empty() {
-                            if folder.is_empty() {
-                                "No issues at the root".to_string()
-                            } else {
-                                format!("No issues in {folder}")
-                            }
-                        } else {
-                            view.filter.empty_message()
-                        };
-                        empty_well(ui, &message, available);
+                        empty_well(ui, &focus_empty_message(view), available);
                         return;
                     }
                     for (group_index, (label, group)) in groups.iter().enumerate() {
@@ -392,113 +350,112 @@ pub(super) fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> FocusGridAction
                             ui.horizontal_top(|ui| {
                                 ui.spacing_mut().item_spacing.x = gap;
                                 for issue in row {
-                                    let fresh = view.new_card == Some(issue.path.as_path());
-                                    let look = if view.selected == Some(issue.path.as_path()) {
-                                        CardLook::Selected {
-                                            scroll: view.scroll_to_selected,
-                                        }
-                                    } else if fresh {
-                                        CardLook::Fresh
-                                    } else {
-                                        CardLook::Plain
-                                    };
-                                    let pill = view
-                                        .past_reviews
-                                        .get(&issue.path)
-                                        .map(|past| past.card_pill(p));
-                                    let extras = CardExtras {
-                                        review_pill: pill,
-                                        review_button: view.can_review
-                                            && view.column.accepts_new_issues()
-                                            && matches!(look, CardLook::Selected { .. }),
-                                        wide: true,
-                                        sections: view.sections,
-                                    };
-                                    let (action, rect) = ui
-                                        .allocate_ui_with_layout(
-                                            Vec2::new(cell, 0.0),
-                                            Layout::top_down(Align::Min),
-                                            |ui| {
-                                                ui.set_width(cell);
-                                                issue_card(
-                                                    ui,
-                                                    issue,
-                                                    cell,
-                                                    look,
-                                                    view.labels,
-                                                    extras,
-                                                )
-                                            },
-                                        )
-                                        .inner;
+                                    let (action, rect) = focus_card(ui, view, issue, cell);
                                     cards.push((issue.path.clone(), rect));
-                                    match action {
-                                        Some(CardAction::FilterLabel(label)) => {
-                                            actions.filter_label = Some(label);
-                                        }
-                                        Some(CardAction::Review) => {
-                                            actions.review = Some(issue.path.clone());
-                                        }
-                                        Some(CardAction::ShowReview) => {
-                                            actions.show_review = Some(issue.path.clone());
-                                        }
-                                        Some(CardAction::AddLabel) => {
-                                            actions.add_label = Some(issue.path.clone());
-                                        }
-                                        Some(CardAction::Open) => {
-                                            actions.clicked = Some(issue.path.clone());
-                                        }
-                                        Some(CardAction::Delete) => {
-                                            actions.delete = Some(issue.path.clone());
-                                        }
-                                        Some(CardAction::Archive) => {
-                                            actions.archive = Some(issue.path.clone());
-                                        }
-                                        None => {}
-                                    }
+                                    intents.extend(action.map(|action| action.on(&issue.path)));
                                 }
                             });
                         }
                     }
                     ui.add_space(gutter);
-
-                    // Reordering by drag is offered only where the order is
-                    // the files' order on the board.
-                    if view.sort == Sort::Board
-                        && let Some(drag) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx())
-                    {
-                        let area = ui.min_rect();
-                        let response =
-                            ui.interact(area, egui::Id::new("focus_drop"), Sense::hover());
-                        let pointer = ui
-                            .ctx()
-                            .pointer_interact_pos()
-                            .or(ui.ctx().pointer_hover_pos());
-                        let insert = pointer
-                            .map(|pos| insertion_index(&cards, pos))
-                            .unwrap_or(cards.len());
-                        if response.dnd_hover_payload::<IssueDrag>().is_some()
-                            && pointer.is_some()
-                            && let Some((_, last)) = cards.last()
-                        {
-                            let (x, y0, y1) = match cards.get(insert) {
-                                Some((_, rect)) => (rect.min.x - gap / 2.0, rect.min.y, rect.max.y),
-                                None => (last.max.x + gap / 2.0, last.min.y, last.max.y),
-                            };
-                            ui.painter().line_segment(
-                                [Pos2::new(x, y0), Pos2::new(x, y1)],
-                                Stroke::new(2.0, p.accent),
-                            );
-                        }
-                        if response.dnd_release_payload::<IssueDrag>().is_some() {
-                            actions.reorder = Some((
-                                drag.path.clone(),
-                                cards.get(insert).map(|(path, _)| path.clone()),
-                            ));
-                        }
-                    }
+                    intents.extend(focus_drop(ui, view, &cards, gap));
                 });
             });
         });
-    actions
+    intents
+}
+
+/// What an empty focused column says: no issues in its folder, or none
+/// matching the filter.
+fn focus_empty_message(view: &FocusGrid) -> String {
+    let folder = match view.column.dir.strip_prefix(view.root) {
+        Ok(relative) if !relative.as_os_str().is_empty() => format!("{}/", relative.display()),
+        _ => String::new(),
+    };
+    if !view.column.issues.is_empty() {
+        view.filter.empty_message()
+    } else if folder.is_empty() {
+        "No issues at the root".to_string()
+    } else {
+        format!("No issues in {folder}")
+    }
+}
+
+/// One wide card in a `cell`-wide slot of the grid.
+fn focus_card(
+    ui: &mut egui::Ui,
+    view: &FocusGrid,
+    issue: &Issue,
+    cell: f32,
+) -> (Option<CardAction>, Rect) {
+    let p = theme::palette(ui);
+    let look = if view.selected == Some(issue.path.as_path()) {
+        CardLook::Selected {
+            scroll: view.scroll_to_selected,
+        }
+    } else if view.new_card == Some(issue.path.as_path()) {
+        CardLook::Fresh
+    } else {
+        CardLook::Plain
+    };
+    let extras = CardExtras {
+        review_pill: view
+            .past_reviews
+            .get(&issue.path)
+            .map(|past| past.card_pill(p)),
+        review_button: view.can_review
+            && view.column.accepts_new_issues()
+            && matches!(look, CardLook::Selected { .. }),
+        wide: true,
+        sections: view.sections,
+    };
+    ui.allocate_ui_with_layout(Vec2::new(cell, 0.0), Layout::top_down(Align::Min), |ui| {
+        ui.set_width(cell);
+        issue_card(ui, issue, cell, look, view.labels, extras)
+    })
+    .inner
+}
+
+/// Reordering by drag, offered only where the order is the files' order on
+/// the board: the `accent` line where the card would land, and the drop.
+fn focus_drop(
+    ui: &mut egui::Ui,
+    view: &FocusGrid,
+    cards: &[(PathBuf, Rect)],
+    gap: f32,
+) -> Option<Intent> {
+    if view.sort != Sort::Board {
+        return None;
+    }
+    let drag = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx())?;
+    let p = theme::palette(ui);
+    let response = ui.interact(ui.min_rect(), egui::Id::new("focus_drop"), Sense::hover());
+    let pointer = ui
+        .ctx()
+        .pointer_interact_pos()
+        .or(ui.ctx().pointer_hover_pos());
+    let insert = pointer
+        .map(|pos| insertion_index(cards, pos))
+        .unwrap_or(cards.len());
+    if response.dnd_hover_payload::<IssueDrag>().is_some()
+        && pointer.is_some()
+        && let Some((_, last)) = cards.last()
+    {
+        let (x, y0, y1) = match cards.get(insert) {
+            Some((_, rect)) => (rect.min.x - gap / 2.0, rect.min.y, rect.max.y),
+            None => (last.max.x + gap / 2.0, last.min.y, last.max.y),
+        };
+        ui.painter().line_segment(
+            [Pos2::new(x, y0), Pos2::new(x, y1)],
+            Stroke::new(2.0, p.accent),
+        );
+    }
+    response
+        .dnd_release_payload::<IssueDrag>()
+        .is_some()
+        .then(|| Intent::Place {
+            path: drag.path.clone(),
+            column: view.column.dir.clone(),
+            anchor: cards.get(insert).map(|(path, _)| path.clone()),
+        })
 }

@@ -1,0 +1,110 @@
+//! What the views ask of the app: one [`Intent`] per user action, applied in
+//! one place once the frame's drawing is done.
+
+use super::*;
+
+/// One thing a view asked for.
+pub(super) enum Intent {
+    Open(PathBuf),
+    /// Open the issue and run the AI review on it.
+    Review(PathBuf),
+    /// Reopen the issue's last review, from its card's verdict pill.
+    ShowReview(PathBuf),
+    Delete(PathBuf),
+    Archive(PathBuf),
+    /// "Archive the issues above", at the foot of Done.
+    ArchiveAll(Vec<PathBuf>),
+    /// Open or close the LabelPicker on the issue.
+    ToggleLabels(PathBuf),
+    /// A label was clicked: filter the board by it.
+    FilterBy(String),
+    /// A dragged card was dropped in `column`, in front of `anchor` (last
+    /// without one).
+    Place {
+        path: PathBuf,
+        column: PathBuf,
+        anchor: Option<PathBuf>,
+    },
+    /// A dragged card was dropped on a column tab.
+    Move {
+        path: PathBuf,
+        to: PathBuf,
+    },
+    /// Show this column full screen (ColumnFocus).
+    FocusColumn(PathBuf),
+    UnfocusColumn,
+    Sort {
+        column: PathBuf,
+        sort: Sort,
+    },
+    Compose,
+    /// Add what the composer holds; `close` also closes it.
+    SubmitComposer {
+        close: bool,
+    },
+    CloseComposer,
+    /// The composer's engine tag: open Settings › Titles.
+    TitleSettings,
+}
+
+impl CardAction {
+    /// What this card action asks for, on the card's issue.
+    pub(super) fn on(self, path: &Path) -> Intent {
+        let path = path.to_path_buf();
+        match self {
+            CardAction::Open => Intent::Open(path),
+            CardAction::Delete => Intent::Delete(path),
+            CardAction::Archive => Intent::Archive(path),
+            CardAction::FilterLabel(label) => Intent::FilterBy(label),
+            CardAction::Review => Intent::Review(path),
+            CardAction::ShowReview => Intent::ShowReview(path),
+            CardAction::AddLabel => Intent::ToggleLabels(path),
+        }
+    }
+}
+
+impl IboardApp {
+    /// Applies the frame's intents, in the order they were asked for.
+    pub(super) fn apply(&mut self, intents: Vec<Intent>) {
+        // A click elsewhere both blurs the composer and adds what it holds:
+        // adding wins over closing it empty.
+        let submitting = intents
+            .iter()
+            .any(|intent| matches!(intent, Intent::SubmitComposer { .. }));
+        for intent in intents {
+            match intent {
+                Intent::Open(path) => self.open_issue(path),
+                Intent::Review(path) => {
+                    self.open_issue(path.clone());
+                    self.start_review(&path, false);
+                }
+                Intent::ShowReview(path) => self.show_past_review(path),
+                Intent::Delete(path) => self.request_delete(path),
+                Intent::Archive(path) => self.archive_issue(&path),
+                Intent::ArchiveAll(paths) => self.archive_all(&paths),
+                Intent::ToggleLabels(path) => self.toggle_label_picker(path),
+                Intent::FilterBy(label) => self.filter_bar.filter.pick(&label),
+                Intent::Place {
+                    path,
+                    column,
+                    anchor,
+                } => self.place_issue(&path, &column, anchor),
+                Intent::Move { path, to } => {
+                    if path.parent() != Some(to.as_path()) {
+                        self.move_issue(&path, &to);
+                    }
+                }
+                Intent::FocusColumn(dir) => self.focus_column(dir),
+                Intent::UnfocusColumn => self.unfocus_column(),
+                Intent::Sort { column, sort } => {
+                    self.column_focus.sorts.insert(column, sort);
+                }
+                Intent::Compose => self.open_composer(),
+                Intent::SubmitComposer { close } => self.submit_composer(close),
+                Intent::CloseComposer if !submitting => self.composer = None,
+                Intent::CloseComposer => {}
+                Intent::TitleSettings => self.open_title_settings(),
+            }
+        }
+    }
+}
