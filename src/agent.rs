@@ -19,6 +19,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -412,11 +413,51 @@ pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// The shell variables a custom command's placeholders become.
-const PLACEHOLDERS: [(&str, &str); 3] = [
+const PLACEHOLDERS: [(&str, &str); 4] = [
     ("{prompt}", "IBOARD_PROMPT"),
     ("{model}", "IBOARD_MODEL"),
     ("{issue}", "IBOARD_ISSUE"),
+    ("{mode}", "IBOARD_MODE"),
 ];
+
+/// How far a review goes: Quick judges the issue's text alone, without
+/// tools; Deep may read the repository to check what the issue claims.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ReviewMode {
+    #[default]
+    Quick,
+    Deep,
+}
+
+impl ReviewMode {
+    /// The name stored with a review and shown in its panel.
+    pub fn key(self) -> &'static str {
+        match self {
+            ReviewMode::Quick => "quick",
+            ReviewMode::Deep => "deep",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Self {
+        if key == "deep" {
+            ReviewMode::Deep
+        } else {
+            ReviewMode::Quick
+        }
+    }
+}
+
+/// The step a running review is on, as "Reading src/app.rs…", shared with
+/// the panel that shows it.
+pub type Progress = Arc<Mutex<Option<String>>>;
+
+/// The latest step of `progress`, if the agent reported one.
+pub fn step(progress: &Progress) -> Option<String> {
+    progress
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
 
 /// Builds the command for `config`, ready to spawn. `model` is the resolved
 /// one (empty for the tool's own choice); `prompt_file` holds `prompt` for a
@@ -428,6 +469,7 @@ fn command(
     prompt: &str,
     prompt_file: &Path,
     issue: &Path,
+    review: Option<ReviewMode>,
 ) -> Command {
     let mut command = match config.tool {
         Tool::Custom => {
@@ -437,7 +479,11 @@ fn command(
                 .arg(shell_script(&config.command))
                 .env("IBOARD_PROMPT", prompt_file)
                 .env("IBOARD_MODEL", model)
-                .env("IBOARD_ISSUE", issue);
+                .env("IBOARD_ISSUE", issue)
+                .env(
+                    "IBOARD_MODE",
+                    review.map(ReviewMode::key).unwrap_or_default(),
+                );
             command
         }
         tool => {
@@ -446,6 +492,20 @@ fn command(
                 Command::new(find_binary(name).unwrap_or_else(|| PathBuf::from(name)));
             // `opencode run "…"` and `claude -p "…"` answer once and exit.
             command.arg(if tool == Tool::OpenCode { "run" } else { "-p" });
+            // A review streams its steps as JSON events, so the panel can say
+            // what the agent is doing; a quick one gets no built-in tools.
+            match (tool, review) {
+                (Tool::OpenCode, Some(_)) => {
+                    command.args(["--format", "json"]);
+                }
+                (_, Some(mode)) => {
+                    command.args(["--output-format", "stream-json", "--verbose"]);
+                    if mode == ReviewMode::Quick {
+                        command.args(["--tools", ""]);
+                    }
+                }
+                (_, None) => {}
+            }
             if !model.is_empty() {
                 command.arg("--model").arg(model);
             }
@@ -482,6 +542,18 @@ pub fn run(
     issue: &Path,
     cancel: &Cancel,
 ) -> Result<String, String> {
+    run_with(config, prompt, issue, cancel, None)
+}
+
+/// [`run`], for a review in `mode` when `review` is set: the agent's steps
+/// land in its [`Progress`] as they come.
+fn run_with(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    cancel: &Cancel,
+    review: Option<(ReviewMode, &Progress)>,
+) -> Result<String, String> {
     let model = match config.model.trim() {
         "" if config.tool != Tool::Custom => default_model(config.tool).unwrap_or_default(),
         model => model.to_string(),
@@ -498,12 +570,30 @@ pub fn run(
         Tool::Custom => "the custom command",
         tool => tool.key(),
     };
-    let command = command(config, &model, prompt, &prompt_file, issue);
-    let output = process::run(command, what, cancel, ANSWER_TIMEOUT);
+    let command = command(
+        config,
+        &model,
+        prompt,
+        &prompt_file,
+        issue,
+        review.map(|(mode, _)| mode),
+    );
+    let streams = review.filter(|_| !custom).map(|(_, progress)| progress);
+    let output = process::run_with(command, what, cancel, ANSWER_TIMEOUT, |line| {
+        if let Some(progress) = streams
+            && let Some(step) = step_of(line)
+        {
+            *progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(step);
+        }
+    });
     if custom {
         let _ = std::fs::remove_file(&prompt_file);
     }
     let answer = output?.into_result("the agent")?;
+    let answer = match streams {
+        Some(_) => final_answer(&answer),
+        None => answer,
+    };
     match answer.trim() {
         "" => Err("the agent returned no answer".to_string()),
         answer => Ok(answer.to_string()),
@@ -514,6 +604,87 @@ pub fn run(
 pub fn start(config: &AgentConfig, prompt: &str, issue: &Path) -> Job<Result<String, String>> {
     let (config, prompt, issue) = (config.clone(), prompt.to_string(), issue.to_path_buf());
     Job::spawn(move |cancel| run(&config, &prompt, &issue, cancel))
+}
+
+/// [`run`] for a review on a background thread, with the [`Progress`] its
+/// steps land in. Dropping the job stops the agent.
+pub fn start_review(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    mode: ReviewMode,
+) -> (Job<Result<String, String>>, Progress) {
+    let (config, prompt, issue) = (config.clone(), prompt.to_string(), issue.to_path_buf());
+    let progress = Progress::default();
+    let steps = Arc::clone(&progress);
+    let job =
+        Job::spawn(move |cancel| run_with(&config, &prompt, &issue, cancel, Some((mode, &steps))));
+    (job, progress)
+}
+
+/// What one streamed event says the agent is doing: a tool call from
+/// OpenCode (`tool_use`) or Claude Code (`assistant` with a `tool_use` part).
+fn step_of(line: &str) -> Option<String> {
+    let event: serde_json::Value = serde_json::from_str(line).ok()?;
+    match event["type"].as_str()? {
+        "tool_use" => describe_tool(
+            event["part"]["tool"].as_str()?,
+            &event["part"]["state"]["input"],
+        ),
+        "assistant" => event["message"]["content"]
+            .as_array()?
+            .iter()
+            .rev()
+            .find(|part| part["type"] == "tool_use")
+            .and_then(|part| describe_tool(part["name"].as_str()?, &part["input"])),
+        _ => None,
+    }
+}
+
+/// "Reading app/review.rs…": the tool as a verb, and the tail of its target.
+fn describe_tool(tool: &str, input: &serde_json::Value) -> Option<String> {
+    let verb = match tool.to_ascii_lowercase().as_str() {
+        "read" => "Reading".to_string(),
+        "grep" | "glob" | "list" | "ls" | "search" => "Searching".to_string(),
+        "bash" => "Running".to_string(),
+        "webfetch" | "fetch" | "websearch" => "Looking up".to_string(),
+        _ => format!("Using {tool}"),
+    };
+    let target = ["file_path", "path", "pattern", "command", "url", "query"]
+        .iter()
+        .find_map(|key| input[*key].as_str());
+    Some(match target {
+        Some(target) => {
+            let parts: Vec<&str> = target.trim_end_matches('/').rsplit('/').take(2).collect();
+            let tail: Vec<&str> = parts.into_iter().rev().collect();
+            format!("{verb} {}…", tail.join("/"))
+        }
+        None => format!("{verb}…"),
+    })
+}
+
+/// The answer in a stream of events: Claude Code's `result`, else the text
+/// of OpenCode's last step. Plain text that is no event stream stays as is.
+fn final_answer(stdout: &str) -> String {
+    let events: Vec<serde_json::Value> = stdout
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    if events.is_empty() {
+        return stdout.to_string();
+    }
+    let mut texts: Vec<&str> = Vec::new();
+    for event in &events {
+        match event["type"].as_str() {
+            Some("result") if event["result"].is_string() => {
+                return event["result"].as_str().unwrap_or_default().to_string();
+            }
+            Some("step_start") => texts.clear(),
+            Some("text") => texts.extend(event["part"]["text"].as_str()),
+            _ => {}
+        }
+    }
+    texts.concat()
 }
 
 /// The verdict on one axis of the review.
@@ -689,7 +860,7 @@ mod tests {
         let report = parse(answer).expect("a report");
         assert_eq!(report.findings[0].body, "Size: the issue is large");
         assert_eq!(report.proposal, None);
-        let echoed = crate::prompts::review_prompt("# An issue");
+        let echoed = crate::prompts::review_prompt("# An issue", ReviewMode::Quick);
         assert!(parse(&echoed).is_none(), "an agent repeating the prompt");
     }
 
@@ -790,15 +961,32 @@ mod tests {
             tool: Tool::OpenCode,
             ..AgentConfig::default()
         };
-        let built = command(&opencode, "vendor/model", "PROMPT", file, issue);
+        let built = command(&opencode, "vendor/model", "PROMPT", file, issue, None);
         assert_eq!(args(&built), ["run", "--model", "vendor/model", "PROMPT"]);
+        let built = command(
+            &opencode,
+            "",
+            "PROMPT",
+            file,
+            issue,
+            Some(ReviewMode::Quick),
+        );
+        assert_eq!(args(&built), ["run", "--format", "json", "PROMPT"]);
 
         let claude = AgentConfig {
             tool: Tool::Claude,
             ..AgentConfig::default()
         };
-        let built = command(&claude, "", "PROMPT", file, issue);
+        let built = command(&claude, "", "PROMPT", file, issue, None);
         assert_eq!(args(&built), ["-p", "PROMPT"]);
+        let stream = ["-p", "--output-format", "stream-json", "--verbose"];
+        let built = command(&claude, "", "PROMPT", file, issue, Some(ReviewMode::Quick));
+        assert_eq!(
+            args(&built),
+            [&stream[..], &["--tools", "", "PROMPT"]].concat()
+        );
+        let built = command(&claude, "", "PROMPT", file, issue, Some(ReviewMode::Deep));
+        assert_eq!(args(&built), [&stream[..], &["PROMPT"]].concat());
 
         let built = command(
             &custom("llm -m {model} < {prompt} # {issue}"),
@@ -806,6 +994,7 @@ mod tests {
             "PROMPT",
             file,
             issue,
+            Some(ReviewMode::Deep),
         );
         assert_eq!(built.get_program(), "sh");
         assert_eq!(
@@ -825,6 +1014,47 @@ mod tests {
         assert_eq!(env("IBOARD_MODEL").as_deref(), Some("gpt"));
         assert_eq!(env("IBOARD_PROMPT").as_deref(), Some("/tmp/prompt.md"));
         assert_eq!(env("IBOARD_ISSUE").as_deref(), Some("/p/todo/a b.md"));
+        assert_eq!(env("IBOARD_MODE").as_deref(), Some("deep"));
+    }
+
+    /// Events recorded from `opencode run --format json` and
+    /// `claude -p --output-format stream-json --verbose`, trimmed.
+    const OPENCODE: &str = r#"{"type":"step_start","part":{"type":"step-start"}}
+{"type":"text","part":{"type":"text","text":"Let me look."}}
+{"type":"tool_use","part":{"type":"tool","tool":"read","state":{"status":"completed","input":{"path":"/p/src/app/review.rs"}}}}
+{"type":"step_finish","part":{"type":"step-finish","reason":"tool-calls"}}
+{"type":"step_start","part":{"type":"step-start"}}
+{"type":"text","part":{"type":"text","text":"RELEVANCE: Pass"}}"#;
+    const CLAUDE: &str = r#"{"type":"system","subtype":"init"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"fn review"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"RELEVANCE: Pass"}]}}
+{"type":"result","subtype":"success","result":"RELEVANCE: Pass"}"#;
+
+    #[test]
+    fn streamed_events_give_steps_and_the_answer() {
+        let steps: Vec<String> = OPENCODE
+            .lines()
+            .chain(CLAUDE.lines())
+            .filter_map(step_of)
+            .collect();
+        assert_eq!(steps, ["Reading app/review.rs…", "Searching fn review…"]);
+        assert_eq!(final_answer(OPENCODE), "RELEVANCE: Pass");
+        assert_eq!(final_answer(CLAUDE), "RELEVANCE: Pass");
+        assert_eq!(final_answer("plain answer\n"), "plain answer\n");
+    }
+
+    #[test]
+    fn a_review_reports_its_steps_and_answers() {
+        let config = AgentConfig {
+            tool: Tool::Custom,
+            command: "printf %s \"$IBOARD_MODE\" # {prompt}".into(),
+            configured: true,
+            ..AgentConfig::default()
+        };
+        let (job, progress) = start_review(&config, "x", Path::new("a.md"), ReviewMode::Deep);
+        assert_eq!(job.wait().unwrap(), Ok("deep".to_string()));
+        assert_eq!(step(&progress), None, "a custom command reports no steps");
     }
 
     #[test]

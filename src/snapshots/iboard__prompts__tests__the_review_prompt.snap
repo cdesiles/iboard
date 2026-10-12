@@ -1,8 +1,8 @@
 ---
 source: src/prompts.rs
-expression: review_prompt(ISSUE)
+expression: "review_prompt(ISSUE, ReviewMode::Quick)"
 ---
-You review software issues before they are implemented. Judge the issue below on three axes and answer with nothing but this exact format:
+You review software issues before they are implemented. Read only the issue: do not open files or run tools. Judge the issue below on three axes and answer with nothing but this exact format:
 
 RELEVANCE: Pass|Challenge|Block
 <one or two sentences: is it still worth doing, does it duplicate another issue, and is it tied to a clear user-facing outcome (its product impact)>

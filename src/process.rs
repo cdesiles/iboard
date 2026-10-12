@@ -58,10 +58,22 @@ impl Output {
 /// names it in errors ("the renderer"). It is stopped, with everything it
 /// started, as soon as `cancel` says so or once `timeout` has passed.
 pub fn run(
+    command: Command,
+    what: &str,
+    cancel: &Cancel,
+    timeout: Duration,
+) -> Result<Output, String> {
+    run_with(command, what, cancel, timeout, |_| {})
+}
+
+/// [`run`], handing each line of standard output to `on_line` as it comes,
+/// for a tool that reports its steps while it works.
+pub fn run_with(
     mut command: Command,
     what: &str,
     cancel: &Cancel,
     timeout: Duration,
+    mut on_line: impl FnMut(&str),
 ) -> Result<Output, String> {
     command
         .stdin(Stdio::null())
@@ -78,7 +90,11 @@ pub fn run(
     let stdout = child.stdout.take().map(Drain::start);
     let stderr = child.stderr.take().map(Drain::start);
     let started = Instant::now();
+    let mut seen = 0;
     let status = loop {
+        if let Some(stdout) = &stdout {
+            stdout.new_lines(&mut seen, &mut on_line);
+        }
         if cancel.is_cancelled() {
             stop(&mut child);
             return Err(format!("{what} was stopped"));
@@ -213,6 +229,20 @@ impl Drain {
         Self { bytes, closed }
     }
 
+    /// Hands every complete line read past `seen` to `on_line`, and moves
+    /// `seen` past them.
+    fn new_lines(&self, seen: &mut usize, on_line: &mut impl FnMut(&str)) {
+        let bytes = self.bytes.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(end) = bytes[*seen..].iter().rposition(|byte| *byte == b'\n') else {
+            return;
+        };
+        let end = *seen + end + 1;
+        for line in String::from_utf8_lossy(&bytes[*seen..end]).lines() {
+            on_line(line);
+        }
+        *seen = end;
+    }
+
     /// What was read, once the pipe closed. Something else may hold it open:
     /// a process the child left behind, or one that inherited it while it was
     /// being spawned. The child has exited, so all it wrote is already in the
@@ -237,6 +267,26 @@ mod tests {
     fn alive(pid: i32) -> bool {
         // SAFETY: signal 0 only checks that the process exists.
         unsafe { libc::kill(pid, 0) == 0 }
+    }
+
+    #[test]
+    fn lines_are_handed_over_while_the_process_runs() {
+        let mut lines = Vec::new();
+        let script = "echo one; sleep 0.2; printf 'two\\nthree'";
+        let output = run_with(
+            sh(script),
+            "it",
+            &Cancel::default(),
+            Duration::from_secs(60),
+            |line| lines.push(line.to_string()),
+        )
+        .unwrap();
+        assert_eq!(lines.first().map(String::as_str), Some("one"));
+        assert!(
+            !lines.iter().any(|line| line == "three"),
+            "an unfinished line waits"
+        );
+        assert_eq!(output.stdout, "one\ntwo\nthree");
     }
 
     #[test]

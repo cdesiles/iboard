@@ -6,6 +6,7 @@
 //! token block is a binding contract. The design system is read-only here; only
 //! the agent's answer changes files.
 
+use crate::agent::ReviewMode;
 use crate::design::{DesignSystem, css};
 
 /// The design context: the brief, the token contract and the component
@@ -65,11 +66,19 @@ pub fn component_prompt(
 
 /// The instruction sent to the agent for a review. It carries only the issue,
 /// by design: if that is not enough context, the issue is the problem. It stays
-/// issue-only on purpose, unlike the design-aware prompts below.
-pub fn review_prompt(content: &str) -> String {
+/// issue-only on purpose, unlike the design-aware prompts below. A Deep review
+/// may check the issue against the repository; a Quick one must not.
+pub fn review_prompt(content: &str, mode: ReviewMode) -> String {
+    let scope = match mode {
+        ReviewMode::Quick => "Read only the issue: do not open files or run tools.",
+        ReviewMode::Deep => {
+            "You may read the repository to check what the issue claims \
+             (sizes, existing code, duplicates); keep the answer short."
+        }
+    };
     format!(
-        "You review software issues before they are implemented. Judge the issue \
-         below on three axes and answer with nothing but this exact format:\n\
+        "You review software issues before they are implemented. {scope} Judge the \
+         issue below on three axes and answer with nothing but this exact format:\n\
          \n\
          RELEVANCE: Pass|Challenge|Block\n\
          <one or two sentences: is it still worth doing, does it duplicate another issue, \
@@ -187,7 +196,7 @@ mod tests {
 
     #[test]
     fn the_review_prompt() {
-        insta::assert_snapshot!(review_prompt(ISSUE));
+        insta::assert_snapshot!(review_prompt(ISSUE, ReviewMode::Quick));
     }
 
     #[test]
@@ -250,7 +259,10 @@ mod tests {
 
     #[test]
     fn review_prompt_stays_issue_only() {
-        let prompt = review_prompt("# Fix the filter\n\nIt forgets the chips.");
+        let prompt = review_prompt(
+            "# Fix the filter\n\nIt forgets the chips.",
+            ReviewMode::Deep,
+        );
         assert!(prompt.contains("RELEVANCE: Pass|Challenge|Block"));
         assert!(prompt.contains("PROPOSAL:"));
         assert!(prompt.contains("# Fix the filter"));

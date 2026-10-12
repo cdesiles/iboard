@@ -13,7 +13,7 @@ use egui::{
 };
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
-use crate::agent::{self, AgentConfig, Report};
+use crate::agent::{self, AgentConfig, Report, ReviewMode};
 use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
 use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_name};
@@ -109,6 +109,7 @@ const REVIEW_MENU_WIDTH: f32 = 240.0;
 /// A choice made in the Review button's menu.
 enum ReviewMenu {
     Review,
+    Deep,
     Settings,
 }
 
@@ -157,6 +158,7 @@ struct CardExtras<'a> {
 #[derive(Clone)]
 struct PastReview {
     draft: bool,
+    mode: ReviewMode,
     agent: String,
     raw: String,
     report: Option<Report>,
@@ -168,6 +170,7 @@ impl PastReview {
     fn new(stored: &reviews::StoredReview, markdown: &str) -> Self {
         Self {
             draft: stored.draft,
+            mode: ReviewMode::from_key(&stored.mode),
             agent: stored.agent.clone(),
             raw: stored.raw.clone(),
             report: agent::parse(&stored.raw),
@@ -426,11 +429,19 @@ impl EditorState {
     }
 }
 
+/// What a review reads, and how far it goes.
+struct ReviewTarget {
+    path: PathBuf,
+    draft: bool,
+    mode: ReviewMode,
+}
+
 /// The AI review of one issue: running, answered or failed.
 struct ReviewState {
     path: PathBuf,
     /// True when the agent read the editor draft rather than the saved file.
     draft: bool,
+    mode: ReviewMode,
     /// The configured tool (and model), shown in the panel header.
     agent: String,
     status: ReviewStatus,
@@ -441,9 +452,17 @@ struct ReviewState {
 }
 
 enum ReviewStatus {
-    Running { answer: Job<Result<String, String>> },
-    Done { raw: String, report: Option<Report> },
-    Failed { error: String },
+    Running {
+        answer: Job<Result<String, String>>,
+        progress: agent::Progress,
+    },
+    Done {
+        raw: String,
+        report: Option<Report>,
+    },
+    Failed {
+        error: String,
+    },
 }
 
 pub struct IboardApp {

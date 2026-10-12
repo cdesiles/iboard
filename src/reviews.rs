@@ -29,6 +29,9 @@ pub struct StoredReview {
     pub hash: String,
     /// The tool and model, as `opencode · default`.
     pub agent: String,
+    /// `quick` or `deep`.
+    #[serde(default)]
+    pub mode: String,
     /// True when the agent read an unsaved editor draft.
     #[serde(default)]
     pub draft: bool,
@@ -133,6 +136,7 @@ mod tests {
         StoredReview {
             hash: content_hash(markdown),
             agent: "opencode · default".into(),
+            mode: "quick".into(),
             draft: false,
             at: "2026-10-12T10:00:00+02:00".into(),
             raw: "RELEVANCE: Pass\nok".into(),

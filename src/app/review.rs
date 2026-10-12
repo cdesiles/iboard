@@ -17,32 +17,44 @@ impl IboardApp {
     }
 
     /// Stores a running review of `content` and hands the prompt to the agent.
-    pub(super) fn run_review(&mut self, path: PathBuf, draft: bool, content: &str, prompt: String) {
+    pub(super) fn run_review(&mut self, target: ReviewTarget, content: &str, prompt: String) {
         if !self.agent.configured() {
             self.open_config();
             return;
         }
-        let answer = agent::start(&self.agent, &prompt, &path);
+        let (answer, progress) =
+            agent::start_review(&self.agent, &prompt, &target.path, target.mode);
         self.review = Some(ReviewState {
-            path,
-            draft,
+            path: target.path,
+            draft: target.draft,
+            mode: target.mode,
             agent: self.agent.label(),
-            status: ReviewStatus::Running { answer },
+            status: ReviewStatus::Running { answer, progress },
             hash: reviews::content_hash(content),
             follow_up: String::new(),
         });
     }
 
-    /// Starts a one-shot review of the open issue (or the editor draft).
+    /// Starts a Quick review of the open issue (or the editor draft).
     pub(super) fn start_review(&mut self, path: &Path, draft: bool) {
+        self.start_review_in(path, draft, ReviewMode::Quick);
+    }
+
+    /// Starts a one-shot review in `mode`.
+    pub(super) fn start_review_in(&mut self, path: &Path, draft: bool, mode: ReviewMode) {
         if !self.is_todo_issue(path) {
             return;
         }
         let Some(content) = self.review_content(path, draft) else {
             return;
         };
-        let prompt = prompts::review_prompt(&content);
-        self.run_review(path.to_path_buf(), draft, &content, prompt);
+        let prompt = prompts::review_prompt(&content, mode);
+        let target = ReviewTarget {
+            path: path.to_path_buf(),
+            draft,
+            mode,
+        };
+        self.run_review(target, &content, prompt);
     }
 
     /// Sends a follow-up ("make it smaller") with the previous answer attached.
@@ -50,31 +62,24 @@ impl IboardApp {
         let Some(review) = self.review.as_ref() else {
             return;
         };
-        let path = review.path.clone();
-        let draft = review.draft;
+        let target = ReviewTarget {
+            path: review.path.clone(),
+            draft: review.draft,
+            mode: review.mode,
+        };
         let follow_up = review.follow_up.trim().to_string();
         if follow_up.is_empty() {
             return;
         }
-        let Some(content) = self.review_content(&path, draft) else {
+        let Some(content) = self.review_content(&target.path, target.draft) else {
             return;
         };
-        let previous = match &review.status {
-            ReviewStatus::Done { raw, .. } => raw.clone(),
-            _ => String::new(),
-        };
-        let prompt = if previous.is_empty() {
-            format!(
-                "{}\n\nFollow-up: {follow_up}",
-                prompts::review_prompt(&content)
-            )
-        } else {
-            format!(
-                "{}\n\nA previous review said:\n{previous}\n\nFollow-up: {follow_up}",
-                prompts::review_prompt(&content)
-            )
-        };
-        self.run_review(path, draft, &content, prompt);
+        let mut prompt = prompts::review_prompt(&content, target.mode);
+        if let ReviewStatus::Done { raw, .. } = &review.status {
+            prompt.push_str(&format!("\n\nA previous review said:\n{raw}"));
+        }
+        prompt.push_str(&format!("\n\nFollow-up: {follow_up}"));
+        self.run_review(target, &content, prompt);
     }
 
     /// Cancels a running review (dropping the job stops the agent), or closes
@@ -90,6 +95,7 @@ impl IboardApp {
             self.review = Some(ReviewState {
                 path,
                 draft: past.draft,
+                mode: past.mode,
                 agent: past.agent,
                 status: ReviewStatus::Done {
                     raw: past.raw,
@@ -107,7 +113,7 @@ impl IboardApp {
         let Some(review) = self.review.as_mut() else {
             return;
         };
-        let ReviewStatus::Running { answer } = &review.status else {
+        let ReviewStatus::Running { answer, .. } = &review.status else {
             return;
         };
         let Some(result) = answer.answer() else {
@@ -123,6 +129,7 @@ impl IboardApp {
         let stored = reviews::StoredReview {
             hash: review.hash.clone(),
             agent: review.agent.clone(),
+            mode: review.mode.key().to_string(),
             draft: review.draft,
             at: chrono::Local::now().to_rfc3339(),
             raw: raw.clone(),
@@ -245,6 +252,9 @@ impl IboardApp {
                 if option(ui, "Review this issue", false, "⌘⇧R").clicked() {
                     picked = Some(ReviewMenu::Review);
                 }
+                if option(ui, "Deep review", false, "reads the repo").clicked() {
+                    picked = Some(ReviewMenu::Deep);
+                }
                 ui.add_space(theme::SPACE_2);
                 ui.separator();
                 widgets::menu_group(ui, "Runs with");
@@ -269,9 +279,14 @@ impl IboardApp {
             })
             .and_then(|inner| inner.inner);
         match picked {
-            Some(ReviewMenu::Review) if running => {}
+            Some(ReviewMenu::Review | ReviewMenu::Deep) if running => {}
             Some(ReviewMenu::Review) if configured => self.start_review(path, draft),
-            Some(ReviewMenu::Review | ReviewMenu::Settings) => self.open_config(),
+            Some(ReviewMenu::Deep) if configured => {
+                self.start_review_in(path, draft, ReviewMode::Deep);
+            }
+            Some(ReviewMenu::Review | ReviewMenu::Deep | ReviewMenu::Settings) => {
+                self.open_config();
+            }
             None => {}
         }
     }
@@ -285,7 +300,7 @@ impl IboardApp {
         };
         let name = file_name(&review.path);
         let source = if review.draft { "draft" } else { "file" };
-        let agent = review.agent.clone();
+        let agent = format!("{} · {}", review.agent, review.mode.key());
         let mut follow_up = review.follow_up.clone();
         let mut dismiss = false;
         let mut again = false;
@@ -350,14 +365,8 @@ impl IboardApp {
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         match &review.status {
-                            ReviewStatus::Running { .. } => {
-                                ui.horizontal(|ui| {
-                                    ui.spinner();
-                                    ui.label(
-                                        RichText::new("The agent is reading the issue…")
-                                            .color(p.ink_muted),
-                                    );
-                                });
+                            ReviewStatus::Running { answer, progress } => {
+                                running_line(ui, answer.elapsed(), agent::step(progress));
                             }
                             ReviewStatus::Failed { error } => {
                                 ui.label(RichText::new(error).color(p.danger));
@@ -492,9 +501,9 @@ impl IboardApp {
             let target = self
                 .review
                 .as_ref()
-                .map(|review| (review.path.clone(), review.draft));
-            if let Some((path, draft)) = target {
-                self.start_review(&path, draft);
+                .map(|review| (review.path.clone(), review.draft, review.mode));
+            if let Some((path, draft, mode)) = target {
+                self.start_review_in(&path, draft, mode);
             }
         } else if again {
             self.ask_again();
@@ -502,4 +511,18 @@ impl IboardApp {
             self.apply_review_proposal();
         }
     }
+}
+
+/// The spinner, the time the agent has taken, and the step it is on:
+/// "0:42 · Reading app/review.rs…".
+fn running_line(ui: &mut egui::Ui, elapsed: Duration, step: Option<String>) {
+    let p = theme::palette(ui);
+    let seconds = elapsed.as_secs();
+    let clock = format!("{}:{:02}", seconds / 60, seconds % 60);
+    let step = step.unwrap_or_else(|| "The agent is reading the issue…".to_string());
+    ui.horizontal(|ui| {
+        ui.spinner();
+        ui.label(RichText::new(clock).font(theme::meta()).color(p.ink_muted));
+        ui.add(egui::Label::new(RichText::new(step).color(p.ink_muted)).truncate());
+    });
 }

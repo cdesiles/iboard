@@ -81,6 +81,7 @@ pub(super) fn open_issue_with_review(tag: &str) -> (Scratch, PathBuf, IboardApp)
     app.review = Some(ReviewState {
         path: file.clone(),
         draft: false,
+        mode: ReviewMode::Quick,
         agent: "opencode · vendor/model".to_string(),
         status: ReviewStatus::Done {
             raw: raw.to_string(),
@@ -165,4 +166,28 @@ fn polling_a_running_review_adopts_the_answer() {
         }
         _ => panic!("the review never finished"),
     }
+}
+
+/// A Deep review reaches the agent as such, and is kept with its mode.
+#[test]
+fn a_deep_review_says_so_and_is_kept_as_deep() {
+    let dir = scratch_dir("deep-review");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("demo.md");
+    std::fs::write(&file, "# Demo\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "grep -q 'read the repository' {prompt} && printf %s {mode}".to_string(),
+        configured: true,
+    };
+    app.start_review_in(&file, false, ReviewMode::Deep);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&file)
+    }));
+    assert_eq!(app.past_reviews[&file].raw, "deep");
+    assert_eq!(app.past_reviews[&file].mode, ReviewMode::Deep);
 }
