@@ -322,51 +322,11 @@ impl IboardApp {
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                Frame::new()
-                    .fill(p.review_soft)
-                    // The header is flush with the panel's top edge, so its
-                    // fill has to round the top corners itself: egui frames
-                    // don't clip children, and a square fill would paint over
-                    // the panel's rounded corners and their border. One less
-                    // than RADIUS_MD matches the inside of the 1pt border.
-                    .corner_radius(CornerRadius {
-                        nw: theme::RADIUS_MD - 1,
-                        ne: theme::RADIUS_MD - 1,
-                        sw: 0,
-                        se: 0,
-                    })
-                    .inner_margin(Margin::symmetric(
-                        theme::SPACE_4 as i8,
-                        theme::SPACE_3 as i8,
-                    ))
-                    .show(ui, |ui| {
-                        // Agent first, so a long file name truncates into the
-                        // space left instead of widening the panel (which
-                        // flickers while the spinner repaints). The row has a
-                        // fixed height: a bare right-to-left layout would
-                        // stretch to fill the whole panel.
-                        ui.allocate_ui_with_layout(
-                            Vec2::new(ui.available_width(), theme::CONTROL_H),
-                            Layout::right_to_left(Align::Center),
-                            |ui| {
-                                ui.label(
-                                    RichText::new(format!("{agent} · {source}"))
-                                        .font(theme::meta())
-                                        .color(p.review),
-                                );
-                                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                                    ui.add(
-                                        egui::Label::new(
-                                            RichText::new(format!("Review of {name}"))
-                                                .font(theme::ui_strong())
-                                                .color(p.review),
-                                        )
-                                        .truncate(),
-                                    );
-                                });
-                            },
-                        );
-                    });
+                review_head(
+                    ui,
+                    &format!("Review of {name}"),
+                    &format!("{agent} · {source}"),
+                );
                 Frame::new()
                     .inner_margin(Margin::same(theme::SPACE_4 as i8))
                     .show(ui, |ui| {
@@ -412,6 +372,10 @@ impl IboardApp {
                 *kept = drafts;
             }
         }
+        self.apply_panel_action(action);
+    }
+
+    fn apply_panel_action(&mut self, action: Option<PanelAction>) {
         match action {
             Some(PanelAction::Cancel) => self.cancel_review(),
             Some(PanelAction::Dismiss) => self.review = None,
@@ -432,6 +396,53 @@ impl IboardApp {
             None => {}
         }
     }
+}
+
+/// The panel's `review-soft` head: "Review of x.md", and the agent, mode and
+/// source on the right.
+fn review_head(ui: &mut egui::Ui, title: &str, detail: &str) {
+    let p = theme::palette(ui);
+    Frame::new()
+        .fill(p.review_soft)
+        // The header is flush with the panel's top edge, so its
+        // fill has to round the top corners itself: egui frames
+        // don't clip children, and a square fill would paint over
+        // the panel's rounded corners and their border. One less
+        // than RADIUS_MD matches the inside of the 1pt border.
+        .corner_radius(CornerRadius {
+            nw: theme::RADIUS_MD - 1,
+            ne: theme::RADIUS_MD - 1,
+            sw: 0,
+            se: 0,
+        })
+        .inner_margin(Margin::symmetric(
+            theme::SPACE_4 as i8,
+            theme::SPACE_3 as i8,
+        ))
+        .show(ui, |ui| {
+            // Agent first, so a long file name truncates into the
+            // space left instead of widening the panel (which
+            // flickers while the spinner repaints). The row has a
+            // fixed height: a bare right-to-left layout would
+            // stretch to fill the whole panel.
+            ui.allocate_ui_with_layout(
+                Vec2::new(ui.available_width(), theme::CONTROL_H),
+                Layout::right_to_left(Align::Center),
+                |ui| {
+                    ui.label(RichText::new(detail).font(theme::meta()).color(p.review));
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(title)
+                                    .font(theme::ui_strong())
+                                    .color(p.review),
+                            )
+                            .truncate(),
+                        );
+                    });
+                },
+            );
+        });
 }
 
 /// What a click in the review panel asks for.

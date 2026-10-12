@@ -139,44 +139,7 @@ impl IboardApp {
                     .color(p.ink_muted),
                 );
                 ui.add_space(theme::SPACE_2);
-                if panel.list.is_empty() {
-                    ui.label(
-                        RichText::new("No commit names this ticket.")
-                            .font(theme::ui_small())
-                            .color(p.ink_muted),
-                    );
-                } else {
-                    egui::ScrollArea::vertical()
-                        .id_salt("commits-list")
-                        .max_height(260.0)
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| {
-                            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-                            for commit in &panel.list {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                                    ui.label(
-                                        RichText::new(&commit.hash)
-                                            .font(egui::FontId::monospace(12.0))
-                                            .color(p.accent),
-                                    );
-                                    ui.label(
-                                        RichText::new(commit.day())
-                                            .font(theme::meta())
-                                            .color(p.ink_muted),
-                                    );
-                                    ui.add(
-                                        egui::Label::new(
-                                            RichText::new(&commit.subject)
-                                                .font(theme::ui_small())
-                                                .color(p.ink),
-                                        )
-                                        .truncate(),
-                                    );
-                                });
-                            }
-                        });
-                }
+                commit_list(ui, &panel.list);
                 ui.add_space(theme::SPACE_2);
                 ui.label(
                     RichText::new(
@@ -371,5 +334,49 @@ impl IboardApp {
             title,
             list,
         });
+    }
+}
+
+/// The commits naming a ticket, newest first: hash, day and subject; or
+/// that there are none.
+fn commit_list(ui: &mut egui::Ui, list: &[commits::Commit]) {
+    let p = theme::palette(ui);
+    if list.is_empty() {
+        ui.label(
+            RichText::new("No commit names this ticket.")
+                .font(theme::ui_small())
+                .color(p.ink_muted),
+        );
+    } else {
+        egui::ScrollArea::vertical()
+            .id_salt("commits-list")
+            .max_height(260.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+                for commit in list {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                        ui.label(
+                            RichText::new(&commit.hash)
+                                .font(egui::FontId::monospace(12.0))
+                                .color(p.accent),
+                        );
+                        ui.label(
+                            RichText::new(commit.day())
+                                .font(theme::meta())
+                                .color(p.ink_muted),
+                        );
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&commit.subject)
+                                    .font(theme::ui_small())
+                                    .color(p.ink),
+                            )
+                            .truncate(),
+                        );
+                    });
+                }
+            });
     }
 }

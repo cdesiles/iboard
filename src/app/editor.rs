@@ -220,135 +220,36 @@ impl IboardApp {
     /// The editor: the same page as the reader, in plain text, framed in
     /// `accent`. Above it: the file name, save state, Discard and Save.
     pub(super) fn detail_edit(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let p = theme::palette(ui);
         let focus_editor = std::mem::take(&mut self.focus_editor);
         let folder = path
             .parent()
             .map(|dir| self.relative(dir))
             .unwrap_or_default();
-        let mut reload = false;
-        let mut keep = false;
-        let mut answer: Option<LeaveChoice> = None;
         let prompting = self.leave_prompt.is_some();
-
+        let mut conflict = (false, false);
+        let mut answer = None;
         page_column(ui, |ui| {
             let Some(editor) = self.editor.as_mut() else {
                 ui.label("Nothing is being edited.");
                 return;
             };
-
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.label(RichText::new(folder).font(theme::meta()).color(p.ink_muted));
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut editor.name)
-                        .font(theme::meta())
-                        .text_color(p.ink)
-                        .hint_text("issue.md")
-                        .char_limit(files::MAX_FILE_NAME_BYTES)
-                        .margin(Margin::symmetric(theme::SPACE_2 as i8, 4))
-                        .desired_width(240.0),
-                );
-                if response.changed() {
-                    editor.last_edit = Some(Instant::now());
-                    ui.ctx().request_repaint_after(AUTOSAVE_AFTER);
-                }
-                // Save and Discard live in the header; the bar keeps the
-                // file and its save state.
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let (word, color) = save_state(editor, p);
-                    widgets::pill(ui, word, color);
-                });
-            });
-
+            editor_bar(ui, editor, &folder);
             if prompting {
                 ui.add_space(theme::SPACE_3);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    ui.label(
-                        RichText::new(format!("Save changes to {}?", editor.baseline_name))
-                            .font(theme::ui_strong())
-                            .color(p.ink),
-                    );
-                    if widgets::button(ui, ButtonKind::Primary, None, "Save", None).clicked() {
-                        answer = Some(LeaveChoice::Save);
-                    }
-                    if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None)
-                        .on_hover_text("Drop your unsaved changes and leave")
-                        .clicked()
-                    {
-                        answer = Some(LeaveChoice::Discard);
-                    }
-                    if widgets::button(ui, ButtonKind::Secondary, None, "Keep editing", Some("esc"))
-                        .clicked()
-                    {
-                        answer = Some(LeaveChoice::KeepEditing);
-                    }
-                });
+                answer = leave_prompt_row(ui, editor);
             }
             if let Some(error) = &editor.error {
                 ui.add_space(theme::SPACE_2);
-                ui.label(RichText::new(error).color(p.danger));
+                ui.label(RichText::new(error).color(theme::palette(ui).danger));
             }
             if editor.conflict.is_some() {
                 ui.add_space(theme::SPACE_2);
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(format!(
-                            "{} changed on disk since you started editing.",
-                            editor.baseline_name
-                        ))
-                        .color(p.danger),
-                    );
-                    reload = widgets::button(ui, ButtonKind::Secondary, None, "Reload", None)
-                        .on_hover_text("Drop your edits and load the file from disk")
-                        .clicked();
-                    keep = widgets::button(ui, ButtonKind::Secondary, None, "Keep mine", None)
-                        .on_hover_text("Overwrite the file on disk with your version")
-                        .clicked();
-                });
+                conflict = conflict_row(ui, editor);
             }
             ui.add_space(theme::SPACE_3);
-
-            let rows = ((ui.available_height() - 2.0 * theme::SPACE_5) / 20.0).max(8.0) as usize;
-            Frame::new()
-                .fill(p.surface)
-                .stroke(Stroke::new(2.0, p.accent))
-                .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-                .inner_margin(Margin::symmetric(20, theme::SPACE_5 as i8))
-                .show(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("editor_scroll")
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            let id = egui::Id::new("editor_body");
-                            let mut output = egui::TextEdit::multiline(&mut editor.text)
-                                .id(id)
-                                .font(theme::edit_body())
-                                .code_editor()
-                                .frame(Frame::NONE)
-                                .margin(Margin::ZERO)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(rows)
-                                .show(ui);
-                            if focus_editor {
-                                // A freshly created issue: caret after the title.
-                                let end = CCursor::new(editor.text.chars().count());
-                                output
-                                    .state
-                                    .cursor
-                                    .set_char_range(Some(CCursorRange::one(end)));
-                                output.state.store(ui.ctx(), id);
-                                output.response.request_focus();
-                            }
-                            if output.response.changed() {
-                                editor.last_edit = Some(Instant::now());
-                                ui.ctx().request_repaint_after(AUTOSAVE_AFTER);
-                            }
-                        });
-                });
+            editor_text(ui, editor, focus_editor);
         });
-
+        let (reload, keep) = conflict;
         if reload {
             self.reload_editor_from_disk();
         }
@@ -359,6 +260,125 @@ impl IboardApp {
             self.answer_leave(choice);
         }
     }
+}
+
+/// The editor's bar: the folder and the file name, editable, with the save
+/// state on the right. Save and Discard live in the header.
+fn editor_bar(ui: &mut egui::Ui, editor: &mut EditorState, folder: &str) {
+    let p = theme::palette(ui);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.label(RichText::new(folder).font(theme::meta()).color(p.ink_muted));
+        let response = ui.add(
+            egui::TextEdit::singleline(&mut editor.name)
+                .font(theme::meta())
+                .text_color(p.ink)
+                .hint_text("issue.md")
+                .char_limit(files::MAX_FILE_NAME_BYTES)
+                .margin(Margin::symmetric(theme::SPACE_2 as i8, 4))
+                .desired_width(240.0),
+        );
+        if response.changed() {
+            editor.last_edit = Some(Instant::now());
+            ui.ctx().request_repaint_after(AUTOSAVE_AFTER);
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let (word, color) = save_state(editor, p);
+            widgets::pill(ui, word, color);
+        });
+    });
+}
+
+/// "Save changes to x.md?" while leaving with unsaved edits: Save, Discard
+/// or Keep editing.
+fn leave_prompt_row(ui: &mut egui::Ui, editor: &EditorState) -> Option<LeaveChoice> {
+    let p = theme::palette(ui);
+    let mut answer = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+        ui.label(
+            RichText::new(format!("Save changes to {}?", editor.baseline_name))
+                .font(theme::ui_strong())
+                .color(p.ink),
+        );
+        if widgets::button(ui, ButtonKind::Primary, None, "Save", None).clicked() {
+            answer = Some(LeaveChoice::Save);
+        }
+        if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None)
+            .on_hover_text("Drop your unsaved changes and leave")
+            .clicked()
+        {
+            answer = Some(LeaveChoice::Discard);
+        }
+        if widgets::button(ui, ButtonKind::Secondary, None, "Keep editing", Some("esc")).clicked() {
+            answer = Some(LeaveChoice::KeepEditing);
+        }
+    });
+    answer
+}
+
+/// The file changed on disk while it was edited: Reload or Keep mine.
+fn conflict_row(ui: &mut egui::Ui, editor: &EditorState) -> (bool, bool) {
+    let p = theme::palette(ui);
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(format!(
+                "{} changed on disk since you started editing.",
+                editor.baseline_name
+            ))
+            .color(p.danger),
+        );
+        let reload = widgets::button(ui, ButtonKind::Secondary, None, "Reload", None)
+            .on_hover_text("Drop your edits and load the file from disk")
+            .clicked();
+        let keep = widgets::button(ui, ButtonKind::Secondary, None, "Keep mine", None)
+            .on_hover_text("Overwrite the file on disk with your version")
+            .clicked();
+        (reload, keep)
+    })
+    .inner
+}
+
+/// The text itself, in an `accent`-edged sheet filling the window. A freshly
+/// created issue gets the caret after its title.
+fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
+    let p = theme::palette(ui);
+    let rows = ((ui.available_height() - 2.0 * theme::SPACE_5) / 20.0).max(8.0) as usize;
+    Frame::new()
+        .fill(p.surface)
+        .stroke(Stroke::new(2.0, p.accent))
+        .corner_radius(CornerRadius::same(theme::RADIUS_MD))
+        .inner_margin(Margin::symmetric(20, theme::SPACE_5 as i8))
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("editor_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let id = egui::Id::new("editor_body");
+                    let mut output = egui::TextEdit::multiline(&mut editor.text)
+                        .id(id)
+                        .font(theme::edit_body())
+                        .code_editor()
+                        .frame(Frame::NONE)
+                        .margin(Margin::ZERO)
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(rows)
+                        .show(ui);
+                    if focus {
+                        let end = CCursor::new(editor.text.chars().count());
+                        output
+                            .state
+                            .cursor
+                            .set_char_range(Some(CCursorRange::one(end)));
+                        output.state.store(ui.ctx(), id);
+                        output.response.request_focus();
+                    }
+                    if output.response.changed() {
+                        editor.last_edit = Some(Instant::now());
+                        ui.ctx().request_repaint_after(AUTOSAVE_AFTER);
+                    }
+                });
+        });
 }
 
 /// The editor's save state as a pill word and its colour.

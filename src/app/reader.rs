@@ -531,29 +531,8 @@ pub(super) fn not_written_block(
         |ui| {
             label(ui);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let kind = if review_ready {
-                    ButtonKind::Review
-                } else {
-                    ButtonKind::Disabled
-                };
-                let response = widgets::button(
-                    ui,
-                    kind,
-                    Some(Icon::Review),
-                    "Draft with Review",
-                    Some("⌘⇧R"),
-                );
-                if review_ready {
-                    if response
-                        .on_hover_text("Ask the review agent to propose these sections")
-                        .clicked()
-                    {
-                        picked = Some(NotWritten::Review);
-                    }
-                } else {
-                    response.on_hover_text(
-                        "No agent is set up yet: choose one in Settings › AI review (⌘,)",
-                    );
+                if draft_with_review(ui, review_ready) {
+                    picked = Some(NotWritten::Review);
                 }
             });
         },
@@ -584,6 +563,31 @@ pub(super) fn not_written_block(
         }
     }
     picked
+}
+
+/// "Draft with Review", or the same button disabled while no agent is set
+/// up. True when it was clicked.
+fn draft_with_review(ui: &mut egui::Ui, review_ready: bool) -> bool {
+    let kind = if review_ready {
+        ButtonKind::Review
+    } else {
+        ButtonKind::Disabled
+    };
+    let response = widgets::button(
+        ui,
+        kind,
+        Some(Icon::Review),
+        "Draft with Review",
+        Some("⌘⇧R"),
+    );
+    if review_ready {
+        response
+            .on_hover_text("Ask the review agent to propose these sections")
+            .clicked()
+    } else {
+        response.on_hover_text("No agent is set up yet: choose one in Settings › AI review (⌘,)");
+        false
+    }
 }
 
 /// The reader's `surface` page: `reader-max` wide, centred, 24×32 padding.

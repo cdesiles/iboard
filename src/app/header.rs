@@ -88,56 +88,59 @@ impl IboardApp {
                     .on_hover_text("Switch project");
                 self.project_menu(&response);
             }
-            Screen::Detail(path) => {
-                // The visible way out, for whoever does not know the shortcuts.
-                let hint = if self.detail_mode == DetailMode::Edit {
-                    "Back to the board (asks if unsaved)"
-                } else {
-                    "Back to the board (esc)"
-                };
-                let mut back =
-                    widgets::button(ui, ButtonKind::Back, Some(Icon::Back), "Board", Some("esc"))
-                        .on_hover_text(hint)
-                        .clicked();
-                // A 16pt `line-strong` divider between the button and the trail.
-                let (divider, _) =
-                    ui.allocate_exact_size(Vec2::new(1.0, theme::CONTROL_H), Sense::hover());
-                ui.painter().line_segment(
-                    [
-                        Pos2::new(divider.center().x, divider.center().y - 8.0),
-                        Pos2::new(divider.center().x, divider.center().y + 8.0),
-                    ],
-                    Stroke::new(1.0, p.line_strong),
-                );
-                ui.spacing_mut().item_spacing.x = theme::SPACE_1;
-                let column = self
-                    .board
-                    .columns
-                    .iter()
-                    .find(|c| c.issues.iter().any(|t| t.path == path))
-                    .map(|c| c.name.clone());
-                let title = self
-                    .board
-                    .find(&path)
-                    .map(|t| t.title.clone())
-                    .unwrap_or_else(|| file_name(&path));
-                let separator = |ui: &mut egui::Ui| {
-                    ui.label(RichText::new("/").color(p.ink_faint));
-                };
-                back |= widgets::crumb(ui, &project, theme::ui_body()).clicked();
-                if let Some(column) = column {
-                    separator(ui);
-                    back |= widgets::crumb(ui, &column, theme::ui_body()).clicked();
-                }
-                separator(ui);
-                ui.add(
-                    egui::Label::new(RichText::new(title).font(theme::ui_strong()).color(p.ink))
-                        .truncate(),
-                );
-                if back {
-                    self.back_to_board();
-                }
-            }
+            Screen::Detail(path) => self.detail_breadcrumb(ui, &path, &project),
+        }
+    }
+
+    /// An issue's trail: Board, then `project / Column / Title`, each crumb
+    /// leading back to the board.
+    fn detail_breadcrumb(&mut self, ui: &mut egui::Ui, path: &Path, project: &str) {
+        let p = theme::palette(ui);
+        // The visible way out, for whoever does not know the shortcuts.
+        let hint = if self.detail_mode == DetailMode::Edit {
+            "Back to the board (asks if unsaved)"
+        } else {
+            "Back to the board (esc)"
+        };
+        let mut back =
+            widgets::button(ui, ButtonKind::Back, Some(Icon::Back), "Board", Some("esc"))
+                .on_hover_text(hint)
+                .clicked();
+        // A 16pt `line-strong` divider between the button and the trail.
+        let (divider, _) = ui.allocate_exact_size(Vec2::new(1.0, theme::CONTROL_H), Sense::hover());
+        ui.painter().line_segment(
+            [
+                Pos2::new(divider.center().x, divider.center().y - 8.0),
+                Pos2::new(divider.center().x, divider.center().y + 8.0),
+            ],
+            Stroke::new(1.0, p.line_strong),
+        );
+        ui.spacing_mut().item_spacing.x = theme::SPACE_1;
+        let column = self
+            .board
+            .columns
+            .iter()
+            .find(|c| c.issues.iter().any(|t| t.path == *path))
+            .map(|c| c.name.clone());
+        let title = self
+            .board
+            .find(path)
+            .map(|t| t.title.clone())
+            .unwrap_or_else(|| file_name(path));
+        let separator = |ui: &mut egui::Ui| {
+            ui.label(RichText::new("/").color(p.ink_faint));
+        };
+        back |= widgets::crumb(ui, project, theme::ui_body()).clicked();
+        if let Some(column) = column {
+            separator(ui);
+            back |= widgets::crumb(ui, &column, theme::ui_body()).clicked();
+        }
+        separator(ui);
+        ui.add(
+            egui::Label::new(RichText::new(title).font(theme::ui_strong()).color(p.ink)).truncate(),
+        );
+        if back {
+            self.back_to_board();
         }
     }
 
@@ -201,171 +204,189 @@ impl IboardApp {
 
     /// The header's buttons, laid out right to left.
     pub(super) fn header_controls(&mut self, ui: &mut egui::Ui) {
-        match self.screen {
-            Screen::Board => {
-                let has_todo = self.board.todo_column().is_some();
-                let new_issue = ui.add_enabled_ui(has_todo, |ui| {
-                    widgets::button(
-                        ui,
-                        ButtonKind::Primary,
-                        Some(Icon::Plus),
-                        "New issue",
-                        Some("⌘N"),
-                    )
-                    .on_hover_text("Add an issue to Todo")
-                });
-                if new_issue.inner.clicked() {
-                    self.open_composer();
-                }
-                self.refresh_button(ui);
-                if widgets::button(ui, ButtonKind::Secondary, None, "Design", None)
-                    .on_hover_text("Browse the project's design system")
-                    .clicked()
-                {
-                    self.open_design();
-                }
-                widgets::checkbox(ui, &mut self.auto, "Auto")
-                    .on_hover_text("Reload when files change on disk, and save edits as you type");
-                self.filter_field(ui);
+        match self.screen.clone() {
+            Screen::Board => self.board_controls(ui),
+            Screen::Detail(path) => self.detail_controls(ui, &path),
+        }
+    }
+
+    /// The board's toolbar: New issue, Refresh, Design, Auto and the filter.
+    fn board_controls(&mut self, ui: &mut egui::Ui) {
+        let has_todo = self.board.todo_column().is_some();
+        let new_issue = ui.add_enabled_ui(has_todo, |ui| {
+            widgets::button(
+                ui,
+                ButtonKind::Primary,
+                Some(Icon::Plus),
+                "New issue",
+                Some("⌘N"),
+            )
+            .on_hover_text("Add an issue to Todo")
+        });
+        if new_issue.inner.clicked() {
+            self.open_composer();
+        }
+        self.refresh_button(ui);
+        if widgets::button(ui, ButtonKind::Secondary, None, "Design", None)
+            .on_hover_text("Browse the project's design system")
+            .clicked()
+        {
+            self.open_design();
+        }
+        widgets::checkbox(ui, &mut self.auto, "Auto")
+            .on_hover_text("Reload when files change on disk, and save edits as you type");
+        self.filter_field(ui);
+    }
+
+    /// An issue's toolbar: Review (Todo), Save and Discard in the Editor,
+    /// Edit, Commits (Done) and Draft design in the Reader, then the right
+    /// group.
+    fn detail_controls(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let path = path.to_path_buf();
+        let exists = self.board.find(&path).is_some();
+        let done = self
+            .board
+            .column_of(&path)
+            .map(Column::is_done)
+            .unwrap_or(false);
+        let reading = self.detail_mode == DetailMode::Preview && exists;
+        // Reviewing refines an issue, so only Todo issues offer it.
+        if self.is_todo_issue(&path) {
+            self.review_button(ui, &path);
+        }
+        // In the Editor, Save and Discard take Edit's place.
+        if self.detail_mode == DetailMode::Edit && exists {
+            if widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S")).clicked() {
+                self.save_and_preview();
             }
-            Screen::Detail(ref path) => {
-                let path = path.clone();
-                let exists = self.board.find(&path).is_some();
-                let done = self
-                    .board
-                    .column_of(&path)
-                    .map(Column::is_done)
-                    .unwrap_or(false);
-                // Reviewing refines an issue, so only Todo issues offer it.
-                if self.is_todo_issue(&path) {
-                    self.review_button(ui, &path);
-                }
-                // In the Editor, Save and Discard take Edit's place.
-                if self.detail_mode == DetailMode::Edit && exists {
-                    if widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S")).clicked()
-                    {
-                        self.save_and_preview();
-                    }
-                    if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None)
-                        .on_hover_text("Drop unsaved changes and go back to the issue")
-                        .clicked()
-                    {
-                        self.discard_edits();
-                    }
-                }
-                if self.detail_mode == DetailMode::Preview
-                    && exists
-                    && self.can_edit(&path)
-                    && widgets::button(
-                        ui,
-                        ButtonKind::Secondary,
-                        Some(Icon::Edit),
-                        "Edit",
-                        Some("E"),
-                    )
-                    .clicked()
-                {
-                    self.start_editing(&path);
-                }
-                if self.detail_mode == DetailMode::Preview && exists && done {
-                    let open = self
-                        .commits
-                        .as_ref()
-                        .is_some_and(|panel| panel.path == path);
-                    let button = widgets::button(
-                        ui,
-                        if open {
-                            ButtonKind::Open
-                        } else {
-                            ButtonKind::Secondary
-                        },
-                        Some(Icon::Commit),
-                        "Commits",
-                        None,
-                    )
-                    .on_hover_text("The git commits that name this ticket");
-                    if let Some(hash) = self.latest_commit(&path, ui.ctx()) {
-                        let p = theme::palette(ui);
-                        ui.label(
-                            RichText::new(hash)
-                                .font(egui::FontId::monospace(11.0))
-                                .color(p.ink_muted),
-                        )
-                        .on_hover_text("Newest commit naming this ticket");
-                    }
-                    if button.clicked() {
-                        self.open_commits(&path);
-                    }
-                }
-                if self.detail_mode == DetailMode::Preview
-                    && exists
-                    && !done
-                    && widgets::button(ui, ButtonKind::Secondary, None, "Draft design", None)
-                        .on_hover_text("Ask the agent for a static mockup of this change")
-                        .clicked()
-                {
-                    self.start_enrichment(&path);
-                }
-                self.refresh_button(ui);
-                // Labelled, and the one control drawn in `danger` at rest. In
-                // the Editor `Del` edits text, so the key hint goes.
-                let delete_key = (self.detail_mode == DetailMode::Preview).then_some("Del");
-                if exists
-                    && widgets::button(
-                        ui,
-                        ButtonKind::DangerOutline,
-                        Some(Icon::Trash),
-                        "Delete",
-                        delete_key,
-                    )
-                    .on_hover_text(if self.confirm_delete {
-                        "Delete this issue (asks to confirm)"
-                    } else {
-                        "Delete this issue"
-                    })
-                    .clicked()
-                {
-                    self.request_delete(path.clone());
-                }
-                // Add label sits first in the right group, before Delete.
-                if exists && self.detail_mode == DetailMode::Preview {
-                    let open = self
-                        .label_picker
-                        .as_ref()
-                        .is_some_and(|picker| picker.path == path);
-                    let add = widgets::button(
-                        ui,
-                        if open {
-                            ButtonKind::Open
-                        } else {
-                            ButtonKind::Secondary
-                        },
-                        Some(Icon::TagPlus),
-                        "Add label",
-                        Some("L"),
-                    )
-                    .on_hover_text("Add a label to this issue");
-                    set_label_anchor(ui.ctx(), &path, add.rect);
-                    if add.clicked() {
-                        self.toggle_label_picker(path.clone());
-                    }
-                }
-                if exists
-                    && done
-                    && self.detail_mode == DetailMode::Preview
-                    && widgets::button(
-                        ui,
-                        ButtonKind::Secondary,
-                        Some(Icon::Archive),
-                        "Archive",
-                        None,
-                    )
-                    .on_hover_text(format!("Move to {ARCHIVE_DIR}/"))
-                    .clicked()
-                {
-                    self.archive_issue(&path);
-                }
+            if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None)
+                .on_hover_text("Drop unsaved changes and go back to the issue")
+                .clicked()
+            {
+                self.discard_edits();
             }
+        }
+        if reading
+            && self.can_edit(&path)
+            && widgets::button(
+                ui,
+                ButtonKind::Secondary,
+                Some(Icon::Edit),
+                "Edit",
+                Some("E"),
+            )
+            .clicked()
+        {
+            self.start_editing(&path);
+        }
+        if reading && done {
+            self.commits_button(ui, &path);
+        }
+        if reading
+            && !done
+            && widgets::button(ui, ButtonKind::Secondary, None, "Draft design", None)
+                .on_hover_text("Ask the agent for a static mockup of this change")
+                .clicked()
+        {
+            self.start_enrichment(&path);
+        }
+        self.detail_right_group(ui, &path, exists, done);
+    }
+
+    /// Commits, `Open` while its popup shows, and the newest commit's hash.
+    fn commits_button(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let open = self
+            .commits
+            .as_ref()
+            .is_some_and(|panel| panel.path == *path);
+        let button = widgets::button(
+            ui,
+            if open {
+                ButtonKind::Open
+            } else {
+                ButtonKind::Secondary
+            },
+            Some(Icon::Commit),
+            "Commits",
+            None,
+        )
+        .on_hover_text("The git commits that name this ticket");
+        if let Some(hash) = self.latest_commit(path, ui.ctx()) {
+            let p = theme::palette(ui);
+            ui.label(
+                RichText::new(hash)
+                    .font(egui::FontId::monospace(11.0))
+                    .color(p.ink_muted),
+            )
+            .on_hover_text("Newest commit naming this ticket");
+        }
+        if button.clicked() {
+            self.open_commits(path);
+        }
+    }
+
+    /// The right group: Refresh, Delete, Add label in the Reader, and
+    /// Archive on Done.
+    fn detail_right_group(&mut self, ui: &mut egui::Ui, path: &Path, exists: bool, done: bool) {
+        let path = path.to_path_buf();
+        self.refresh_button(ui);
+        // Labelled, and the one control drawn in `danger` at rest. In
+        // the Editor `Del` edits text, so the key hint goes.
+        let delete_key = (self.detail_mode == DetailMode::Preview).then_some("Del");
+        if exists
+            && widgets::button(
+                ui,
+                ButtonKind::DangerOutline,
+                Some(Icon::Trash),
+                "Delete",
+                delete_key,
+            )
+            .on_hover_text(if self.confirm_delete {
+                "Delete this issue (asks to confirm)"
+            } else {
+                "Delete this issue"
+            })
+            .clicked()
+        {
+            self.request_delete(path.clone());
+        }
+        // Add label sits first in the right group, before Delete.
+        if exists && self.detail_mode == DetailMode::Preview {
+            let open = self
+                .label_picker
+                .as_ref()
+                .is_some_and(|picker| picker.path == path);
+            let add = widgets::button(
+                ui,
+                if open {
+                    ButtonKind::Open
+                } else {
+                    ButtonKind::Secondary
+                },
+                Some(Icon::TagPlus),
+                "Add label",
+                Some("L"),
+            )
+            .on_hover_text("Add a label to this issue");
+            set_label_anchor(ui.ctx(), &path, add.rect);
+            if add.clicked() {
+                self.toggle_label_picker(path.clone());
+            }
+        }
+        if exists
+            && done
+            && self.detail_mode == DetailMode::Preview
+            && widgets::button(
+                ui,
+                ButtonKind::Secondary,
+                Some(Icon::Archive),
+                "Archive",
+                None,
+            )
+            .on_hover_text(format!("Move to {ARCHIVE_DIR}/"))
+            .clicked()
+        {
+            self.archive_issue(&path);
         }
     }
 
