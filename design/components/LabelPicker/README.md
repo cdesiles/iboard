@@ -1,6 +1,6 @@
 # LabelPicker
 
-A small popover that adds labels to one issue without opening the Editor. It opens under its trigger, the card's tag-plus action or the Reader's **Add label** button (which turns `Open` while the picker shows), lists the labels already on the board, most used first, and stays open for the next label.
+A small popover that adds labels to one issue without opening the Editor. It opens under its trigger, the card's tag-plus action or the Reader's **Add label** button (which turns `Open` while the picker shows), lists the labels already on the board, most used first, and stays open for the next label. Done issues have no trigger: their labels are settled.
 
 ## Anatomy
 

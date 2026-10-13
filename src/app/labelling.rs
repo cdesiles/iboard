@@ -4,8 +4,11 @@ use super::*;
 
 impl IboardApp {
     /// Opens the LabelPicker on `path`, or closes it when it is already open
-    /// there (the trigger again).
+    /// there (the trigger again). Done issues keep the labels they have.
     pub(super) fn toggle_label_picker(&mut self, path: PathBuf) {
+        if self.is_done_issue(&path) {
+            return;
+        }
         if self
             .session
             .label_picker

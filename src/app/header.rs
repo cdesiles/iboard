@@ -334,8 +334,8 @@ impl IboardApp {
         }
     }
 
-    /// The right group: Refresh, Delete (not on Done), Add label in the
-    /// Reader, and Archive on Done.
+    /// The right group: Refresh, then Delete and Add label in the Reader, or
+    /// Archive on Done.
     fn detail_right_group(&mut self, ui: &mut egui::Ui, path: &Path, exists: bool, done: bool) {
         let path = path.to_path_buf();
         self.refresh_button(ui);
@@ -361,7 +361,7 @@ impl IboardApp {
             self.request_delete(path.clone());
         }
         // Add label sits first in the right group, before Delete.
-        if exists && self.session.detail_mode == DetailMode::Preview {
+        if exists && !done && self.session.detail_mode == DetailMode::Preview {
             let open = self
                 .session
                 .label_picker

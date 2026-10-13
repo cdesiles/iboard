@@ -431,3 +431,24 @@ fn done_cards_cannot_be_deleted() {
     assert!(app.session.confirm.is_none(), "nothing to confirm");
     assert!(file.exists());
 }
+
+/// Done issues keep the labels they have: no Add label, and `L` opens nothing.
+#[test]
+fn done_cards_cannot_be_labelled() {
+    let dir = scratch_dir("done-no-label");
+    let done = dir.join("issues/done");
+    std::fs::create_dir_all(&done).unwrap();
+    let file = done.join("01-demo.md");
+    std::fs::write(&file, "# Demo\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.session.selected = Some(file.clone());
+
+    let ctx = themed_ctx();
+    frame(&ctx, &mut app, vec![]);
+    assert!(
+        ctx.read_response(egui::Id::new(("card_add_label", &file)))
+            .is_none()
+    );
+    frame(&ctx, &mut app, vec![key(Key::L, Default::default())]);
+    assert!(app.session.label_picker.is_none());
+}
