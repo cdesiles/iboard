@@ -831,6 +831,44 @@ fn archive_all_clears_done() {
     );
 }
 
+/// Done's count gives way to "Archive all" while its header is hovered.
+#[test]
+fn hovering_the_done_header_offers_archive_all() {
+    let dir = scratch_dir("archive-all-head");
+    let done = dir.join("issues/done");
+    std::fs::create_dir_all(&done).unwrap();
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let a = done.join("a.md");
+    std::fs::write(&a, "# A\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let index = app
+        .board
+        .columns
+        .iter()
+        .position(|c| c.name.eq_ignore_ascii_case("done"))
+        .unwrap();
+    let archive_all = egui::Id::new(("archive_all", index));
+
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    assert!(ctx.read_response(archive_all).is_none(), "hidden at rest");
+    let column = ctx
+        .read_response(egui::Id::new(("column_drop", index)))
+        .unwrap()
+        .rect;
+    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
+    draw(&ctx, &mut app, vec![moved(head)]);
+    let at = ctx
+        .read_response(archive_all)
+        .expect("shown on hover")
+        .rect
+        .center();
+    draw(&ctx, &mut app, vec![moved(at)]);
+    draw(&ctx, &mut app, vec![button(at, true)]);
+    draw(&ctx, &mut app, vec![button(at, false)]);
+    assert!(!a.exists() && dir.join("issues/.archive/a.md").exists());
+}
+
 #[test]
 fn only_the_todo_column_offers_new_issues() {
     let dir = scratch_dir("new-columns");

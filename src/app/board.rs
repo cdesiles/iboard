@@ -193,7 +193,7 @@ pub(super) fn column_ui(
         |ui| {
             ui.set_width(view.width);
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            column_head(ui, view, visible.len(), &mut intents);
+            column_head(ui, view, &visible, &mut intents);
             // The composer stays at the top of Todo; the cards scroll under it.
             if let Some(composer) = composer {
                 composer_ui(ui, composer, column, &folder, &mut intents);
@@ -230,8 +230,13 @@ pub(super) fn column_ui(
 }
 
 /// The column's header: dot, uppercase name, count, Todo's `+`, and the 2pt
-/// status rule under it.
-fn column_head(ui: &mut egui::Ui, view: &ColumnView, shown: usize, intents: &mut Vec<Intent>) {
+/// status rule under it. Hovered, Done trades its count for its controls.
+fn column_head(
+    ui: &mut egui::Ui,
+    view: &ColumnView,
+    visible: &[&Issue],
+    intents: &mut Vec<Intent>,
+) {
     let p = theme::palette(ui);
     let column = view.column;
     let status = status_color(p, column);
@@ -259,6 +264,14 @@ fn column_head(ui: &mut egui::Ui, view: &ColumnView, shown: usize, intents: &mut
         {
             intents.push(Intent::Compose);
         }
+        if column.name.eq_ignore_ascii_case("done")
+            && !visible.is_empty()
+            && ui.rect_contains_pointer(head_rect)
+        {
+            done_controls(ui, view, visible, intents);
+            return;
+        }
+        let shown = visible.len();
         // Filtered: "2/6", the total in `ink-faint`.
         let mut count = LayoutJob::default();
         let part = |color| egui::TextFormat::simple(theme::meta(), color);
@@ -279,7 +292,7 @@ fn column_head(ui: &mut egui::Ui, view: &ColumnView, shown: usize, intents: &mut
     );
 }
 
-/// The column's cards (or its empty well), then Done's "Archive all".
+/// The column's cards, or its empty well.
 /// Returns each card's issue and rect, for placing a drop.
 fn column_cards(
     ui: &mut egui::Ui,
@@ -308,21 +321,32 @@ fn column_cards(
         intents.extend(action.map(|action| action.on(&issue.path)));
     }
 
-    // At the end of a session, Done can be cleared at once: the issues it
-    // lists (after the filter) go to `.archive/`.
-    if column.name.eq_ignore_ascii_case("done") && visible.len() > 1 {
-        ui.add_space(theme::SPACE_1);
-        let label = format!("Archive the {} issues above", visible.len());
-        if widgets::button(ui, ButtonKind::Secondary, Some(Icon::Archive), &label, None)
-            .on_hover_text(format!("Move them all to {ARCHIVE_DIR}/"))
-            .clicked()
-        {
-            intents.push(Intent::ArchiveAll(
-                visible.iter().map(|issue| issue.path.clone()).collect(),
-            ));
-        }
-    }
     cards
+}
+
+/// Done's header controls, shown while it is hovered: "Archive all" moves
+/// the issues it lists (after the filter) to `.archive/`.
+fn done_controls(
+    ui: &mut egui::Ui,
+    view: &ColumnView,
+    visible: &[&Issue],
+    intents: &mut Vec<Intent>,
+) {
+    let noun = if visible.len() == 1 {
+        "issue"
+    } else {
+        "issues"
+    };
+    let hover = format!(
+        "Archive all: move the {} {noun} to {ARCHIVE_DIR}/",
+        visible.len()
+    );
+    let id = egui::Id::new(("archive_all", view.index));
+    if widgets::icon_button(ui, Icon::Archive, id, &hover, widgets::Tone::Plain).clicked() {
+        intents.push(Intent::ArchiveAll(
+            visible.iter().map(|issue| issue.path.clone()).collect(),
+        ));
+    }
 }
 
 /// One card on the board, in its look: selected, just written, or plain.

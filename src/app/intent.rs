@@ -12,7 +12,7 @@ pub(super) enum Intent {
     ShowReview(PathBuf),
     Delete(PathBuf),
     Archive(PathBuf),
-    /// "Archive the issues above", at the foot of Done.
+    /// "Archive all", in Done's hovered header.
     ArchiveAll(Vec<PathBuf>),
     /// Open or close the LabelPicker on the issue.
     ToggleLabels(PathBuf),

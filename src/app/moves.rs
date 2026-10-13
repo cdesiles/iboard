@@ -308,7 +308,7 @@ impl IboardApp {
         }
     }
 
-    /// "Archive all" at the foot of Done: moves every listed issue to
+    /// "Archive all" in Done's header: moves every listed issue to
     /// `.archive/`, then reads the board once, and says how many went.
     pub(super) fn archive_all(&mut self, paths: &[PathBuf]) {
         let archived = paths
