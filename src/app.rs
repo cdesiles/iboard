@@ -136,6 +136,8 @@ enum CardAction {
     Delete,
     /// Move a done issue to `.archive`.
     Archive,
+    /// Show a done issue's diff: every commit that closed it.
+    Diff,
     /// Add the card's label to the filter.
     FilterLabel(String),
     /// Run the AI review (selected Todo card).

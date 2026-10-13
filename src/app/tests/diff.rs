@@ -114,3 +114,26 @@ fn a_commit_opens_as_a_diff_and_finds_a_term() {
     harness.run_steps(2);
     assert!(matches!(&harness.state().1.session.screen, Screen::Detail(path) if *path == issue));
 }
+
+/// A Done card's diff action opens every commit that closed it.
+#[test]
+fn a_done_card_opens_its_diff() {
+    let (_dir, issue, hash) = closed_issue("card-diff");
+    let mut app = IboardApp::from_located(discovery::locate(&issue).unwrap());
+    app.session.selected = Some(issue.clone());
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let at = ctx
+        .read_response(egui::Id::new(("card_diff", &issue)))
+        .expect("Done cards offer their diff")
+        .rect
+        .center();
+    draw(&ctx, &mut app, vec![moved(at)]);
+    draw(&ctx, &mut app, vec![button(at, true)]);
+    draw(&ctx, &mut app, vec![button(at, false)]);
+    assert!(matches!(app.session.screen, Screen::Diff));
+    assert!(until(|| {
+        app.session.diff.as_mut().unwrap().poll();
+        app.session.diff.as_ref().unwrap().summary() == format!("{hash} · 1 file · +2 −0")
+    }));
+}

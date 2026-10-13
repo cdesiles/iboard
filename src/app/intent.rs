@@ -12,6 +12,8 @@ pub(super) enum Intent {
     ShowReview(PathBuf),
     Delete(PathBuf),
     Archive(PathBuf),
+    /// A done issue's diff, from its card.
+    Diff(PathBuf),
     /// "Archive all", in Done's hovered header.
     ArchiveAll(Vec<PathBuf>),
     /// Open or close the LabelPicker on the issue.
@@ -64,6 +66,7 @@ impl CardAction {
             CardAction::Open => Intent::Open(path),
             CardAction::Delete => Intent::Delete(path),
             CardAction::Archive => Intent::Archive(path),
+            CardAction::Diff => Intent::Diff(path),
             CardAction::FilterLabel(label) => Intent::FilterBy(label),
             CardAction::Review => Intent::Review(path),
             CardAction::ShowReview => Intent::ShowReview(path),
@@ -90,6 +93,7 @@ impl IboardApp {
                 Intent::ShowReview(path) => self.show_past_review(path),
                 Intent::Delete(path) => self.request_delete(path),
                 Intent::Archive(path) => self.archive_issue(&path),
+                Intent::Diff(path) => self.show_issue_diff(&path),
                 Intent::ArchiveAll(paths) => self.archive_all(&paths),
                 Intent::ToggleLabels(path) => self.toggle_label_picker(path),
                 Intent::FilterBy(label) => self.filter_bar.filter.pick(&label),

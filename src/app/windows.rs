@@ -340,6 +340,24 @@ impl IboardApp {
             list,
         });
     }
+
+    /// Opens the Diff screen on every commit that closed `path`, newest
+    /// first; or says there is none.
+    pub(super) fn show_issue_diff(&mut self, path: &Path) {
+        let dir = path.parent().unwrap_or(&self.board.root).to_path_buf();
+        let hashes: Vec<String> = commits::for_file(&dir, &file_name(path))
+            .into_iter()
+            .map(|commit| commit.hash)
+            .collect();
+        if hashes.is_empty() {
+            self.session.notice = Some((
+                format!("No commit names {}", file_name(path)),
+                Instant::now(),
+            ));
+        } else {
+            self.open_diff(path, hashes);
+        }
+    }
 }
 
 /// The commits naming a ticket, newest first: hash, day and subject; or
