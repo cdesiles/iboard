@@ -334,8 +334,8 @@ impl IboardApp {
         }
     }
 
-    /// The right group: Refresh, Delete, Add label in the Reader, and
-    /// Archive on Done.
+    /// The right group: Refresh, Delete (not on Done), Add label in the
+    /// Reader, and Archive on Done.
     fn detail_right_group(&mut self, ui: &mut egui::Ui, path: &Path, exists: bool, done: bool) {
         let path = path.to_path_buf();
         self.refresh_button(ui);
@@ -343,6 +343,7 @@ impl IboardApp {
         // the Editor `Del` edits text, so the key hint goes.
         let delete_key = (self.session.detail_mode == DetailMode::Preview).then_some("Del");
         if exists
+            && !done
             && widgets::button(
                 ui,
                 ButtonKind::DangerOutline,

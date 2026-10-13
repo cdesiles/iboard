@@ -403,3 +403,31 @@ fn the_card_delete_icon_asks_to_delete_without_opening() {
         "and does not open the issue"
     );
 }
+
+/// Done issues are archived, never deleted: no trash icon, and `Del` on the
+/// selected card does nothing.
+#[test]
+fn done_cards_cannot_be_deleted() {
+    let dir = scratch_dir("done-no-delete");
+    let done = dir.join("issues/done");
+    std::fs::create_dir_all(&done).unwrap();
+    let file = done.join("01-demo.md");
+    std::fs::write(&file, "# Demo\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.session.selected = Some(file.clone());
+
+    let ctx = themed_ctx();
+    frame(&ctx, &mut app, vec![]);
+    assert!(
+        ctx.read_response(egui::Id::new(("card_archive", &file)))
+            .is_some()
+    );
+    assert!(
+        ctx.read_response(egui::Id::new(("card_delete", &file)))
+            .is_none()
+    );
+
+    frame(&ctx, &mut app, vec![key(Key::Delete, Default::default())]);
+    assert!(app.session.confirm.is_none(), "nothing to confirm");
+    assert!(file.exists());
+}

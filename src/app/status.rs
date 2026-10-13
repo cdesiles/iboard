@@ -120,7 +120,7 @@ impl IboardApp {
                 ("Del", "delete"),
             ]
         } else if done {
-            vec![("↩", "open"), ("A", "archive"), ("Del", "delete")]
+            vec![("↩", "open"), ("A", "archive")]
         } else {
             vec![("↩", "open"), ("Del", "delete")]
         }

@@ -779,9 +779,9 @@ fn selection_follows_the_filter_and_survives_opening() {
 #[test]
 fn with_asking_off_delete_is_immediate_and_command_z_restores() {
     let dir = scratch_dir("delete-no-ask");
-    let done = dir.join("issues/done");
-    std::fs::create_dir_all(&done).unwrap();
-    let file = done.join("sidebar.md");
+    let doing = dir.join("issues/doing");
+    std::fs::create_dir_all(&doing).unwrap();
+    let file = doing.join("sidebar.md");
     std::fs::write(&file, "# Sidebar\n\nCollapse it.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     assert!(app.confirm_delete, "asking is on by default");

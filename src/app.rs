@@ -270,7 +270,7 @@ enum DockDrop {
 }
 
 /// The DropZones dock: 56pt zones with 12pt padding and a 1pt rule above.
-/// Archive shows for Done cards only; otherwise Delete alone spans the dock.
+/// A Done card gets Archive alone, any other Delete alone: either spans it.
 const DOCK_H: f32 = 56.0 + 2.0 * 12.0 + 1.0;
 /// How long the dock takes to slide in or out.
 const DOCK_SLIDE: f32 = 0.14;
@@ -807,6 +807,10 @@ impl IboardApp {
         self.board
             .column_of(path)
             .is_some_and(|column| column.accepts_new_issues())
+    }
+
+    fn is_done_issue(&self, path: &Path) -> bool {
+        self.board.column_of(path).is_some_and(Column::is_done)
     }
 
     /// A path relative to the issues folder, as the file system names it.

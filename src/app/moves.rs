@@ -185,8 +185,12 @@ impl IboardApp {
 
     /// Every delete lands here: the trash icons, the Delete key and button,
     /// and the Delete drop zone. It asks first unless Settings › General says
-    /// not to; then the file goes at once and `⌘Z` can bring it back.
+    /// not to; then the file goes at once and `⌘Z` can bring it back. Done
+    /// issues are archived, never deleted.
     pub(super) fn request_delete(&mut self, path: PathBuf) {
+        if self.is_done_issue(&path) {
+            return;
+        }
         if self.confirm_delete {
             self.session.confirm = Some(Confirm::Delete(path));
         } else {

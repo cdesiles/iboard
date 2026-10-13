@@ -44,33 +44,18 @@ impl IboardApp {
                     dock.min + Vec2::new(theme::SPACE_5, 1.0 + theme::SPACE_4),
                     dock.max - Vec2::new(theme::SPACE_5, theme::SPACE_4),
                 );
-                // Archive is a Done-only exit: a card from another column only
-                // gets Delete, which then spans the whole dock.
-                let zones: Vec<(Rect, DropZone)> = if archivable {
-                    let half = (inner.width() - theme::SPACE_5) / 2.0;
-                    vec![
-                        (
-                            Rect::from_min_size(inner.min, Vec2::new(half, inner.height())),
-                            DropZone::Archive,
-                        ),
-                        (
-                            Rect::from_min_size(
-                                Pos2::new(inner.max.x - half, inner.min.y),
-                                Vec2::new(half, inner.height()),
-                            ),
-                            DropZone::Delete,
-                        ),
-                    ]
+                // Done cards are archived, never deleted; the others are
+                // deleted, never archived.
+                let zone = if archivable {
+                    DropZone::Archive
                 } else {
-                    vec![(inner, DropZone::Delete)]
+                    DropZone::Delete
                 };
-                for (rect, zone) in zones {
-                    if let Some(path) = drop_zone(ui, rect, zone, self.confirm_delete) {
-                        dropped = Some(match zone {
-                            DropZone::Archive => DockDrop::Archive(path),
-                            DropZone::Delete => DockDrop::Delete(path),
-                        });
-                    }
+                if let Some(path) = drop_zone(ui, inner, zone, self.confirm_delete) {
+                    dropped = Some(match zone {
+                        DropZone::Archive => DockDrop::Archive(path),
+                        DropZone::Delete => DockDrop::Delete(path),
+                    });
                 }
             });
         if shown < 1.0 {

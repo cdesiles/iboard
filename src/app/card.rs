@@ -298,9 +298,8 @@ fn card_meta(
     let p = theme::palette(ui);
     let mut action = None;
     let mut action_rects = Vec::new();
-    // Add label, Review and Delete, plus Archive on Done: 70pt, or 94pt on
-    // Done.
-    let slots = if issue.done_at.is_some() { 4.0 } else { 3.0 };
+    // Add label, Review and Delete, or Add label and Archive on Done: 70pt.
+    let slots = 3.0;
     let slot = Vec2::new(
         slots * widgets::CARD_ACTION + (slots - 1.0) * theme::SPACE_1,
         widgets::CARD_ACTION,
@@ -348,7 +347,7 @@ fn card_meta(
     (action, action_rects)
 }
 
-/// The icon actions, right to left: Delete, Archive on Done, Review on the
+/// The icon actions, right to left: Delete, or Archive on Done, Review on the
 /// selected Todo card, and Add label first of the cluster.
 fn card_actions(
     ui: &mut egui::Ui,
@@ -366,15 +365,16 @@ fn card_actions(
         }
         response
     };
-    button(
-        ui,
-        Icon::Trash,
-        "card_delete",
-        "Delete  Del",
-        widgets::Tone::Danger,
-        CardAction::Delete,
-    );
-    if issue.done_at.is_some() {
+    if issue.done_at.is_none() {
+        button(
+            ui,
+            Icon::Trash,
+            "card_delete",
+            "Delete  Del",
+            widgets::Tone::Danger,
+            CardAction::Delete,
+        );
+    } else {
         button(
             ui,
             Icon::Archive,
