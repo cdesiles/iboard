@@ -58,6 +58,7 @@ impl IboardApp {
                             new_card: new_card.as_deref(),
                             selected: selected.as_deref(),
                             scroll_to_selected,
+                            picked: &self.session.picked,
                             root: &self.board.root,
                             labels: &self.labels,
                             past_reviews: &self.past_reviews,
@@ -223,7 +224,8 @@ pub(super) fn column_ui(
 }
 
 /// The column's header: dot, uppercase name, count, Todo's `+`, and the 2pt
-/// status rule under it. Hovered, the count gives way to the controls.
+/// status rule under it. Hovered, the count gives way to the controls. A
+/// column holding picked cards offers to clear the multi-selection.
 fn column_head(
     ui: &mut egui::Ui,
     view: &ColumnView,
@@ -256,6 +258,16 @@ fn column_head(
                 .clicked()
         {
             intents.push(Intent::Compose);
+        }
+        if visible
+            .iter()
+            .any(|issue| view.picked.contains(&issue.path))
+        {
+            let id = egui::Id::new(("clear_picked", view.index));
+            let hover = "Clear selection  esc";
+            if widgets::icon_button(ui, Icon::Close, id, hover, widgets::Tone::Plain).clicked() {
+                intents.push(Intent::ClearPicked);
+            }
         }
         if ui.rect_contains_pointer(head_rect) {
             if column.name.eq_ignore_ascii_case("done") && !visible.is_empty() {
@@ -353,6 +365,8 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
         CardLook::Selected {
             scroll: view.scroll_to_selected,
         }
+    } else if view.picked.contains(&issue.path) {
+        CardLook::Selected { scroll: false }
     } else if view.new_card == Some(issue.path.as_path()) {
         CardLook::Fresh
     } else {

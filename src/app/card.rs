@@ -2,9 +2,10 @@
 
 use super::*;
 
-/// Draws one issue card. A single click reads it; dragging the card carries it
-/// to another column, with a copy following the cursor. Returns the action the
-/// card asked for (if any) and the rect it occupies.
+/// Draws one issue card. A single click reads it, a shift-click picks it into
+/// the multi-selection; dragging the card carries it to another column, with a
+/// copy following the cursor. Returns the action the card asked for (if any)
+/// and the rect it occupies.
 pub(super) fn issue_card(
     ui: &mut egui::Ui,
     issue: &Issue,
@@ -87,8 +88,13 @@ pub(super) fn issue_card(
     }
 
     card_edge(ui, &response, look);
-    let clicked_open = (response.clicked() || response.double_clicked()) && !over_action;
-    let action = body.action.or(clicked_open.then_some(CardAction::Open));
+    let clicked = (response.clicked() || response.double_clicked()) && !over_action;
+    let shift = ui.input(|i| i.modifiers.shift);
+    let action = body.action.or(clicked.then_some(if shift {
+        CardAction::Pick
+    } else {
+        CardAction::Open
+    }));
 
     (action, response.rect)
 }

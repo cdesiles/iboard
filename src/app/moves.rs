@@ -31,14 +31,7 @@ impl IboardApp {
                 {
                     editor.path = target.clone();
                 }
-                if let Screen::Detail(open) = &mut self.session.screen
-                    && open == path
-                {
-                    *open = target.clone();
-                }
-                if self.session.selected.as_deref() == Some(path) {
-                    self.session.selected = Some(target.clone());
-                }
+                self.apply_renames(&[(path.to_path_buf(), target.clone())]);
                 self.refresh();
                 Some(target)
             }
@@ -53,22 +46,30 @@ impl IboardApp {
     /// file-name ordered column (Todo, Ready), renumber the files so the drop
     /// position becomes the priority. `anchor` is the card the dropped one
     /// lands in front of, or `None` for the end.
+    /// A picked card carries the whole multi-selection with it, in board
+    /// order, landing together in front of `anchor`.
     pub(super) fn place_issue(&mut self, path: &Path, target_dir: &Path, anchor: Option<PathBuf>) {
-        let same_dir = path.parent() == Some(target_dir);
+        let paths = self.selection_of(path);
         let orderable = discovery::is_orderable_column(target_dir);
-        if same_dir && !orderable {
+        if !orderable && paths.iter().all(|path| path.parent() == Some(target_dir)) {
             return;
         }
-        let moved = if same_dir {
-            path.to_path_buf()
-        } else {
-            match self.move_issue(path, target_dir) {
-                Some(moved) => moved,
-                None => return,
-            }
-        };
-        if orderable {
+        let moved: Vec<PathBuf> = paths
+            .iter()
+            .filter_map(|path| self.move_issue(path, target_dir))
+            .collect();
+        if orderable && !moved.is_empty() {
             self.reorder_column(target_dir, &moved, anchor.as_deref());
+        }
+    }
+
+    /// A drop on a column tab: the issue, or the multi-selection it is in,
+    /// moves to the end of `to`.
+    pub(super) fn move_issues(&mut self, path: &Path, to: &Path) {
+        for path in self.selection_of(path) {
+            if path.parent() != Some(to) {
+                self.move_issue(&path, to);
+            }
         }
     }
 
@@ -98,45 +99,39 @@ impl IboardApp {
     }
 
     /// Renumbers an ordered column so `moved` sits in front of `anchor`, keeping
-    /// every other issue in its current order. Returns `moved`'s path after the
-    /// renumbering, which may have changed its prefix.
-    pub(super) fn reorder_column(
-        &mut self,
-        dir: &Path,
-        moved: &Path,
-        anchor: Option<&Path>,
-    ) -> Option<PathBuf> {
-        if anchor == Some(moved) {
-            return Some(moved.to_path_buf());
+    /// every other issue in its current order. An anchor among the moved
+    /// gives way to the next issue that is not.
+    pub(super) fn reorder_column(&mut self, dir: &Path, moved: &[PathBuf], anchor: Option<&Path>) {
+        if moved.len() == 1 && anchor == Some(moved[0].as_path()) {
+            return;
         }
         self.refresh();
-        let column = self
+        let Some(column) = self
             .board
             .columns
             .iter()
-            .find(|column| column.dir.as_path() == dir)?;
-        let mut order: Vec<PathBuf> = column.issues.iter().map(|t| t.path.clone()).collect();
-        order.retain(|path| path != moved);
-        match anchor.and_then(|anchor| order.iter().position(|path| path == anchor)) {
-            Some(index) => order.insert(index, moved.to_path_buf()),
-            None => order.push(moved.to_path_buf()),
-        }
-        let result = match discovery::renumber(dir, &order) {
-            Ok(renames) => {
-                let renamed = renames
-                    .iter()
-                    .find(|(old, _)| old == moved)
-                    .map(|(_, new)| new.clone());
-                self.apply_renames(&renames);
-                renamed
-            }
-            Err(err) => {
-                self.error = Some(err);
-                None
-            }
+            .find(|column| column.dir.as_path() == dir)
+        else {
+            return;
         };
+        let all: Vec<PathBuf> = column.issues.iter().map(|t| t.path.clone()).collect();
+        let anchor = anchor
+            .and_then(|anchor| all.iter().position(|path| path == anchor))
+            .and_then(|at| all[at..].iter().find(|path| !moved.contains(path)));
+        let mut order: Vec<PathBuf> = all
+            .iter()
+            .filter(|path| !moved.contains(path))
+            .cloned()
+            .collect();
+        let at = anchor
+            .and_then(|anchor| order.iter().position(|path| path == anchor))
+            .unwrap_or(order.len());
+        order.splice(at..at, moved.iter().cloned());
+        match discovery::renumber(dir, &order) {
+            Ok(renames) => self.apply_renames(&renames),
+            Err(err) => self.error = Some(err),
+        }
         self.refresh();
-        Some(result.unwrap_or_else(|| moved.to_path_buf()))
     }
 
     /// Follows renamed files in everything that holds an issue: the
@@ -151,11 +146,12 @@ impl IboardApp {
             if let Some(selected) = self.session.selected.as_mut() {
                 follow(selected);
             }
+            self.session.picked.iter_mut().for_each(follow);
             if let Screen::Detail(open) = &mut self.session.screen {
                 follow(open);
             }
-            if let Some(Confirm::Delete(path)) = self.session.confirm.as_mut() {
-                follow(path);
+            if let Some(Confirm::Delete(paths)) = self.session.confirm.as_mut() {
+                paths.iter_mut().for_each(follow);
             }
             if let Some((path, _)) = self.session.new_card.as_mut() {
                 follow(path);
@@ -187,26 +183,51 @@ impl IboardApp {
     /// and the Delete drop zone. It asks first unless Settings › General says
     /// not to; then the file goes at once and `⌘Z` can bring it back. Done
     /// issues are archived, never deleted.
+    /// A picked issue takes the whole multi-selection with it.
     pub(super) fn request_delete(&mut self, path: PathBuf) {
-        if self.is_done_issue(&path) {
+        let paths: Vec<PathBuf> = self
+            .selection_of(&path)
+            .into_iter()
+            .filter(|path| !self.is_done_issue(path))
+            .collect();
+        if paths.is_empty() {
             return;
         }
         if self.confirm_delete {
-            self.session.confirm = Some(Confirm::Delete(path));
-        } else {
-            let content = std::fs::read(&path).unwrap_or_default();
-            if let Some(trashed) = self.delete_issue(&path) {
-                self.session.notice = Some((
-                    format!("Moved {} to the Trash", self.relative(&path)),
-                    Instant::now(),
-                ));
-                self.session.undo = Some(Undo::Deleted(Deleted {
+            self.session.confirm = Some(Confirm::Delete(paths));
+            return;
+        }
+        let deleted: Vec<Deleted> = paths
+            .into_iter()
+            .filter_map(|path| {
+                let content = std::fs::read(&path).unwrap_or_default();
+                let trashed = self.delete_issue(&path)?;
+                Some(Deleted {
                     path,
                     trashed,
                     content,
                     at: Instant::now(),
-                }));
-            }
+                })
+            })
+            .collect();
+        if !deleted.is_empty() {
+            self.session.notice = Some((self.trashed_notice(&deleted), Instant::now()));
+            self.session.undo = Some(Undo::Deleted(deleted));
+        }
+    }
+
+    /// "Moved todo/a.md to the Trash", or how many went.
+    pub(super) fn trashed_notice(&self, deleted: &[Deleted]) -> String {
+        match deleted {
+            [one] => format!("Moved {} to the Trash", self.relative(&one.path)),
+            many => format!("Moved {} issues to the Trash", many.len()),
+        }
+    }
+
+    /// The confirmed delete: every issue the dialog listed.
+    pub(super) fn delete_issues(&mut self, paths: &[PathBuf]) {
+        for path in paths {
+            self.delete_issue(path);
         }
     }
 
@@ -219,7 +240,9 @@ impl IboardApp {
             .take()
             .filter(|undo| undo.at().elapsed() < UNDO_FOR)
         {
-            Some(Undo::Deleted(deleted)) => self.undo_delete(deleted),
+            Some(Undo::Deleted(deleted)) => deleted
+                .into_iter()
+                .for_each(|deleted| self.undo_delete(deleted)),
             Some(Undo::Split(split)) => self.undo_split(split),
             None => {}
         }
@@ -283,16 +306,7 @@ impl IboardApp {
             Ok(trashed) => {
                 self.session.notice =
                     Some((format!("Deleted {}", file_name(path)), Instant::now()));
-                if self.session.selected.as_deref() == Some(path) {
-                    self.session.selected = None;
-                }
-                if self.session.editor.as_ref().is_some_and(|e| e.path == path) {
-                    self.session.editor = None;
-                }
-                if matches!(&self.session.screen, Screen::Detail(open) if open == path) {
-                    self.session.detail_mode = DetailMode::Preview;
-                    self.session.screen = Screen::Board;
-                }
+                self.let_go(path);
                 self.refresh();
                 Some(trashed)
             }
@@ -305,8 +319,16 @@ impl IboardApp {
 
     /// Moves a done issue out of the board into `issues/.archive`, which
     /// discovery ignores. Never overwrites an archived file.
+    /// A picked issue takes the done issues of the multi-selection with it.
     pub(super) fn archive_issue(&mut self, path: &Path) {
-        if self.move_to_archive(path).is_some() {
+        let paths = self.selection_of(path);
+        if paths.len() > 1 {
+            let done: Vec<PathBuf> = paths
+                .into_iter()
+                .filter(|path| self.is_done_issue(path))
+                .collect();
+            self.archive_all(&done);
+        } else if self.move_to_archive(path).is_some() {
             self.session.notice = Some((format!("Archived {}", file_name(path)), Instant::now()));
             self.refresh();
         }
@@ -351,9 +373,17 @@ impl IboardApp {
             self.error = Some(format!("Couldn't archive {}: {err}", self.relative(path)));
             return None;
         }
+        self.let_go(path);
+        Some(target)
+    }
+
+    /// Lets go of an issue that left the board: the selections, the editor
+    /// and the reader.
+    fn let_go(&mut self, path: &Path) {
         if self.session.selected.as_deref() == Some(path) {
             self.session.selected = None;
         }
+        self.session.picked.retain(|picked| picked != path);
         if self.session.editor.as_ref().is_some_and(|e| e.path == path) {
             self.session.editor = None;
         }
@@ -361,7 +391,6 @@ impl IboardApp {
             self.session.detail_mode = DetailMode::Preview;
             self.session.screen = Screen::Board;
         }
-        Some(target)
     }
 
     /// Moves a just-composed ticket to position 1, once the pointer has settled.
@@ -386,6 +415,6 @@ impl IboardApp {
         let Some(anchor) = anchor else {
             return;
         };
-        self.reorder_column(&dir, &path, Some(&anchor));
+        self.reorder_column(&dir, &[path], Some(&anchor));
     }
 }

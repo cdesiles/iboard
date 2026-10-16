@@ -63,9 +63,7 @@ impl IboardApp {
         }
         if let Some(undo) = self.session.undo.as_ref().filter(|_| self.can_undo()) {
             let text = match undo {
-                Undo::Deleted(deleted) => {
-                    format!("Moved {} to the Trash", self.relative(&deleted.path))
-                }
+                Undo::Deleted(deleted) => self.trashed_notice(deleted),
                 Undo::Split(split) => format!(
                     "Split {} into {} tickets",
                     file_name(&split.original),

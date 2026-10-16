@@ -70,66 +70,58 @@ impl IboardApp {
         }
     }
 
-    /// Writes `label` into the picker's issue, then reloads so the pill shows
-    /// on the card and in the Reader.
+    /// Writes `label` into the picker's issue, or every picked issue when it
+    /// is one of them, then reloads so the pill shows on the cards and in the
+    /// Reader.
     pub(super) fn add_label(&mut self, label: &str, now: f64) {
-        let Some(path) = self
-            .session
-            .label_picker
-            .as_ref()
-            .map(|picker| picker.path.clone())
-        else {
-            return;
-        };
-        let shown = path
-            .strip_prefix(&self.board.root)
-            .unwrap_or(&path)
-            .display()
-            .to_string();
-        match labels::add_label_to_file(&path, label) {
-            Ok(_) => {
-                self.refresh();
-                if let Some(picker) = self.session.label_picker.as_mut() {
-                    picker.added(label.to_string(), shown, now);
-                }
-            }
-            Err(message) => {
-                if let Some(picker) = self.session.label_picker.as_mut() {
-                    picker.failed(message);
-                }
-            }
+        if let Some(shown) = self.relabel(|path| labels::add_label_to_file(path, label))
+            && let Some(picker) = self.session.label_picker.as_mut()
+        {
+            picker.added(label.to_string(), shown, now);
         }
     }
 
-    /// Takes `label` off the picker's issue, then reloads so the pill goes
-    /// from the card and the Reader.
+    /// Takes `label` off the picker's issue, or every picked issue when it is
+    /// one of them, then reloads so the pill goes from the cards and the
+    /// Reader.
     pub(super) fn remove_label(&mut self, label: &str, now: f64) {
-        let Some(path) = self
-            .session
-            .label_picker
-            .as_ref()
-            .map(|picker| picker.path.clone())
-        else {
-            return;
-        };
-        let shown = path
-            .strip_prefix(&self.board.root)
-            .unwrap_or(&path)
-            .display()
-            .to_string();
-        match labels::remove_label_from_file(&path, label) {
-            Ok(_) => {
-                self.refresh();
-                if let Some(picker) = self.session.label_picker.as_mut() {
-                    picker.removed(label.to_string(), shown, now);
-                }
-            }
-            Err(message) => {
-                if let Some(picker) = self.session.label_picker.as_mut() {
-                    picker.failed(message);
-                }
+        if let Some(shown) = self.relabel(|path| labels::remove_label_from_file(path, label))
+            && let Some(picker) = self.session.label_picker.as_mut()
+        {
+            picker.removed(label.to_string(), shown, now);
+        }
+    }
+
+    /// Rewrites the issues the picker acts on with `write` (done ones keep
+    /// their labels), and names them for its confirmation; `None` when nothing could be written.
+    fn relabel<T>(&mut self, write: impl Fn(&Path) -> Result<T, String>) -> Option<String> {
+        let path = self.session.label_picker.as_ref()?.path.clone();
+        let paths: Vec<PathBuf> = self
+            .selection_of(&path)
+            .into_iter()
+            .filter(|path| !self.is_done_issue(path))
+            .collect();
+        let mut failure = None;
+        for path in &paths {
+            if let Err(message) = write(path) {
+                failure = Some(message);
             }
         }
+        self.refresh();
+        if let Some(message) = failure {
+            if let Some(picker) = self.session.label_picker.as_mut() {
+                picker.failed(message);
+            }
+            return None;
+        }
+        Some(match paths.as_slice() {
+            [one] => one
+                .strip_prefix(&self.board.root)
+                .unwrap_or(one)
+                .display()
+                .to_string(),
+            many => format!("{} issues", many.len()),
+        })
     }
 
     /// Rewrites every issue that carries a renamed label, in the order the

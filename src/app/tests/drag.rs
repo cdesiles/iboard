@@ -194,7 +194,7 @@ fn dropping_a_card_on_delete_asks_first() {
     drag_card_to_zone(&mut app, &file, Some("drop_zone_delete"));
 
     assert!(
-        matches!(&app.session.confirm, Some(Confirm::Delete(path)) if *path == file),
+        matches!(&app.session.confirm, Some(Confirm::Delete(paths)) if *paths == [file.clone()]),
         "the drop opens the confirmation"
     );
     assert!(file.exists(), "nothing is removed until confirmed");

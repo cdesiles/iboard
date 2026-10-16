@@ -132,6 +132,8 @@ enum ProjectChoice {
 enum CardAction {
     /// Open the issue in the reader.
     Open,
+    /// Shift-click: add the issue to the multi-selection, or take it out.
+    Pick,
     /// Delete the issue's file.
     Delete,
     /// Move a done issue to `.archive`.
@@ -218,7 +220,7 @@ impl PastReview {
 /// A destructive action waiting for confirmation.
 #[derive(Clone)]
 enum Confirm {
-    Delete(PathBuf),
+    Delete(Vec<PathBuf>),
 }
 
 /// Which half of the detail view is showing.
@@ -301,14 +303,14 @@ struct CommitsPanel {
 /// An issue deleted without asking, kept so `⌘Z` can put it back.
 /// What `⌘Z` on the board can still take back.
 enum Undo {
-    Deleted(Deleted),
+    Deleted(Vec<Deleted>),
     Split(split::SplitDone),
 }
 
 impl Undo {
     fn at(&self) -> Instant {
         match self {
-            Undo::Deleted(deleted) => deleted.at,
+            Undo::Deleted(deleted) => deleted.first().map_or_else(Instant::now, |d| d.at),
             Undo::Split(split) => split.at,
         }
     }
@@ -566,6 +568,9 @@ struct Session {
     selected: Option<PathBuf>,
     /// Scroll the selected card into view on the next frame.
     scroll_to_selected: bool,
+    /// The cards shift-clicked together; their actions and drags apply to
+    /// all of them.
+    picked: Vec<PathBuf>,
     /// How far a two-finger swipe to the right has gone; `None` until the
     /// fingers lift after one went back.
     swipe: Option<f32>,
@@ -604,6 +609,7 @@ impl Default for Session {
             notes: None,
             selected: None,
             scroll_to_selected: false,
+            picked: Vec::new(),
             swipe: Some(0.0),
             focus_editor: false,
             label_picker: None,
@@ -881,8 +887,8 @@ impl IboardApp {
                 }
             });
         self.label_picker_ui(ui);
-        if let Some(Confirm::Delete(path)) = self.session.confirm.clone() {
-            self.confirm_dialog(ui, &path);
+        if let Some(Confirm::Delete(paths)) = self.session.confirm.clone() {
+            self.confirm_dialog(ui, &paths);
         }
         self.config_window(ui);
         self.design_window(ui);
@@ -941,6 +947,8 @@ struct ColumnView<'a> {
     selected: Option<&'a Path>,
     /// Scroll the selected card into view this frame.
     scroll_to_selected: bool,
+    /// The multi-selection.
+    picked: &'a [PathBuf],
     root: &'a Path,
     /// The label colours, for the chip on each card.
     labels: &'a Labels,
@@ -973,6 +981,7 @@ struct FocusGrid<'a> {
     can_review: bool,
     selected: Option<&'a Path>,
     scroll_to_selected: bool,
+    picked: &'a [PathBuf],
     new_card: Option<&'a Path>,
 }
 

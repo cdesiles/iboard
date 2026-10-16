@@ -6,6 +6,10 @@ use super::*;
 /// One thing a view asked for.
 pub(super) enum Intent {
     Open(PathBuf),
+    /// Shift-click: the issue joins or leaves the multi-selection.
+    Pick(PathBuf),
+    /// The column header's "Clear selection".
+    ClearPicked,
     /// Open the issue and run the AI review on it.
     Review(PathBuf),
     /// Reopen the issue's last review, from its card's verdict pill.
@@ -64,6 +68,7 @@ impl CardAction {
         let path = path.to_path_buf();
         match self {
             CardAction::Open => Intent::Open(path),
+            CardAction::Pick => Intent::Pick(path),
             CardAction::Delete => Intent::Delete(path),
             CardAction::Archive => Intent::Archive(path),
             CardAction::Diff => Intent::Diff(path),
@@ -86,6 +91,11 @@ impl IboardApp {
         for intent in intents {
             match intent {
                 Intent::Open(path) => self.open_issue(path),
+                Intent::Pick(path) => self.pick(path),
+                Intent::ClearPicked => {
+                    self.session.picked.clear();
+                    self.session.selected = None;
+                }
                 Intent::Review(path) => {
                     self.open_issue(path.clone());
                     self.start_review(&path, false);
@@ -111,11 +121,7 @@ impl IboardApp {
                     column,
                     anchor,
                 } => self.place_issue(&path, &column, anchor),
-                Intent::Move { path, to } => {
-                    if path.parent() != Some(to.as_path()) {
-                        self.move_issue(&path, &to);
-                    }
-                }
+                Intent::Move { path, to } => self.move_issues(&path, &to),
                 Intent::FocusColumn(dir) => self.focus_column(dir),
                 Intent::UnfocusColumn => self.unfocus_column(),
                 Intent::Sort { column, sort } => {

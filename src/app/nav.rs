@@ -17,6 +17,7 @@ impl IboardApp {
             self.session.composer = None;
         }
         self.cancel_review();
+        self.session.picked.clear();
         self.session.selected = Some(path.clone());
         self.session.screen = Screen::Detail(path);
         self.session.detail_mode = DetailMode::Preview;
@@ -212,6 +213,41 @@ impl IboardApp {
             .selected
             .clone()
             .filter(|path| self.board.find(path).is_some())
+    }
+
+    /// Shift-click: a picked card leaves the multi-selection, any other joins
+    /// it, along with the card selected before.
+    pub(super) fn pick(&mut self, path: PathBuf) {
+        let picked = &mut self.session.picked;
+        if let Some(at) = picked.iter().position(|p| *p == path) {
+            picked.remove(at);
+            self.session.selected = picked.last().cloned();
+            return;
+        }
+        if picked.is_empty()
+            && let Some(selected) = self.session.selected.take()
+            && selected != path
+        {
+            picked.push(selected);
+        }
+        picked.push(path.clone());
+        self.session.selected = Some(path);
+    }
+
+    /// What an action on `path` applies to: the whole multi-selection when
+    /// `path` is in it, in board order; `path` alone otherwise.
+    pub(super) fn selection_of(&self, path: &Path) -> Vec<PathBuf> {
+        if !self.session.picked.iter().any(|p| p == path) {
+            return vec![path.to_path_buf()];
+        }
+        self.board
+            .columns
+            .iter()
+            .flat_map(|column| &column.issues)
+            .map(|issue| &issue.path)
+            .filter(|p| self.session.picked.contains(p))
+            .cloned()
+            .collect()
     }
 }
 

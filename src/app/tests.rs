@@ -11,6 +11,7 @@ mod editor;
 mod enrich;
 mod focus;
 mod review;
+mod select;
 mod settings;
 use review::open_issue_with_review;
 
@@ -325,12 +326,12 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
     let mut app = IboardApp::from_located(located);
     // What belongs to alpha must not follow the switch.
     let a = alpha.join("issues/todo/a.md");
-    app.session.undo = Some(Undo::Deleted(Deleted {
+    app.session.undo = Some(Undo::Deleted(vec![Deleted {
         path: a.clone(),
         trashed: None,
         content: Vec::new(),
         at: Instant::now(),
-    }));
+    }]));
     app.session.notice = Some(("Archived a.md".to_string(), Instant::now()));
     app.session.pending_front = Some((alpha.join("issues/todo"), a.clone()));
     app.session.design_error = Some("alpha has no design".to_string());

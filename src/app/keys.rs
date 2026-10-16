@@ -302,13 +302,13 @@ impl IboardApp {
     /// The delete confirmation owns Escape and Enter while it is up. True
     /// while it is.
     fn confirm_keys(&mut self, ctx: &egui::Context) -> bool {
-        let Some(Confirm::Delete(path)) = self.session.confirm.clone() else {
+        let Some(Confirm::Delete(paths)) = self.session.confirm.clone() else {
             return false;
         };
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             self.session.confirm = None;
         } else if ctx.input(|i| i.key_pressed(Key::Enter)) {
-            self.delete_issue(&path);
+            self.delete_issues(&paths);
         }
         true
     }
@@ -352,7 +352,10 @@ impl IboardApp {
                     self.filter_bar.filter.clear()
                 }
                 Screen::Board if self.column_focus.column.is_some() => self.unfocus_column(),
-                Screen::Board => self.session.selected = None,
+                Screen::Board => {
+                    self.session.selected = None;
+                    self.session.picked.clear();
+                }
                 Screen::Detail(_) if self.session.detail_mode == DetailMode::Edit => {
                     self.show_preview()
                 }

@@ -5,14 +5,30 @@ use super::*;
 impl IboardApp {
     /// ConfirmDialog for a delete, centred over a scrim: `↩` (or the focused
     /// Delete button) confirms; `esc`, Cancel or a click on the scrim cancels.
-    pub(super) fn confirm_dialog(&mut self, ui: &egui::Ui, path: &Path) {
+    pub(super) fn confirm_dialog(&mut self, ui: &egui::Ui, paths: &[PathBuf]) {
         let p = theme::palette(ui);
-        let title = self
-            .board
-            .find(path)
-            .map(|issue| issue.title.clone())
-            .unwrap_or_else(|| file_name(path));
-        let relative = self.relative(path);
+        let (question, title, relative) = match paths {
+            [path] => (
+                "Delete this issue?".to_string(),
+                self.board
+                    .find(path)
+                    .map(|issue| issue.title.clone())
+                    .unwrap_or_else(|| file_name(path)),
+                self.relative(path),
+            ),
+            many => (
+                format!("Delete {} issues?", many.len()),
+                many.iter()
+                    .filter_map(|path| self.board.find(path))
+                    .map(|issue| issue.title.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                many.iter()
+                    .map(|path| self.relative(path))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+        };
         let width = 360.0;
         let pad = 20.0;
         let mut confirmed = false;
@@ -31,11 +47,7 @@ impl IboardApp {
                 ui.set_width(inner);
                 ui.style_mut().interaction.selectable_labels = false;
                 ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                ui.label(
-                    RichText::new("Delete this issue?")
-                        .font(theme::ui_title())
-                        .color(p.ink),
-                );
+                ui.label(RichText::new(question).font(theme::ui_title()).color(p.ink));
                 // The subject: what goes, by title and by file.
                 ui.add_space(theme::SPACE_2);
                 Frame::new()
@@ -85,7 +97,7 @@ impl IboardApp {
                 });
             });
         if confirmed {
-            self.delete_issue(path);
+            self.delete_issues(paths);
         } else if cancelled || modal.should_close() {
             self.session.confirm = None;
         }

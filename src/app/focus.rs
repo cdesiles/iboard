@@ -90,6 +90,7 @@ impl IboardApp {
             can_review: self.agent.configured(),
             selected: selected.as_deref(),
             scroll_to_selected,
+            picked: &self.session.picked,
             new_card: new_card.as_deref(),
         };
         let intents = focus_grid(ui, &view);
@@ -393,6 +394,8 @@ fn focus_card(
         CardLook::Selected {
             scroll: view.scroll_to_selected,
         }
+    } else if view.picked.contains(&issue.path) {
+        CardLook::Selected { scroll: false }
     } else if view.new_card == Some(issue.path.as_path()) {
         CardLook::Fresh
     } else {

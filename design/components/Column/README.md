@@ -5,6 +5,7 @@ One column per folder: `todo/`, `ready/`, `doing/`, `done/`. Equal widths betwee
 - Header: 8pt status dot, uppercase title in `ui-label`, count in `meta` right-aligned, and a 2pt rule in the status color. Color plus word, never color alone.
 - The title is a button: on hover it gets a `surface-hover` fill, and a click (or `⌘1` to `⌘4`) opens that column full screen (see ColumnFocus). A double-click on the header or the column's empty space does the same.
 - Hovering a header swaps its count for its controls, right-aligned: an `expand` icon button that also opens the column full screen. Todo's `+` stays at the far right.
+- A column holding picked cards (see IssueCard) shows a `close` icon button in its header, "Clear selection"; `esc` does the same.
 - The Todo header alone ends with a ghost `+` icon button that opens the QuickAdd composer (same as `⌘N`). Ready, Doing and Done have none: new issues always start in Todo.
 - Done's controls end with an `archive` icon button, right of `expand`, that moves every issue it lists (after the filter) to `.archive/`.
 - Cards stack with `space-3` gaps. Todo and Ready follow the file names (Ready's `001-` prefix is its priority); Doing and Done put the most recently edited first.
