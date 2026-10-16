@@ -11,7 +11,6 @@ pub(super) struct Build {
     /// The issue the agent works on, in its new column.
     current: PathBuf,
     answer: Job<Result<String, String>>,
-    progress: agent::Progress,
     /// When the agent took `current`.
     started: Instant,
     /// Where `current` stands in the whole run, from 1.
@@ -111,13 +110,11 @@ impl IboardApp {
         let prompt = prompts::build_prompt(&self.relative(&issue), &content);
         let project = self.located.project_dir.clone();
         let log = build_log::path(&self.board.root, &issue);
-        let (answer, progress) =
-            agent::start_build(&self.build_agent, &prompt, &issue, &project, &log);
+        let (answer, _) = agent::start_build(&self.build_agent, &prompt, &issue, &project, &log);
         self.session.build = Some(Build {
             queue,
             current: issue,
             answer,
-            progress,
             started: Instant::now(),
             at,
             total,
@@ -164,18 +161,11 @@ impl IboardApp {
         }
     }
 
-    /// The status bar's line while building: the issue, its place in the
-    /// run, the time spent on it, and the agent's latest step.
-    pub(super) fn build_status(&self) -> Option<String> {
+    /// Where the issue at work stands in its run: its place, from 1, and
+    /// the run's size.
+    #[cfg(test)]
+    pub(super) fn build_place(&self) -> Option<(usize, usize)> {
         let build = self.session.build.as_ref()?;
-        let mut text = format!("Building {}", file_name(&build.current));
-        if build.total > 1 {
-            text.push_str(&format!(" ({}/{})", build.at, build.total));
-        }
-        text.push_str(&format!(" · {}", stopwatch(build.started.elapsed())));
-        if let Some(step) = agent::step(&build.progress) {
-            text.push_str(&format!(" · {step}"));
-        }
-        Some(text)
+        Some((build.at, build.total))
     }
 }

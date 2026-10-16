@@ -99,7 +99,7 @@ fn a_failed_build_stops_the_run() {
 fn stop_ends_the_build_and_keeps_the_issue_where_it_is() {
     let (dir, mut app) = board("build-stop", "sleep 30 # {prompt}");
     app.apply(vec![Intent::Build(ready(&app))]);
-    assert!(app.build_status().unwrap().contains("(1/2)"));
+    assert_eq!(app.build_place(), Some((1, 2)));
     app.apply(vec![Intent::StopBuild]);
     assert!(app.session.build.is_none());
     assert_eq!(in_column(&dir, "doing").len(), 1);
@@ -136,10 +136,6 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
     app.apply(vec![Intent::Build(ready(&app))]);
     let taken = app.building_now().unwrap().0.to_path_buf();
     assert_eq!(taken.parent(), Some(dir.join("issues/doing").as_path()));
-    assert!(
-        app.build_status().unwrap().contains("· 00:0"),
-        "time spent shows"
-    );
 
     app.apply(vec![Intent::Select(taken.clone())]);
     draw(&ctx, &mut app, vec![]);
@@ -160,10 +156,7 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
         app.building_now().map(|(path, _)| path),
         Some(taken.as_path())
     );
-    assert!(
-        !app.build_status().unwrap().contains("(1/"),
-        "a retry builds one issue"
-    );
+    assert_eq!(app.build_place(), Some((1, 1)), "a retry builds one issue");
     assert_eq!(in_column(&dir, "doing"), ["a.md"], "it stays where it is");
     assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
 }
@@ -180,7 +173,7 @@ fn retrying_the_issue_at_work_keeps_the_rest_of_the_run() {
     let (again, restarted) = app.building_now().unwrap();
     assert_eq!(again, taken);
     assert!(restarted > started, "the clock starts over");
-    assert!(app.build_status().unwrap().contains("(1/2)"));
+    assert_eq!(app.build_place(), Some((1, 2)));
     assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
 }
 
