@@ -650,13 +650,19 @@ fn run_with(
     if custom {
         let _ = std::fs::remove_file(&prompt_file);
     }
-    let answer = output?.into_result("the agent")?;
+    let output = output?;
+    let failure = stream_error(&output.stdout);
+    let answer = output
+        .into_result("the agent")
+        .map_err(|err| failure.clone().unwrap_or(err))?;
     let answer = match streams {
         Some(_) => final_answer(&answer),
         None => answer,
     };
     match answer.trim() {
-        "" if purpose != Purpose::Build => Err("the agent returned no answer".to_string()),
+        "" if purpose != Purpose::Build => {
+            Err(failure.unwrap_or_else(|| "the agent returned no answer".to_string()))
+        }
         answer => Ok(answer.to_string()),
     }
 }
@@ -796,6 +802,34 @@ fn final_answer(stdout: &str) -> String {
         }
     }
     texts.concat()
+}
+
+/// The error an agent reported in its event stream, where its error output
+/// stays empty: OpenCode's `error` event, or Claude Code's failed `result`.
+fn stream_error(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter_map(|event| match event["type"].as_str()? {
+            "error" => event["error"]["message"]
+                .as_str()
+                .or(event["error"]["data"]["message"].as_str())
+                .or(event["error"].as_str())
+                .or(event["message"].as_str())
+                .map(str::to_string),
+            "result" if event["is_error"] == true => event["result"]
+                .as_str()
+                .or(event["subtype"].as_str())
+                .map(str::to_string),
+            _ => None,
+        })
+        .map(|message| match message.strip_prefix('[') {
+            Some(rest) => rest
+                .split_once("] ")
+                .map_or(message.clone(), |(_, text)| text.to_string()),
+            None => message,
+        })
+        .next_back()
 }
 
 /// One ticket of a split: its `# ` title (labels included) and its body.
@@ -1212,6 +1246,24 @@ mod tests {
         assert_eq!(final_answer(OPENCODE), "RELEVANCE: Pass");
         assert_eq!(final_answer(CLAUDE), "RELEVANCE: Pass");
         assert_eq!(final_answer("plain answer\n"), "plain answer\n");
+    }
+
+    #[test]
+    fn an_agent_failing_in_its_stream_reports_its_own_error() {
+        let opencode = r#"{"type":"error","error":{"type":"provider.rate-limit","message":"[anthropic-auth category=x; [connection 1]; request-id=r] Fast mode needs usage credits."}}"#;
+        assert_eq!(
+            stream_error(opencode).as_deref(),
+            Some("Fast mode needs usage credits.")
+        );
+        let claude = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Invalid model"}"#;
+        assert_eq!(stream_error(claude).as_deref(), Some("Invalid model"));
+        assert_eq!(stream_error(CLAUDE), None);
+        assert_eq!(stream_error(OPENCODE), None);
+        let config = custom(
+            "printf '%s\\n' '{\"type\":\"error\",\"error\":{\"message\":\"no credits\"}}'; exit 1 # {prompt}",
+        );
+        let error = run(&config, "x", Path::new("a.md"), &Cancel::default());
+        assert_eq!(error, Err("no credits".to_string()));
     }
 
     #[test]
