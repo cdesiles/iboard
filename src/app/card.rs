@@ -316,7 +316,7 @@ pub(super) fn card_body(
         .show(ui, |ui| {
             ui.set_width(inner);
             ui.spacing_mut().item_spacing.y = if extras.wide { 6.0 } else { theme::SPACE_2 };
-            let label_clicks = card_labels(ui, issue, labels);
+            let (review, label_clicks) = card_labels(ui, issue, labels, &extras);
             card_text(ui, issue, inner, &extras);
             let (mut action, mut action_rects) = ui
                 .horizontal(|ui| {
@@ -326,6 +326,12 @@ pub(super) fn card_body(
                     .inner
                 })
                 .inner;
+            if let Some(review) = review {
+                action_rects.push(review.rect);
+                if review.clicked() {
+                    action = Some(CardAction::ShowReview);
+                }
+            }
             // Each label is its own click target: it filters the board.
             for (label, rect, clicked) in label_clicks {
                 action_rects.push(rect);
@@ -341,23 +347,50 @@ pub(super) fn card_body(
     }
 }
 
-/// The labels, on their own row above the title, 4pt apart and wrapping; no
-/// labels, no row. Each with its rect and whether it was clicked.
-fn card_labels(ui: &mut egui::Ui, issue: &Issue, labels: &Labels) -> Vec<(String, Rect, bool)> {
+/// The top row, above the title: the last review's verdict first, then the
+/// labels, 4pt apart and wrapping; neither, no row. The verdict's response,
+/// and each label with its rect and whether it was clicked.
+fn card_labels(
+    ui: &mut egui::Ui,
+    issue: &Issue,
+    labels: &Labels,
+    extras: &CardExtras,
+) -> (Option<egui::Response>, Vec<(String, Rect, bool)>) {
     let mut clicks = Vec::new();
-    if issue.labels.is_empty() {
-        return clicks;
+    if issue.labels.is_empty() && extras.review_pill.is_none() {
+        return (None, clicks);
     }
-    ui.horizontal_wrapped(|ui| {
+    let review = ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
+        let review = extras
+            .review_pill
+            .map(|(word, color, stale)| review_pill(ui, word, color, stale));
         for label in &issue.labels {
             let pill = widgets::label_pill(ui, label, labels.color(label))
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(format!("Filter by {label}"));
             clicks.push((label.clone(), pill.rect, pill.clicked()));
         }
+        review
     });
-    clicks
+    (review.inner, clicks)
+}
+
+/// The last review's verdict, faint once the issue changed since: a click
+/// reopens it.
+fn review_pill(ui: &mut egui::Ui, word: &str, color: Color32, stale: bool) -> egui::Response {
+    let (color, hint) = if stale {
+        (
+            theme::palette(ui).ink_faint,
+            "Reviewed before the last edit: show it",
+        )
+    } else {
+        (color, "Show the last review")
+    };
+    widgets::pill(ui, word, color)
+        .interact(Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(hint)
 }
 
 /// The title, the summary (six lines on a wide card, three otherwise) and,
@@ -383,8 +416,8 @@ fn card_text(ui: &mut egui::Ui, issue: &Issue, inner: f32, extras: &CardExtras) 
     }
 }
 
-/// The card's last row, right to left: its actions, the review verdict, the
-/// date, then the file name. The action clicked, and every action's rect.
+/// The card's last row, right to left: its actions, the date, then the file
+/// name. The action clicked, and every action's rect.
 fn card_meta(
     ui: &mut egui::Ui,
     issue: &Issue,
@@ -413,22 +446,6 @@ fn card_meta(
         }
         card_actions(ui, issue, extras, &mut action, &mut action_rects);
     });
-    // The last review's verdict: a click reopens it.
-    if let Some((word, color, stale)) = extras.review_pill {
-        let (color, hint) = if stale {
-            (p.ink_faint, "Reviewed before the last edit: show it")
-        } else {
-            (color, "Show the last review")
-        };
-        let pill = widgets::pill(ui, word, color)
-            .interact(Sense::click())
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text(hint);
-        action_rects.push(pill.rect);
-        if pill.clicked() {
-            action = Some(CardAction::ShowReview);
-        }
-    }
     card_date_label(ui, issue, extras.wide);
     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
         ui.add(
