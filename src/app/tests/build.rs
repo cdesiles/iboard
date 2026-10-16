@@ -134,7 +134,7 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
     let (dir, mut app) = board("build-card", "sleep 30 # {prompt}");
     let ctx = themed_ctx();
     app.apply(vec![Intent::Build(ready(&app))]);
-    let taken = app.building_now().unwrap().0.to_path_buf();
+    let taken = app.building_now()[0].0.clone();
     assert_eq!(taken.parent(), Some(dir.join("issues/doing").as_path()));
 
     app.apply(vec![Intent::Select(taken.clone())]);
@@ -152,10 +152,7 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
 
     draw(&ctx, &mut app, vec![]);
     click(&ctx, &mut app, egui::Id::new(("card_retry_build", &taken)));
-    assert_eq!(
-        app.building_now().map(|(path, _)| path),
-        Some(taken.as_path())
-    );
+    assert_eq!(app.building_now()[0].0, taken);
     assert_eq!(app.build_place(), Some((1, 1)), "a retry builds one issue");
     assert_eq!(in_column(&dir, "doing"), ["a.md"], "it stays where it is");
     assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
@@ -165,12 +162,9 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
 fn retrying_the_issue_at_work_keeps_the_rest_of_the_run() {
     let (dir, mut app) = board("build-retry", "sleep 30 # {prompt}");
     app.apply(vec![Intent::Build(ready(&app))]);
-    let (taken, started) = app
-        .building_now()
-        .map(|(p, t)| (p.to_path_buf(), t))
-        .unwrap();
+    let (taken, started) = app.building_now()[0].clone();
     app.apply(vec![Intent::RetryBuild(taken.clone())]);
-    let (again, restarted) = app.building_now().unwrap();
+    let (again, restarted) = app.building_now()[0].clone();
     assert_eq!(again, taken);
     assert!(restarted > started, "the clock starts over");
     assert_eq!(app.build_place(), Some((1, 2)));
@@ -182,7 +176,7 @@ fn the_agent_log_shows_what_the_build_did_on_the_issue() {
     let (_dir, mut app) = board("build-log", "echo working on it # {prompt}");
     let ctx = themed_ctx();
     app.apply(vec![Intent::Build(vec![ready(&app)[0].clone()])]);
-    let taken = app.building_now().unwrap().0.to_path_buf();
+    let taken = app.building_now()[0].0.clone();
     assert!(app.has_agent_log(&taken), "offered while the agent runs");
     assert!(until(|| {
         app.poll_build(&ctx);
@@ -203,4 +197,60 @@ fn the_agent_log_shows_what_the_build_did_on_the_issue() {
         app.session.agent_log.is_none(),
         "the button closes it again"
     );
+}
+
+#[test]
+fn two_agents_build_two_issues_at_once() {
+    let (dir, mut app) = board("build-two", "sleep 30 # {prompt}");
+    app.apply(vec![Intent::Agents(2), Intent::Build(ready(&app))]);
+    assert_eq!(app.building_now().len(), 2);
+    assert!(in_column(&dir, "ready").is_empty());
+    assert_eq!(in_column(&dir, "doing"), ["a.md", "b.md"]);
+}
+
+#[test]
+fn one_agent_takes_the_first_issue_and_more_take_the_next() {
+    let (dir, mut app) = board("build-more", "sleep 30 # {prompt}");
+    app.apply(vec![Intent::Build(ready(&app))]);
+    assert_eq!(in_column(&dir, "doing"), ["a.md"], "one agent, the first");
+    app.apply(vec![Intent::Agents(2)]);
+    assert_eq!(app.building_now().len(), 2, "the new agent takes the next");
+    app.apply(vec![Intent::Agents(1)]);
+    assert_eq!(
+        app.building_now().len(),
+        2,
+        "fewer let the ones at work finish"
+    );
+}
+
+#[test]
+fn no_agents_stops_the_build_and_at_most_sixteen() {
+    let (dir, mut app) = board("build-none", "sleep 30 # {prompt}");
+    app.apply(vec![Intent::Build(ready(&app))]);
+    app.apply(vec![Intent::Agents(0)]);
+    assert!(app.session.build.is_none());
+    assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
+    app.apply(vec![Intent::Agents(40)]);
+    assert_eq!(app.session.agents, 16);
+}
+
+#[test]
+fn doing_header_adds_and_removes_agents() {
+    let (_dir, mut app) = board("build-stepper", "true # {prompt}");
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    click(&ctx, &mut app, egui::Id::new(("more_agents", 2)));
+    assert_eq!(app.session.agents, 2);
+    click(&ctx, &mut app, egui::Id::new(("fewer_agents", 2)));
+    click(&ctx, &mut app, egui::Id::new(("fewer_agents", 2)));
+    assert_eq!(app.session.agents, 0);
+}
+
+#[test]
+fn stopping_one_card_keeps_the_other_agent_at_work() {
+    let (_dir, mut app) = board("build-stop-one", "sleep 30 # {prompt}");
+    app.apply(vec![Intent::Agents(2), Intent::Build(ready(&app))]);
+    let first = app.building_now()[0].0.clone();
+    app.apply(vec![Intent::StopAgent(first)]);
+    assert_eq!(app.building_now().len(), 1);
 }

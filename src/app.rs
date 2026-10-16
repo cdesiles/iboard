@@ -65,7 +65,7 @@ mod status;
 mod windows;
 
 use board::*;
-use build::card_build;
+use build::{Builds, card_build};
 use card::*;
 use compose::*;
 use filter_bar::*;
@@ -156,7 +156,7 @@ enum CardAction {
     ShowReview,
     /// Open (or close) the LabelPicker on this card.
     AddLabel,
-    /// Stop the AI build, from the card its agent works on.
+    /// Stop the agent that works on the card.
     StopBuild,
     /// Hand the issue to the build agent again, from scratch.
     RetryBuild,
@@ -625,6 +625,8 @@ struct Session {
     diff: Option<diff_view::DiffView>,
     /// The AI build working through Ready, while it runs.
     build: Option<build::Build>,
+    /// How many build agents may work at once, set on Doing's header.
+    agents: usize,
     /// The agent log open beside the reader.
     agent_log: Option<agent_log::LogView>,
 }
@@ -661,6 +663,7 @@ impl Default for Session {
             refine: None,
             diff: None,
             build: None,
+            agents: 1,
             agent_log: None,
         }
     }
@@ -994,10 +997,8 @@ struct ColumnView<'a> {
     past_reviews: &'a HashMap<PathBuf, PastReview>,
     /// An agent is set up, so the selected Todo card offers Review.
     can_review: bool,
-    /// The AI build runs, so Ready offers Stop instead of Play.
-    building: bool,
-    /// The issue the build agent works on, and since when.
-    build: Option<(&'a Path, Instant)>,
+    /// The issues the build agents work on, and how many may.
+    builds: Builds<'a>,
 }
 
 /// One column tab of ColumnFocus: its name, count and status colour, and
@@ -1025,7 +1026,7 @@ struct FocusGrid<'a> {
     scroll_to_selected: bool,
     picked: &'a [PathBuf],
     new_card: Option<&'a Path>,
-    build: Option<(&'a Path, Instant)>,
+    builds: Builds<'a>,
 }
 
 /// One of the DropZones in the dock.

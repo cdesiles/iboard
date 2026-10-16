@@ -26,9 +26,7 @@ impl LogView {
 impl IboardApp {
     /// Whether the build agent works on `path` now or ever did.
     pub(super) fn has_agent_log(&self, path: &Path) -> bool {
-        self.building_now()
-            .is_some_and(|(building, _)| building == path)
-            || build_log::path(&self.board.root, path).is_file()
+        self.building_since(path).is_some() || build_log::path(&self.board.root, path).is_file()
     }
 
     pub(super) fn agent_log_open(&self, path: &Path) -> bool {
@@ -68,11 +66,11 @@ impl IboardApp {
     /// said and did, kept scrolled to its newest line.
     pub(super) fn agent_log_panel(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette(ui);
-        let running = self.session.agent_log.as_ref().and_then(|log| {
-            self.building_now()
-                .filter(|(building, _)| *building == log.path)
-                .map(|(_, since)| since)
-        });
+        let running = self
+            .session
+            .agent_log
+            .as_ref()
+            .and_then(|log| self.building_since(&log.path));
         let Some(log) = self.session.agent_log.as_mut() else {
             return;
         };

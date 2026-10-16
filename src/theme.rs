@@ -428,6 +428,7 @@ fn visuals(theme: Theme, p: &Palette) -> egui::Visuals {
 #[derive(Clone, Copy)]
 pub enum Icon {
     Plus,
+    Minus,
     Refresh,
     Edit,
     /// The back chevron, pointing left.
@@ -470,6 +471,9 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
     match icon {
         Icon::Plus => {
             painter.line_segment([at(12.0, 5.0), at(12.0, 19.0)], stroke);
+            painter.line_segment([at(5.0, 12.0), at(19.0, 12.0)], stroke);
+        }
+        Icon::Minus => {
             painter.line_segment([at(5.0, 12.0), at(19.0, 12.0)], stroke);
         }
         Icon::Back => {

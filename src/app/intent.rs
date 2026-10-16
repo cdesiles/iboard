@@ -21,10 +21,14 @@ pub(super) enum Intent {
     Diff(PathBuf),
     /// Play, in Ready's hovered header: build these issues, top first.
     Build(Vec<PathBuf>),
-    /// Stop, in Ready's header or on the card the build agent works on.
+    /// Stop, in Ready's header: every build agent.
     StopBuild,
-    /// Retry, on a Doing card: the build agent starts the issue over.
+    /// Stop, on the card a build agent works on: that agent.
+    StopAgent(PathBuf),
+    /// Retry, on a Doing card: a build agent starts the issue over.
     RetryBuild(PathBuf),
+    /// Doing's `−` and `+`: how many build agents may work at once.
+    Agents(usize),
     /// "Archive all", in Done's hovered header.
     ArchiveAll(Vec<PathBuf>),
     /// Open or close the LabelPicker on the issue.
@@ -84,7 +88,7 @@ impl CardAction {
             CardAction::Review => Intent::Review(path),
             CardAction::ShowReview => Intent::ShowReview(path),
             CardAction::AddLabel => Intent::ToggleLabels(path),
-            CardAction::StopBuild => Intent::StopBuild,
+            CardAction::StopBuild => Intent::StopAgent(path),
             CardAction::RetryBuild => Intent::RetryBuild(path),
         }
     }
@@ -118,6 +122,8 @@ impl IboardApp {
                 Intent::ArchiveAll(paths) => self.archive_all(&paths),
                 Intent::Build(paths) => self.start_build(paths),
                 Intent::StopBuild => self.stop_build(),
+                Intent::StopAgent(path) => self.stop_agent(&path),
+                Intent::Agents(agents) => self.set_agents(agents),
                 Intent::RetryBuild(path) => self.retry_build(path),
                 Intent::ToggleLabels(path) => self.toggle_label_picker(path),
                 Intent::FilterBy(label) => self.filter_bar.filter.pick(&label),

@@ -78,9 +78,7 @@ impl IboardApp {
         let selected = self.session.selected.clone();
         let scroll_to_selected = std::mem::take(&mut self.session.scroll_to_selected);
         let new_card = self.flashing_card();
-        let build = self
-            .building_now()
-            .map(|(path, since)| (path.to_path_buf(), since));
+        let running = self.building_now();
         let view = FocusGrid {
             column,
             root: &self.board.root,
@@ -95,7 +93,10 @@ impl IboardApp {
             scroll_to_selected,
             picked: &self.session.picked,
             new_card: new_card.as_deref(),
-            build: build.as_ref().map(|(path, since)| (path.as_path(), *since)),
+            builds: Builds {
+                running: &running,
+                agents: self.session.agents,
+            },
         };
         let intents = focus_grid(ui, &view);
         self.apply(intents);
@@ -416,7 +417,7 @@ fn focus_card(
         expand: view.picked.is_empty() || view.selected == Some(issue.path.as_path()),
         wide: true,
         sections: view.sections,
-        build: card_build(view.column, issue, view.build),
+        build: card_build(view.column, issue, view.builds),
     };
     ui.allocate_ui_with_layout(Vec2::new(cell, 0.0), Layout::top_down(Align::Min), |ui| {
         ui.set_width(cell);

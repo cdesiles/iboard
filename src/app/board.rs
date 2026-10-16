@@ -31,9 +31,8 @@ impl IboardApp {
         }
         let selected = self.session.selected.clone();
         let scroll_to_selected = std::mem::take(&mut self.session.scroll_to_selected);
-        let build = self
-            .building_now()
-            .map(|(path, since)| (path.to_path_buf(), since));
+        let running = self.building_now();
+        let agents = self.session.agents;
 
         let mut intents = Vec::new();
         egui::ScrollArea::horizontal()
@@ -66,8 +65,10 @@ impl IboardApp {
                             labels: &self.labels,
                             past_reviews: &self.past_reviews,
                             can_review: self.agent.configured(),
-                            building: build.is_some(),
-                            build: build.as_ref().map(|(path, since)| (path.as_path(), *since)),
+                            builds: Builds {
+                                running: &running,
+                                agents,
+                            },
                         };
                         intents.extend(column_ui(ui, &view, composer));
                     }
@@ -272,10 +273,11 @@ fn column_head(
             column_actions(ui, view, visible, shortcut, intents);
             return;
         }
-        // A running build keeps its Stop in view.
-        if view.building {
+        // A running build keeps its Stop, and Doing its agents, in view.
+        if !view.builds.running.is_empty() {
             build_action(ui, view, visible, intents);
         }
+        agents_stepper(ui, view, intents);
         let shown = visible.len();
         // Filtered: "2/6", the total in `ink-faint`.
         let mut count = LayoutJob::default();
@@ -314,6 +316,7 @@ fn column_actions(
         intents.push(Intent::Compose);
     }
     build_action(ui, view, visible, intents);
+    agents_stepper(ui, view, intents);
     if column.name.eq_ignore_ascii_case("done") && !visible.is_empty() {
         done_controls(ui, view, visible, intents);
     }
@@ -337,7 +340,7 @@ fn build_action(
     }
     let id = egui::Id::new(("build", view.index));
     let tone = widgets::Tone::Plain;
-    if view.building {
+    if !view.builds.running.is_empty() {
         if widgets::icon_button(ui, Icon::Stop, id, "Stop the AI build", tone).clicked() {
             intents.push(Intent::StopBuild);
         }
@@ -348,6 +351,35 @@ fn build_action(
             visible.iter().map(|issue| issue.path.clone()).collect(),
         ));
     }
+}
+
+/// Doing's agents, right to left: `+`, how many, `−`. Down to none, which
+/// stops the AI build; up to [`build::MAX_AGENTS`].
+fn agents_stepper(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent>) {
+    if !discovery::is_doing_column(&view.column.dir) {
+        return;
+    }
+    let agents = view.builds.agents;
+    let tone = widgets::Tone::Plain;
+    ui.add_enabled_ui(agents < build::MAX_AGENTS, |ui| {
+        let id = egui::Id::new(("more_agents", view.index));
+        if widgets::icon_button(ui, Icon::Plus, id, "One more build agent", tone).clicked() {
+            intents.push(Intent::Agents(agents + 1));
+        }
+    });
+    let noun = if agents == 1 { "agent" } else { "agents" };
+    ui.label(
+        RichText::new(format!("{agents} {noun}"))
+            .font(theme::meta())
+            .color(theme::palette(ui).ink_muted),
+    )
+    .on_hover_text("Build agents working at once; none stops the AI build");
+    ui.add_enabled_ui(agents > 0, |ui| {
+        let id = egui::Id::new(("fewer_agents", view.index));
+        if widgets::icon_button(ui, Icon::Minus, id, "One build agent fewer", tone).clicked() {
+            intents.push(Intent::Agents(agents - 1));
+        }
+    });
 }
 
 /// The column's cards, or its empty well.
@@ -431,7 +463,7 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
             && view.column.accepts_new_issues()
             && matches!(look, CardLook::Selected { .. }),
         expand: view.picked.is_empty() || view.selected == Some(issue.path.as_path()),
-        build: card_build(view.column, issue, view.build),
+        build: card_build(view.column, issue, view.builds),
         ..CardExtras::default()
     };
     issue_card(ui, issue, view.width, look, view.labels, extras)
