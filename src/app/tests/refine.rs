@@ -1,6 +1,7 @@
 //! Refinement's tests: the conversation, stopping a turn, applying the spec.
 
 use super::*;
+use egui_kittest::kittest::Queryable;
 
 /// An app reading `todo/01-demo.md`, whose agent is the custom `command`.
 fn refining(tag: &str, command: &str) -> (Scratch, PathBuf, IboardApp) {
@@ -60,6 +61,13 @@ fn a_conversation_ends_in_a_refined_issue() {
     assert_eq!(app.session.editor.as_ref().unwrap().text, "# Spec");
     assert_eq!(app.session.detail_mode, DetailMode::Edit);
     assert!(app.session.refine.is_some(), "the conversation stays open");
+    assert!(
+        !app.refinement_shown(),
+        "the popin tucks away for the draft"
+    );
+    app.start_refinement(&file);
+    assert!(app.refinement_shown());
+    assert_eq!(turns(&app), 3, "the menu brings the same conversation back");
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
         "# Demo\n\nContext.\n"
@@ -88,6 +96,7 @@ fn stopping_a_turn_gives_the_answer_back() {
     assert!(!refine.is_running());
     assert_eq!((refine.turns.len(), refine.reply.as_str()), (1, "Because."));
 
+    app.session.refine = None;
     app.start_refinement(&file);
     app.stop_refinement();
     assert!(app.session.refine.is_none());
@@ -108,4 +117,42 @@ fn a_refinement_and_a_review_replace_each_other() {
     app.agent.configured = false;
     app.start_refinement(&file);
     assert!(app.settings.is_some() && app.session.refine.is_none());
+}
+
+/// The popin sits over the page: Hide tucks it away and keeps the
+/// conversation, the pill at the foot brings it back, Dismiss ends it.
+#[test]
+fn the_popin_hides_and_comes_back() {
+    let (_dir, file, mut app) = refining("refine-popin", "printf 'Why?' # {prompt}");
+    app.start_refinement(&file);
+    assert!(until(|| {
+        app.poll_refinement();
+        turns(&app) == 1
+    }));
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    harness.get_by_label("Hide").click();
+    harness.run_steps(4);
+    assert!(!harness.state().1.refinement_shown());
+    assert_eq!(turns(&harness.state().1), 1);
+
+    harness.get_by_label("Back to the refinement").click();
+    harness.run_steps(2);
+    assert!(harness.state().1.refinement_shown());
+    harness.get_by_label("Dismiss").click();
+    harness.run_steps(2);
+    assert!(harness.state().1.session.refine.is_none());
 }

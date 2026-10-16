@@ -48,7 +48,7 @@ impl IboardApp {
             .as_ref()
             .is_some_and(|refine| refine.path == path);
         let logged = self.agent_log_open(path);
-        if reviewed || refined || logged {
+        if reviewed || logged {
             let p = theme::palette(ui);
             egui::Panel::right("review")
                 .exact_size(REVIEW_PANEL_WIDTH)
@@ -62,8 +62,6 @@ impl IboardApp {
                 .show(ui, |ui| {
                     if reviewed {
                         self.review_panel(ui);
-                    } else if refined {
-                        self.refine_panel(ui);
                     } else {
                         self.agent_log_panel(ui);
                     }
@@ -73,6 +71,9 @@ impl IboardApp {
         match self.session.detail_mode {
             DetailMode::Preview => self.detail_preview(ui, path),
             DetailMode::Edit => self.detail_edit(ui, path),
+        }
+        if refined {
+            self.refine_popin(ui);
         }
     }
 

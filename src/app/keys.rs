@@ -193,9 +193,9 @@ impl IboardApp {
         if matches!(self.session.screen, Screen::Diff) && !confirming {
             self.diff_keys(ctx);
         }
-        let cx = self.key_context(ctx, confirming);
+        let cx = self.key_context(ctx, confirming || self.refinement_shown());
         let mut commands = ctx.input(|i| keymap(i, &cx));
-        if !confirming && (!cx.board || cx.focused) && self.swiped_back(ctx) {
+        if !cx.confirming && (!cx.board || cx.focused) && self.swiped_back(ctx) {
             commands.push(Command::Back);
         }
         for command in commands {
@@ -338,7 +338,7 @@ impl IboardApp {
             notes.draft = None;
         } else if self.session.review.is_some() {
             self.cancel_review();
-        } else if self.session.refine.is_some() {
+        } else if self.refinement_shown() {
             self.escape_refinement(ctx);
         } else {
             match self.session.screen.clone() {

@@ -4,8 +4,12 @@
 use super::review::{review_head, running_line};
 use super::*;
 
-/// Room the reply field and the buttons keep below the conversation.
-const REPLY_ROOM: f32 = 190.0;
+/// Room the head, the reply field and the buttons keep around the
+/// conversation.
+const REPLY_ROOM: f32 = 230.0;
+
+/// The popin's widest, on a large window.
+const POPIN_WIDTH: f32 = 720.0;
 
 /// Who said a turn of a refinement.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -40,6 +44,8 @@ pub(super) struct Refinement {
     pub(super) reply: String,
     running: Option<(Job<Result<String, String>>, agent::Progress)>,
     error: Option<String>,
+    /// Tucked away to read the page; the conversation goes on behind.
+    pub(super) hidden: bool,
 }
 
 impl Refinement {
@@ -56,23 +62,30 @@ impl Refinement {
     }
 }
 
-/// What a click or a key in the refinement panel asks for.
+/// What a click or a key in the refinement popin asks for.
 enum RefineAction {
     Send,
     Apply,
     Stop,
     Retry,
+    Hide,
+    Show,
     Dismiss,
 }
 
 impl IboardApp {
-    /// Opens a refinement of a Todo issue: the challenger speaks first.
+    /// Opens a refinement of a Todo issue: the challenger speaks first. A
+    /// conversation already held on it comes back instead.
     pub(super) fn start_refinement(&mut self, path: &Path) {
         if !self.agent.configured() {
             self.open_config();
             return;
         }
         if !self.is_todo_issue(path) {
+            return;
+        }
+        if let Some(refine) = self.session.refine.as_mut().filter(|r| r.path == path) {
+            refine.hidden = false;
             return;
         }
         self.session.review = None;
@@ -83,6 +96,7 @@ impl IboardApp {
             reply: String::new(),
             running: None,
             error: None,
+            hidden: false,
         });
         self.ask_challenger();
     }
@@ -184,6 +198,14 @@ impl IboardApp {
         }
     }
 
+    /// Whether the popin is up, on the issue in the reader.
+    pub(super) fn refinement_shown(&self) -> bool {
+        self.session.refine.as_ref().is_some_and(|refine| {
+            !refine.hidden
+                && matches!(&self.session.screen, Screen::Detail(path) if *path == refine.path)
+        })
+    }
+
     /// `esc`: stops a turn on its way, else closes the conversation, unless
     /// a field has the keyboard (the reply field gives it up instead).
     pub(super) fn escape_refinement(&mut self, ctx: &egui::Context) {
@@ -200,7 +222,7 @@ impl IboardApp {
     }
 
     /// The challenger's latest proposal, in the editor as an unsaved draft.
-    /// The conversation stays open beside it, and reads the draft next.
+    /// The popin tucks away to show it; the conversation reads it next.
     pub(super) fn apply_refinement(&mut self) {
         let Some(refine) = self.session.refine.as_ref() else {
             return;
@@ -216,76 +238,123 @@ impl IboardApp {
             editor.text = proposal;
             editor.last_edit = Some(Instant::now());
         }
+        if let Some(refine) = self.session.refine.as_mut() {
+            refine.hidden = true;
+        }
     }
 
-    /// The refinement panel beside the page: the conversation, the reply
-    /// field (`⌘↩` sends) and the actions on it.
-    pub(super) fn refine_panel(&mut self, ui: &mut egui::Ui) {
+    /// The refinement over the page, as a popin: the conversation, the reply
+    /// field (`⌘↩` sends) and the actions on it. Tucked away, a pill at the
+    /// foot of the page brings it back.
+    pub(super) fn refine_popin(&mut self, ui: &mut egui::Ui) {
         let Some(mut refine) = self.session.refine.take() else {
             return;
         };
-        let action = refine_ui(ui, &mut refine, &mut self.reader.cache);
+        let action = if refine.hidden {
+            resume_pill(ui, &refine)
+        } else {
+            let p = theme::palette(ui);
+            let window = ui.ctx().content_rect();
+            let size = Vec2::new(
+                POPIN_WIDTH.min(window.width() - 2.0 * theme::SPACE_7),
+                window.height() * 0.8,
+            );
+            let modal = egui::Modal::new(egui::Id::new("refine"))
+                .frame(widgets::popover_frame(ui))
+                .backdrop_color(p.scrim)
+                .show(ui.ctx(), |ui| {
+                    refine_ui(ui, size, &mut refine, &mut self.reader.cache)
+                });
+            modal.inner.or_else(|| {
+                modal
+                    .backdrop_response
+                    .clicked()
+                    .then_some(RefineAction::Hide)
+            })
+        };
         self.session.refine = Some(refine);
         match action {
             Some(RefineAction::Send) => self.send_reply(),
             Some(RefineAction::Apply) => self.apply_refinement(),
             Some(RefineAction::Stop) => self.stop_refinement(),
             Some(RefineAction::Retry) => self.ask_challenger(),
+            Some(RefineAction::Hide | RefineAction::Show) => {
+                if let Some(refine) = self.session.refine.as_mut() {
+                    refine.hidden = matches!(action, Some(RefineAction::Hide));
+                }
+            }
             Some(RefineAction::Dismiss) => self.session.refine = None,
             None => {}
         }
     }
 }
 
+/// The tucked-away refinement, floating at the foot of the window.
+fn resume_pill(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction> {
+    let label = if refine.is_running() {
+        "Refining…"
+    } else {
+        "Back to the refinement"
+    };
+    let mut resume = false;
+    egui::Area::new(egui::Id::new("refine-resume"))
+        .anchor(egui::Align2::CENTER_BOTTOM, Vec2::new(0.0, -theme::SPACE_7))
+        .order(egui::Order::Foreground)
+        .show(ui.ctx(), |ui| {
+            widgets::popover_frame(ui)
+                .inner_margin(Margin::same(theme::SPACE_2 as i8))
+                .show(ui, |ui| {
+                    resume = widgets::button(ui, ButtonKind::Review, None, label, None).clicked();
+                });
+        });
+    resume.then_some(RefineAction::Show)
+}
+
 fn refine_ui(
     ui: &mut egui::Ui,
+    size: Vec2,
     refine: &mut Refinement,
     cache: &mut CommonMarkCache,
 ) -> Option<RefineAction> {
     let p = theme::palette(ui);
     let mut action = None;
+    ui.set_width(size.x);
+    ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+    let title = format!("Refining {}", file_name(&refine.path));
+    review_head(ui, &title, &format!("{} · challenger", refine.agent));
     Frame::new()
-        .fill(p.surface)
-        .stroke(Stroke::new(1.0, p.line_strong))
-        .corner_radius(CornerRadius::same(theme::RADIUS_MD))
+        .inner_margin(Margin::same(theme::SPACE_4 as i8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            let title = format!("Refining {}", file_name(&refine.path));
-            review_head(ui, &title, &format!("{} · challenger", refine.agent));
-            Frame::new()
-                .inner_margin(Margin::same(theme::SPACE_4 as i8))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    egui::ScrollArea::vertical()
-                        .max_height((ui.available_height() - REPLY_ROOM).max(theme::CONTROL_H))
-                        .stick_to_bottom(true)
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| conversation(ui, refine, cache));
-                    if let Some(error) = &refine.error {
-                        ui.label(RichText::new(error).color(p.danger));
-                    }
-                    ui.add_space(theme::SPACE_3);
-                    let field = ui.add(
-                        egui::TextEdit::multiline(&mut refine.reply)
-                            .hint_text(RichText::new("Answer the challenger…").color(p.ink_faint))
-                            .font(theme::ui_body())
-                            .desired_rows(3)
-                            .desired_width(f32::INFINITY),
-                    );
-                    if field.has_focus()
-                        && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter))
-                    {
-                        action = Some(RefineAction::Send);
-                    }
-                });
-            Frame::new()
-                .inner_margin(Margin::symmetric(
-                    theme::SPACE_4 as i8,
-                    theme::SPACE_3 as i8,
-                ))
-                .show(ui, |ui| {
-                    action = refine_footer(ui, refine).or(action.take());
-                });
+            egui::ScrollArea::vertical()
+                .max_height((size.y - REPLY_ROOM).max(theme::CONTROL_H))
+                .stick_to_bottom(true)
+                .auto_shrink([false, true])
+                .show(ui, |ui| conversation(ui, refine, cache));
+            if let Some(error) = &refine.error {
+                ui.label(RichText::new(error).color(p.danger));
+            }
+            ui.add_space(theme::SPACE_3);
+            let field = ui.add(
+                egui::TextEdit::multiline(&mut refine.reply)
+                    .hint_text(RichText::new("Answer the challenger…").color(p.ink_faint))
+                    .font(theme::ui_body())
+                    .desired_rows(3)
+                    .desired_width(f32::INFINITY),
+            );
+            if field.has_focus()
+                && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter))
+            {
+                action = Some(RefineAction::Send);
+            }
+        });
+    Frame::new()
+        .inner_margin(Margin::symmetric(
+            theme::SPACE_4 as i8,
+            theme::SPACE_3 as i8,
+        ))
+        .show(ui, |ui| {
+            action = refine_footer(ui, refine).or(action.take());
         });
     action
 }
@@ -379,6 +448,7 @@ fn refine_footer(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction>
                 None,
                 RefineAction::Dismiss,
             );
+            button(ui, ButtonKind::Ghost, "Hide", None, RefineAction::Hide);
         },
     );
     action
