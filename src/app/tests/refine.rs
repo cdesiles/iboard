@@ -156,3 +156,54 @@ fn the_popin_hides_and_comes_back() {
     harness.run_steps(2);
     assert!(harness.state().1.session.refine.is_none());
 }
+
+/// The challenger's turn opens on its TL;DR, and its suggested answers sit
+/// at the foot of the popin: `↓` `↩` sends one, a click another.
+#[test]
+fn a_suggested_answer_is_picked_by_key_or_click() {
+    let (_dir, file, mut app) = refining(
+        "refine-options",
+        "printf 'TLDR: Keep it small.\\n\\nWho needs it?\\nOPTIONS:\\n- Nobody yet\\n- Touch users\\nPROPOSAL: NONE' # {prompt}",
+    );
+    app.start_refinement(&file);
+    assert!(until(|| {
+        app.poll_refinement();
+        turns(&app) == 1
+    }));
+    let turn = &app.session.refine.as_ref().unwrap().turns[0];
+    assert_eq!(
+        (turn.tldr.as_deref(), turn.text.as_str()),
+        (Some("Keep it small."), "Who needs it?")
+    );
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    harness.key_press(egui::Key::ArrowDown);
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(2);
+    let refine = harness.state().1.session.refine.as_ref().unwrap();
+    assert_eq!(refine.turns[1].text, "Touch users");
+
+    let app = &mut harness.state_mut().1;
+    assert!(until(|| {
+        app.poll_refinement();
+        turns(app) == 3
+    }));
+    harness.run_steps(2);
+    harness.get_by_label("Nobody yet").click();
+    harness.run_steps(2);
+    let refine = harness.state().1.session.refine.as_ref().unwrap();
+    assert_eq!(refine.turns[3].text, "Nobody yet");
+}

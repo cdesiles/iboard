@@ -968,23 +968,76 @@ fn proposal_of(text: &str) -> Option<String> {
     (!text.is_empty() && !text.eq_ignore_ascii_case("none")).then(|| text.to_string())
 }
 
-/// One turn of a refinement: the challenger's message, and the refined issue
-/// once it proposes one, after its `PROPOSAL:` line.
-pub fn parse_refinement(text: &str) -> (String, Option<String>) {
+/// One turn of a refinement, as the challenger answered it.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Challenge {
+    /// The global advice in a line or two, after `TLDR:`.
+    pub tldr: Option<String>,
+    pub text: String,
+    /// Answers the author may pick, listed after `OPTIONS:`.
+    pub options: Vec<String>,
+    /// The refined issue once it proposes one, after `PROPOSAL:`.
+    pub proposal: Option<String>,
+}
+
+/// The challenger's turn: `TLDR:` up to the first blank line, the challenge,
+/// `OPTIONS:` one per line, then `PROPOSAL:` to the end. Each part may be
+/// missing.
+pub fn parse_refinement(text: &str) -> Challenge {
     let lines: Vec<&str> = text.lines().collect();
-    let proposal_line = lines.iter().enumerate().find_map(|(at, line)| {
+    let mut challenge = Challenge::default();
+    let mut end = lines.len();
+    if let Some((at, rest)) = key_line(&lines, &["PROPOSAL"]) {
+        challenge.proposal = proposal_of(&[&[rest][..], &lines[at + 1..]].concat().join("\n"));
+        end = at;
+    }
+    if let Some((at, rest)) = key_line(&lines[..end], &["OPTIONS"]) {
+        challenge.options = [&[rest][..], &lines[at + 1..end]]
+            .concat()
+            .iter()
+            .map(|line| list_item(line))
+            .filter(|option| !option.is_empty() && !option.eq_ignore_ascii_case("none"))
+            .map(str::to_string)
+            .collect();
+        end = at;
+    }
+    let mut body = lines[..end].to_vec();
+    if let Some((at, rest)) = key_line(&body, &["TLDR", "TL;DR"]) {
+        let after = body[at + 1..]
+            .iter()
+            .position(|line| line.trim().is_empty())
+            .map_or(body.len(), |blank| at + 1 + blank);
+        let tldr = [&[rest][..], &body[at + 1..after]].concat().join(" ");
+        challenge.tldr = Some(tldr.trim().to_string()).filter(|tldr| !tldr.is_empty());
+        body.drain(at..after);
+    }
+    challenge.text = body.join("\n").trim().to_string();
+    challenge
+}
+
+/// A list line without its bullet or number: `- Yes` and `2. Yes` give `Yes`.
+fn list_item(line: &str) -> &str {
+    let line = line.trim();
+    if let Some(rest) = ["- ", "* ", "+ "]
+        .iter()
+        .find_map(|bullet| line.strip_prefix(bullet))
+    {
+        return rest.trim_start();
+    }
+    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    match line[digits..].strip_prefix(['.', ')']) {
+        Some(rest) if digits > 0 => rest.trim_start(),
+        _ => line,
+    }
+}
+
+/// The first line of `lines` keyed by one of `keys`, and what follows its key.
+fn key_line<'a>(lines: &[&'a str], keys: &[&str]) -> Option<(usize, &'a str)> {
+    lines.iter().enumerate().find_map(|(at, line)| {
         key_and_rest(line.trim())
-            .filter(|(key, _)| key == "PROPOSAL")
+            .filter(|(key, _)| keys.contains(&key.as_str()))
             .map(|(_, rest)| (at, rest))
-    });
-    let Some((at, rest)) = proposal_line else {
-        return (text.trim().to_string(), None);
-    };
-    let proposal = [&[rest][..], &lines[at + 1..]].concat().join("\n");
-    (
-        lines[..at].join("\n").trim().to_string(),
-        proposal_of(&proposal),
-    )
+    })
 }
 
 /// A line's `KEY: rest`, the markdown around the key dropped: `**Size:** Pass`
@@ -1405,14 +1458,32 @@ Some context.";
 
     #[test]
     fn a_refinement_turn_parts_the_challenge_from_the_proposal() {
-        let (message, proposal) = parse_refinement("Who asked for it?\n\n**PROPOSAL:** NONE\n");
-        assert_eq!(message, "Who asked for it?");
-        assert_eq!(proposal, None);
-        let (message, proposal) =
-            parse_refinement("Settled.\nPROPOSAL:\n# [feat] Refine\n\nThe spec.");
-        assert_eq!(message, "Settled.");
-        assert_eq!(proposal.as_deref(), Some("# [feat] Refine\n\nThe spec."));
-        assert_eq!(parse_refinement(" Just prose. ").0, "Just prose.");
+        let turn = parse_refinement("Who asked for it?\n\n**PROPOSAL:** NONE\n");
+        assert_eq!(turn.text, "Who asked for it?");
+        assert_eq!(turn.proposal, None);
+        let turn = parse_refinement("Settled.\nPROPOSAL:\n# [feat] Refine\n\nThe spec.");
+        assert_eq!(turn.text, "Settled.");
+        assert_eq!(
+            turn.proposal.as_deref(),
+            Some("# [feat] Refine\n\nThe spec.")
+        );
+        let turn = parse_refinement(" Just prose. ");
+        assert_eq!((turn.text.as_str(), turn.tldr), ("Just prose.", None));
+    }
+
+    #[test]
+    fn a_refinement_turn_opens_on_its_tldr_and_ends_on_options() {
+        let turn = parse_refinement(
+            "**TL;DR:** Ship the smaller fix.\nDrop the redesign.\n\n## Why\n\nIt costs a week.\n\
+             OPTIONS:\n1. Keep the fix only\n- **Both**, later\nNONE\nPROPOSAL: NONE",
+        );
+        assert_eq!(
+            turn.tldr.as_deref(),
+            Some("Ship the smaller fix. Drop the redesign.")
+        );
+        assert_eq!(turn.text, "## Why\n\nIt costs a week.");
+        assert_eq!(turn.options, ["Keep the fix only", "**Both**, later"]);
+        assert_eq!(turn.proposal, None);
     }
 
     #[test]

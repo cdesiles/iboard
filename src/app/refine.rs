@@ -3,6 +3,7 @@
 
 use super::review::{review_head, running_line};
 use super::*;
+use iboard::markdown;
 
 /// Room the head, the reply field and the buttons keep around the
 /// conversation.
@@ -10,6 +11,9 @@ const REPLY_ROOM: f32 = 230.0;
 
 /// The popin's widest, on a large window.
 const POPIN_WIDTH: f32 = 720.0;
+
+/// The height of a one-line suggested answer.
+const OPTION_H: f32 = 28.0;
 
 /// Who said a turn of a refinement.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -29,9 +33,23 @@ impl Speaker {
 
 pub(super) struct Turn {
     pub(super) by: Speaker,
+    /// The challenger's advice at a glance, above its turn.
+    pub(super) tldr: Option<String>,
     pub(super) text: String,
+    /// The answers the challenger suggests, picked at the foot of the popin.
+    pub(super) options: Vec<String>,
     /// The refined issue the challenger proposed with this turn.
     pub(super) proposal: Option<String>,
+}
+
+impl Turn {
+    /// The turn as the agent reads it again.
+    fn said(&self) -> String {
+        match &self.tldr {
+            Some(tldr) => format!("TLDR: {tldr}\n\n{}", self.text),
+            None => self.text.clone(),
+        }
+    }
 }
 
 /// The refinement of one issue: what was said, and the turn on its way.
@@ -46,11 +64,21 @@ pub(super) struct Refinement {
     error: Option<String>,
     /// Tucked away to read the page; the conversation goes on behind.
     pub(super) hidden: bool,
+    /// The suggested answer the keyboard highlights.
+    pub(super) picked: usize,
 }
 
 impl Refinement {
     pub(super) fn is_running(&self) -> bool {
         self.running.is_some()
+    }
+
+    /// The answers the challenger's last turn suggests, while it waits for one.
+    pub(super) fn options(&self) -> &[String] {
+        match self.turns.last() {
+            Some(turn) if turn.by == Speaker::Challenger && !self.is_running() => &turn.options,
+            _ => &[],
+        }
     }
 
     /// The latest refined issue the challenger proposed.
@@ -65,6 +93,7 @@ impl Refinement {
 /// What a click or a key in the refinement popin asks for.
 enum RefineAction {
     Send,
+    Pick(usize),
     Apply,
     Stop,
     Retry,
@@ -97,6 +126,7 @@ impl IboardApp {
             running: None,
             error: None,
             hidden: false,
+            picked: 0,
         });
         self.ask_challenger();
     }
@@ -118,11 +148,13 @@ impl IboardApp {
         let Some(refine) = self.session.refine.as_mut() else {
             return;
         };
-        let conversation: Vec<prompts::Turn> = refine
+        let said: Vec<(&str, String)> = refine
             .turns
             .iter()
-            .map(|turn| (turn.by.name(), turn.text.as_str()))
+            .map(|turn| (turn.by.name(), turn.said()))
             .collect();
+        let conversation: Vec<prompts::Turn> =
+            said.iter().map(|(by, text)| (*by, text.as_str())).collect();
         let prompt = prompts::refine_prompt(&content, &conversation, &notes);
         refine.error = None;
         refine.running = Some(agent::start_review(
@@ -145,10 +177,24 @@ impl IboardApp {
         refine.reply.clear();
         refine.turns.push(Turn {
             by: Speaker::Author,
+            tldr: None,
             text: reply,
+            options: Vec::new(),
             proposal: None,
         });
         self.ask_challenger();
+    }
+
+    /// Answers with one of the challenger's suggestions, as if typed.
+    pub(super) fn pick_option(&mut self, index: usize) {
+        let Some(refine) = self.session.refine.as_mut() else {
+            return;
+        };
+        let Some(option) = refine.options().get(index).cloned() else {
+            return;
+        };
+        refine.reply = option;
+        self.send_reply();
     }
 
     /// Adopts the challenger's turn once it is in; called every frame.
@@ -166,11 +212,14 @@ impl IboardApp {
         refine.running = None;
         match result {
             Ok(raw) => {
-                let (text, proposal) = agent::parse_refinement(&raw);
+                let challenge = agent::parse_refinement(&raw);
+                refine.picked = 0;
                 refine.turns.push(Turn {
                     by: Speaker::Challenger,
-                    text,
-                    proposal,
+                    tldr: challenge.tldr,
+                    text: challenge.text,
+                    options: challenge.options,
+                    proposal: challenge.proposal,
                 });
             }
             Err(error) => refine.error = Some(error),
@@ -275,6 +324,7 @@ impl IboardApp {
         self.session.refine = Some(refine);
         match action {
             Some(RefineAction::Send) => self.send_reply(),
+            Some(RefineAction::Pick(index)) => self.pick_option(index),
             Some(RefineAction::Apply) => self.apply_refinement(),
             Some(RefineAction::Stop) => self.stop_refinement(),
             Some(RefineAction::Retry) => self.ask_challenger(),
@@ -322,22 +372,30 @@ fn refine_ui(
     ui.spacing_mut().item_spacing.y = theme::SPACE_2;
     let title = format!("Refining {}", file_name(&refine.path));
     review_head(ui, &title, &format!("{} · challenger", refine.agent));
+    let options_room = refine.options().len() as f32 * (OPTION_H + theme::SPACE_1);
     Frame::new()
         .inner_margin(Margin::same(theme::SPACE_4 as i8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             egui::ScrollArea::vertical()
-                .max_height((size.y - REPLY_ROOM).max(theme::CONTROL_H))
+                .max_height((size.y - REPLY_ROOM - options_room).max(theme::CONTROL_H))
                 .stick_to_bottom(true)
                 .auto_shrink([false, true])
                 .show(ui, |ui| conversation(ui, refine, cache));
             if let Some(error) = &refine.error {
                 ui.label(RichText::new(error).color(p.danger));
             }
+            action = option_keys(ui, refine);
             ui.add_space(theme::SPACE_3);
+            action = options_list(ui, refine).or(action.take());
+            let hint = if refine.options().is_empty() {
+                "Answer the challenger…"
+            } else {
+                "Or answer in your own words…"
+            };
             let field = ui.add(
                 egui::TextEdit::multiline(&mut refine.reply)
-                    .hint_text(RichText::new("Answer the challenger…").color(p.ink_faint))
+                    .hint_text(RichText::new(hint).color(p.ink_faint))
                     .font(theme::ui_body())
                     .desired_rows(3)
                     .desired_width(f32::INFINITY),
@@ -363,16 +421,31 @@ fn refine_ui(
 /// when it came with a refined issue.
 fn conversation(ui: &mut egui::Ui, refine: &Refinement, cache: &mut CommonMarkCache) {
     let p = theme::palette(ui);
+    // Reading sizes, as in the reader: the turns are prose to read.
+    ui.style_mut()
+        .text_styles
+        .insert(egui::TextStyle::Body, theme::read_body());
+    ui.spacing_mut().item_spacing.y = theme::SPACE_3;
     for (index, turn) in refine.turns.iter().enumerate() {
         let (who, color) = match turn.by {
             Speaker::Challenger => ("Challenger", p.review),
             Speaker::Author => ("You", p.ink_muted),
         };
         ui.label(RichText::new(who).font(theme::meta()).color(color));
+        if let Some(tldr) = &turn.tldr {
+            tldr_box(ui, tldr);
+        }
         match turn.by {
             Speaker::Challenger => {
                 ui.push_id(("turn", index), |ui| {
-                    CommonMarkViewer::new().show(ui, cache, &turn.text);
+                    for (at, block) in markdown::blocks(&turn.text).into_iter().enumerate() {
+                        if at > 0 {
+                            ui.add_space(theme::SPACE_3);
+                        }
+                        ui.push_id(at, |ui| {
+                            CommonMarkViewer::new().show(ui, cache, &turn.text[block]);
+                        });
+                    }
                 });
             }
             Speaker::Author => {
@@ -392,6 +465,120 @@ fn conversation(ui: &mut egui::Ui, refine: &Refinement, cache: &mut CommonMarkCa
         let step = agent::step(progress).or(Some("The challenger is thinking…".into()));
         running_line(ui, answer.elapsed(), step);
     }
+}
+
+/// The challenger's advice at a glance, on `review-soft` above its turn.
+fn tldr_box(ui: &mut egui::Ui, tldr: &str) {
+    let p = theme::palette(ui);
+    Frame::new()
+        .fill(p.review_soft)
+        .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+        .inner_margin(Margin::same(theme::SPACE_4 as i8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+            ui.label(
+                RichText::new("TL;DR")
+                    .font(theme::ui_label())
+                    .color(p.review),
+            );
+            ui.label(RichText::new(tldr).font(theme::ui_title()).color(p.ink));
+        });
+}
+
+/// `↑` `↓` move through the suggested answers, `↩` or its number sends one,
+/// unless a field has the keyboard.
+fn option_keys(ui: &mut egui::Ui, refine: &mut Refinement) -> Option<RefineAction> {
+    let count = refine.options().len();
+    if count == 0 || ui.memory(|m| m.focused().is_some()) {
+        return None;
+    }
+    const NUMBERS: [Key; 9] = [
+        Key::Num1,
+        Key::Num2,
+        Key::Num3,
+        Key::Num4,
+        Key::Num5,
+        Key::Num6,
+        Key::Num7,
+        Key::Num8,
+        Key::Num9,
+    ];
+    ui.input_mut(|i| {
+        let none = egui::Modifiers::NONE;
+        if i.consume_key(none, Key::ArrowDown) {
+            refine.picked = (refine.picked + 1).min(count - 1);
+        }
+        if i.consume_key(none, Key::ArrowUp) {
+            refine.picked = refine.picked.saturating_sub(1);
+        }
+        if i.consume_key(none, Key::Enter) {
+            return Some(RefineAction::Pick(refine.picked.min(count - 1)));
+        }
+        NUMBERS[..count.min(NUMBERS.len())]
+            .iter()
+            .position(|key| i.consume_key(none, *key))
+            .map(RefineAction::Pick)
+    })
+}
+
+/// The challenger's suggested answers, one clickable row each.
+fn options_list(ui: &mut egui::Ui, refine: &mut Refinement) -> Option<RefineAction> {
+    let mut action = None;
+    ui.spacing_mut().item_spacing.y = theme::SPACE_1;
+    for (index, option) in refine.options().to_vec().iter().enumerate() {
+        let row = option_row(ui, index, option, index == refine.picked);
+        if row.hovered() && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
+            refine.picked = index;
+        }
+        if row.clicked() {
+            action = Some(RefineAction::Pick(index));
+        }
+    }
+    ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+    action
+}
+
+/// One suggested answer: its number as a key cap, the answer wrapped beside
+/// it, and an `accent-soft` fill when the keyboard highlights it.
+fn option_row(ui: &mut egui::Ui, index: usize, option: &str, active: bool) -> egui::Response {
+    let p = theme::palette(ui);
+    let width = ui.available_width();
+    let indent = theme::SPACE_3 + 18.0 + theme::SPACE_3;
+    let text = ui.painter().layout(
+        option.to_string(),
+        theme::read_body(),
+        p.ink,
+        width - indent - theme::SPACE_3,
+    );
+    let height = (text.size().y + 2.0 * theme::SPACE_2).max(OPTION_H);
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, option));
+    if ui.is_rect_visible(rect) {
+        let fill = if active {
+            p.accent_soft
+        } else if response.hovered() {
+            p.surface_hover
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), fill);
+        let top = rect.center().y - text.size().y / 2.0;
+        let first_line = text
+            .rows
+            .first()
+            .map_or(text.size().y, |row| row.rect().height());
+        widgets::paint_kbd(
+            ui,
+            &(index + 1).to_string(),
+            Pos2::new(rect.min.x + theme::SPACE_3, top + first_line / 2.0),
+        );
+        ui.painter()
+            .galley(Pos2::new(rect.min.x + indent, top), text, p.ink);
+    }
+    response
 }
 
 /// The panel's buttons, right to left: the main action first.

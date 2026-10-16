@@ -121,7 +121,13 @@ pub fn refine_prompt(content: &str, conversation: &[Turn], notes: &[(String, Str
          three questions or objections, the most important first, and say plainly when you \
          think the issue should be dropped, and why. Answer with nothing but this format:\n\
          \n\
-         <your challenge, in markdown>\n\
+         TLDR: <your overall advice, in at most two short lines, so the author gets it at a \
+         glance>\n\
+         \n\
+         <your challenge, in markdown: short paragraphs separated by blank lines>\n\
+         OPTIONS:\n\
+         - <an answer the author could give you, or a solution they could pick, in one \
+         plain-text line; two to four of them, the one you advise first>\n\
          PROPOSAL:\n\
          <once the conversation has settled the need, the full refined issue in markdown: \
          the need, the spec, out of scope and acceptance criteria; until then, the single \
