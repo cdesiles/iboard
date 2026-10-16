@@ -1,7 +1,7 @@
 //! Paths and times the way the UI shows them.
 
 use std::path::Path;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 /// A path with the home folder shortened to `~`.
 pub fn display_path(path: &Path) -> String {
@@ -46,10 +46,23 @@ pub fn card_date(time: SystemTime) -> String {
     }
 }
 
+/// How long something has run, as `mm:ss`; minutes keep counting past the
+/// hour.
+pub fn stopwatch(duration: Duration) -> String {
+    let secs = duration.as_secs();
+    format!("{:02}:{:02}", secs / 60, secs % 60)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+
+    #[test]
+    fn a_stopwatch_reads_minutes_and_seconds() {
+        assert_eq!(stopwatch(Duration::from_millis(4_900)), "00:04");
+        assert_eq!(stopwatch(Duration::from_secs(125)), "02:05");
+        assert_eq!(stopwatch(Duration::from_secs(3_725)), "62:05");
+    }
 
     #[test]
     fn times_read_as_how_long_ago() {

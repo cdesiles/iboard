@@ -117,3 +117,69 @@ fn without_a_build_agent_play_opens_its_settings() {
         Some(settings_ui::Tab::Build)
     );
 }
+
+fn click(ctx: &egui::Context, app: &mut IboardApp, id: egui::Id) {
+    let at = ctx
+        .read_response(id)
+        .expect("the button is drawn")
+        .rect
+        .center();
+    draw(ctx, app, vec![moved(at)]);
+    draw(ctx, app, vec![moved(at), button(at, true)]);
+    draw(ctx, app, vec![button(at, false)]);
+}
+
+#[test]
+fn the_card_at_work_stops_the_build_and_doing_retries_it() {
+    let (dir, mut app) = board("build-card", "sleep 30 # {prompt}");
+    let ctx = themed_ctx();
+    app.apply(vec![Intent::Build(ready(&app))]);
+    let taken = app.building_now().unwrap().0.to_path_buf();
+    assert_eq!(taken.parent(), Some(dir.join("issues/doing").as_path()));
+    assert!(
+        app.build_status().unwrap().contains("· 00:0"),
+        "time spent shows"
+    );
+
+    app.apply(vec![Intent::Select(taken.clone())]);
+    draw(&ctx, &mut app, vec![]);
+    assert!(
+        ctx.read_response(egui::Id::new(("card_delete", &taken)))
+            .is_none()
+    );
+    click(&ctx, &mut app, egui::Id::new(("card_stop_build", &taken)));
+    assert!(
+        app.session.build.is_none(),
+        "Stop on the card ends the build"
+    );
+    assert_eq!(in_column(&dir, "doing"), ["a.md"]);
+
+    draw(&ctx, &mut app, vec![]);
+    click(&ctx, &mut app, egui::Id::new(("card_retry_build", &taken)));
+    assert_eq!(
+        app.building_now().map(|(path, _)| path),
+        Some(taken.as_path())
+    );
+    assert!(
+        !app.build_status().unwrap().contains("(1/"),
+        "a retry builds one issue"
+    );
+    assert_eq!(in_column(&dir, "doing"), ["a.md"], "it stays where it is");
+    assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
+}
+
+#[test]
+fn retrying_the_issue_at_work_keeps_the_rest_of_the_run() {
+    let (dir, mut app) = board("build-retry", "sleep 30 # {prompt}");
+    app.apply(vec![Intent::Build(ready(&app))]);
+    let (taken, started) = app
+        .building_now()
+        .map(|(p, t)| (p.to_path_buf(), t))
+        .unwrap();
+    app.apply(vec![Intent::RetryBuild(taken.clone())]);
+    let (again, restarted) = app.building_now().unwrap();
+    assert_eq!(again, taken);
+    assert!(restarted > started, "the clock starts over");
+    assert!(app.build_status().unwrap().contains("(1/2)"));
+    assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
+}

@@ -18,7 +18,7 @@ use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
 use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_name};
 use crate::filter::{self, Filter};
-use crate::format::{card_date, display_path, relative_time};
+use crate::format::{card_date, display_path, relative_time, stopwatch};
 use crate::general::{self, Appearance};
 use crate::issue::Issue;
 use crate::job::{self, Job};
@@ -63,6 +63,7 @@ mod status;
 mod windows;
 
 use board::*;
+use build::card_build;
 use card::*;
 use compose::*;
 use filter_bar::*;
@@ -153,6 +154,19 @@ enum CardAction {
     ShowReview,
     /// Open (or close) the LabelPicker on this card.
     AddLabel,
+    /// Stop the AI build, from the card its agent works on.
+    StopBuild,
+    /// Hand the issue to the build agent again, from scratch.
+    RetryBuild,
+}
+
+/// Where a card stands with the AI build.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CardBuild {
+    /// The build agent works on it, since then.
+    Running(Instant),
+    /// It waits in Doing with no build running: it can be built again.
+    Retry,
 }
 
 /// What a card shows beyond its file: the last review's verdict pill, and
@@ -169,6 +183,7 @@ struct CardExtras<'a> {
     wide: bool,
     /// The reader's standard sections, for the wide card's facts row.
     sections: &'a [String],
+    build: Option<CardBuild>,
 }
 
 /// An issue's last review, read from its sidecar, so its card pill can
@@ -976,6 +991,8 @@ struct ColumnView<'a> {
     can_review: bool,
     /// The AI build runs, so Ready offers Stop instead of Play.
     building: bool,
+    /// The issue the build agent works on, and since when.
+    build: Option<(&'a Path, Instant)>,
 }
 
 /// One column tab of ColumnFocus: its name, count and status colour, and
@@ -1003,6 +1020,7 @@ struct FocusGrid<'a> {
     scroll_to_selected: bool,
     picked: &'a [PathBuf],
     new_card: Option<&'a Path>,
+    build: Option<(&'a Path, Instant)>,
 }
 
 /// One of the DropZones in the dock.

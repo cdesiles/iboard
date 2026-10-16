@@ -31,6 +31,9 @@ impl IboardApp {
         }
         let selected = self.session.selected.clone();
         let scroll_to_selected = std::mem::take(&mut self.session.scroll_to_selected);
+        let build = self
+            .building_now()
+            .map(|(path, since)| (path.to_path_buf(), since));
 
         let mut intents = Vec::new();
         egui::ScrollArea::horizontal()
@@ -63,7 +66,8 @@ impl IboardApp {
                             labels: &self.labels,
                             past_reviews: &self.past_reviews,
                             can_review: self.agent.configured(),
-                            building: self.session.build.is_some(),
+                            building: build.is_some(),
+                            build: build.as_ref().map(|(path, since)| (path.as_path(), *since)),
                         };
                         intents.extend(column_ui(ui, &view, composer));
                     }
@@ -427,6 +431,7 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
             && view.column.accepts_new_issues()
             && matches!(look, CardLook::Selected { .. }),
         expand: view.picked.is_empty() || view.selected == Some(issue.path.as_path()),
+        build: card_build(view.column, issue, view.build),
         ..CardExtras::default()
     };
     issue_card(ui, issue, view.width, look, view.labels, extras)

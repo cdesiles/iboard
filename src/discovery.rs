@@ -393,6 +393,11 @@ pub fn is_ready_column(dir: &Path) -> bool {
     canonical_name(dir) == Some("Ready")
 }
 
+/// Whether `dir` is the Doing column, where the AI build's agent works.
+pub fn is_doing_column(dir: &Path) -> bool {
+    canonical_name(dir) == Some("Doing")
+}
+
 /// Whether `dir` is the Done column.
 pub fn is_done_column(dir: &Path) -> bool {
     canonical_name(dir) == Some("Done")

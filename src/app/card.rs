@@ -90,6 +90,18 @@ pub(super) fn issue_card(
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
 
+    let response = match extras.build {
+        Some(CardBuild::Running(since)) => {
+            at_work(ui, response.rect, since);
+            if over_action {
+                response
+            } else {
+                let spent = stopwatch(since.elapsed());
+                response.on_hover_text(format!("Building with AI for {spent}"))
+            }
+        }
+        _ => response,
+    };
     card_edge(ui, &response, look);
     let shift = ui.input(|i| i.modifiers.shift);
     let click = if response.double_clicked() && !shift {
@@ -145,6 +157,36 @@ fn expand_action(
     if expand.clicked() {
         body.action = Some(CardAction::Open);
     }
+}
+
+/// The card the build agent works on: it flashes `status-doing` as it is
+/// taken, then its edge breathes and a light runs along its foot.
+fn at_work(ui: &egui::Ui, card: Rect, since: Instant) {
+    const TAKEN: f32 = 0.6;
+    const SWEEP: f32 = 1.6;
+    let p = theme::palette(ui);
+    let painter = ui.painter();
+    let corner = CornerRadius::same(theme::RADIUS_MD);
+    let t = since.elapsed().as_secs_f32();
+    if t < TAKEN {
+        let flash = p.status_doing.gamma_multiply(0.3 * (1.0 - t / TAKEN));
+        painter.rect_filled(card, corner, flash);
+    }
+    let breath = 0.6 + 0.4 * (t * std::f32::consts::PI).cos();
+    let edge = Stroke::new(2.0, p.status_doing.gamma_multiply(breath));
+    painter.rect_stroke(card, corner, edge, StrokeKind::Inside);
+    let track = card.shrink2(Vec2::new(f32::from(theme::RADIUS_MD), 0.0));
+    let span = track.width() * 0.3;
+    let start = track.min.x - span + (t / SWEEP).fract() * (track.width() + span);
+    let y = card.max.y - 3.0;
+    let light = Rect::from_min_max(
+        Pos2::new(start.max(track.min.x), y - 1.0),
+        Pos2::new((start + span).min(track.max.x), y + 1.0),
+    );
+    if light.width() > 0.0 {
+        painter.rect_filled(light, CornerRadius::same(1), p.status_doing);
+    }
+    ui.ctx().request_repaint();
 }
 
 /// The card's edge: 2pt `accent` when selected (scrolled into view when
@@ -401,8 +443,9 @@ fn card_meta(
     (action, action_rects)
 }
 
-/// The icon actions, right to left: Delete, Review on the selected Todo card
-/// and Add label first of the cluster; or Archive and Diff on Done.
+/// The icon actions, right to left: Delete (Stop on the card being built),
+/// Retry on Doing's cards, Review on the selected Todo card and Add label
+/// first of the cluster; or Archive and Diff on Done.
 fn card_actions(
     ui: &mut egui::Ui,
     issue: &Issue,
@@ -438,14 +481,35 @@ fn card_actions(
         );
         return;
     }
-    button(
-        ui,
-        Icon::Trash,
-        "card_delete",
-        "Delete  Del",
-        widgets::Tone::Danger,
-        CardAction::Delete,
-    );
+    if matches!(extras.build, Some(CardBuild::Running(_))) {
+        button(
+            ui,
+            Icon::Stop,
+            "card_stop_build",
+            "Stop the AI build",
+            widgets::Tone::Plain,
+            CardAction::StopBuild,
+        );
+    } else {
+        button(
+            ui,
+            Icon::Trash,
+            "card_delete",
+            "Delete  Del",
+            widgets::Tone::Danger,
+            CardAction::Delete,
+        );
+    }
+    if extras.build.is_some() {
+        button(
+            ui,
+            Icon::Refresh,
+            "card_retry_build",
+            "Retry with AI",
+            widgets::Tone::Plain,
+            CardAction::RetryBuild,
+        );
+    }
     if extras.review_button {
         button(
             ui,
