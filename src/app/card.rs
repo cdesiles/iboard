@@ -409,7 +409,7 @@ fn card_text(ui: &mut egui::Ui, issue: &Issue, inner: f32, extras: &CardExtras) 
         let mut job =
             LayoutJob::simple(issue.summary.clone(), theme::ui_small(), p.ink_muted, inner);
         job.wrap.max_rows = if extras.wide { 6 } else { 3 };
-        ui.add(egui::Label::new(job));
+        ui.add(egui::Label::new(job).show_tooltip_when_elided(false));
     }
     if extras.wide {
         fact_row(ui, issue, extras.sections);
