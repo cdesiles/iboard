@@ -429,7 +429,10 @@ impl IboardApp {
                 }
             }
             Command::Step(key) => self.move_selection(key),
-            Command::Open(path) => self.open_issue(path),
+            Command::Open(path) => {
+                let first = self.selection_of(&path).into_iter().next();
+                self.open_issue(first.unwrap_or(path));
+            }
             Command::NextColumn => self.move_selection_to_next(),
             Command::Edit(path) => self.start_editing(&path),
             Command::Archive(path) => self.archive_issue(&path),

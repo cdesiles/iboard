@@ -130,8 +130,10 @@ enum ProjectChoice {
 /// An issue action available from a card or the detail header.
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum CardAction {
-    /// Open the issue in the reader.
+    /// Open the issue in the reader, from its Expand action.
     Open,
+    /// A plain click: the card becomes the only one selected.
+    Select,
     /// Shift-click: add the issue to the multi-selection, or take it out.
     Pick,
     /// Delete the issue's file.
@@ -157,6 +159,9 @@ struct CardExtras<'a> {
     /// The last verdict, and whether the issue changed since.
     review_pill: Option<(&'a str, Color32, bool)>,
     review_button: bool,
+    /// The hovered card offers Expand: every card but the picked ones that
+    /// do not have focus.
+    expand: bool,
     /// In ColumnFocus: show more of the description.
     wide: bool,
     /// The reader's standard sections, for the wide card's facts row.

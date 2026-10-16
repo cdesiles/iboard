@@ -215,6 +215,12 @@ impl IboardApp {
             .filter(|path| self.board.find(path).is_some())
     }
 
+    /// A plain click: the card becomes the only one selected, without opening.
+    pub(super) fn select(&mut self, path: PathBuf) {
+        self.session.picked.clear();
+        self.session.selected = Some(path);
+    }
+
     /// Shift-click: a picked card leaves the multi-selection, any other joins
     /// it, along with the card selected before.
     pub(super) fn pick(&mut self, path: PathBuf) {

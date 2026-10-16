@@ -57,6 +57,26 @@ fn shift_clicks_pick_cards_and_unpick_them() {
 }
 
 #[test]
+fn only_the_card_with_focus_offers_expand_and_enter_opens_the_first_picked() {
+    let (_dir, mut app, [a, b, _]) = board("expand");
+    app.pick(a.clone());
+    app.pick(b.clone());
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let expand = |path: &Path| ctx.read_response(egui::Id::new(("card_expand", path)));
+
+    draw(&ctx, &mut app, vec![moved(card_center(&ctx, &a))]);
+    draw(&ctx, &mut app, vec![moved(card_center(&ctx, &a))]);
+    assert!(expand(&a).is_none(), "a picked card without focus");
+    draw(&ctx, &mut app, vec![moved(card_center(&ctx, &b))]);
+    draw(&ctx, &mut app, vec![moved(card_center(&ctx, &b))]);
+    assert!(expand(&b).is_some(), "the card with focus");
+
+    frame(&ctx, &mut app, vec![key(Key::Enter, egui::Modifiers::NONE)]);
+    assert!(matches!(&app.session.screen, Screen::Detail(path) if *path == a));
+}
+
+#[test]
 fn a_plain_click_voids_the_selection() {
     let (_dir, mut app, [a, b, c]) = board("void");
     app.pick(a);

@@ -194,12 +194,12 @@ fn composer_keys_and_clicking_away() {
         "the click adds it"
     );
     assert!(app.session.composer.is_none(), "and closes the composer");
-    let opened = todo.join("004-other.md");
-    let got = match &app.session.screen {
-        Screen::Detail(path) => Some(path.clone()),
-        _ => None,
-    };
-    assert_eq!(got, Some(opened), "the clicked card still opens");
+    assert!(matches!(app.session.screen, Screen::Board));
+    assert_eq!(
+        app.session.selected,
+        Some(todo.join("004-other.md")),
+        "the clicked card is still selected"
+    );
 }
 
 /// A composer whose engine answers through `sender`, as the real ones do.

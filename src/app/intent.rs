@@ -6,6 +6,7 @@ use super::*;
 /// One thing a view asked for.
 pub(super) enum Intent {
     Open(PathBuf),
+    Select(PathBuf),
     /// Shift-click: the issue joins or leaves the multi-selection.
     Pick(PathBuf),
     /// The column header's "Clear selection".
@@ -68,6 +69,7 @@ impl CardAction {
         let path = path.to_path_buf();
         match self {
             CardAction::Open => Intent::Open(path),
+            CardAction::Select => Intent::Select(path),
             CardAction::Pick => Intent::Pick(path),
             CardAction::Delete => Intent::Delete(path),
             CardAction::Archive => Intent::Archive(path),
@@ -91,6 +93,7 @@ impl IboardApp {
         for intent in intents {
             match intent {
                 Intent::Open(path) => self.open_issue(path),
+                Intent::Select(path) => self.select(path),
                 Intent::Pick(path) => self.pick(path),
                 Intent::ClearPicked => {
                     self.session.picked.clear();

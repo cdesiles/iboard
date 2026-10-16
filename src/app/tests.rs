@@ -549,50 +549,41 @@ fn the_label_picker_adds_labels_from_the_keyboard() {
 
 /// A press and release without movement is still a click, not a drag.
 #[test]
-fn clicking_a_card_still_opens_it() {
+fn a_click_selects_a_card_and_expand_opens_it() {
     let dir = scratch_dir("click");
     let todo = dir.join("issues/todo");
     std::fs::create_dir_all(&todo).unwrap();
     let file = todo.join("01-demo.md");
     std::fs::write(&file, "# Demo\n").unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
-
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     let ctx = themed_ctx();
+    let click = |app: &mut IboardApp, at: egui::Pos2| {
+        draw(&ctx, app, vec![moved(at)]);
+        draw(&ctx, app, vec![moved(at), button(at, true)]);
+        draw(&ctx, app, vec![button(at, false)]);
+    };
 
     draw(&ctx, &mut app, vec![]);
-    let card_id = egui::Id::new(("issue_card", &file));
-    let start = ctx.read_response(card_id).unwrap().rect.center();
+    let card = ctx
+        .read_response(egui::Id::new(("issue_card", &file)))
+        .unwrap()
+        .rect;
+    click(&mut app, card.center());
+    assert!(matches!(app.session.screen, Screen::Board), "nothing opens");
+    assert_eq!(app.session.selected.as_deref(), Some(file.as_path()));
 
-    draw(&ctx, &mut app, vec![egui::Event::PointerMoved(start)]);
-    draw(
-        &ctx,
-        &mut app,
-        vec![
-            egui::Event::PointerMoved(start),
-            egui::Event::PointerButton {
-                pos: start,
-                button: egui::PointerButton::Primary,
-                pressed: true,
-                modifiers: Default::default(),
-            },
-        ],
+    let expand = ctx
+        .read_response(egui::Id::new(("card_expand", &file)))
+        .expect("the hovered card offers Expand")
+        .rect;
+    assert!(
+        expand.right() <= card.right() && (expand.top() - card.top()).abs() < 10.0,
+        "Expand sits in the top right corner"
     );
-    draw(
-        &ctx,
-        &mut app,
-        vec![egui::Event::PointerButton {
-            pos: start,
-            button: egui::PointerButton::Primary,
-            pressed: false,
-            modifiers: Default::default(),
-        }],
-    );
-
+    click(&mut app, expand.center());
     assert!(
         matches!(app.session.screen, Screen::Detail(path) if path == file),
-        "a plain click should open the issue"
+        "Expand opens the issue"
     );
 }
 

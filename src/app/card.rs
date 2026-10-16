@@ -2,8 +2,8 @@
 
 use super::*;
 
-/// Draws one issue card. A single click reads it, a shift-click picks it into
-/// the multi-selection; dragging the card carries it to another column, with a
+/// Draws one issue card. A click selects it, a shift-click picks it into the
+/// multi-selection, its Expand action or a double click reads it; dragging the card carries it to another column, with a
 /// copy following the cursor. Returns the action the card asked for (if any)
 /// and the rect it occupies.
 pub(super) fn issue_card(
@@ -54,9 +54,12 @@ pub(super) fn issue_card(
             )
         },
     );
-    let body = scope.inner;
+    let mut body = scope.inner;
     let response = scope.response;
     ui.ctx().data_mut(|d| d.insert_temp(rect_id, response.rect));
+    if show_actions && extras.expand {
+        expand_action(ui, issue, response.rect, look, &mut body);
+    }
 
     // Dragging the card carries its file path; a drop on a column moves it,
     // a drop on the DropZones dock archives or deletes it.
@@ -88,15 +91,60 @@ pub(super) fn issue_card(
     }
 
     card_edge(ui, &response, look);
-    let clicked = (response.clicked() || response.double_clicked()) && !over_action;
     let shift = ui.input(|i| i.modifiers.shift);
-    let action = body.action.or(clicked.then_some(if shift {
-        CardAction::Pick
+    let click = if response.double_clicked() && !shift {
+        Some(CardAction::Open)
+    } else if response.clicked() {
+        Some(if shift {
+            CardAction::Pick
+        } else {
+            CardAction::Select
+        })
     } else {
-        CardAction::Open
-    }));
+        None
+    };
+    let action = body.action.or(click.filter(|_| !over_action));
 
     (action, response.rect)
+}
+
+/// Expand, in the card's top right corner over the card's fill: it opens the
+/// Reader.
+fn expand_action(
+    ui: &mut egui::Ui,
+    issue: &Issue,
+    card: Rect,
+    look: CardLook,
+    body: &mut CardBody,
+) {
+    let p = theme::palette(ui);
+    let inset = theme::SPACE_1 + 2.0;
+    let rect = Rect::from_min_size(
+        Pos2::new(
+            card.max.x - inset - widgets::CARD_ACTION,
+            card.min.y + inset,
+        ),
+        Vec2::splat(widgets::CARD_ACTION),
+    );
+    let fill = if look == CardLook::Plain {
+        p.surface
+    } else {
+        p.accent_soft
+    };
+    ui.painter()
+        .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), fill);
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    let expand = widgets::icon_button(
+        &mut child,
+        Icon::Expand,
+        egui::Id::new(("card_expand", &issue.path)),
+        "Expand  ↩",
+        widgets::Tone::Plain,
+    );
+    body.action_rects.push(expand.rect);
+    if expand.clicked() {
+        body.action = Some(CardAction::Open);
+    }
 }
 
 /// The card's edge: 2pt `accent` when selected (scrolled into view when

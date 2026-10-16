@@ -409,6 +409,7 @@ fn focus_card(
         review_button: view.can_review
             && view.column.accepts_new_issues()
             && matches!(look, CardLook::Selected { .. }),
+        expand: view.picked.is_empty() || view.selected == Some(issue.path.as_path()),
         wide: true,
         sections: view.sections,
     };

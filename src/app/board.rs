@@ -394,6 +394,7 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
         review_button: view.can_review
             && view.column.accepts_new_issues()
             && matches!(look, CardLook::Selected { .. }),
+        expand: view.picked.is_empty() || view.selected == Some(issue.path.as_path()),
         ..CardExtras::default()
     };
     issue_card(ui, issue, view.width, look, view.labels, extras)
