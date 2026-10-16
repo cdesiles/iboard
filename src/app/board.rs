@@ -223,8 +223,9 @@ pub(super) fn column_ui(
     intents
 }
 
-/// The column's header: dot, uppercase name, count, Todo's `+`, and the 2pt
-/// status rule under it. Hovered, the count gives way to the controls. A
+/// The column's header: dot, uppercase name, count, and the 2pt status rule
+/// under it. Hovered, the count gives way to the column actions. Picked cards
+/// put "Clear selection" beside the title. A
 /// column holding picked cards offers to clear the multi-selection.
 fn column_head(
     ui: &mut egui::Ui,
@@ -250,34 +251,20 @@ fn column_head(
     if column_title_button(&mut head, &column.name, shortcut).clicked() {
         intents.push(Intent::FocusColumn(column.dir.clone()));
     }
+    if visible
+        .iter()
+        .any(|issue| view.picked.contains(&issue.path))
+    {
+        let id = egui::Id::new(("clear_picked", view.index));
+        let hover = "Clear selection  esc";
+        if widgets::icon_button(&mut head, Icon::Close, id, hover, widgets::Tone::Plain).clicked() {
+            intents.push(Intent::ClearPicked);
+        }
+    }
     head.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-        if column.accepts_new_issues()
-            && widgets::button(ui, ButtonKind::Ghost, Some(Icon::Plus), "", None)
-                .on_hover_text("New issue in Todo (⌘N)")
-                .clicked()
-        {
-            intents.push(Intent::Compose);
-        }
-        if visible
-            .iter()
-            .any(|issue| view.picked.contains(&issue.path))
-        {
-            let id = egui::Id::new(("clear_picked", view.index));
-            let hover = "Clear selection  esc";
-            if widgets::icon_button(ui, Icon::Close, id, hover, widgets::Tone::Plain).clicked() {
-                intents.push(Intent::ClearPicked);
-            }
-        }
         if ui.rect_contains_pointer(head_rect) {
-            if column.name.eq_ignore_ascii_case("done") && !visible.is_empty() {
-                done_controls(ui, view, visible, intents);
-            }
-            let id = egui::Id::new(("expand_column", view.index));
-            let hover = expand_tooltip(&column.name, shortcut);
-            if widgets::icon_button(ui, Icon::Expand, id, &hover, widgets::Tone::Plain).clicked() {
-                intents.push(Intent::FocusColumn(column.dir.clone()));
-            }
+            column_actions(ui, view, visible, shortcut, intents);
             return;
         }
         let shown = visible.len();
@@ -299,6 +286,32 @@ fn column_head(
         ],
         Stroke::new(2.0, status),
     );
+}
+
+/// The hovered header's actions, right to left: Todo's `+`, Done's archive,
+/// then expand.
+fn column_actions(
+    ui: &mut egui::Ui,
+    view: &ColumnView,
+    visible: &[&Issue],
+    shortcut: Option<&str>,
+    intents: &mut Vec<Intent>,
+) {
+    let column = view.column;
+    let id = egui::Id::new(("new_issue", view.index));
+    if column.accepts_new_issues()
+        && widgets::icon_button(ui, Icon::Plus, id, "New issue  ⌘N", widgets::Tone::Plain).clicked()
+    {
+        intents.push(Intent::Compose);
+    }
+    if column.name.eq_ignore_ascii_case("done") && !visible.is_empty() {
+        done_controls(ui, view, visible, intents);
+    }
+    let id = egui::Id::new(("expand_column", view.index));
+    let hover = expand_tooltip(&column.name, shortcut);
+    if widgets::icon_button(ui, Icon::Expand, id, &hover, widgets::Tone::Plain).clicked() {
+        intents.push(Intent::FocusColumn(column.dir.clone()));
+    }
 }
 
 /// The column's cards, or its empty well.

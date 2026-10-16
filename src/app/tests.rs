@@ -875,6 +875,42 @@ fn hovering_the_done_header_offers_archive_all() {
     assert!(!a.exists() && dir.join("issues/.archive/a.md").exists());
 }
 
+/// Todo's `+` is a column action: shown on hover, right of expand.
+#[test]
+fn todo_offers_new_issue_on_hover_right_of_expand() {
+    let dir = scratch_dir("plus-head");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let index = app
+        .board
+        .columns
+        .iter()
+        .position(|c| c.accepts_new_issues())
+        .unwrap();
+    let plus = egui::Id::new(("new_issue", index));
+
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    assert!(ctx.read_response(plus).is_none(), "hidden at rest");
+    let column = ctx
+        .read_response(egui::Id::new(("column_drop", index)))
+        .unwrap()
+        .rect;
+    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
+    draw(&ctx, &mut app, vec![moved(head)]);
+    let at = ctx.read_response(plus).expect("shown on hover").rect;
+    let expand = ctx
+        .read_response(egui::Id::new(("expand_column", index)))
+        .unwrap()
+        .rect;
+    assert!(expand.max.x <= at.min.x, "+ sits right of expand");
+    let at = at.center();
+    draw(&ctx, &mut app, vec![moved(at)]);
+    draw(&ctx, &mut app, vec![button(at, true)]);
+    draw(&ctx, &mut app, vec![button(at, false)]);
+    assert!(app.session.composer.is_some(), "+ opens the composer");
+}
+
 /// A hovered header offers expand at its right, which opens ColumnFocus.
 #[test]
 fn hovering_a_header_offers_expand() {
