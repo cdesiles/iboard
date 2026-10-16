@@ -863,10 +863,48 @@ fn hovering_the_done_header_offers_archive_all() {
         .expect("shown on hover")
         .rect
         .center();
+    let expand = ctx
+        .read_response(egui::Id::new(("expand_column", index)))
+        .expect("expand shown on hover")
+        .rect;
+    assert!(expand.max.x <= at.x, "expand sits left of archive");
     draw(&ctx, &mut app, vec![moved(at)]);
     draw(&ctx, &mut app, vec![button(at, true)]);
     draw(&ctx, &mut app, vec![button(at, false)]);
     assert!(!a.exists() && dir.join("issues/.archive/a.md").exists());
+}
+
+/// A hovered header offers expand at its right, which opens ColumnFocus.
+#[test]
+fn hovering_a_header_offers_expand() {
+    let dir = scratch_dir("expand-head");
+    let doing = dir.join("issues/doing");
+    std::fs::create_dir_all(&doing).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let index = app
+        .board
+        .columns
+        .iter()
+        .position(|c| c.name.eq_ignore_ascii_case("doing"))
+        .unwrap();
+    let expand = egui::Id::new(("expand_column", index));
+
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    assert!(ctx.read_response(expand).is_none(), "hidden at rest");
+    let column = ctx
+        .read_response(egui::Id::new(("column_drop", index)))
+        .unwrap()
+        .rect;
+    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
+    draw(&ctx, &mut app, vec![moved(head)]);
+    let at = ctx.read_response(expand).expect("shown on hover").rect;
+    assert!(at.max.x > column.center().x, "on the right of the header");
+    let at = at.center();
+    draw(&ctx, &mut app, vec![moved(at)]);
+    draw(&ctx, &mut app, vec![button(at, true)]);
+    draw(&ctx, &mut app, vec![button(at, false)]);
+    assert_eq!(app.column_focus.column.as_deref(), Some(doing.as_path()));
 }
 
 #[test]

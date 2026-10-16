@@ -94,8 +94,7 @@ pub(super) fn status_color(p: &Palette, column: &Column) -> Color32 {
 
 /// The column header's title as a button (see the Column component): at rest
 /// it is just the uppercase `ui-label`, on hover it takes a `surface-hover`
-/// fill and shows a small expand icon in `ink-muted`. Clicking it expands the
-/// column to the whole window (ColumnFocus); the tooltip names the shortcut.
+/// fill. Clicking it expands the column to the whole window (ColumnFocus).
 pub(super) fn column_title_button(
     ui: &mut egui::Ui,
     name: &str,
@@ -106,17 +105,11 @@ pub(super) fn column_title_button(
     let text = widgets::text_width(ui, &label, theme::ui_label())
         + label.chars().count() as f32 * theme::LABEL_TRACKING;
     let pad = theme::SPACE_2;
-    let gap = 6.0;
-    let icon = 12.0;
-    let width = pad * 2.0 + text + gap + icon;
+    let width = pad * 2.0 + text;
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 20.0), Sense::click());
-    let tooltip = match shortcut {
-        Some(key) => format!("Show {name} full screen ({key})"),
-        None => format!("Show {name} full screen"),
-    };
     let response = response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(tooltip);
+        .on_hover_text(expand_tooltip(name, shortcut));
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         if response.hovered() {
@@ -142,15 +135,15 @@ pub(super) fn column_title_button(
             label_galley,
             p.ink,
         );
-        if response.hovered() {
-            let icon_rect = Rect::from_center_size(
-                Pos2::new(rect.max.x - pad - icon / 2.0, rect.center().y),
-                Vec2::splat(icon),
-            );
-            theme::paint_icon(painter, Icon::Expand, icon_rect, p.ink_muted);
-        }
     }
     response
+}
+
+fn expand_tooltip(name: &str, shortcut: Option<&str>) -> String {
+    match shortcut {
+        Some(key) => format!("Show {name} full screen  {key}"),
+        None => format!("Show {name} full screen"),
+    }
 }
 
 pub(super) fn column_ui(
@@ -230,7 +223,7 @@ pub(super) fn column_ui(
 }
 
 /// The column's header: dot, uppercase name, count, Todo's `+`, and the 2pt
-/// status rule under it. Hovered, Done trades its count for its controls.
+/// status rule under it. Hovered, the count gives way to the controls.
 fn column_head(
     ui: &mut egui::Ui,
     view: &ColumnView,
@@ -264,11 +257,15 @@ fn column_head(
         {
             intents.push(Intent::Compose);
         }
-        if column.name.eq_ignore_ascii_case("done")
-            && !visible.is_empty()
-            && ui.rect_contains_pointer(head_rect)
-        {
-            done_controls(ui, view, visible, intents);
+        if ui.rect_contains_pointer(head_rect) {
+            if column.name.eq_ignore_ascii_case("done") && !visible.is_empty() {
+                done_controls(ui, view, visible, intents);
+            }
+            let id = egui::Id::new(("expand_column", view.index));
+            let hover = expand_tooltip(&column.name, shortcut);
+            if widgets::icon_button(ui, Icon::Expand, id, &hover, widgets::Tone::Plain).clicked() {
+                intents.push(Intent::FocusColumn(column.dir.clone()));
+            }
             return;
         }
         let shown = visible.len();
