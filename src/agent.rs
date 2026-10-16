@@ -20,6 +20,7 @@
 //! ever returns text: writing the file stays the user's decision.
 
 use std::ffi::OsString;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -27,6 +28,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::build_log;
 use crate::files;
 use crate::job::{Cancel, Job};
 use crate::process;
@@ -589,7 +591,13 @@ pub fn run(
     run_with(config, prompt, issue, cancel, Purpose::Answer, None, None)
 }
 
-/// [`run`] for `purpose`, in `dir` when set; the agent's steps land in
+/// Where a build runs: the project it edits, and the log its output goes to.
+struct Workspace<'a> {
+    dir: &'a Path,
+    log: &'a Path,
+}
+
+/// [`run`] for `purpose`, in `workspace` when set; the agent's steps land in
 /// `progress` as they come.
 fn run_with(
     config: &AgentConfig,
@@ -598,7 +606,7 @@ fn run_with(
     cancel: &Cancel,
     purpose: Purpose,
     progress: Option<&Progress>,
-    dir: Option<&Path>,
+    workspace: Option<&Workspace>,
 ) -> Result<String, String> {
     let model = match config.model.trim() {
         "" if config.tool != Tool::Custom => default_model(config.tool).unwrap_or_default(),
@@ -617,9 +625,10 @@ fn run_with(
         tool => tool.key(),
     };
     let mut command = command(config, &model, prompt, &prompt_file, issue, purpose);
-    if let Some(dir) = dir {
-        command.current_dir(dir);
+    if let Some(workspace) = workspace {
+        command.current_dir(workspace.dir);
     }
+    let mut log = workspace.and_then(|workspace| build_log::open(workspace.log).ok());
     let timeout = if purpose == Purpose::Build {
         BUILD_TIMEOUT
     } else {
@@ -631,6 +640,11 @@ fn run_with(
             && let Some(step) = step_of(line)
         {
             *progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(step);
+        }
+        if let Some(log) = log.as_mut() {
+            for entry in build_log::entries(line) {
+                let _ = writeln!(log, "{entry}");
+            }
         }
     });
     if custom {
@@ -679,36 +693,49 @@ pub fn start_review(
 }
 
 /// Runs the agent on `prompt` to implement `issue`, from `project`, on a
-/// background thread, with the [`Progress`] its steps land in. Dropping the
-/// job stops the agent.
+/// background thread, with the [`Progress`] its steps land in. What it does
+/// is appended to `log`, under a heading. Dropping the job stops the agent.
 pub fn start_build(
     config: &AgentConfig,
     prompt: &str,
     issue: &Path,
     project: &Path,
+    log: &Path,
 ) -> (Job<Result<String, String>>, Progress) {
     let (config, prompt) = (config.clone(), prompt.to_string());
-    let (issue, project) = (issue.to_path_buf(), project.to_path_buf());
+    let (issue, project, log) = (
+        issue.to_path_buf(),
+        project.to_path_buf(),
+        log.to_path_buf(),
+    );
     let progress = Progress::default();
     let steps = Arc::clone(&progress);
     let job = Job::spawn(move |cancel| {
+        let at = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+        let _ = build_log::append(&log, &build_log::heading(&at, &config.label()));
+        let workspace = Workspace {
+            dir: &project,
+            log: &log,
+        };
         let (purpose, steps) = (Purpose::Build, Some(&steps));
-        run_with(
+        let result = run_with(
             &config,
             &prompt,
             &issue,
             cancel,
             purpose,
             steps,
-            Some(&project),
-        )
+            Some(&workspace),
+        );
+        let _ = build_log::append(&log, &build_log::outcome(&result));
+        result
     });
     (job, progress)
 }
 
 /// What one streamed event says the agent is doing: a tool call from
 /// OpenCode (`tool_use`) or Claude Code (`assistant` with a `tool_use` part).
-fn step_of(line: &str) -> Option<String> {
+pub(crate) fn step_of(line: &str) -> Option<String> {
     let event: serde_json::Value = serde_json::from_str(line).ok()?;
     match event["type"].as_str()? {
         "tool_use" => describe_tool(
@@ -726,7 +753,7 @@ fn step_of(line: &str) -> Option<String> {
 }
 
 /// "Reading app/review.rs…": the tool as a verb, and the tail of its target.
-fn describe_tool(tool: &str, input: &serde_json::Value) -> Option<String> {
+pub(crate) fn describe_tool(tool: &str, input: &serde_json::Value) -> Option<String> {
     let verb = match tool.to_ascii_lowercase().as_str() {
         "read" => "Reading".to_string(),
         "grep" | "glob" | "list" | "ls" | "search" => "Searching".to_string(),

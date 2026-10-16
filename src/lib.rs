@@ -11,6 +11,7 @@
 //! design system, in a terminal or in its own window.
 
 pub mod agent;
+pub mod build_log;
 pub mod commits;
 pub mod config;
 pub mod design;

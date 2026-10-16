@@ -290,6 +290,9 @@ impl IboardApp {
         if reading && done {
             self.commits_button(ui, &path);
         }
+        if reading && self.has_agent_log(&path) {
+            self.agent_log_button(ui, &path);
+        }
         if reading
             && !done
             && widgets::button(ui, ButtonKind::Secondary, None, "Draft design", None)

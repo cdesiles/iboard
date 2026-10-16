@@ -37,6 +37,7 @@ use crate::{design_ui, dialog, recents, sheet};
 use iboard::design::{self, DesignSystem};
 use iboard::prompts;
 
+mod agent_log;
 mod board;
 mod build;
 mod card;
@@ -624,6 +625,8 @@ struct Session {
     diff: Option<diff_view::DiffView>,
     /// The AI build working through Ready, while it runs.
     build: Option<build::Build>,
+    /// The agent log open beside the reader.
+    agent_log: Option<agent_log::LogView>,
 }
 
 impl Default for Session {
@@ -658,6 +661,7 @@ impl Default for Session {
             refine: None,
             diff: None,
             build: None,
+            agent_log: None,
         }
     }
 }

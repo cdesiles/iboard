@@ -183,3 +183,31 @@ fn retrying_the_issue_at_work_keeps_the_rest_of_the_run() {
     assert!(app.build_status().unwrap().contains("(1/2)"));
     assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
 }
+
+#[test]
+fn the_agent_log_shows_what_the_build_did_on_the_issue() {
+    let (_dir, mut app) = board("build-log", "echo working on it # {prompt}");
+    let ctx = themed_ctx();
+    app.apply(vec![Intent::Build(vec![ready(&app)[0].clone()])]);
+    let taken = app.building_now().unwrap().0.to_path_buf();
+    assert!(app.has_agent_log(&taken), "offered while the agent runs");
+    assert!(until(|| {
+        app.poll_build(&ctx);
+        app.session.build.is_none()
+    }));
+    assert!(app.has_agent_log(&taken), "and once it is done");
+    assert!(!app.has_agent_log(&ready(&app)[0]));
+
+    app.open_issue(taken.clone());
+    app.toggle_agent_log(&taken);
+    draw(&ctx, &mut app, vec![]);
+    let text = &app.session.agent_log.as_ref().unwrap().text;
+    assert!(text.starts_with("── ") && text.contains("custom"), "{text}");
+    assert!(text.ends_with("working on it\n✓ Finished\n"), "{text}");
+
+    app.toggle_agent_log(&taken);
+    assert!(
+        app.session.agent_log.is_none(),
+        "the button closes it again"
+    );
+}

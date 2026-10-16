@@ -2,6 +2,7 @@
 //! to bottom, each moved to the next column while the agent works on it.
 
 use super::*;
+use crate::build_log;
 
 /// The issues an AI build goes through, and the one its agent is on.
 pub(super) struct Build {
@@ -109,7 +110,9 @@ impl IboardApp {
         };
         let prompt = prompts::build_prompt(&self.relative(&issue), &content);
         let project = self.located.project_dir.clone();
-        let (answer, progress) = agent::start_build(&self.build_agent, &prompt, &issue, &project);
+        let log = build_log::path(&self.board.root, &issue);
+        let (answer, progress) =
+            agent::start_build(&self.build_agent, &prompt, &issue, &project, &log);
         self.session.build = Some(Build {
             queue,
             current: issue,
