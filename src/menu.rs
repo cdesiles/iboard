@@ -2,8 +2,8 @@
 //!
 //! winit installs a default menu named after the process (`iboard`). This
 //! replaces it with one owned by the app: About, Hide and Quit, then File and
-//! Window menus. Call [`install`] once the event loop is running, from the main
-//! thread.
+//! Window menus, the latter also sizing the text through egui's zoom. Call
+//! [`install`] once the event loop is running, from the main thread.
 //!
 //! The Quit item deliberately does *not* send AppKit's `terminate:`. That tears
 //! the `NSWindow` down, and the Touch Bar finder then races the teardown and
@@ -77,6 +77,27 @@ define_class!(
             SETTINGS_REQUESTED.store(true, Ordering::SeqCst);
             if let Some(ctx) = CONTEXT.get() {
                 ctx.request_repaint();
+            }
+        }
+
+        #[unsafe(method(zoomIn:))]
+        fn zoom_in(&self, _sender: Option<&AnyObject>) {
+            if let Some(ctx) = CONTEXT.get() {
+                eframe::egui::gui_zoom::zoom_in(ctx);
+            }
+        }
+
+        #[unsafe(method(zoomOut:))]
+        fn zoom_out(&self, _sender: Option<&AnyObject>) {
+            if let Some(ctx) = CONTEXT.get() {
+                eframe::egui::gui_zoom::zoom_out(ctx);
+            }
+        }
+
+        #[unsafe(method(resetZoom:))]
+        fn reset_zoom(&self, _sender: Option<&AnyObject>) {
+            if let Some(ctx) = CONTEXT.get() {
+                ctx.set_zoom_factor(1.0);
             }
         }
 
@@ -173,6 +194,16 @@ pub fn install(app_name: &str, credits: &str, settings: bool) {
     let window_menu = submenu(mtm, &menubar, "Window");
     window_menu.addItem(&item(mtm, "Minimize", Some(sel!(performMiniaturize:)), "m"));
     window_menu.addItem(&item(mtm, "Zoom", Some(sel!(performZoom:)), ""));
+    window_menu.addItem(&NSMenuItem::separatorItem(mtm));
+    for (title, action, key) in [
+        ("Increase Font Size", sel!(zoomIn:), "+"),
+        ("Decrease Font Size", sel!(zoomOut:), "-"),
+        ("Actual Size", sel!(resetZoom:), "0"),
+    ] {
+        let zoom = item(mtm, title, Some(action), key);
+        set_target(&zoom, target);
+        window_menu.addItem(&zoom);
+    }
     if settings {
         window_menu.addItem(&NSMenuItem::separatorItem(mtm));
         // No key equivalent: `⌘,` stays the app's own toggle, handled in egui.
