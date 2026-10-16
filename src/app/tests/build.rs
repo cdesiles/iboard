@@ -143,6 +143,11 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
         ctx.read_response(egui::Id::new(("card_delete", &taken)))
             .is_none()
     );
+    assert!(
+        ctx.read_response(egui::Id::new(("card_retry_build", &taken)))
+            .is_none(),
+        "no retry while its agent runs"
+    );
     click(&ctx, &mut app, egui::Id::new(("card_stop_build", &taken)));
     assert!(
         app.session.build.is_none(),

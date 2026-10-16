@@ -461,7 +461,7 @@ fn card_meta(
 }
 
 /// The icon actions, right to left: Delete (Stop on the card being built),
-/// Retry on Doing's cards, Review on the selected Todo card and Add label
+/// Retry on Doing's cards no agent is on, Review on the selected Todo card and Add label
 /// first of the cluster; or Archive and Diff on Done.
 fn card_actions(
     ui: &mut egui::Ui,
@@ -517,7 +517,7 @@ fn card_actions(
             CardAction::Delete,
         );
     }
-    if extras.build.is_some() {
+    if matches!(extras.build, Some(CardBuild::Retry)) {
         button(
             ui,
             Icon::Refresh,
