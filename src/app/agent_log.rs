@@ -3,7 +3,7 @@
 
 use super::review::review_head;
 use super::*;
-use crate::build_log;
+use crate::build_log::{self, Entry};
 
 /// The log open beside the reader, read again whenever its file grows.
 pub(super) struct LogView {
@@ -11,6 +11,7 @@ pub(super) struct LogView {
     file: PathBuf,
     len: Option<u64>,
     pub(super) text: String,
+    cache: CommonMarkCache,
 }
 
 impl LogView {
@@ -59,6 +60,7 @@ impl IboardApp {
             file: build_log::path(&self.board.root, path),
             len: None,
             text: String::new(),
+            cache: CommonMarkCache::default(),
         });
     }
 
@@ -98,17 +100,65 @@ impl IboardApp {
                             .stick_to_bottom(true)
                             .auto_shrink(false)
                             .show(ui, |ui| {
-                                let (text, color) = match log.text.as_str() {
-                                    "" => ("The agent has not said anything yet.", p.ink_muted),
-                                    text => (text, p.ink),
-                                };
-                                ui.label(
-                                    RichText::new(text)
-                                        .font(egui::FontId::monospace(11.0))
-                                        .color(color),
-                                );
+                                if log.text.is_empty() {
+                                    ui.label(
+                                        RichText::new("The agent has not said anything yet.")
+                                            .color(p.ink_muted),
+                                    );
+                                }
+                                log_entries(ui, &log.text, &mut log.cache);
                             });
                     });
             });
+    }
+}
+
+/// The log read as what it is: each run under its heading, the agent's
+/// messages as rendered markdown, its steps and outcomes as quiet lines.
+fn log_entries(ui: &mut egui::Ui, text: &str, cache: &mut CommonMarkCache) {
+    let p = theme::palette(ui);
+    ui.style_mut()
+        .text_styles
+        .insert(egui::TextStyle::Body, theme::read_body());
+    ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+    for (at, entry) in build_log::parse(text).into_iter().enumerate() {
+        match entry {
+            Entry::Run(run) => {
+                if at > 0 {
+                    ui.add_space(theme::SPACE_3);
+                    ui.separator();
+                }
+                ui.label(
+                    RichText::new(run)
+                        .font(theme::meta())
+                        .color(p.review)
+                        .strong(),
+                );
+            }
+            Entry::Step(step) => {
+                ui.label(
+                    RichText::new(format!("→ {step}"))
+                        .font(egui::FontId::monospace(11.0))
+                        .color(p.ink_faint),
+                );
+            }
+            Entry::Outcome { ok, text } => {
+                let (mark, color) = if ok {
+                    ("✓", p.status_done)
+                } else {
+                    ("✗", p.danger)
+                };
+                ui.label(
+                    RichText::new(format!("{mark} {text}"))
+                        .color(color)
+                        .strong(),
+                );
+            }
+            Entry::Message(message) => {
+                ui.push_id(("message", at), |ui| {
+                    CommonMarkViewer::new().show(ui, cache, &message);
+                });
+            }
+        }
     }
 }

@@ -50,9 +50,11 @@ impl IboardApp {
         let logged = self.agent_log_open(path);
         if reviewed || logged {
             let p = theme::palette(ui);
-            egui::Panel::right("review")
-                .exact_size(REVIEW_PANEL_WIDTH)
-                .resizable(false)
+            let widest = (ui.available_width() * 0.7).max(REVIEW_PANEL_WIDTH);
+            let panel = egui::Panel::right("review")
+                .default_size(REVIEW_PANEL_WIDTH)
+                .size_range(REVIEW_PANEL_WIDTH..=widest)
+                .resizable(true)
                 .frame(Frame::new().fill(p.bg).inner_margin(Margin {
                     left: theme::SPACE_5 as i8,
                     right: theme::SPACE_5 as i8,
@@ -66,6 +68,7 @@ impl IboardApp {
                         self.agent_log_panel(ui);
                     }
                 });
+            resize_grip(ui, panel.response.rect);
         }
 
         match self.session.detail_mode {
@@ -715,4 +718,15 @@ pub(super) fn paint_rest_hint(ui: &egui::Ui, rest: Rect) {
     );
     x += text.size().x + gap;
     widgets::paint_kbd(ui, "E", Pos2::new(x, y));
+}
+
+/// The little grip on the side panel's edge, saying it can be dragged wider.
+fn resize_grip(ui: &egui::Ui, panel: Rect) {
+    let p = theme::palette(ui);
+    let grip = Rect::from_center_size(
+        egui::pos2(panel.left(), panel.center().y),
+        Vec2::new(4.0, 32.0),
+    );
+    ui.painter()
+        .rect_filled(grip, CornerRadius::same(2), p.line_strong);
 }

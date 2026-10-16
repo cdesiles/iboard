@@ -88,7 +88,60 @@ fn message(text: &serde_json::Value) -> Option<String> {
 }
 
 fn step(step: String) -> String {
-    format!("→ {step}")
+    format!("→ {}", step.lines().next().unwrap_or_default().trim_end())
+}
+
+/// One piece of a log, as the agent log panel shows it.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Entry<'a> {
+    /// A run's heading: when, and which agent.
+    Run(&'a str),
+    /// A tool the agent used.
+    Step(&'a str),
+    /// How a run ended, and whether it went well.
+    Outcome { ok: bool, text: &'a str },
+    /// What the agent said, in markdown, over one or more lines.
+    Message(String),
+}
+
+/// The log's `text` cut into its runs, steps, outcomes and messages; the
+/// lines between two marked ones make one message.
+pub fn parse(text: &str) -> Vec<Entry<'_>> {
+    let mut entries = Vec::new();
+    let mut message: Vec<&str> = Vec::new();
+    let flush = |message: &mut Vec<&str>, entries: &mut Vec<Entry>| {
+        let text = message.join("\n");
+        if !text.trim().is_empty() {
+            entries.push(Entry::Message(text.trim().to_string()));
+        }
+        message.clear();
+    };
+    for line in text.lines() {
+        let marked = if let Some(rest) = line.strip_prefix("── ") {
+            Some(Entry::Run(rest.trim()))
+        } else if let Some(rest) = line.strip_prefix("→ ") {
+            Some(Entry::Step(rest.trim()))
+        } else if let Some(rest) = line.strip_prefix("✓ ") {
+            Some(Entry::Outcome {
+                ok: true,
+                text: rest.trim(),
+            })
+        } else {
+            line.strip_prefix("✗ ").map(|rest| Entry::Outcome {
+                ok: false,
+                text: rest.trim(),
+            })
+        };
+        match marked {
+            Some(entry) => {
+                flush(&mut message, &mut entries);
+                entries.push(entry);
+            }
+            None => message.push(line),
+        }
+    }
+    flush(&mut message, &mut entries);
+    entries
 }
 
 #[cfg(test)]
@@ -120,6 +173,35 @@ mod tests {
         );
         assert_eq!(entries("plain output  "), ["plain output"]);
         assert!(entries("   ").is_empty());
+    }
+
+    #[test]
+    fn a_log_parses_into_runs_steps_messages_and_outcomes() {
+        let log = "── 2026-10-17 · opencode\nLet me **look**.\n\n- one\n- two\n→ Reading app.rs…\nDone.\n✓ Finished\n── later · claude\n✗ stopped\n";
+        assert_eq!(
+            parse(log),
+            [
+                Entry::Run("2026-10-17 · opencode"),
+                Entry::Message("Let me **look**.\n\n- one\n- two".into()),
+                Entry::Step("Reading app.rs…"),
+                Entry::Message("Done.".into()),
+                Entry::Outcome {
+                    ok: true,
+                    text: "Finished"
+                },
+                Entry::Run("later · claude"),
+                Entry::Outcome {
+                    ok: false,
+                    text: "stopped"
+                },
+            ]
+        );
+        assert!(parse("").is_empty());
+    }
+
+    #[test]
+    fn a_step_takes_one_line() {
+        assert_eq!(step("Using shell a\nb".into()), "→ Using shell a");
     }
 
     #[test]
