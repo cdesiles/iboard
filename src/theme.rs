@@ -454,6 +454,10 @@ pub enum Icon {
     TagPlus,
     /// A node on a line: the git commits behind an issue.
     Commit,
+    /// A right-pointing triangle: start the AI build.
+    Play,
+    /// A rounded square: stop the AI build.
+    Stop,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -586,6 +590,16 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             painter.line_segment([at(12.0, 2.5), at(12.0, 8.5)], stroke);
             painter.line_segment([at(12.0, 15.5), at(12.0, 21.5)], stroke);
             painter.circle_stroke(at(12.0, 12.0), 3.5 * s, stroke);
+        }
+        Icon::Play => {
+            // Lucide's play.
+            let points = vec![at(6.0, 3.0), at(20.0, 12.0), at(6.0, 21.0)];
+            painter.add(egui::Shape::closed_line(points, stroke));
+        }
+        Icon::Stop => {
+            let square = Rect::from_min_max(at(5.0, 5.0), at(19.0, 19.0));
+            let radius = CornerRadius::same((2.0 * s).round() as u8);
+            painter.rect_stroke(square, radius, stroke, egui::StrokeKind::Middle);
         }
         Icon::Review => {
             // A speech bubble (Lucide's message-circle-question): a circle

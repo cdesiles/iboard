@@ -101,6 +101,24 @@ pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]
     prompt
 }
 
+/// The instruction sent to the AI build agent: implement the issue at
+/// `issue` (relative to the project), whose text is `content`, and wrap it up
+/// the way the project asks.
+pub fn build_prompt(issue: &str, content: &str) -> String {
+    format!(
+        "You implement one issue in this repository, working in it directly. The issue is \
+         `{issue}`; it was just moved to its in-progress column. Read the project's own \
+         instructions first (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, whichever exist) and follow \
+         them: their checks, how a finished issue is closed and how it is committed. Other agents \
+         or people may be changing files at the same time: touch and commit only what this issue \
+         needs. If the issue cannot be done as written, change no code and explain why. End with \
+         a two or three line summary of what you did.\n\
+         \n\
+         ---\n\
+         {content}"
+    )
+}
+
 /// The line each ticket of a split answer starts with.
 pub const SPLIT_MARK: &str = "=== TICKET ===";
 
@@ -314,6 +332,14 @@ mod tests {
             prompt.ends_with("> Three files.\n> Over 1,100 lines.\nOnly design.rs matters now.\n")
         );
         assert!(!review_prompt("# Split", ReviewMode::Quick, &[]).contains("notes"));
+    }
+
+    #[test]
+    fn the_build_prompt() {
+        insta::assert_snapshot!(build_prompt(
+            "issues/doing/001-play.md",
+            "# [feat] Play\n\nStart the ready issues."
+        ));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! rendered markdown reader, and an editor with debounced autosave. Its look
 //! follows the design system in `design/` (see `theme.rs`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -38,6 +38,7 @@ use iboard::design::{self, DesignSystem};
 use iboard::prompts;
 
 mod board;
+mod build;
 mod card;
 mod comments;
 mod compose;
@@ -523,6 +524,8 @@ pub struct IboardApp {
     pending_title: Option<String>,
     /// The user-configured AI tool and model.
     agent: AgentConfig,
+    /// The agent that implements Ready issues: `[build]`, or `agent`.
+    build_agent: AgentConfig,
     /// The user configuration Settings saves to; `None` in tests, so they
     /// never touch the user's file.
     config_file: Option<PathBuf>,
@@ -599,6 +602,8 @@ struct Session {
     enrichment: Option<Enrichment>,
     /// The Diff screen's commits, while it shows.
     diff: Option<diff_view::DiffView>,
+    /// The AI build working through Ready, while it runs.
+    build: Option<build::Build>,
 }
 
 impl Default for Session {
@@ -631,6 +636,7 @@ impl Default for Session {
             commit_hash: None,
             review: None,
             diff: None,
+            build: None,
         }
     }
 }
@@ -701,6 +707,7 @@ impl IboardApp {
         app.config_file = settings::config_file();
         let mut config = UserConfig::load(app.config_file.as_deref());
         app.agent = agent::load(&mut config);
+        app.build_agent = agent::load_build(&mut config, &app.agent);
         app.filter_bar.suggestions = filter::load_suggestions(&mut config);
         app.title_engine = titles::load_engine(&mut config);
         app.confirm_delete = general::load_confirm_delete(&mut config);
@@ -749,6 +756,7 @@ impl IboardApp {
             recents_file: None,
             pending_title: None,
             agent: AgentConfig::default(),
+            build_agent: AgentConfig::default(),
             config_file: None,
             config_problem: None,
             settings: None,
@@ -961,6 +969,8 @@ struct ColumnView<'a> {
     past_reviews: &'a HashMap<PathBuf, PastReview>,
     /// An agent is set up, so the selected Todo card offers Review.
     can_review: bool,
+    /// The AI build runs, so Ready offers Stop instead of Play.
+    building: bool,
 }
 
 /// One column tab of ColumnFocus: its name, count and status colour, and

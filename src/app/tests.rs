@@ -3,6 +3,7 @@
 use super::nav::step_selection;
 use super::*;
 
+mod build;
 mod compose;
 mod design_panel;
 mod diff;

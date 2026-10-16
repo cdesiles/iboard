@@ -1,4 +1,4 @@
-//! Settings › AI review: which agent runs the review, and with which model.
+//! Settings › AI review and AI build: which agent runs, and with which model.
 
 use egui::{Frame, Id, Key, Margin, Modifiers, RichText, Vec2};
 
@@ -140,8 +140,13 @@ impl Dialog {
         ui.add_space(theme::SPACE_2);
         help(
             ui,
-            "iboard fills in {prompt} (a temp file with the issue and instructions), {model} and \
-             {issue} (the issue path). The review is read from stdout.",
+            if self.tab == super::Tab::Build {
+                "iboard fills in {prompt} (a temp file with the issue and instructions), {model} \
+                 and {issue} (the issue path). It runs from the project folder and may edit it."
+            } else {
+                "iboard fills in {prompt} (a temp file with the issue and instructions), {model} \
+                 and {issue} (the issue path). The review is read from stdout."
+            },
             p.ink_muted,
         );
         if let Some(invalid) = &self.invalid {

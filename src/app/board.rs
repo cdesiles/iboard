@@ -63,6 +63,7 @@ impl IboardApp {
                             labels: &self.labels,
                             past_reviews: &self.past_reviews,
                             can_review: self.agent.configured(),
+                            building: self.session.build.is_some(),
                         };
                         intents.extend(column_ui(ui, &view, composer));
                     }
@@ -267,6 +268,10 @@ fn column_head(
             column_actions(ui, view, visible, shortcut, intents);
             return;
         }
+        // A running build keeps its Stop in view.
+        if view.building {
+            build_action(ui, view, visible, intents);
+        }
         let shown = visible.len();
         // Filtered: "2/6", the total in `ink-faint`.
         let mut count = LayoutJob::default();
@@ -288,8 +293,8 @@ fn column_head(
     );
 }
 
-/// The hovered header's actions, right to left: Todo's `+`, Done's archive,
-/// then expand.
+/// The hovered header's actions, right to left: Todo's `+`, Ready's play,
+/// Done's archive, then expand.
 fn column_actions(
     ui: &mut egui::Ui,
     view: &ColumnView,
@@ -304,6 +309,7 @@ fn column_actions(
     {
         intents.push(Intent::Compose);
     }
+    build_action(ui, view, visible, intents);
     if column.name.eq_ignore_ascii_case("done") && !visible.is_empty() {
         done_controls(ui, view, visible, intents);
     }
@@ -311,6 +317,32 @@ fn column_actions(
     let hover = expand_tooltip(&column.name, shortcut);
     if widgets::icon_button(ui, Icon::Expand, id, &hover, widgets::Tone::Plain).clicked() {
         intents.push(Intent::FocusColumn(column.dir.clone()));
+    }
+}
+
+/// Ready's play, which hands its issues to the build agent top to bottom,
+/// or stop while that build runs.
+fn build_action(
+    ui: &mut egui::Ui,
+    view: &ColumnView,
+    visible: &[&Issue],
+    intents: &mut Vec<Intent>,
+) {
+    if !discovery::is_ready_column(&view.column.dir) {
+        return;
+    }
+    let id = egui::Id::new(("build", view.index));
+    let tone = widgets::Tone::Plain;
+    if view.building {
+        if widgets::icon_button(ui, Icon::Stop, id, "Stop the AI build", tone).clicked() {
+            intents.push(Intent::StopBuild);
+        }
+    } else if !visible.is_empty()
+        && widgets::icon_button(ui, Icon::Play, id, "Build with AI, top to bottom", tone).clicked()
+    {
+        intents.push(Intent::Build(
+            visible.iter().map(|issue| issue.path.clone()).collect(),
+        ));
     }
 }
 

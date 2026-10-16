@@ -14,6 +14,13 @@ impl IboardApp {
                 Screen::Detail(path) => self.detail_status(ui, &path),
                 Screen::Diff => self.diff_status(ui),
             };
+            if let Some(text) = self.build_status() {
+                let p = theme::palette(ui);
+                ui.add(
+                    egui::Label::new(RichText::new(text).font(theme::meta()).color(p.accent))
+                        .truncate(),
+                );
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_4;
                 for (key, action) in hints.into_iter().rev() {

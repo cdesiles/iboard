@@ -202,8 +202,15 @@ impl IboardApp {
                     dialog.tab = settings_ui::Tab::Review;
                     return;
                 }
+                let save_build = dialog.build_seen;
+                if save_build && !dialog.validate_build() {
+                    dialog.tab = settings_ui::Tab::Build;
+                    return;
+                }
                 let mut config = dialog.form.clone();
                 config.configured = self.agent.configured() || save_review;
+                let mut build = dialog.build_form.clone();
+                build.configured = self.build_agent.configured() || save_build;
                 let engine = dialog.engine;
                 let confirm_delete = dialog.confirm_delete;
                 let appearance = dialog.appearance;
@@ -218,6 +225,9 @@ impl IboardApp {
                     let mut sections = Vec::new();
                     if save_review && config != self.agent {
                         sections.push(agent::section(&config)?);
+                    }
+                    if save_build && build != self.build_agent {
+                        sections.push(agent::build_section(&build)?);
                     }
                     if engine != self.title_engine {
                         sections.push(titles::section(engine)?);
@@ -244,6 +254,9 @@ impl IboardApp {
                         self.settings_tab = dialog.tab;
                         if save_review {
                             self.agent = config;
+                        }
+                        if save_build {
+                            self.build_agent = build;
                         }
                         self.title_engine = engine;
                         self.confirm_delete = confirm_delete;
@@ -287,6 +300,7 @@ impl IboardApp {
         let mut dialog =
             settings_ui::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
                 .with_labels(&self.labels, used)
+                .with_build(&self.build_agent)
                 .with_appearance(self.appearance);
         dialog.save_error = self.config_problem.clone();
         self.settings = Some(dialog);

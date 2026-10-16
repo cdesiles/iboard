@@ -19,6 +19,10 @@ pub(super) enum Intent {
     Archive(PathBuf),
     /// A done issue's diff, from its card.
     Diff(PathBuf),
+    /// Play, in Ready's hovered header: build these issues, top first.
+    Build(Vec<PathBuf>),
+    /// Stop, in Ready's header while the AI build runs.
+    StopBuild,
     /// "Archive all", in Done's hovered header.
     ArchiveAll(Vec<PathBuf>),
     /// Open or close the LabelPicker on the issue.
@@ -108,6 +112,8 @@ impl IboardApp {
                 Intent::Archive(path) => self.archive_issue(&path),
                 Intent::Diff(path) => self.show_issue_diff(&path),
                 Intent::ArchiveAll(paths) => self.archive_all(&paths),
+                Intent::Build(paths) => self.start_build(paths),
+                Intent::StopBuild => self.stop_build(),
                 Intent::ToggleLabels(path) => self.toggle_label_picker(path),
                 Intent::FilterBy(label) => self.filter_bar.filter.pick(&label),
                 Intent::ShowLabel(label) => {

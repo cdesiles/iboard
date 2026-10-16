@@ -143,7 +143,7 @@ Motion is short and only ever says where something went: the filter field wideni
 
 ## Iconography
 
-Line icons at 14pt, 1.6pt stroke, `currentColor`, drawn on the 24pt control grid: refresh, back chevron, edit pencil, plus, review, trash, archive, tag-plus, git node. The repo has no icon set yet; use Lucide (MIT) glyphs of the same names, and keep any icon paired with a word (the back chevron comes with "Board") except the per-card actions (trash, archive), which carry a tooltip and only appear when the card is hovered, selected or focused.
+Line icons at 14pt, 1.6pt stroke, `currentColor`, drawn on the 24pt control grid: refresh, back chevron, edit pencil, plus, review, trash, archive, tag-plus, git node, play and square (stop). The repo has no icon set yet; use Lucide (MIT) glyphs of the same names, and keep any icon paired with a word (the back chevron comes with "Board") except the per-card actions (trash, archive), which carry a tooltip and only appear when the card is hovered, selected or focused.
 
 ## AI review
 

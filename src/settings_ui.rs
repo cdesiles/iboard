@@ -1,6 +1,6 @@
-//! The Settings dialog (`⌘,`), with four tabs: General (the theme, and
+//! The Settings dialog (`⌘,`), with five tabs: General (the theme, and
 //! whether deleting asks first), AI review (which agent runs the review, and with which model),
-//! Titles (which engine names new issues) and Labels (label colours). See
+//! AI build (the same, for the agent that implements Ready issues), Titles (which engine names new issues) and Labels (label colours). See
 //! `design/components/{GeneralSettings,ReviewSettings,TitleSettings}`.
 //!
 //! One module per tab. What the dialog shows about the tools (where each is
@@ -52,6 +52,7 @@ pub enum Tab {
     #[default]
     General,
     Review,
+    Build,
     Titles,
     Labels,
 }
@@ -63,6 +64,11 @@ pub struct Dialog {
     pub review_seen: bool,
     /// The settings being edited; the app's copy changes only on Save.
     pub form: AgentConfig,
+    /// The AI build tab was shown, so Save writes its settings.
+    pub build_seen: bool,
+    /// The AI build agent being edited. The AI build tab edits it through
+    /// the AI review tab's fields, swapped into `form` while it draws.
+    pub build_form: AgentConfig,
     /// The title engine being chosen.
     pub engine: Engine,
     /// Settings › General: deleting an issue asks first.
@@ -111,6 +117,8 @@ impl Dialog {
             tab,
             review_seen: false,
             form: config.clone(),
+            build_seen: false,
+            build_form: config.clone(),
             engine,
             confirm_delete,
             appearance: Appearance::default(),
@@ -149,6 +157,12 @@ impl Dialog {
         self
     }
 
+    /// Starts Settings › AI build on the agent that implements issues.
+    pub fn with_build(mut self, build: &AgentConfig) -> Self {
+        self.build_form = build.clone();
+        self
+    }
+
     /// Starts Settings › General on the current theme.
     pub fn with_appearance(mut self, appearance: Appearance) -> Self {
         self.appearance = appearance;
@@ -160,6 +174,19 @@ impl Dialog {
     pub fn validate(&mut self) -> bool {
         self.invalid = self.form.validate().err();
         self.invalid.is_none()
+    }
+
+    /// [`Dialog::validate`], for the AI build tab.
+    pub fn validate_build(&mut self) -> bool {
+        self.invalid = self.build_form.validate().err();
+        self.invalid.is_none()
+    }
+
+    /// Settings › AI build: the AI review tab's fields, on the build agent.
+    fn build_body(&mut self, ui: &mut egui::Ui, catalog: &mut Catalog) {
+        std::mem::swap(&mut self.form, &mut self.build_form);
+        self.review_body(ui, catalog);
+        std::mem::swap(&mut self.form, &mut self.build_form);
     }
 
     /// Draws the dialog over the current screen and handles its keys.
@@ -207,6 +234,10 @@ impl Dialog {
                                     self.review_seen = true;
                                     self.review_body(ui, catalog);
                                 }
+                                Tab::Build => {
+                                    self.build_seen = true;
+                                    self.build_body(ui, catalog);
+                                }
                                 Tab::Titles => self.titles_body(ui),
                                 Tab::Labels => {
                                     self.labels_seen = true;
@@ -230,6 +261,7 @@ impl Dialog {
             if let Some(tab) = tabs(ui, self.tab) {
                 self.tab = tab;
                 self.menu = None;
+                self.invalid = None;
             }
         })
     }
@@ -243,6 +275,7 @@ fn tabs(ui: &mut egui::Ui, current: Tab) -> Option<Tab> {
         &[
             (Tab::General, "General"),
             (Tab::Review, "AI review"),
+            (Tab::Build, "AI build"),
             (Tab::Titles, "Titles"),
             (Tab::Labels, "Labels"),
         ],
@@ -391,7 +424,13 @@ mod tests {
             ..Default::default()
         };
         let mut catalog = Catalog::default();
-        for tab in [Tab::General, Tab::Review, Tab::Titles, Tab::Labels] {
+        for tab in [
+            Tab::General,
+            Tab::Review,
+            Tab::Build,
+            Tab::Titles,
+            Tab::Labels,
+        ] {
             for confirm in [true, false] {
                 let mut dialog = Dialog::new(&AgentConfig::default(), Engine::Apple, confirm, tab)
                     .with_labels(&Labels::presets(), ["ops".to_string()]);

@@ -11,6 +11,9 @@
 //! command = ""             # custom only, e.g. "llm -m {model} < {prompt}"
 //! ```
 //!
+//! A `[build]` section, of the same shape, names the agent that implements
+//! Ready issues; without one, the review's agent does.
+//!
 //! `default` is the tool's first favorite model, so it follows the tool's own
 //! settings. [`start`] runs the tool non-interactively against the issue text
 //! and hands the answer back over a channel; the GUI polls it. The agent only
@@ -160,19 +163,28 @@ struct RawAgent {
 /// The agent in the `[ai]` section; unconfigured when there is none, or when
 /// its tool is not one iboard runs, which is reported.
 pub fn load(config: &mut UserConfig) -> AgentConfig {
-    let raw: RawAgent = config.section("ai");
+    load_section(config, "ai").unwrap_or_default()
+}
+
+/// The agent in the `[build]` section, or `review`'s when there is none.
+pub fn load_build(config: &mut UserConfig, review: &AgentConfig) -> AgentConfig {
+    load_section(config, "build").unwrap_or_else(|| review.clone())
+}
+
+fn load_section(config: &mut UserConfig, name: &str) -> Option<AgentConfig> {
+    let raw: RawAgent = config.section(name);
     let tool = raw.tool.trim();
     if tool.is_empty() {
-        return AgentConfig::default();
+        return None;
     }
     let Some(tool) = Tool::from_key(tool) else {
         config.problem(format!(
-            "[ai]: tool \"{tool}\" is not opencode, claude or custom"
+            "[{name}]: tool \"{tool}\" is not opencode, claude or custom"
         ));
-        return AgentConfig::default();
+        return None;
     };
     let model = raw.model.trim();
-    AgentConfig {
+    Some(AgentConfig {
         tool,
         model: if model.eq_ignore_ascii_case(DEFAULT_MODEL) {
             String::new()
@@ -181,12 +193,17 @@ pub fn load(config: &mut UserConfig) -> AgentConfig {
         },
         command: raw.command,
         configured: true,
-    }
+    })
 }
 
 /// The `[ai]` section that stores `config`.
 pub fn section(config: &AgentConfig) -> Result<Section, String> {
     Section::new("ai", &config.to_raw())
+}
+
+/// The `[build]` section that stores `config`.
+pub fn build_section(config: &AgentConfig) -> Result<Section, String> {
+    Section::new("build", &config.to_raw())
 }
 
 /// The folders searched for a tool: `PATH`, then where installers put them.
@@ -409,6 +426,9 @@ fn parse_claude_model(text: &str) -> Option<String> {
 /// How long an agent may work on an answer before it is stopped.
 pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
+/// How long an agent may work on implementing an issue.
+pub const BUILD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+
 /// How long `--version` and `opencode models` may take.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -447,6 +467,26 @@ impl ReviewMode {
     }
 }
 
+/// What a run of the agent is for: a plain answer, a review, or implementing
+/// an issue, which edits the repository.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Purpose {
+    Answer,
+    Review(ReviewMode),
+    Build,
+}
+
+impl Purpose {
+    /// A custom command's `{mode}`.
+    fn key(self) -> &'static str {
+        match self {
+            Purpose::Answer => "",
+            Purpose::Review(mode) => mode.key(),
+            Purpose::Build => "build",
+        }
+    }
+}
+
 /// The step a running review is on, as "Reading src/app.rs…", shared with
 /// the panel that shows it.
 pub type Progress = Arc<Mutex<Option<String>>>;
@@ -469,7 +509,7 @@ fn command(
     prompt: &str,
     prompt_file: &Path,
     issue: &Path,
-    review: Option<ReviewMode>,
+    purpose: Purpose,
 ) -> Command {
     let mut command = match config.tool {
         Tool::Custom => {
@@ -480,10 +520,7 @@ fn command(
                 .env("IBOARD_PROMPT", prompt_file)
                 .env("IBOARD_MODEL", model)
                 .env("IBOARD_ISSUE", issue)
-                .env(
-                    "IBOARD_MODE",
-                    review.map(ReviewMode::key).unwrap_or_default(),
-                );
+                .env("IBOARD_MODE", purpose.key());
             command
         }
         tool => {
@@ -492,19 +529,26 @@ fn command(
                 Command::new(find_binary(name).unwrap_or_else(|| PathBuf::from(name)));
             // `opencode run "…"` and `claude -p "…"` answer once and exit.
             command.arg(if tool == Tool::OpenCode { "run" } else { "-p" });
-            // A review streams its steps as JSON events, so the panel can say
-            // what the agent is doing; a quick one gets no built-in tools.
-            match (tool, review) {
-                (Tool::OpenCode, Some(_)) => {
+            // A review or a build streams its steps as JSON events, so iboard
+            // can say what the agent is doing; a quick review gets no built-in
+            // tools, a build may edit files.
+            match (tool, purpose) {
+                (_, Purpose::Answer) => {}
+                (Tool::OpenCode, _) => {
                     command.args(["--format", "json"]);
                 }
-                (_, Some(mode)) => {
+                (_, _) => {
                     command.args(["--output-format", "stream-json", "--verbose"]);
-                    if mode == ReviewMode::Quick {
-                        command.args(["--tools", ""]);
+                    match purpose {
+                        Purpose::Review(ReviewMode::Quick) => {
+                            command.args(["--tools", ""]);
+                        }
+                        Purpose::Build => {
+                            command.args(["--permission-mode", "acceptEdits"]);
+                        }
+                        _ => {}
                     }
                 }
-                (_, None) => {}
             }
             if !model.is_empty() {
                 command.arg("--model").arg(model);
@@ -542,17 +586,19 @@ pub fn run(
     issue: &Path,
     cancel: &Cancel,
 ) -> Result<String, String> {
-    run_with(config, prompt, issue, cancel, None)
+    run_with(config, prompt, issue, cancel, Purpose::Answer, None, None)
 }
 
-/// [`run`], for a review in `mode` when `review` is set: the agent's steps
-/// land in its [`Progress`] as they come.
+/// [`run`] for `purpose`, in `dir` when set; the agent's steps land in
+/// `progress` as they come.
 fn run_with(
     config: &AgentConfig,
     prompt: &str,
     issue: &Path,
     cancel: &Cancel,
-    review: Option<(ReviewMode, &Progress)>,
+    purpose: Purpose,
+    progress: Option<&Progress>,
+    dir: Option<&Path>,
 ) -> Result<String, String> {
     let model = match config.model.trim() {
         "" if config.tool != Tool::Custom => default_model(config.tool).unwrap_or_default(),
@@ -570,16 +616,17 @@ fn run_with(
         Tool::Custom => "the custom command",
         tool => tool.key(),
     };
-    let command = command(
-        config,
-        &model,
-        prompt,
-        &prompt_file,
-        issue,
-        review.map(|(mode, _)| mode),
-    );
-    let streams = review.filter(|_| !custom).map(|(_, progress)| progress);
-    let output = process::run_with(command, what, cancel, ANSWER_TIMEOUT, |line| {
+    let mut command = command(config, &model, prompt, &prompt_file, issue, purpose);
+    if let Some(dir) = dir {
+        command.current_dir(dir);
+    }
+    let timeout = if purpose == Purpose::Build {
+        BUILD_TIMEOUT
+    } else {
+        ANSWER_TIMEOUT
+    };
+    let streams = progress.filter(|_| !custom);
+    let output = process::run_with(command, what, cancel, timeout, |line| {
         if let Some(progress) = streams
             && let Some(step) = step_of(line)
         {
@@ -595,7 +642,7 @@ fn run_with(
         None => answer,
     };
     match answer.trim() {
-        "" => Err("the agent returned no answer".to_string()),
+        "" if purpose != Purpose::Build => Err("the agent returned no answer".to_string()),
         answer => Ok(answer.to_string()),
     }
 }
@@ -617,8 +664,45 @@ pub fn start_review(
     let (config, prompt, issue) = (config.clone(), prompt.to_string(), issue.to_path_buf());
     let progress = Progress::default();
     let steps = Arc::clone(&progress);
-    let job =
-        Job::spawn(move |cancel| run_with(&config, &prompt, &issue, cancel, Some((mode, &steps))));
+    let job = Job::spawn(move |cancel| {
+        run_with(
+            &config,
+            &prompt,
+            &issue,
+            cancel,
+            Purpose::Review(mode),
+            Some(&steps),
+            None,
+        )
+    });
+    (job, progress)
+}
+
+/// Runs the agent on `prompt` to implement `issue`, from `project`, on a
+/// background thread, with the [`Progress`] its steps land in. Dropping the
+/// job stops the agent.
+pub fn start_build(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    project: &Path,
+) -> (Job<Result<String, String>>, Progress) {
+    let (config, prompt) = (config.clone(), prompt.to_string());
+    let (issue, project) = (issue.to_path_buf(), project.to_path_buf());
+    let progress = Progress::default();
+    let steps = Arc::clone(&progress);
+    let job = Job::spawn(move |cancel| {
+        let (purpose, steps) = (Purpose::Build, Some(&steps));
+        run_with(
+            &config,
+            &prompt,
+            &issue,
+            cancel,
+            purpose,
+            steps,
+            Some(&project),
+        )
+    });
     (job, progress)
 }
 
@@ -986,7 +1070,14 @@ mod tests {
             tool: Tool::OpenCode,
             ..AgentConfig::default()
         };
-        let built = command(&opencode, "vendor/model", "PROMPT", file, issue, None);
+        let built = command(
+            &opencode,
+            "vendor/model",
+            "PROMPT",
+            file,
+            issue,
+            Purpose::Answer,
+        );
         assert_eq!(args(&built), ["run", "--model", "vendor/model", "PROMPT"]);
         let built = command(
             &opencode,
@@ -994,7 +1085,7 @@ mod tests {
             "PROMPT",
             file,
             issue,
-            Some(ReviewMode::Quick),
+            Purpose::Review(ReviewMode::Quick),
         );
         assert_eq!(args(&built), ["run", "--format", "json", "PROMPT"]);
 
@@ -1002,16 +1093,23 @@ mod tests {
             tool: Tool::Claude,
             ..AgentConfig::default()
         };
-        let built = command(&claude, "", "PROMPT", file, issue, None);
+        let built = command(&claude, "", "PROMPT", file, issue, Purpose::Answer);
         assert_eq!(args(&built), ["-p", "PROMPT"]);
         let stream = ["-p", "--output-format", "stream-json", "--verbose"];
-        let built = command(&claude, "", "PROMPT", file, issue, Some(ReviewMode::Quick));
+        let quick = Purpose::Review(ReviewMode::Quick);
+        let built = command(&claude, "", "PROMPT", file, issue, quick);
         assert_eq!(
             args(&built),
             [&stream[..], &["--tools", "", "PROMPT"]].concat()
         );
-        let built = command(&claude, "", "PROMPT", file, issue, Some(ReviewMode::Deep));
+        let deep = Purpose::Review(ReviewMode::Deep);
+        let built = command(&claude, "", "PROMPT", file, issue, deep);
         assert_eq!(args(&built), [&stream[..], &["PROMPT"]].concat());
+        let built = command(&claude, "", "PROMPT", file, issue, Purpose::Build);
+        assert_eq!(
+            args(&built),
+            [&stream[..], &["--permission-mode", "acceptEdits", "PROMPT"]].concat()
+        );
 
         let built = command(
             &custom("llm -m {model} < {prompt} # {issue}"),
@@ -1019,7 +1117,7 @@ mod tests {
             "PROMPT",
             file,
             issue,
-            Some(ReviewMode::Deep),
+            Purpose::Review(ReviewMode::Deep),
         );
         assert_eq!(built.get_program(), "sh");
         assert_eq!(
@@ -1116,6 +1214,22 @@ mod tests {
 
         let (agent, problems) = read("");
         assert!(!agent.configured() && problems.is_empty());
+    }
+
+    #[test]
+    fn the_build_agent_falls_back_to_the_review_agent() {
+        let read = |text: &str| {
+            let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
+            let review = load(&mut config);
+            load_build(&mut config, &review)
+        };
+        let review = "[ai]\ntool = \"claude\"\nmodel = \"opus\"\n";
+        let build = read(review);
+        assert_eq!((build.tool, build.model.as_str()), (Tool::Claude, "opus"));
+        let build = read(&format!("{review}[build]\ntool = \"opencode\"\n"));
+        assert_eq!(build.tool, Tool::OpenCode);
+        assert!(build.configured() && build.model.is_empty());
+        assert!(!read("").configured());
     }
 
     #[test]

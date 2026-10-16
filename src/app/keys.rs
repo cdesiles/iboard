@@ -173,6 +173,7 @@ impl IboardApp {
         self.poll_naming(ctx);
         self.poll_design_draft(ctx);
         self.poll_enrichment(ctx);
+        self.poll_build(ctx);
         self.window_requests(ctx);
 
         let confirming = self.confirm_keys(ctx);

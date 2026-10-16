@@ -1,0 +1,10 @@
+---
+source: src/prompts.rs
+expression: "build_prompt(\"issues/doing/001-play.md\",\n\"# [feat] Play\\n\\nStart the ready issues.\")"
+---
+You implement one issue in this repository, working in it directly. The issue is `issues/doing/001-play.md`; it was just moved to its in-progress column. Read the project's own instructions first (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, whichever exist) and follow them: their checks, how a finished issue is closed and how it is committed. Other agents or people may be changing files at the same time: touch and commit only what this issue needs. If the issue cannot be done as written, change no code and explain why. End with a two or three line summary of what you did.
+
+---
+# [feat] Play
+
+Start the ready issues.
