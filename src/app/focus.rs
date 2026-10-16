@@ -418,6 +418,7 @@ fn focus_card(
         wide: true,
         sections: view.sections,
         build: card_build(view.column, issue, view.builds),
+        labelling: discovery::is_editable_column(&view.column.dir),
     };
     ui.allocate_ui_with_layout(Vec2::new(cell, 0.0), Layout::top_down(Align::Min), |ui| {
         ui.set_width(cell);

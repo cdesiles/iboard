@@ -531,6 +531,9 @@ fn card_actions(
             CardAction::Review,
         );
     }
+    if !extras.labelling {
+        return;
+    }
     // Add label opens the LabelPicker under it.
     let picking = label_picker_open(ui.ctx()).as_deref() == Some(&issue.path);
     let tone = if picking {

@@ -549,6 +549,36 @@ fn the_label_picker_adds_labels_from_the_keyboard() {
     assert!(login.exists(), "the file name never changes");
 }
 
+#[test]
+fn a_doing_issue_offers_no_label_picker() {
+    let dir = scratch_dir("label-doing");
+    let doing = dir.join("issues/doing");
+    std::fs::create_dir_all(&doing).unwrap();
+    let wip = doing.join("wip.md");
+    std::fs::write(&wip, "# [bug] Work in progress\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.session.selected = Some(wip.clone());
+
+    let ctx = themed_ctx();
+    frame(&ctx, &mut app, vec![]);
+    let add = egui::Id::new(("card_add_label", &wip));
+    assert!(ctx.read_response(add).is_none(), "no Add label on the card");
+    frame(
+        &ctx,
+        &mut app,
+        vec![egui::Event::Key {
+            key: Key::L,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+    );
+    assert!(app.session.label_picker.is_none(), "L opens no picker");
+    app.toggle_label_picker(wip.clone());
+    assert!(app.session.label_picker.is_none());
+}
+
 /// A press and release without movement is still a click, not a drag.
 #[test]
 fn a_click_selects_a_card_and_expand_opens_it() {

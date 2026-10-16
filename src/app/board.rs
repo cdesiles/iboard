@@ -464,6 +464,7 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
             && matches!(look, CardLook::Selected { .. }),
         expand: view.picked.is_empty() || view.selected == Some(issue.path.as_path()),
         build: card_build(view.column, issue, view.builds),
+        labelling: discovery::is_editable_column(&view.column.dir),
         ..CardExtras::default()
     };
     issue_card(ui, issue, view.width, look, view.labels, extras)

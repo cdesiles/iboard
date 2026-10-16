@@ -186,6 +186,8 @@ struct CardExtras<'a> {
     /// The reader's standard sections, for the wide card's facts row.
     sections: &'a [String],
     build: Option<CardBuild>,
+    /// Offers Add label: Doing and Done keep the labels they have.
+    labelling: bool,
 }
 
 /// An issue's last review, read from its sidecar, so its card pill can

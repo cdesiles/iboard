@@ -364,7 +364,7 @@ impl IboardApp {
             self.request_delete(path.clone());
         }
         // Add label sits first in the right group, before Delete.
-        if exists && !done && self.session.detail_mode == DetailMode::Preview {
+        if exists && self.can_edit(&path) && self.session.detail_mode == DetailMode::Preview {
             let open = self
                 .session
                 .label_picker

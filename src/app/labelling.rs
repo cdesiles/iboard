@@ -4,9 +4,10 @@ use super::*;
 
 impl IboardApp {
     /// Opens the LabelPicker on `path`, or closes it when it is already open
-    /// there (the trigger again). Done issues keep the labels they have.
+    /// there (the trigger again). Read-only issues (Doing, Done) keep the
+    /// labels they have.
     pub(super) fn toggle_label_picker(&mut self, path: PathBuf) {
-        if self.is_done_issue(&path) {
+        if !self.can_edit(&path) {
             return;
         }
         if self
@@ -92,14 +93,14 @@ impl IboardApp {
         }
     }
 
-    /// Rewrites the issues the picker acts on with `write` (done ones keep
+    /// Rewrites the issues the picker acts on with `write` (read-only ones keep
     /// their labels), and names them for its confirmation; `None` when nothing could be written.
     fn relabel<T>(&mut self, write: impl Fn(&Path) -> Result<T, String>) -> Option<String> {
         let path = self.session.label_picker.as_ref()?.path.clone();
         let paths: Vec<PathBuf> = self
             .selection_of(&path)
             .into_iter()
-            .filter(|path| !self.is_done_issue(path))
+            .filter(|path| self.can_edit(path))
             .collect();
         let mut failure = None;
         for path in &paths {
