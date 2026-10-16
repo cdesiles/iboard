@@ -148,6 +148,11 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
             .is_none(),
         "no retry while its agent runs"
     );
+    assert!(
+        ctx.read_response(egui::Id::new(("card_build_timer", &taken)))
+            .is_some(),
+        "the card shows how long its agent has been at work"
+    );
     click(&ctx, &mut app, egui::Id::new(("card_stop_build", &taken)));
     assert!(
         app.session.build.is_none(),

@@ -90,18 +90,9 @@ pub(super) fn issue_card(
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
 
-    let response = match extras.build {
-        Some(CardBuild::Running(since)) => {
-            at_work(ui, response.rect, since);
-            if over_action {
-                response
-            } else {
-                let spent = stopwatch(since.elapsed());
-                response.on_hover_text(format!("Building with AI for {spent}"))
-            }
-        }
-        _ => response,
-    };
+    if let Some(CardBuild::Running(since)) = extras.build {
+        at_work(ui, response.rect, since);
+    }
     card_edge(ui, &response, look);
     let shift = ui.input(|i| i.modifiers.shift);
     let click = if response.double_clicked() && !shift {
@@ -446,6 +437,9 @@ fn card_meta(
         }
         card_actions(ui, issue, extras, &mut action, &mut action_rects);
     });
+    if let Some(CardBuild::Running(since)) = extras.build {
+        build_timer(ui, issue, since);
+    }
     card_date_label(ui, issue, extras.wide);
     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
         ui.add(
@@ -553,6 +547,23 @@ fn card_actions(
         CardAction::AddLabel,
     );
     set_label_anchor(ui.ctx(), &issue.path, add_label.rect);
+}
+
+/// How long the build agent has been on the issue, `mm:ss` in `status-doing`.
+fn build_timer(ui: &mut egui::Ui, issue: &Issue, since: Instant) {
+    let color = theme::palette(ui).status_doing;
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .id(egui::Id::new(("card_build_timer", &issue.path)))
+            .sense(Sense::hover()),
+        |ui| {
+            ui.label(
+                RichText::new(stopwatch(since.elapsed()))
+                    .font(theme::meta())
+                    .color(color),
+            )
+        },
+    );
 }
 
 /// Wide cards always show the modified date, as on the board's Done cards:
