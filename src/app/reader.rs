@@ -37,12 +37,17 @@ impl IboardApp {
             return;
         }
 
-        if self
+        let reviewed = self
             .session
             .review
             .as_ref()
-            .is_some_and(|review| review.path == path)
-        {
+            .is_some_and(|review| review.path == path);
+        let refined = self
+            .session
+            .refine
+            .as_ref()
+            .is_some_and(|refine| refine.path == path);
+        if reviewed || refined {
             let p = theme::palette(ui);
             egui::Panel::right("review")
                 .exact_size(REVIEW_PANEL_WIDTH)
@@ -53,7 +58,13 @@ impl IboardApp {
                     top: theme::SPACE_5 as i8,
                     bottom: theme::SPACE_5 as i8,
                 }))
-                .show(ui, |ui| self.review_panel(ui));
+                .show(ui, |ui| {
+                    if reviewed {
+                        self.review_panel(ui);
+                    } else {
+                        self.refine_panel(ui);
+                    }
+                });
         }
 
         match self.session.detail_mode {

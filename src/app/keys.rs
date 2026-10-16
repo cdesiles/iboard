@@ -169,6 +169,7 @@ impl IboardApp {
         }
         // Adopt an agent's answer as soon as it lands.
         self.poll_review();
+        self.poll_refinement();
         self.poll_split();
         self.poll_naming(ctx);
         self.poll_design_draft(ctx);
@@ -337,6 +338,8 @@ impl IboardApp {
             notes.draft = None;
         } else if self.session.review.is_some() {
             self.cancel_review();
+        } else if self.session.refine.is_some() {
+            self.escape_refinement(ctx);
         } else {
             match self.session.screen.clone() {
                 Screen::Diff if self.session.diff.as_ref().is_some_and(|v| v.find.is_some()) => {
@@ -491,7 +494,12 @@ impl IboardApp {
                 review.status,
                 ReviewStatus::Running { .. } | ReviewStatus::Splitting { .. }
             )
-        }) {
+        }) || self
+            .session
+            .refine
+            .as_ref()
+            .is_some_and(refine::Refinement::is_running)
+        {
             ctx.request_repaint_after(job::POLL_EVERY);
         }
     }

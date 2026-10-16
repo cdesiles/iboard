@@ -897,13 +897,33 @@ pub fn parse(text: &str) -> Option<Report> {
     if findings.len() != AXES.len() {
         return None;
     }
-    let proposal = proposal_lines.join("\n").trim().to_string();
-    let proposal = if proposal.is_empty() || proposal.eq_ignore_ascii_case("none") {
-        None
-    } else {
-        Some(proposal)
-    };
+    let proposal = proposal_of(&proposal_lines.join("\n"));
     Some(Report { findings, proposal })
+}
+
+/// A proposed rewrite, unless it is empty or the word `NONE`.
+fn proposal_of(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty() && !text.eq_ignore_ascii_case("none")).then(|| text.to_string())
+}
+
+/// One turn of a refinement: the challenger's message, and the refined issue
+/// once it proposes one, after its `PROPOSAL:` line.
+pub fn parse_refinement(text: &str) -> (String, Option<String>) {
+    let lines: Vec<&str> = text.lines().collect();
+    let proposal_line = lines.iter().enumerate().find_map(|(at, line)| {
+        key_and_rest(line.trim())
+            .filter(|(key, _)| key == "PROPOSAL")
+            .map(|(_, rest)| (at, rest))
+    });
+    let Some((at, rest)) = proposal_line else {
+        return (text.trim().to_string(), None);
+    };
+    let proposal = [&[rest][..], &lines[at + 1..]].concat().join("\n");
+    (
+        lines[..at].join("\n").trim().to_string(),
+        proposal_of(&proposal),
+    )
 }
 
 /// A line's `KEY: rest`, the markdown around the key dropped: `**Size:** Pass`
@@ -1302,6 +1322,18 @@ Some context.";
         assert!(parse_split("=== TICKET ===\n# Only one\n").is_none());
         assert!(parse_split("=== TICKET ===\n# A\n=== TICKET ===\nno title\n").is_none());
         assert!(parse_split("prose").is_none());
+    }
+
+    #[test]
+    fn a_refinement_turn_parts_the_challenge_from_the_proposal() {
+        let (message, proposal) = parse_refinement("Who asked for it?\n\n**PROPOSAL:** NONE\n");
+        assert_eq!(message, "Who asked for it?");
+        assert_eq!(proposal, None);
+        let (message, proposal) =
+            parse_refinement("Settled.\nPROPOSAL:\n# [feat] Refine\n\nThe spec.");
+        assert_eq!(message, "Settled.");
+        assert_eq!(proposal.as_deref(), Some("# [feat] Refine\n\nThe spec."));
+        assert_eq!(parse_refinement(" Just prose. ").0, "Just prose.");
     }
 
     #[test]

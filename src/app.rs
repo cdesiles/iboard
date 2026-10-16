@@ -56,6 +56,7 @@ mod labelling;
 mod moves;
 mod nav;
 mod reader;
+mod refine;
 mod review;
 mod split;
 mod status;
@@ -117,6 +118,7 @@ const REVIEW_MENU_WIDTH: f32 = 240.0;
 enum ReviewMenu {
     Review,
     Deep,
+    Refine,
     Settings,
 }
 
@@ -588,6 +590,8 @@ struct Session {
     focus_editor: bool,
     /// The AI review of the open issue, if any.
     review: Option<ReviewState>,
+    /// The refinement of the open issue: a conversation with a challenger.
+    refine: Option<refine::Refinement>,
     /// The reader's comments on the open issue.
     notes: Option<comments::Notes>,
     /// The Design panel, while it is open.
@@ -635,6 +639,7 @@ impl Default for Session {
             scan: None,
             commit_hash: None,
             review: None,
+            refine: None,
             diff: None,
             build: None,
         }

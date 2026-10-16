@@ -101,6 +101,45 @@ pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]
     prompt
 }
 
+/// One turn of a refinement for the agent to read again: who spoke
+/// (`Challenger` or `Author`) and what they said.
+pub type Turn<'a> = (&'a str, &'a str);
+
+/// The instruction for a refinement: the agent plays a product challenger
+/// talking with the issue's author until the issue is a clear spec worth
+/// building, or until it is clear it should be dropped. `conversation` is
+/// what was said so far, oldest first; the issue is read again every turn.
+pub fn refine_prompt(content: &str, conversation: &[Turn], notes: &[(String, String)]) -> String {
+    let mut prompt = format!(
+        "You are a product challenger refining a software issue with its author before it \
+         is planned (backlog refinement). Your sole role is to challenge the intent until \
+         the issue is a clear spec worth building. Is the feature really adding value, and \
+         for whom? Is the bug worth fixing: how often, and how badly does it hurt? Is there \
+         a smaller or simpler way to the same outcome? What is out of scope, and how will \
+         we know it is done? Read only the issue and the conversation: do not open files or \
+         run tools, and do not write code. Be direct and brief: each turn, raise at most \
+         three questions or objections, the most important first, and say plainly when you \
+         think the issue should be dropped, and why. Answer with nothing but this format:\n\
+         \n\
+         <your challenge, in markdown>\n\
+         PROPOSAL:\n\
+         <once the conversation has settled the need, the full refined issue in markdown: \
+         the need, the spec, out of scope and acceptance criteria; until then, the single \
+         word NONE>\n\
+         \n\
+         ---\n\
+         {content}"
+    );
+    push_notes(&mut prompt, notes);
+    if !conversation.is_empty() {
+        prompt.push_str("\n\n---\nThe conversation so far:\n");
+        for (speaker, text) in conversation {
+            prompt.push_str(&format!("\n{speaker}: {}\n", text.trim()));
+        }
+    }
+    prompt
+}
+
 /// The instruction sent to the AI build agent: implement the issue at
 /// `issue` (relative to the project), whose text is `content`, and wrap it up
 /// the way the project asks.
@@ -261,6 +300,15 @@ mod tests {
     #[test]
     fn the_review_prompt() {
         insta::assert_snapshot!(review_prompt(ISSUE, ReviewMode::Quick, &[]));
+    }
+
+    #[test]
+    fn the_refine_prompt() {
+        let conversation = [
+            ("Challenger", "Who needs a taller header?"),
+            ("Author", "Touch users miss the buttons."),
+        ];
+        insta::assert_snapshot!(refine_prompt(ISSUE, &conversation, &[]));
     }
 
     #[test]

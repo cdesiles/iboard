@@ -26,6 +26,7 @@ impl IboardApp {
         let (answer, progress) =
             agent::start_review(&self.agent, &prompt, &target.path, target.mode);
         self.mark_notes_sent(&target.path);
+        self.session.refine = None;
         self.session.review = Some(ReviewState {
             path: target.path,
             draft: target.draft,
@@ -91,9 +92,11 @@ impl IboardApp {
     }
 
     /// Cancels a running review (dropping the job stops the agent), or closes
-    /// a finished one, which stays behind the card's pill.
+    /// a finished one, which stays behind the card's pill. A refinement, in
+    /// the same place, goes with it.
     pub(super) fn cancel_review(&mut self) {
         self.session.review = None;
+        self.session.refine = None;
     }
 
     /// The card's verdict pill: opens the issue with its last review.
@@ -264,6 +267,9 @@ impl IboardApp {
                 if option(ui, "Deep review", false, "reads the repo").clicked() {
                     picked = Some(ReviewMenu::Deep);
                 }
+                if option(ui, "Refine with a challenger", false, "a conversation").clicked() {
+                    picked = Some(ReviewMenu::Refine);
+                }
                 ui.add_space(theme::SPACE_2);
                 ui.separator();
                 widgets::menu_group(ui, "Runs with");
@@ -288,12 +294,15 @@ impl IboardApp {
             })
             .and_then(|inner| inner.inner);
         match picked {
-            Some(ReviewMenu::Review | ReviewMenu::Deep) if running => {}
+            Some(ReviewMenu::Review | ReviewMenu::Deep | ReviewMenu::Refine) if running => {}
             Some(ReviewMenu::Review) if configured => self.start_review(path, draft),
             Some(ReviewMenu::Deep) if configured => {
                 self.start_review_in(path, draft, ReviewMode::Deep);
             }
-            Some(ReviewMenu::Review | ReviewMenu::Deep | ReviewMenu::Settings) => {
+            Some(ReviewMenu::Refine) if configured => self.start_refinement(path),
+            Some(
+                ReviewMenu::Review | ReviewMenu::Deep | ReviewMenu::Refine | ReviewMenu::Settings,
+            ) => {
                 self.open_config();
             }
             None => {}
@@ -403,7 +412,7 @@ impl IboardApp {
 
 /// The panel's `review-soft` head: "Review of x.md", and the agent, mode and
 /// source on the right.
-fn review_head(ui: &mut egui::Ui, title: &str, detail: &str) {
+pub(super) fn review_head(ui: &mut egui::Ui, title: &str, detail: &str) {
     let p = theme::palette(ui);
     Frame::new()
         .fill(p.review_soft)
@@ -604,7 +613,7 @@ fn review_footer(
 
 /// The spinner, the time the agent has taken, and the step it is on:
 /// "0:42 · Reading app/review.rs…".
-fn running_line(ui: &mut egui::Ui, elapsed: Duration, step: Option<String>) {
+pub(super) fn running_line(ui: &mut egui::Ui, elapsed: Duration, step: Option<String>) {
     let p = theme::palette(ui);
     let seconds = elapsed.as_secs();
     let clock = format!("{}:{:02}", seconds / 60, seconds % 60);

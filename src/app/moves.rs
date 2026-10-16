@@ -167,6 +167,7 @@ impl IboardApp {
                     .map(|picker| &mut picker.path),
                 self.session.commits.as_mut().map(|panel| &mut panel.path),
                 self.session.review.as_mut().map(|review| &mut review.path),
+                self.session.refine.as_mut().map(|refine| &mut refine.path),
                 self.session.notes.as_mut().map(|notes| &mut notes.path),
                 self.session
                     .enrichment
@@ -299,6 +300,11 @@ impl IboardApp {
             .review
             .as_ref()
             .is_some_and(|review| review.path == path)
+            || self
+                .session
+                .refine
+                .as_ref()
+                .is_some_and(|refine| refine.path == path)
         {
             self.cancel_review();
         }
@@ -357,6 +363,11 @@ impl IboardApp {
             .review
             .as_ref()
             .is_some_and(|review| review.path == path)
+            || self
+                .session
+                .refine
+                .as_ref()
+                .is_some_and(|refine| refine.path == path)
         {
             self.cancel_review();
         }
