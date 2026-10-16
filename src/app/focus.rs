@@ -96,6 +96,7 @@ impl IboardApp {
             builds: Builds {
                 running: &running,
                 agents: self.session.agents,
+                watching: self.watching_ready(),
             },
         };
         let intents = focus_grid(ui, &view);

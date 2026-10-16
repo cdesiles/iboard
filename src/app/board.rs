@@ -33,6 +33,7 @@ impl IboardApp {
         let scroll_to_selected = std::mem::take(&mut self.session.scroll_to_selected);
         let running = self.building_now();
         let agents = self.session.agents;
+        let watching = self.watching_ready();
 
         let mut intents = Vec::new();
         egui::ScrollArea::horizontal()
@@ -68,6 +69,7 @@ impl IboardApp {
                             builds: Builds {
                                 running: &running,
                                 agents,
+                                watching,
                             },
                         };
                         intents.extend(column_ui(ui, &view, composer));
@@ -274,7 +276,7 @@ fn column_head(
             return;
         }
         // A running build keeps its Stop, and Doing its agents, in view.
-        if !view.builds.running.is_empty() {
+        if view.builds.active() {
             build_action(ui, view, visible, intents);
         }
         agents_stepper(ui, view, intents);
@@ -328,7 +330,7 @@ fn column_actions(
 }
 
 /// Ready's play, which hands its issues to the build agent top to bottom,
-/// or stop while that build runs.
+/// or stop while that build runs or watches Ready for new issues.
 fn build_action(
     ui: &mut egui::Ui,
     view: &ColumnView,
@@ -340,7 +342,7 @@ fn build_action(
     }
     let id = egui::Id::new(("build", view.index));
     let tone = widgets::Tone::Plain;
-    if !view.builds.running.is_empty() {
+    if view.builds.active() {
         if widgets::icon_button(ui, Icon::Stop, id, "Stop the AI build", tone).clicked() {
             intents.push(Intent::StopBuild);
         }

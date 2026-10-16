@@ -264,3 +264,55 @@ fn stopping_one_card_keeps_the_other_agent_at_work() {
     app.apply(vec![Intent::StopAgent(first)]);
     assert_eq!(app.building_now().len(), 1);
 }
+
+#[test]
+fn while_play_is_pressed_an_issue_dropped_in_ready_is_built() {
+    let (dir, mut app) = board("build-watch-drop", "true # {prompt}");
+    let ctx = themed_ctx();
+    std::fs::write(dir.join("issues/todo/003-c.md"), "# C\n").unwrap();
+    app.apply(vec![Intent::Agents(2), Intent::Build(ready(&app))]);
+    assert!(until(|| {
+        app.poll_build(&ctx);
+        app.session.build.is_none()
+    }));
+    assert!(
+        app.watching_ready(),
+        "Play stays pressed once Ready is empty"
+    );
+
+    let todo = dir.join("issues/todo/003-c.md");
+    app.apply(vec![Intent::Move {
+        path: todo,
+        to: dir.join("issues/ready"),
+    }]);
+    app.poll_build(&ctx);
+    assert_eq!(in_column(&dir, "doing"), ["a.md", "b.md", "c.md"]);
+    assert!(in_column(&dir, "ready").is_empty());
+}
+
+#[test]
+fn while_play_is_pressed_ready_is_rescanned_for_other_processes_issues() {
+    let (dir, mut app) = board("build-watch-disk", "sleep 30 # {prompt}");
+    let ctx = themed_ctx();
+    app.auto = false;
+    app.apply(vec![Intent::Agents(3), Intent::Build(ready(&app))]);
+    std::fs::write(dir.join("issues/ready/003-c.md"), "# C\n").unwrap();
+    assert!(until(|| {
+        frame(&ctx, &mut app, vec![]);
+        app.building_now().len() == 3
+    }));
+    assert_eq!(in_column(&dir, "doing"), ["a.md", "b.md", "c.md"]);
+}
+
+#[test]
+fn stop_stops_watching_ready() {
+    let (dir, mut app) = board("build-watch-stop", "sleep 30 # {prompt}");
+    let ctx = themed_ctx();
+    app.apply(vec![Intent::Build(ready(&app)), Intent::StopBuild]);
+    assert!(!app.watching_ready());
+    std::fs::write(dir.join("issues/ready/003-c.md"), "# C\n").unwrap();
+    app.refresh();
+    app.poll_build(&ctx);
+    assert!(app.session.build.is_none());
+    assert_eq!(in_column(&dir, "ready"), ["002-b.md", "003-c.md"]);
+}

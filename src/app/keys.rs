@@ -466,8 +466,9 @@ impl IboardApp {
             self.flush_autosave(false);
         }
 
-        // Auto reads the board again every RESCAN_EVERY, off the UI thread.
-        if self.auto {
+        // Auto, or Play watching Ready, reads the board again every
+        // RESCAN_EVERY, off the UI thread.
+        if self.auto || self.watching_ready() {
             if self.session.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
                 self.last_refresh = Instant::now();
                 let located = self.located.clone();

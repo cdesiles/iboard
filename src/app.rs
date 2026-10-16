@@ -627,6 +627,8 @@ struct Session {
     diff: Option<diff_view::DiffView>,
     /// The AI build working through Ready, while it runs.
     build: Option<build::Build>,
+    /// Ready, watched for new issues from Play until Stop.
+    watch: Option<build::Watch>,
     /// How many build agents may work at once, set on Doing's header.
     agents: usize,
     /// The agent log open beside the reader.
@@ -665,6 +667,7 @@ impl Default for Session {
             refine: None,
             diff: None,
             build: None,
+            watch: None,
             agents: 1,
             agent_log: None,
         }

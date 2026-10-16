@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::build_log;
+use std::collections::HashSet;
 
 /// The most agents an AI build runs at once.
 pub(super) const MAX_AGENTS: usize = 16;
@@ -19,6 +20,27 @@ pub(super) struct Build {
     total: usize,
     /// An agent failed: the rest of the queue was dropped.
     failed: bool,
+}
+
+impl Build {
+    fn new(queue: Vec<PathBuf>) -> Self {
+        Self {
+            total: queue.len(),
+            queue: queue.into(),
+            runs: Vec::new(),
+            taken: 0,
+            failed: false,
+        }
+    }
+}
+
+/// Play stays pressed until Stop: an issue that arrives in Ready, dropped
+/// there or written by another process, joins the build.
+pub(super) struct Watch {
+    /// Ready's issues when the board was last looked at.
+    ready: HashSet<PathBuf>,
+    /// The board generation `ready` was read from.
+    generation: u64,
 }
 
 /// One agent at work on one issue.
@@ -37,9 +59,16 @@ struct Run {
 pub(super) struct Builds<'a> {
     pub(super) running: &'a [(PathBuf, Instant)],
     pub(super) agents: usize,
+    /// Play is pressed: Ready shows Stop even while no agent works.
+    pub(super) watching: bool,
 }
 
 impl Builds<'_> {
+    /// Play is pressed, or an agent is at work: Ready offers Stop.
+    pub(super) fn active(&self) -> bool {
+        self.watching || !self.running.is_empty()
+    }
+
     /// An agent is free for a Doing card's retry.
     fn has_room(&self) -> bool {
         self.running.len() < self.agents
@@ -65,14 +94,60 @@ impl IboardApp {
             return;
         }
         self.session.agents = self.session.agents.max(1);
-        self.session.build = Some(Build {
-            total: paths.len(),
-            queue: paths.into(),
-            runs: Vec::new(),
-            taken: 0,
-            failed: false,
+        self.session.watch = Some(Watch {
+            ready: self.ready_issues().into_iter().collect(),
+            generation: self.board_generation,
         });
+        self.session.build = Some(Build::new(paths));
         self.fill_agents();
+    }
+
+    fn ready_issues(&self) -> Vec<PathBuf> {
+        self.board
+            .columns
+            .iter()
+            .filter(|column| discovery::is_ready_column(&column.dir))
+            .flat_map(|column| column.issues.iter().map(|issue| issue.path.clone()))
+            .collect()
+    }
+
+    /// While Play is pressed, queues the issues that arrived in Ready since
+    /// the board was last read, and hands them to the free agents.
+    fn watch_ready(&mut self) {
+        let generation = self.board_generation;
+        let ready = self.ready_issues();
+        let Some(watch) = self.session.watch.as_mut() else {
+            return;
+        };
+        if watch.generation == generation {
+            return;
+        }
+        watch.generation = generation;
+        let arrived: Vec<PathBuf> = ready
+            .iter()
+            .filter(|path| !watch.ready.contains(*path))
+            .cloned()
+            .collect();
+        watch.ready = ready.into_iter().collect();
+        if arrived.is_empty() {
+            return;
+        }
+        let build = self
+            .session
+            .build
+            .get_or_insert_with(|| Build::new(Vec::new()));
+        for path in arrived {
+            if !build.queue.contains(&path) {
+                build.total += 1;
+                build.queue.push_back(path);
+            }
+        }
+        self.fill_agents();
+    }
+
+    /// Play is pressed: new Ready issues join the build.
+    pub(super) fn watching_ready(&self) -> bool {
+        self.session.watch.is_some()
     }
 
     /// Retry, on a Doing card: an agent starts `path` over where it is. The
@@ -82,13 +157,11 @@ impl IboardApp {
             self.open_settings(settings_ui::Tab::Build);
             return;
         }
-        let mut build = self.session.build.take().unwrap_or(Build {
-            queue: VecDeque::new(),
-            runs: Vec::new(),
-            taken: 0,
-            total: 0,
-            failed: false,
-        });
+        let mut build = self
+            .session
+            .build
+            .take()
+            .unwrap_or_else(|| Build::new(Vec::new()));
         let at = match build.runs.iter().position(|run| run.issue == path) {
             Some(index) => build.runs.remove(index).at,
             None => {
@@ -143,6 +216,7 @@ impl IboardApp {
     /// Stop, on Ready's header: every agent is stopped and the rest of the
     /// queue dropped. The issues they were on stay where they are.
     pub(super) fn stop_build(&mut self) {
+        self.session.watch = None;
         if let Some(build) = self.session.build.take() {
             let what = match build.runs.as_slice() {
                 [run] => file_name(&run.issue),
@@ -161,6 +235,7 @@ impl IboardApp {
         build.runs.retain(|run| run.issue != path);
         if build.runs.is_empty() {
             self.session.build = None;
+            self.session.watch = None;
         }
         let name = file_name(path);
         self.session.notice = Some((format!("Stopped building {name}"), Instant::now()));
@@ -224,6 +299,7 @@ impl IboardApp {
     /// the next issues; a failure drops the rest of the queue. Called every
     /// frame.
     pub(super) fn poll_build(&mut self, ctx: &egui::Context) {
+        self.watch_ready();
         let Some(build) = self.session.build.as_mut() else {
             return;
         };
@@ -243,6 +319,7 @@ impl IboardApp {
             if let Err(err) = result {
                 build.queue.clear();
                 build.failed = true;
+                self.session.watch = None;
                 self.error = Some(format!("Couldn't build {name}: {err}"));
             }
         }
