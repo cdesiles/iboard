@@ -43,6 +43,7 @@ mod card;
 mod comments;
 mod compose;
 mod design_panel;
+mod diff_syntax;
 mod diff_view;
 mod dock;
 mod editor;

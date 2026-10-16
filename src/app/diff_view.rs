@@ -1,12 +1,12 @@
 //! The Diff screen: the commits that closed an issue, as a unified diff with
 //! its files listed on the left, syntax colours, and a find bar.
 
-use std::collections::HashSet;
-use std::sync::OnceLock;
+use std::collections::{HashMap, HashSet};
 
-use egui_extras::syntax_highlighting::{CodeTheme, SyntectSettings, highlight_with};
+use egui::text::{LayoutJob, TextFormat};
 use iboard::diff::{self, CommitDiff, FileDiff, FileStatus, Line, LineKind};
 
+use super::diff_syntax::{self, FileColours, Span};
 use super::*;
 
 /// Every row of the diff is this tall, so only the visible ones are drawn.
@@ -29,6 +29,8 @@ pub(super) struct DiffView {
     rows: Vec<Row>,
     /// Large files the user expanded, by commit and file.
     expanded: HashSet<(usize, usize)>,
+    /// Syntax colours of the files drawn so far, by commit and file.
+    colours: HashMap<(usize, usize), FileColours>,
     pub(super) find: Option<Find>,
     /// Scroll to this offset on the next frame.
     scroll: Option<f32>,
@@ -70,6 +72,7 @@ impl DiffView {
             error: None,
             rows: Vec::new(),
             expanded: HashSet::new(),
+            colours: HashMap::new(),
             find: None,
             scroll: None,
             offset: 0.0,
@@ -442,8 +445,7 @@ fn diff_rows(ui: &mut egui::Ui, view: &mut DiffView) {
     if let Some(offset) = view.scroll.take() {
         area = area.vertical_scroll_offset(offset);
     }
-    let mut style = (**ui.style()).clone();
-    style.override_font_id = Some(egui::FontId::monospace(12.0));
+    let dark = ui.visuals().dark_mode;
     let mut expand = None;
     let output = area.show_rows(ui, ROW_H, view.rows.len(), |ui, range| {
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -462,11 +464,22 @@ fn diff_rows(ui: &mut egui::Ui, view: &mut DiffView) {
                     }
                 }
                 Row::Hunk(c, f, h) => hunk_row(ui, rect, &view.file(c, f).hunks[h].header),
-                Row::Line(c, f, ..) => {
+                Row::Line(c, f, h, l) => {
                     let marks = row_matches(view.find.as_ref(), at);
-                    let ext = view.file(c, f).extension();
+                    if view
+                        .colours
+                        .get(&(c, f))
+                        .is_none_or(|known| known.dark != dark)
+                    {
+                        let colours = diff_syntax::colour_file(view.file(c, f), dark);
+                        view.colours.insert((c, f), colours);
+                    }
+                    let spans = view
+                        .colours
+                        .get(&(c, f))
+                        .and_then(|colours| colours.hunks.get(h)?.get(l));
                     if let Some(line) = view.line(row) {
-                        line_row(ui, rect, line, ext, &style, &marks);
+                        line_row(ui, rect, line, spans.map_or(&[], Vec::as_slice), &marks);
                     }
                 }
             }
@@ -577,8 +590,7 @@ fn line_row(
     ui: &egui::Ui,
     rect: Rect,
     line: &Line,
-    ext: &str,
-    style: &egui::Style,
+    spans: &[Span],
     marks: &[(usize, usize, bool)],
 ) {
     let p = theme::palette(ui);
@@ -617,12 +629,7 @@ fn line_row(
         );
         return;
     }
-    let theme = if ui.visuals().dark_mode {
-        CodeTheme::dark(12.0)
-    } else {
-        CodeTheme::light(12.0)
-    };
-    let job = highlight_with(ui.ctx(), style, &theme, &line.text, ext, syntect_settings());
+    let job = coloured(&line.text, spans, p.ink);
     let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
     let top = rect.center().y - galley.size().y / 2.0;
     for (from, to, current) in marks {
@@ -642,12 +649,29 @@ fn line_row(
     ui.painter().galley(Pos2::new(text_x, top), galley, p.ink);
 }
 
-/// Syntect's grammars with bat's extra ones (TypeScript, Swift, TOML…),
-/// and its themes, loaded once.
-fn syntect_settings() -> &'static SyntectSettings {
-    static SETTINGS: OnceLock<SyntectSettings> = OnceLock::new();
-    SETTINGS.get_or_init(|| SyntectSettings {
-        ps: two_face::syntax::extra_newlines(),
-        ts: syntect::highlighting::ThemeSet::load_defaults(),
-    })
+/// `text` in its syntax colours, or in `ink` where they are missing.
+fn coloured(text: &str, spans: &[Span], ink: Color32) -> LayoutJob {
+    let font = egui::FontId::monospace(12.0);
+    let mut job = LayoutJob::default();
+    let covers = spans.first().is_some_and(|span| span.bytes.start == 0)
+        && spans
+            .last()
+            .is_some_and(|span| span.bytes.end == text.len())
+        && spans
+            .windows(2)
+            .all(|pair| pair[0].bytes.end == pair[1].bytes.start);
+    if !covers {
+        job.append(text, 0.0, TextFormat::simple(font, ink));
+        return job;
+    }
+    for span in spans {
+        let format = TextFormat {
+            font_id: font.clone(),
+            color: span.color,
+            italics: span.italics,
+            ..TextFormat::default()
+        };
+        job.append(text.get(span.bytes.clone()).unwrap_or(""), 0.0, format);
+    }
+    job
 }
