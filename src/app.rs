@@ -62,6 +62,7 @@ mod reader;
 mod refine;
 mod review;
 mod split;
+mod stats;
 mod status;
 mod windows;
 
@@ -660,6 +661,8 @@ struct Session {
     agents: usize,
     /// The agent log open beside the reader.
     agent_log: Option<agent_log::LogView>,
+    /// The project stats panel, from Tools › Project Stats….
+    stats: Option<stats::StatsPanel>,
 }
 
 impl Default for Session {
@@ -698,6 +701,7 @@ impl Default for Session {
             watch: None,
             agents: 1,
             agent_log: None,
+            stats: None,
         }
     }
 }
@@ -973,6 +977,7 @@ impl IboardApp {
         self.design_window(ui);
         self.enrichment_window(ui);
         self.commits_window(ui);
+        self.stats_window(ui);
         self.flush_pending_front(ui.ctx());
         self.flush_closing_composer(ui.ctx());
     }

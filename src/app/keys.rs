@@ -182,6 +182,7 @@ impl IboardApp {
         self.poll_design_draft(ctx);
         self.poll_enrichment(ctx);
         self.poll_build(ctx);
+        self.poll_stats(ctx);
         self.window_requests(ctx);
 
         let confirming = self.confirm_keys(ctx);
@@ -191,6 +192,11 @@ impl IboardApp {
             if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma)) {
                 self.settings = None;
             }
+            self.background(ctx);
+            return;
+        }
+        if self.session.stats.is_some() {
+            self.stats_keys(ctx);
             self.background(ctx);
             return;
         }
@@ -284,8 +290,9 @@ impl IboardApp {
         }
     }
 
-    /// The window's own requests: a quit or Settings picked from the macOS
-    /// menu, and closing the window, one more way of leaving the editor.
+    /// The window's own requests: a quit, Settings or Project Stats picked
+    /// from the macOS menu, and closing the window, one more way of leaving
+    /// the editor.
     fn window_requests(&mut self, ctx: &egui::Context) {
         // A quit from the menu arrives as a flag rather than a window close,
         // so it can run the save prompt before we exit.
@@ -296,6 +303,10 @@ impl IboardApp {
         #[cfg(target_os = "macos")]
         if iboard::menu::take_settings_request() && self.settings.is_none() {
             self.open_settings(self.settings_tab);
+        }
+        #[cfg(target_os = "macos")]
+        if iboard::menu::take_stats_request() {
+            self.open_stats();
         }
         let close_requested = ctx.input(|i| i.viewport().close_requested());
         if close_requested && !self.closing {

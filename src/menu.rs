@@ -1,9 +1,9 @@
 //! The macOS menu bar.
 //!
 //! winit installs a default menu named after the process (`iboard`). This
-//! replaces it with one owned by the app: About, Hide and Quit, then File and
-//! Window menus, the latter also sizing the text through egui's zoom. Call
-//! [`install`] once the event loop is running, from the main thread.
+//! replaces it with one owned by the app: About, Hide and Quit, then File,
+//! Tools and Window menus, the latter also sizing the text through egui's
+//! zoom. Call [`install`] once the event loop is running, from the main thread.
 //!
 //! The Quit item deliberately does *not* send AppKit's `terminate:`. That tears
 //! the `NSWindow` down, and the Touch Bar finder then races the teardown and
@@ -32,6 +32,9 @@ static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 /// Set by Window › Settings… and read once per frame by the app.
 static SETTINGS_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+/// Set by Tools › Project Stats… and read once per frame by the app.
+static STATS_REQUESTED: AtomicBool = AtomicBool::new(false);
+
 /// The running app's context, so a menu action can wake its frame loop.
 static CONTEXT: OnceLock<eframe::egui::Context> = OnceLock::new();
 
@@ -59,6 +62,11 @@ pub fn take_settings_request() -> bool {
     SETTINGS_REQUESTED.swap(false, Ordering::SeqCst)
 }
 
+/// Whether Tools › Project Stats… was picked since the last call.
+pub fn take_stats_request() -> bool {
+    STATS_REQUESTED.swap(false, Ordering::SeqCst)
+}
+
 define_class!(
     /// Receives the menu actions AppKit has no standard selector for.
     #[unsafe(super(NSObject))]
@@ -75,6 +83,14 @@ define_class!(
         #[unsafe(method(openSettings:))]
         fn open_settings(&self, _sender: Option<&AnyObject>) {
             SETTINGS_REQUESTED.store(true, Ordering::SeqCst);
+            if let Some(ctx) = CONTEXT.get() {
+                ctx.request_repaint();
+            }
+        }
+
+        #[unsafe(method(openStats:))]
+        fn open_stats(&self, _sender: Option<&AnyObject>) {
+            STATS_REQUESTED.store(true, Ordering::SeqCst);
             if let Some(ctx) = CONTEXT.get() {
                 ctx.request_repaint();
             }
@@ -128,9 +144,10 @@ fn set_target(item: &NSMenuItem, target: &'static AnyObject) {
 /// Replaces winit's default menu bar. Does nothing off the main thread.
 ///
 /// `app_name` titles the application menu and the About panel; `credits` is the
-/// line under the version there. `settings` adds Window › Settings…, which the
-/// caller watches with [`take_settings_request`].
-pub fn install(app_name: &str, credits: &str, settings: bool) {
+/// line under the version there. `board` adds Window › Settings… and Tools ›
+/// Project Stats…, which the caller watches with [`take_settings_request`] and
+/// [`take_stats_request`].
+pub fn install(app_name: &str, credits: &str, board: bool) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
@@ -190,6 +207,13 @@ pub fn install(app_name: &str, credits: &str, settings: bool) {
     let file_menu = submenu(mtm, &menubar, "File");
     file_menu.addItem(&item(mtm, "Close Window", Some(sel!(performClose:)), "w"));
 
+    if board {
+        let tools_menu = submenu(mtm, &menubar, "Tools");
+        let stats = item(mtm, "Project Stats…", Some(sel!(openStats:)), "");
+        set_target(&stats, target);
+        tools_menu.addItem(&stats);
+    }
+
     // Window menu: AppKit appends the open windows to it.
     let window_menu = submenu(mtm, &menubar, "Window");
     window_menu.addItem(&item(mtm, "Minimize", Some(sel!(performMiniaturize:)), "m"));
@@ -204,7 +228,7 @@ pub fn install(app_name: &str, credits: &str, settings: bool) {
         set_target(&zoom, target);
         window_menu.addItem(&zoom);
     }
-    if settings {
+    if board {
         window_menu.addItem(&NSMenuItem::separatorItem(mtm));
         // No key equivalent: `⌘,` stays the app's own toggle, handled in egui.
         let settings_item = item(mtm, "Settings…", Some(sel!(openSettings:)), "");

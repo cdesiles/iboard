@@ -39,6 +39,7 @@ pub mod prompts;
 pub mod reviews;
 pub mod settings;
 pub mod sheet;
+pub mod stats;
 #[cfg(feature = "gui")]
 pub mod theme;
 pub mod titles;
