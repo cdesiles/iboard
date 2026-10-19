@@ -5,7 +5,7 @@ The board's filter in the header: compact at rest, wide while you use it, with o
 ## Width
 
 - **Rest:** 220pt with a search icon, the placeholder "Filter issues" and the `⌘F` hint.
-- **Focused, or a filter is on:** 480pt. Focused, its own edge turns `accent` (1.5pt), with no separate focus ring around it. It grows to the left into the header's empty space, so the controls on its right (Auto, Refresh, New issue) never move. On a narrow window it takes what is left between the breadcrumb and Auto, never less than 220pt; the breadcrumb path truncates first.
+- **Focused, or a filter is on:** 480pt. Focused, its own edge turns `accent` (1.5pt), with no separate focus ring around it. It grows to the left into the header's empty space, so the controls on its right (Refresh, New issue) never move. On a narrow window it takes what is left between the breadcrumb and the buttons, never less than 220pt; the breadcrumb path truncates first.
 - **Focus leaves with an empty field:** it shrinks back to 220pt. With a filter on, it stays at 480pt with an `accent` edge, so a filtered board is always obvious.
 - The width change takes 120ms and is skipped when reduced motion is on: the field jumps to its width in one frame (see Motion in `design/README.md`).
 

@@ -779,6 +779,7 @@ impl IboardApp {
         app.title_engine = titles::load_engine(&mut config);
         app.confirm_delete = general::load_confirm_delete(&mut config);
         app.appearance = general::load_appearance(&mut config);
+        app.auto = general::load_auto(&mut config);
         theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
         if !config.problems.is_empty() {

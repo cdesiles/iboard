@@ -1,6 +1,6 @@
 # GeneralSettings
 
-The **General** tab of the Settings dialog (`⌘,`), first of four: *General*, *AI review*, *Titles*, *Labels*. It holds two choices: the theme, then whether deleting asks first.
+The **General** tab of the Settings dialog (`⌘,`), first of four: *General*, *AI review*, *Titles*, *Labels*. It holds three choices: the theme, Auto, then whether deleting asks first.
 
 ## Theme
 
@@ -9,6 +9,12 @@ The **General** tab of the Settings dialog (`⌘,`), first of four: *General*, *
 - The help line under it says what the choice does: "Light, whatever the system's appearance.", "Dark, whatever the system's appearance.", "Follows the system's appearance, light or dark."
 - Applied on Save, at once: the board and Settings itself redraw in the new theme. `idesign` reads the same setting when it opens.
 - Both themes draw from the `light` and `dark` values of `design/tokens.json`; nothing is tuned per theme in code.
+
+## Auto
+
+- A checkbox under the label "Auto": "Reload and save automatically", **checked by default**. It lives only here; the board's header has no Auto toggle.
+- **On:** the board reloads when files change on disk, and the Editor saves as you type and on leave. Help line: "The board reloads when files change on disk, and edits save as you type."
+- **Off:** the header shows Refresh, and the Editor asks before leaving unsaved edits. Help line: "Refresh (⌘R) reloads the board, and the editor asks before leaving unsaved edits."
 
 ## Ask before deleting an issue
 
@@ -24,6 +30,9 @@ The **General** tab of the Settings dialog (`⌘,`), first of four: *General*, *
 ```toml
 [appearance]
 theme = "light"  # "dark", or "system" to follow macOS
+
+[auto]
+enabled = true   # false: no reload from disk, no saving as you type
 
 [delete]
 confirm = true   # false: delete without asking

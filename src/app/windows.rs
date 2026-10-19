@@ -214,6 +214,7 @@ impl IboardApp {
                 let engine = dialog.engine;
                 let confirm_delete = dialog.confirm_delete;
                 let appearance = dialog.appearance;
+                let auto = dialog.auto;
                 // `[labels]` is rewritten only once its tab was looked at.
                 let label_table = dialog
                     .labels_seen
@@ -238,6 +239,9 @@ impl IboardApp {
                     if appearance != self.appearance {
                         sections.push(general::appearance_section(appearance)?);
                     }
+                    if auto != self.auto {
+                        sections.push(general::auto_section(auto)?);
+                    }
                     if let Some(table) = &label_table
                         && *table != labels::table(&self.labels.entries())
                     {
@@ -261,6 +265,7 @@ impl IboardApp {
                         self.title_engine = engine;
                         self.confirm_delete = confirm_delete;
                         self.appearance = appearance;
+                        self.auto = auto;
                         theme::apply(ui.ctx(), appearance);
                         if let Some(table) = &label_table {
                             self.rename_labels(&renames);
@@ -301,7 +306,8 @@ impl IboardApp {
             settings_ui::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
                 .with_labels(&self.labels, used)
                 .with_build(&self.build_agent)
-                .with_appearance(self.appearance);
+                .with_appearance(self.appearance)
+                .with_auto(self.auto);
         dialog.save_error = self.config_problem.clone();
         self.settings = Some(dialog);
     }

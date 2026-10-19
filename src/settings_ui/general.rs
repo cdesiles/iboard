@@ -1,4 +1,4 @@
-//! Settings › General: the theme, and whether deleting an issue asks first.
+//! Settings › General: the theme, Auto, and whether deleting an issue asks first.
 
 use super::Dialog;
 use crate::general::Appearance;
@@ -22,6 +22,16 @@ impl Dialog {
             Appearance::System => "Follows the system's appearance, light or dark.",
         };
         help(ui, theme_help, p.ink_muted);
+        ui.add_space(theme::SPACE_5);
+        field_label(ui, "Auto");
+        widgets::checkbox(ui, &mut self.auto, "Reload and save automatically");
+        ui.add_space(theme::SPACE_2);
+        let auto_help = if self.auto {
+            "The board reloads when files change on disk, and edits save as you type."
+        } else {
+            "Refresh (⌘R) reloads the board, and the editor asks before leaving unsaved edits."
+        };
+        help(ui, auto_help, p.ink_muted);
         ui.add_space(theme::SPACE_5);
         field_label(ui, "Deleting issues");
         widgets::checkbox(ui, &mut self.confirm_delete, "Ask before deleting an issue");

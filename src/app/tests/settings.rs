@@ -1,4 +1,4 @@
-//! The Settings dialog's tests: saving it, its file, and the theme.
+//! The Settings dialog's tests: saving it, its file, the theme and Auto.
 
 use super::*;
 
@@ -109,6 +109,57 @@ fn the_theme_is_light_until_settings_picks_dark() {
     assert_eq!(
         std::fs::read_to_string(&config).unwrap(),
         "[appearance]\ntheme = \"dark\"\n"
+    );
+}
+
+/// Auto is on with no toggle on the board; only Settings › General turns it
+/// off, which brings Refresh back and writes `[auto]`.
+#[test]
+fn auto_is_on_and_only_settings_turns_it_off() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, _file, mut app) = open_issue_with_review("auto");
+    let config = dir.join("iboard.toml");
+    app.config_file = Some(config.clone());
+    app.session.screen = Screen::Board;
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    assert!(harness.state().1.auto, "on by default");
+    assert!(harness.query_by_label("Auto").is_none(), "not on the board");
+    assert!(harness.query_by_label("Refresh").is_none());
+
+    harness
+        .state_mut()
+        .1
+        .open_settings(settings_ui::Tab::General);
+    harness.run_steps(2);
+    harness
+        .get_by_label("Reload and save automatically")
+        .click();
+    harness.run_steps(2);
+    harness.get_by_label("Save").click();
+    harness.run_steps(2);
+
+    assert!(!harness.state().1.auto);
+    assert!(
+        harness.query_by_label("Refresh").is_some(),
+        "Refresh is back"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&config).unwrap(),
+        "[auto]\nenabled = false\n"
     );
 }
 

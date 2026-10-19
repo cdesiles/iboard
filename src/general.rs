@@ -7,6 +7,9 @@
 //!
 //! [appearance]
 //! theme = "light"  # "dark", or "system" to follow macOS
+//!
+//! [auto]
+//! enabled = true   # false: no reload from disk, no saving as you type
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -33,6 +36,28 @@ pub fn section(confirm: bool) -> Result<Section, String> {
         "delete",
         &RawDelete {
             confirm: Some(confirm),
+        },
+    )
+}
+
+/// The `[auto] enabled` section of the user configuration.
+#[derive(Default, Deserialize, Serialize)]
+struct RawAuto {
+    enabled: Option<bool>,
+}
+
+/// Whether the board reloads from disk and the editor saves as you type; on
+/// unless `[auto]` says otherwise.
+pub fn load_auto(config: &mut UserConfig) -> bool {
+    config.section::<RawAuto>("auto").enabled.unwrap_or(true)
+}
+
+/// The `[auto]` section that stores `enabled`.
+pub fn auto_section(enabled: bool) -> Result<Section, String> {
+    Section::new(
+        "auto",
+        &RawAuto {
+            enabled: Some(enabled),
         },
     )
 }
@@ -120,6 +145,16 @@ mod tests {
         let mut config = UserConfig::parse("[delete]\nconfirm = \"no\"\n", file);
         assert!(load_confirm_delete(&mut config));
         assert_eq!(config.problems.len(), 1, "a wrong type is reported");
+    }
+
+    #[test]
+    fn auto_is_on_by_default_and_can_be_turned_off() {
+        let file = Path::new("iboard.toml");
+        assert!(load_auto(&mut UserConfig::default()));
+        let mut config = UserConfig::parse("[auto]\nenabled = false\n", file);
+        assert!(!load_auto(&mut config));
+        let mut config = UserConfig::parse("[auto]\nenabled = true\n", file);
+        assert!(load_auto(&mut config));
     }
 
     #[test]

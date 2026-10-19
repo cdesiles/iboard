@@ -75,6 +75,8 @@ pub struct Dialog {
     pub confirm_delete: bool,
     /// Settings › General: the theme.
     pub appearance: Appearance,
+    /// Settings › General: reload from disk and save edits as you type.
+    pub auto: bool,
     /// Settings › Labels: every label and its `#rrggbb` colour (empty: none).
     pub label_rows: Vec<(String, String)>,
     /// The Labels tab was shown, so Save writes `[labels]`.
@@ -122,6 +124,7 @@ impl Dialog {
             engine,
             confirm_delete,
             appearance: Appearance::default(),
+            auto: true,
             label_rows: Vec::new(),
             labels_seen: false,
             renames: Vec::new(),
@@ -166,6 +169,11 @@ impl Dialog {
     /// Starts Settings › General on the current theme.
     pub fn with_appearance(mut self, appearance: Appearance) -> Self {
         self.appearance = appearance;
+        self
+    }
+
+    pub fn with_auto(mut self, auto: bool) -> Self {
+        self.auto = auto;
         self
     }
 

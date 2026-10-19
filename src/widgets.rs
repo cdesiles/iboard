@@ -1,6 +1,6 @@
 //! Controls of the design system that egui does not draw the same way:
 //! buttons, selects, menus, pills, column tabs, the pieces dialogs share, the
-//! Auto checkbox, keyboard hints and breadcrumbs. See
+//! checkbox, keyboard hints and breadcrumbs. See
 //! `design/components/*/README.md` for what each one is for.
 
 use egui::{
@@ -51,7 +51,7 @@ pub fn thinking(ui: &mut Ui, height: f32) -> Response {
     response
 }
 
-/// The 14pt Auto checkbox: `accent` fill and an `on-accent` tick when checked.
+/// The 14pt checkbox: `accent` fill and an `on-accent` tick when checked.
 pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
     let p = theme::palette(ui);
     let text = galley(ui, label, theme::ui_button(), p.ink);
@@ -64,6 +64,9 @@ pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
         response.mark_changed();
     }
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *checked, label)
+    });
 
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();

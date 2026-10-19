@@ -218,7 +218,7 @@ impl IboardApp {
         }
     }
 
-    /// The board's toolbar: New issue, Refresh, Design, Auto and the filter.
+    /// The board's toolbar: New issue, Refresh, Design and the filter.
     fn board_controls(&mut self, ui: &mut egui::Ui) {
         let has_todo = self.board.todo_column().is_some();
         let new_issue = ui.add_enabled_ui(has_todo, |ui| {
@@ -241,8 +241,6 @@ impl IboardApp {
         {
             self.design_button(ui.visuals().dark_mode);
         }
-        widgets::checkbox(ui, &mut self.auto, "Auto")
-            .on_hover_text("Reload when files change on disk, and save edits as you type");
         self.filter_field(ui);
     }
 
@@ -404,8 +402,9 @@ impl IboardApp {
         }
     }
 
-    /// Only offered when Auto is off: with Auto on the board already reloads
-    /// itself. `⌘R` keeps working either way, but on a Todo issue it refines.
+    /// Only offered when Settings › General turns Auto off: with Auto on the
+    /// board already reloads itself. `⌘R` keeps working either way, but on a
+    /// Todo issue it refines.
     pub(super) fn refresh_button(&mut self, ui: &mut egui::Ui) {
         if self.auto {
             return;

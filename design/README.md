@@ -113,7 +113,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Reader (Done) | Click Commits | CommitsOpened | Popup lists the commits whose message names the file (`closes <file>.md`) |
 | Commits popup | Click a commit, or All | DiffOpened | Diff: the changed files on the left, the unified diff on the right; `⌘F` finds, `n p` and `] [` move by file and hunk, `esc` goes back to the issue |
 | Editor | Type | DraftChanged | Editor, Unsaved pill |
-| Editor | Save (`⌘S`, or auto on leave when Auto is on) | IssueSaved / SaveFailed | Reader / Editor with error |
+| Editor | Save (`⌘S`, or auto on leave when Auto is on in Settings › General) | IssueSaved / SaveFailed | Reader / Editor with error |
 | Any | Refresh, or file watcher fires | IssuesReloaded | Same screen; open draft kept, conflict flagged |
 | Board | Focus filter (`⌘F`, click) | FilterFocused | Field widens to 480pt, the three most used labels shown |
 | Board, Reader | Click a label | LabelClicked → FilterSuggestionPicked | Board filtered by that label |
