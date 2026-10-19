@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
+use crate::build_log;
 use crate::config::Config;
 use crate::files;
 use crate::history;
@@ -338,7 +339,13 @@ pub fn build(located: &Located) -> Result<Board> {
         let files = collect_markdown(dir, &mut warnings);
         let mut issues = load_issues(files, &mut warnings);
         match canonical_name(dir) {
-            Some("Done") => sort_recent_first(dir, &mut issues, true),
+            Some("Done") => {
+                sort_recent_first(dir, &mut issues, true);
+                for issue in &mut issues {
+                    let log = build_log::load(&build_log::path(root, &issue.path));
+                    issue.built_in = log.as_deref().and_then(build_log::took);
+                }
+            }
             Some("Doing") => sort_recent_first(dir, &mut issues, false),
             _ => {}
         }

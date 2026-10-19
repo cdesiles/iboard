@@ -454,6 +454,10 @@ fn card_meta(
         // Hidden actions are also disabled, so a click there opens the card
         // instead.
         if !visible {
+            if let Some(took) = issue.built_in {
+                built_in(ui, took);
+                return;
+            }
             ui.set_invisible();
         }
         card_actions(ui, issue, extras, &mut action, &mut action_rects);
@@ -595,6 +599,17 @@ fn build_timer(ui: &mut egui::Ui, issue: &Issue, since: Instant) {
                     .color(color),
             )
         },
+    );
+}
+
+/// How long the build agent took on a Done issue, `mm:ss` in `ink-muted`,
+/// where its actions show on hover.
+fn built_in(ui: &mut egui::Ui, took: Duration) {
+    let color = theme::palette(ui).ink_muted;
+    ui.label(
+        RichText::new(stopwatch(took))
+            .font(theme::meta())
+            .color(color),
     );
 }
 

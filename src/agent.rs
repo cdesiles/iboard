@@ -844,6 +844,7 @@ pub fn start_build(
     let steps = Arc::clone(&progress);
     let job = Job::spawn(move |cancel| {
         let at = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+        let started = std::time::Instant::now();
         let _ = build_log::append(&log, &build_log::heading(&at, &config.label()));
         let workspace = Workspace {
             dir: &project,
@@ -859,7 +860,7 @@ pub fn start_build(
             steps,
             Some(&workspace),
         );
-        let _ = build_log::append(&log, &build_log::outcome(&result));
+        let _ = build_log::append(&log, &build_log::outcome(&result, started.elapsed()));
         result
     });
     (job, progress)

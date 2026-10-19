@@ -6,8 +6,9 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use crate::{agent, reviews};
+use crate::{agent, format, reviews};
 
 /// The folder under the issues root; discovery skips dot-folders.
 pub const DIR: &str = ".builds";
@@ -46,12 +47,25 @@ pub fn heading(at: &str, agent: &str) -> String {
     format!("── {at} · {agent}")
 }
 
-/// The line a run ends on.
-pub fn outcome(result: &Result<String, String>) -> String {
+/// The line a run ends on, with how long a finished one `took`.
+pub fn outcome(result: &Result<String, String>, took: Duration) -> String {
     match result {
-        Ok(_) => "✓ Finished".to_string(),
+        Ok(_) => format!("{FINISHED}{}", format::stopwatch(took)),
         Err(err) => format!("✗ {err}"),
     }
+}
+
+const FINISHED: &str = "✓ Finished in ";
+
+/// How long the agent took on the issue: its last run's, when it finished.
+pub fn took(text: &str) -> Option<Duration> {
+    let last = text
+        .lines()
+        .rev()
+        .find(|line| line.starts_with("✓ ") || line.starts_with("✗ ") || line.starts_with("── "))?;
+    let (minutes, seconds) = last.strip_prefix(FINISHED)?.trim().split_once(':')?;
+    let secs = minutes.parse::<u64>().ok()? * 60 + seconds.parse::<u64>().ok()?;
+    Some(Duration::from_secs(secs))
 }
 
 /// What one line of the agent's output adds to the log: its messages and
@@ -211,8 +225,25 @@ mod tests {
         assert_eq!(log, path(dir.path(), Path::new("done/001-fix.md")));
         assert_eq!(load(&log), None);
         append(&log, "one").unwrap();
-        append(&log, &outcome(&Err("stopped".into()))).unwrap();
-        append(&log, &outcome(&Ok(String::new()))).unwrap();
-        assert_eq!(load(&log).unwrap(), "one\n✗ stopped\n✓ Finished\n");
+        let took = Duration::from_secs(125);
+        append(&log, &outcome(&Err("stopped".into()), took)).unwrap();
+        append(&log, &outcome(&Ok(String::new()), took)).unwrap();
+        assert_eq!(load(&log).unwrap(), "one\n✗ stopped\n✓ Finished in 02:05\n");
+    }
+
+    #[test]
+    fn the_time_taken_is_the_last_runs_when_it_finished() {
+        let finished = "── a · opencode\n✓ Finished in 02:05\n";
+        assert_eq!(took(finished), Some(Duration::from_secs(125)));
+        assert_eq!(
+            took(&format!("{finished}── b · opencode\n→ Reading…\n")),
+            None
+        );
+        assert_eq!(
+            took(&format!("{finished}── b · opencode\n✗ stopped\n")),
+            None
+        );
+        assert_eq!(took("── a · opencode\n✓ Finished\n"), None);
+        assert_eq!(took(""), None);
     }
 }

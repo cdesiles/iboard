@@ -201,7 +201,7 @@ fn the_agent_log_shows_what_the_build_did_on_the_issue() {
     draw(&ctx, &mut app, vec![]);
     let text = &app.session.agent_log.as_ref().unwrap().text;
     assert!(text.starts_with("── ") && text.contains("custom"), "{text}");
-    assert!(text.ends_with("working on it\n✓ Finished\n"), "{text}");
+    assert!(text.contains("working on it\n✓ Finished in 00:0"), "{text}");
 
     app.toggle_agent_log(&taken);
     assert!(
@@ -347,4 +347,35 @@ fn a_done_card_opens_its_agent_log() {
     app.apply(vec![Intent::AgentLog(done.clone())]);
     assert!(matches!(app.session.screen, Screen::Board));
     assert!(app.session.notice.is_some(), "says no agent built it");
+}
+
+#[test]
+fn a_done_card_shows_how_long_its_agent_took_until_hovered() {
+    let (dir, _) = board("build-done-timer", "true # {prompt}");
+    let done = dir.join("issues/done/003-c.md");
+    std::fs::write(&done, "# C\n").unwrap();
+    let log = crate::build_log::path(&dir.join("issues"), &done);
+    std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+    std::fs::write(&log, "── a · custom\n✓ Finished in 02:05\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let issue = app.board.find(&done).unwrap();
+    assert_eq!(issue.built_in, Some(Duration::from_secs(125)));
+
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    draw(&ctx, &mut app, vec![]);
+    let actions = |ctx: &egui::Context| {
+        ctx.read_response(egui::Id::new(("card_agent_log", &done)))
+            .is_some()
+    };
+    assert!(!actions(&ctx), "the timer stands where the actions go");
+    let card = ctx
+        .read_response(egui::Id::new(("issue_card", &done)))
+        .unwrap()
+        .rect
+        .center();
+    for _ in 0..3 {
+        draw(&ctx, &mut app, vec![moved(card)]);
+    }
+    assert!(actions(&ctx), "hovering the card shows its actions");
 }
