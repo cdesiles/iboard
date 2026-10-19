@@ -245,6 +245,7 @@ pub fn split_button(
     } else {
         ui.interact(main_rect, id.with("main"), Sense::hover())
     };
+    main.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, main_enabled, label));
     let caret = ui
         .interact(caret_rect, id.with("caret"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);

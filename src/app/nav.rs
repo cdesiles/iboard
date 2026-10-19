@@ -16,7 +16,7 @@ impl IboardApp {
         {
             self.session.composer = None;
         }
-        self.cancel_review();
+        self.close_review();
         self.session.picked.clear();
         self.session.selected = Some(path.clone());
         self.session.screen = Screen::Detail(path);

@@ -143,6 +143,7 @@ impl IboardApp {
                     *path = new.clone();
                 }
             };
+            self.session.review_runs.rename(old, new);
             if let Some(selected) = self.session.selected.as_mut() {
                 follow(selected);
             }
@@ -306,8 +307,9 @@ impl IboardApp {
                 .as_ref()
                 .is_some_and(|refine| refine.path == path)
         {
-            self.cancel_review();
+            self.close_review();
         }
+        self.cancel_review_run(path);
         match self.trash.delete(path) {
             Ok(trashed) => {
                 self.session.notice =
@@ -369,8 +371,9 @@ impl IboardApp {
                 .as_ref()
                 .is_some_and(|refine| refine.path == path)
         {
-            self.cancel_review();
+            self.close_review();
         }
+        self.cancel_review_run(path);
         let archive = self.board.root.join(ARCHIVE_DIR);
         if let Err(err) = std::fs::create_dir_all(&archive) {
             self.error = Some(format!(

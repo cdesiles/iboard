@@ -344,7 +344,7 @@ impl IboardApp {
         {
             notes.draft = None;
         } else if self.session.review.is_some() {
-            self.cancel_review();
+            self.close_review();
         } else if self.refinement_shown() {
             self.escape_refinement(ctx);
         } else {
@@ -419,7 +419,7 @@ impl IboardApp {
             Command::Refine(path) => self.start_refinement(&path),
             Command::ToggleReview(path) => {
                 if self.review_is_running(&path) {
-                    self.cancel_review();
+                    self.cancel_review_run(&path);
                 } else {
                     let draft = self.session.detail_mode == DetailMode::Edit;
                     self.start_review(&path, draft);
@@ -499,16 +499,17 @@ impl IboardApp {
             }
         }
         // Poll a running review a few times a second.
-        if self.session.review.as_ref().is_some_and(|review| {
-            matches!(
-                review.status,
-                ReviewStatus::Running { .. } | ReviewStatus::Splitting { .. }
-            )
-        }) || self
-            .session
-            .refine
-            .as_ref()
-            .is_some_and(refine::Refinement::is_running)
+        if self.session.review_runs.any_running()
+            || self
+                .session
+                .review
+                .as_ref()
+                .is_some_and(|review| matches!(review.status, ReviewStatus::Splitting { .. }))
+            || self
+                .session
+                .refine
+                .as_ref()
+                .is_some_and(refine::Refinement::is_running)
         {
             ctx.request_repaint_after(job::POLL_EVERY);
         }

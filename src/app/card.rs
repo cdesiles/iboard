@@ -383,7 +383,7 @@ fn card_labels(
         ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
         let review = extras
             .review_pill
-            .map(|(word, color, stale)| review_pill(ui, word, color, stale));
+            .map(|(word, color, hint)| review_pill(ui, word, color, hint));
         for label in &issue.labels {
             let pill = widgets::label_pill(ui, label, labels.color(label))
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -395,19 +395,12 @@ fn card_labels(
     (review.inner, clicks)
 }
 
-/// The last review's verdict, faint once the issue changed since: a click
-/// reopens it.
-fn review_pill(ui: &mut egui::Ui, word: &str, color: Color32, stale: bool) -> egui::Response {
-    let (color, hint) = if stale {
-        (
-            theme::palette(ui).ink_faint,
-            "Reviewed before the last edit: show it",
-        )
-    } else {
-        (color, "Show the last review")
-    };
-    widgets::pill(ui, word, color)
-        .interact(Sense::click())
+/// The review running or ready, or the last verdict: a click opens the
+/// issue with it.
+fn review_pill(ui: &mut egui::Ui, word: &str, color: Color32, hint: &str) -> egui::Response {
+    let response = widgets::pill(ui, word, color).interact(Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, word));
+    response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(hint)
 }

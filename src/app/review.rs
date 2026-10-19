@@ -17,25 +17,28 @@ impl IboardApp {
         }
     }
 
-    /// Stores a running review of `content` and hands the prompt to the agent.
+    /// Hands the prompt to the agent in the background and returns at once:
+    /// the issue's card and reader show the run until its answer lands.
     pub(super) fn run_review(&mut self, target: ReviewTarget, content: &str, prompt: String) {
         if !self.agent.configured() {
             self.open_config();
             return;
         }
-        let (answer, progress) =
-            agent::start_review(&self.agent, &prompt, &target.path, target.mode);
+        let (answer, _) = agent::start_review(&self.agent, &prompt, &target.path, target.mode);
         self.mark_notes_sent(&target.path);
-        self.session.refine = None;
-        self.session.review = Some(ReviewState {
-            path: target.path,
-            draft: target.draft,
-            mode: target.mode,
-            agent: self.agent.label(),
-            status: ReviewStatus::Running { answer, progress },
-            hash: reviews::content_hash(content),
-            follow_up: String::new(),
-        });
+        self.close_review();
+        let runs = &mut self.session.review_runs;
+        runs.ready.remove(&target.path);
+        runs.running.insert(
+            target.path,
+            ReviewRun {
+                draft: target.draft,
+                mode: target.mode,
+                agent: self.agent.label(),
+                hash: reviews::content_hash(content),
+                answer,
+            },
+        );
     }
 
     /// Starts a Quick review of the open issue (or the editor draft).
@@ -45,7 +48,7 @@ impl IboardApp {
 
     /// Starts a one-shot review in `mode`.
     pub(super) fn start_review_in(&mut self, path: &Path, draft: bool, mode: ReviewMode) {
-        if !self.is_todo_issue(path) {
+        if !self.is_todo_issue(path) || self.review_is_running(path) {
             return;
         }
         let Some(content) = self.review_content(path, draft) else {
@@ -91,17 +94,27 @@ impl IboardApp {
         self.run_review(target, &content, prompt);
     }
 
-    /// Cancels a running review (dropping the job stops the agent), or closes
-    /// a finished one, which stays behind the card's pill. A refinement, in
-    /// the same place, goes with it.
-    pub(super) fn cancel_review(&mut self) {
+    /// Closes the review panel; the review stays behind the card's pill. A
+    /// refinement, in the same place, goes with it. A review running in the
+    /// background goes on.
+    pub(super) fn close_review(&mut self) {
         self.session.review = None;
         self.session.refine = None;
     }
 
-    /// The card's verdict pill: opens the issue with its last review.
+    /// Stops the review running on `path`: dropping its job stops the agent.
+    pub(super) fn cancel_review_run(&mut self, path: &Path) {
+        self.session.review_runs.forget(path);
+    }
+
+    /// The card's review pill: opens the issue with its last review, which
+    /// is no longer news. While one runs, the reader shows it running.
     pub(super) fn show_past_review(&mut self, path: PathBuf) {
         self.open_issue(path.clone());
+        self.session.review_runs.ready.remove(&path);
+        if self.review_is_running(&path) {
+            return;
+        }
         if let Some(past) = self.past_reviews.get(&path).cloned() {
             self.session.review = Some(ReviewState {
                 path,
@@ -112,58 +125,55 @@ impl IboardApp {
                     raw: past.raw,
                     report: past.report,
                 },
-                // Only a running review is saved, so this one needs none.
-                hash: String::new(),
                 follow_up: String::new(),
             });
         }
     }
 
-    /// Adopts the agent's answer once it is in; called every frame.
+    /// Adopts the answers that are in, kept beside their issue and marked
+    /// ready; a failure goes to the status strip and leaves the last review
+    /// alone. Called every frame.
     pub(super) fn poll_review(&mut self) {
-        let Some(review) = self.session.review.as_mut() else {
-            return;
-        };
-        let ReviewStatus::Running { answer, .. } = &review.status else {
-            return;
-        };
-        let Some(result) = answer.answer() else {
-            return;
-        };
-        let raw = match result {
-            Ok(raw) => raw,
-            Err(error) => {
-                review.status = ReviewStatus::Failed { error };
-                return;
+        let landed: Vec<(PathBuf, Result<String, String>)> = self
+            .session
+            .review_runs
+            .running
+            .iter_mut()
+            .filter_map(|(path, run)| Some((path.clone(), run.answer.answer()?)))
+            .collect();
+        for (path, result) in landed {
+            let Some(run) = self.session.review_runs.running.remove(&path) else {
+                continue;
+            };
+            let raw = match result {
+                Ok(raw) => raw,
+                Err(error) => {
+                    self.error = Some(format!("Review of {} failed: {error}", file_name(&path)));
+                    continue;
+                }
+            };
+            let stored = reviews::StoredReview {
+                hash: run.hash,
+                agent: run.agent,
+                mode: run.mode.key().to_string(),
+                draft: run.draft,
+                at: chrono::Local::now().to_rfc3339(),
+                raw,
+            };
+            if let Err(err) = reviews::save_review(&self.board.root, &path, stored.clone()) {
+                self.error = Some(err);
             }
-        };
-        let stored = reviews::StoredReview {
-            hash: review.hash.clone(),
-            agent: review.agent.clone(),
-            mode: review.mode.key().to_string(),
-            draft: review.draft,
-            at: chrono::Local::now().to_rfc3339(),
-            raw: raw.clone(),
-        };
-        review.status = ReviewStatus::Done {
-            report: agent::parse(&raw),
-            raw,
-        };
-        let path = review.path.clone();
-        if let Err(err) = reviews::save_review(&self.board.root, &path, stored.clone()) {
-            self.error = Some(err);
-        }
-        if let Some(issue) = self.board.find(&path) {
-            let past = PastReview::new(&stored, &issue.markdown);
-            self.past_reviews.insert(path, past);
+            if let Some(issue) = self.board.find(&path) {
+                let past = PastReview::new(&stored, &issue.markdown);
+                self.past_reviews.insert(path.clone(), past);
+            }
+            self.session.review_runs.ready.insert(path);
         }
     }
 
-    /// Whether a review is running for the issue currently in the reader.
+    /// Whether a review of `path` is running in the background.
     pub(super) fn review_is_running(&self, path: &Path) -> bool {
-        self.session.review.as_ref().is_some_and(|review| {
-            review.path == path && matches!(review.status, ReviewStatus::Running { .. })
-        })
+        self.session.review_runs.is_running(path)
     }
 
     /// The proposed rewrite, when the agent offered one: the editor opens with
@@ -210,7 +220,7 @@ impl IboardApp {
         let configured = self.agent.configured();
         let label = if running { "Reviewing…" } else { "Refine" };
         let hint = if running {
-            "Cancel the review (esc)"
+            "The review runs in the background: cancel it (⌘⇧R)"
         } else if configured {
             "Refine this issue in a conversation with a challenger"
         } else {
@@ -222,13 +232,13 @@ impl IboardApp {
             ButtonKind::Review,
             Some(Icon::Review),
             label,
-            Some(if running { "esc" } else { "⌘R" }),
+            Some(if running { "⌘⇧R" } else { "⌘R" }),
             running || configured,
         );
         let draft = self.session.detail_mode == DetailMode::Edit;
         if main.on_hover_text(hint).clicked() {
             if running {
-                self.cancel_review();
+                self.cancel_review_run(path);
             } else if configured {
                 self.start_refinement(path);
             } else {
@@ -307,6 +317,13 @@ impl IboardApp {
                 self.open_config();
             }
             None => {}
+        }
+        if self.session.review_runs.is_ready(path)
+            && widgets::button(ui, ButtonKind::Review, None, "Review ready", None)
+                .on_hover_text("The review is in: show it")
+                .clicked()
+        {
+            self.show_past_review(path.to_path_buf());
         }
     }
 
@@ -389,7 +406,7 @@ impl IboardApp {
 
     fn apply_panel_action(&mut self, action: Option<PanelAction>) {
         match action {
-            Some(PanelAction::Cancel) => self.cancel_review(),
+            Some(PanelAction::Cancel) => self.close_review(),
             Some(PanelAction::Dismiss) => self.session.review = None,
             Some(PanelAction::Retry) => {
                 let target = self
@@ -408,6 +425,74 @@ impl IboardApp {
             Some(PanelAction::BackToReview) => self.back_to_review(),
             None => {}
         }
+    }
+}
+
+/// The reviews running in the background, one per issue, and the issues
+/// whose review landed since it was last shown.
+#[derive(Default)]
+pub(super) struct ReviewRuns {
+    running: HashMap<PathBuf, ReviewRun>,
+    ready: HashSet<PathBuf>,
+}
+
+/// A review the agent is working on, and what to keep with its answer.
+struct ReviewRun {
+    draft: bool,
+    mode: ReviewMode,
+    agent: String,
+    /// [`reviews::content_hash`] of the text the agent reads.
+    hash: String,
+    answer: Job<Result<String, String>>,
+}
+
+impl ReviewRuns {
+    pub(super) fn is_running(&self, path: &Path) -> bool {
+        self.running.contains_key(path)
+    }
+
+    pub(super) fn is_ready(&self, path: &Path) -> bool {
+        self.ready.contains(path)
+    }
+
+    pub(super) fn any_running(&self) -> bool {
+        !self.running.is_empty()
+    }
+
+    /// Stops the run on `path`, if any, and drops its ready mark.
+    pub(super) fn forget(&mut self, path: &Path) {
+        self.running.remove(path);
+        self.ready.remove(path);
+    }
+
+    /// Follows an issue renamed from `old` to `new`.
+    pub(super) fn rename(&mut self, old: &Path, new: &Path) {
+        if let Some(run) = self.running.remove(old) {
+            self.running.insert(new.to_path_buf(), run);
+        }
+        if self.ready.remove(old) {
+            self.ready.insert(new.to_path_buf());
+        }
+    }
+}
+
+/// What the cards' review pill says: the review running or ready, else the
+/// last verdict.
+#[derive(Clone, Copy)]
+pub(super) struct CardReviews<'a> {
+    pub(super) past: &'a HashMap<PathBuf, PastReview>,
+    pub(super) runs: &'a ReviewRuns,
+}
+
+impl CardReviews<'_> {
+    pub(super) fn pill(&self, path: &Path, p: &Palette) -> Option<ReviewPill> {
+        if self.runs.is_running(path) {
+            return Some(("Reviewing…", p.review, "The review is running"));
+        }
+        if self.runs.is_ready(path) {
+            return Some(("Review ready", p.review, "The review is in: show it"));
+        }
+        self.past.get(path).map(|past| past.card_pill(p))
     }
 }
 
@@ -480,9 +565,6 @@ fn review_body(
     let p = theme::palette(ui);
     let mut action = None;
     match status {
-        ReviewStatus::Running { answer, progress } => {
-            running_line(ui, answer.elapsed(), agent::step(progress));
-        }
         ReviewStatus::Splitting {
             answer, progress, ..
         } => {
@@ -552,7 +634,7 @@ fn review_footer(
                 }
             };
             match status {
-                ReviewStatus::Running { .. } | ReviewStatus::Splitting { .. } => {
+                ReviewStatus::Splitting { .. } => {
                     button(
                         ui,
                         ButtonKind::Secondary,

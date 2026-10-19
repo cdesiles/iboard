@@ -11,7 +11,7 @@ pub(super) enum Intent {
     Pick(PathBuf),
     /// The column header's "Clear selection".
     ClearPicked,
-    /// Open the issue and run the AI review on it.
+    /// Run the AI review on the issue, in the background.
     Review(PathBuf),
     /// Reopen the issue's last review, from its card's verdict pill.
     ShowReview(PathBuf),
@@ -111,10 +111,7 @@ impl IboardApp {
                     self.session.picked.clear();
                     self.session.selected = None;
                 }
-                Intent::Review(path) => {
-                    self.open_issue(path.clone());
-                    self.start_review(&path, false);
-                }
+                Intent::Review(path) => self.start_review(&path, false),
                 Intent::ShowReview(path) => self.show_past_review(path),
                 Intent::Delete(path) => self.request_delete(path),
                 Intent::Archive(path) => self.archive_issue(&path),

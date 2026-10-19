@@ -44,7 +44,7 @@ fn a_review_is_kept_beside_the_issue() {
         app.poll_review();
         app.past_reviews.contains_key(&file)
     }));
-    app.cancel_review();
+    app.close_review();
     let p = &theme::LIGHT;
     assert_eq!(app.past_reviews[&file].pill(p).0, "Block");
     assert!(dir.join("issues/.reviews/demo.toml").exists());
@@ -94,7 +94,6 @@ pub(super) fn open_issue_with_review(tag: &str) -> (Scratch, PathBuf, IboardApp)
             raw: raw.to_string(),
             report: agent::parse(raw),
         },
-        hash: String::new(),
         follow_up: String::new(),
     });
     (dir, file, app)
@@ -172,13 +171,16 @@ fn polling_a_running_review_adopts_the_answer() {
         !app.review_is_running(&file)
     });
 
-    match &app.session.review.as_ref().unwrap().status {
-        ReviewStatus::Done { raw, report } => {
-            assert!(raw.contains("You review software issues"), "got: {raw:?}");
-            assert!(report.is_none(), "prose that is not a report stays raw");
-        }
-        _ => panic!("the review never finished"),
-    }
+    let past = &app.past_reviews[&file];
+    assert!(
+        past.raw.contains("You review software issues"),
+        "got: {:?}",
+        past.raw
+    );
+    assert!(
+        past.report.is_none(),
+        "prose that is not a report stays raw"
+    );
 }
 
 /// A Deep review reaches the agent as such, and is kept with its mode.
@@ -302,11 +304,9 @@ fn a_size_block_splits_the_issue_in_place() {
     app.start_review(&big, false);
     assert!(until(|| {
         app.poll_review();
-        matches!(
-            app.session.review.as_ref().unwrap().status,
-            ReviewStatus::Done { .. }
-        )
+        app.past_reviews.contains_key(&big)
     }));
+    app.show_past_review(big.clone());
     app.start_split();
     assert!(until(|| {
         app.poll_split();
@@ -358,4 +358,155 @@ fn a_size_block_splits_the_issue_in_place() {
     app.undo_last();
     assert_eq!(names(&todo), ["001-first.md", "002-big.md", "004-last.md"]);
     assert_eq!(std::fs::read_to_string(&big).unwrap(), "# Big\n");
+}
+
+type Drawn = egui_kittest::Harness<'static, (bool, IboardApp)>;
+
+/// The board with `todo/01-demo.md` selected, drawn through egui_kittest,
+/// its reviews run by `command`.
+fn reviewing(tag: &str, command: &str) -> (Scratch, PathBuf, Drawn) {
+    let dir = scratch_dir(tag);
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("01-demo.md");
+    std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
+    std::fs::write(todo.join("02-other.md"), "# Other\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: command.to_string(),
+        configured: true,
+    };
+    app.session.selected = Some(file.clone());
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    (dir, file, harness)
+}
+
+/// Frames until the review of `file` is no longer running.
+fn land(harness: &mut Drawn, file: &Path) {
+    assert!(until(|| {
+        harness.step();
+        !harness.state().1.review_is_running(file)
+    }));
+    harness.run_steps(2);
+}
+
+const PASSING: &str = "printf 'RELEVANCE: Pass\\nok\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}";
+
+/// Asking for a review returns at once: the card says it runs, the board
+/// and the reader stay usable, and the reader says it runs too.
+#[test]
+fn a_review_runs_in_the_background() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, file, mut harness) = reviewing("review-running", "sleep 30 # {prompt}");
+    harness.get_by_label("Review").click();
+    harness.run_steps(2);
+    let app = &harness.state().1;
+    assert!(app.review_is_running(&file));
+    assert!(
+        matches!(app.session.screen, Screen::Board),
+        "the board stays"
+    );
+    assert!(app.session.review.is_none(), "no panel while it runs");
+    harness.get_by_label("Reviewing…");
+
+    harness.state_mut().1.move_selection(Key::ArrowDown);
+    harness.run_steps(1);
+    harness.state_mut().1.open_issue(file.clone());
+    harness.run_steps(2);
+    assert!(harness.state().1.review_is_running(&file));
+    harness.get_by_label("Reviewing…").click();
+    harness.run_steps(1);
+    assert!(
+        !harness.state().1.review_is_running(&file),
+        "the reader's button cancels it"
+    );
+}
+
+/// When the answer lands the card shows it is ready; a click opens the
+/// issue with the review panel.
+#[test]
+fn a_ready_review_opens_from_its_card() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, file, mut harness) = reviewing("review-ready", PASSING);
+    harness.get_by_label("Review").click();
+    harness.run_steps(1);
+    land(&mut harness, &file);
+    assert!(harness.state().1.past_reviews.contains_key(&file));
+    assert!(matches!(harness.state().1.session.screen, Screen::Board));
+
+    harness.get_by_label("Review ready").click();
+    harness.run_steps(2);
+    let app = &harness.state().1;
+    assert!(matches!(&app.session.screen, Screen::Detail(path) if *path == file));
+    let review = app.session.review.as_ref().expect("the panel opens");
+    assert!(matches!(review.status, ReviewStatus::Done { .. }));
+    assert!(!app.session.review_runs.is_ready(&file), "seen now");
+    assert!(harness.query_by_label("Review ready").is_none());
+}
+
+/// A review asked for from the reader lands there as a ready button.
+#[test]
+fn a_ready_review_opens_from_the_reader() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, file, mut harness) = reviewing("review-ready-reader", PASSING);
+    harness.state_mut().1.open_issue(file.clone());
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::R);
+    harness.run_steps(1);
+    assert!(harness.state().1.session.review.is_none());
+    land(&mut harness, &file);
+
+    harness.get_by_label("Review ready").click();
+    harness.run_steps(2);
+    let app = &harness.state().1;
+    assert!(app.session.review.is_some(), "the panel opens");
+    assert!(!app.session.review_runs.is_ready(&file));
+}
+
+/// A failed review says so in the status strip, and the issue keeps its
+/// previous review.
+#[test]
+fn a_failed_review_keeps_the_last_one() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, file, mut harness) = reviewing("review-failed", "exit 3 # {prompt}");
+    let previous = reviews::StoredReview {
+        hash: reviews::content_hash("# Demo\n\nContext.\n"),
+        agent: "custom · default".to_string(),
+        mode: "quick".to_string(),
+        draft: false,
+        at: chrono::Local::now().to_rfc3339(),
+        raw: "RELEVANCE: Pass\nok\nSIZE: Block\nsplit\nCLARITY: Pass\nok\nPROPOSAL: NONE"
+            .to_string(),
+    };
+    reviews::save_review(&dir.join("issues"), &file, previous).unwrap();
+    harness.state_mut().1.refresh();
+    harness.run_steps(1);
+    harness.get_by_label("Block");
+
+    harness.get_by_label("Review").click();
+    harness.run_steps(1);
+    land(&mut harness, &file);
+    let error = harness.state().1.error.clone().expect("the strip names it");
+    assert!(error.starts_with("Review of 01-demo.md failed"), "{error}");
+    harness.get_by_label(&error);
+    harness.get_by_label("Block");
+    assert!(harness.query_by_label("Review ready").is_none());
+    let sidecar = reviews::load(&dir.join("issues"), &file);
+    assert!(sidecar.review.unwrap().raw.contains("SIZE: Block"));
 }

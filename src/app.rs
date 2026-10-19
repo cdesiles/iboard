@@ -2,7 +2,7 @@
 //! rendered markdown reader, and an editor with debounced autosave. Its look
 //! follows the design system in `design/` (see `theme.rs`).
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -175,8 +175,8 @@ enum CardBuild {
 /// whether the selected card offers Review.
 #[derive(Clone, Copy, Default)]
 struct CardExtras<'a> {
-    /// The last verdict, and whether the issue changed since.
-    review_pill: Option<(&'a str, Color32, bool)>,
+    /// The review running or ready, else the last verdict.
+    review_pill: Option<ReviewPill>,
     review_button: bool,
     /// The hovered card offers Expand: every card but the picked ones that
     /// do not have focus.
@@ -189,6 +189,9 @@ struct CardExtras<'a> {
     /// Offers Add label: Doing and Done keep the labels they have.
     labelling: bool,
 }
+
+/// A card's review pill: its word, colour and tooltip.
+type ReviewPill = (&'static str, Color32, &'static str);
 
 /// An issue's last review, read from its sidecar, so its card pill can
 /// reopen it.
@@ -237,10 +240,14 @@ impl PastReview {
 }
 
 impl PastReview {
-    /// The card's pill: the verdict, and whether the issue changed since.
-    fn card_pill(&self, p: &Palette) -> (&'static str, Color32, bool) {
+    /// The card's pill: the verdict, faint once the issue changed since.
+    fn card_pill(&self, p: &Palette) -> ReviewPill {
         let (word, color) = self.pill(p);
-        (word, color, self.stale)
+        if self.stale {
+            (word, p.ink_faint, "Reviewed before the last edit: show it")
+        } else {
+            (word, color, "Show the last review")
+        }
     }
 }
 
@@ -452,7 +459,7 @@ struct ReviewTarget {
     mode: ReviewMode,
 }
 
-/// The AI review of one issue: running, answered or failed.
+/// The review panel on one issue: its findings, or the split they led to.
 struct ReviewState {
     path: PathBuf,
     /// True when the agent read the editor draft rather than the saved file.
@@ -461,17 +468,12 @@ struct ReviewState {
     /// The configured tool (and model), shown in the panel header.
     agent: String,
     status: ReviewStatus,
-    /// [`reviews::content_hash`] of the text the agent reads.
-    hash: String,
     /// The "Ask again" follow-up, kept between renders.
     follow_up: String,
 }
 
+/// The review panel: the findings, or a split under way.
 enum ReviewStatus {
-    Running {
-        answer: Job<Result<String, String>>,
-        progress: agent::Progress,
-    },
     Done {
         raw: String,
         report: Option<Report>,
@@ -607,8 +609,10 @@ struct Session {
     leave_prompt: Option<Leave>,
     /// Set when a freshly created issue should receive keyboard focus.
     focus_editor: bool,
-    /// The AI review of the open issue, if any.
+    /// The review panel on the open issue, if any.
     review: Option<ReviewState>,
+    /// The reviews running in the background, and those just landed.
+    review_runs: review::ReviewRuns,
     /// The refinement of the open issue: a conversation with a challenger.
     refine: Option<refine::Refinement>,
     /// The reader's comments on the open issue.
@@ -664,6 +668,7 @@ impl Default for Session {
             scan: None,
             commit_hash: None,
             review: None,
+            review_runs: review::ReviewRuns::default(),
             refine: None,
             diff: None,
             build: None,
@@ -819,7 +824,7 @@ impl IboardApp {
                 self.pending_title = Some(discovery::window_title(&located));
                 let project_dir = located.project_dir.clone();
                 self.located = located;
-                self.cancel_review();
+                self.close_review();
                 self.session = Session::default();
                 self.past_reviews.clear();
                 self.column_focus.column = None;
@@ -998,8 +1003,8 @@ struct ColumnView<'a> {
     root: &'a Path,
     /// The label colours, for the chip on each card.
     labels: &'a Labels,
-    /// The last review of each issue, for the cards' verdict pills.
-    past_reviews: &'a HashMap<PathBuf, PastReview>,
+    /// The cards' review pills.
+    reviews: review::CardReviews<'a>,
     /// An agent is set up, so the selected Todo card offers Review.
     can_review: bool,
     /// The issues the build agents work on, and how many may.
@@ -1025,7 +1030,7 @@ struct FocusGrid<'a> {
     group: bool,
     labels: &'a Labels,
     sections: &'a [String],
-    past_reviews: &'a HashMap<PathBuf, PastReview>,
+    reviews: review::CardReviews<'a>,
     can_review: bool,
     selected: Option<&'a Path>,
     scroll_to_selected: bool,

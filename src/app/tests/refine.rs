@@ -109,7 +109,7 @@ fn a_refinement_and_a_review_replace_each_other() {
     let (_dir, file, mut app) = refining("refine-review", "printf 'Why?' # {prompt}");
     app.start_refinement(&file);
     app.start_review(&file, false);
-    assert!(app.session.refine.is_none() && app.session.review.is_some());
+    assert!(app.session.refine.is_none() && app.review_is_running(&file));
     app.start_refinement(&file);
     assert!(app.session.refine.is_some() && app.session.review.is_none());
 
@@ -133,7 +133,7 @@ fn command_r_refines_and_command_shift_r_reviews() {
     };
     let command = egui::Modifiers::COMMAND;
     frame(&ctx, &mut app, press(command | egui::Modifiers::SHIFT));
-    assert!(app.session.review.is_some() && app.session.refine.is_none());
+    assert!(app.review_is_running(&file) && app.session.refine.is_none());
     frame(&ctx, &mut app, press(command));
     assert!(app.session.refine.is_some() && app.session.review.is_none());
 

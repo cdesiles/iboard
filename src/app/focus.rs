@@ -87,7 +87,10 @@ impl IboardApp {
             group: self.column_focus.group_by_label,
             labels: &self.labels,
             sections: &self.board.reader_sections,
-            past_reviews: &self.past_reviews,
+            reviews: review::CardReviews {
+                past: &self.past_reviews,
+                runs: &self.session.review_runs,
+            },
             can_review: self.agent.configured(),
             selected: selected.as_deref(),
             scroll_to_selected,
@@ -408,10 +411,7 @@ fn focus_card(
         CardLook::Plain
     };
     let extras = CardExtras {
-        review_pill: view
-            .past_reviews
-            .get(&issue.path)
-            .map(|past| past.card_pill(p)),
+        review_pill: view.reviews.pill(&issue.path, p),
         review_button: view.can_review
             && view.column.accepts_new_issues()
             && matches!(look, CardLook::Selected { .. }),

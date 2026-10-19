@@ -64,7 +64,10 @@ impl IboardApp {
                             picked: &self.session.picked,
                             root: &self.board.root,
                             labels: &self.labels,
-                            past_reviews: &self.past_reviews,
+                            reviews: review::CardReviews {
+                                past: &self.past_reviews,
+                                runs: &self.session.review_runs,
+                            },
                             can_review: self.agent.configured(),
                             builds: Builds {
                                 running: &running,
@@ -455,12 +458,8 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
     } else {
         CardLook::Plain
     };
-    let pill = view
-        .past_reviews
-        .get(&issue.path)
-        .map(|past| past.card_pill(p));
     let extras = CardExtras {
-        review_pill: pill,
+        review_pill: view.reviews.pill(&issue.path, p),
         review_button: view.can_review
             && view.column.accepts_new_issues()
             && matches!(look, CardLook::Selected { .. }),
