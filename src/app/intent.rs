@@ -19,6 +19,8 @@ pub(super) enum Intent {
     Archive(PathBuf),
     /// A done issue's diff, from its card.
     Diff(PathBuf),
+    /// A done issue's agent log, from its card: the reader, the log beside it.
+    AgentLog(PathBuf),
     /// Play, in Ready's hovered header: build these issues, top first.
     Build(Vec<PathBuf>),
     /// Stop, in Ready's header: every build agent.
@@ -84,6 +86,7 @@ impl CardAction {
             CardAction::Delete => Intent::Delete(path),
             CardAction::Archive => Intent::Archive(path),
             CardAction::Diff => Intent::Diff(path),
+            CardAction::AgentLog => Intent::AgentLog(path),
             CardAction::FilterLabel(label) => Intent::FilterBy(label),
             CardAction::Review => Intent::Review(path),
             CardAction::ShowReview => Intent::ShowReview(path),
@@ -116,6 +119,7 @@ impl IboardApp {
                 Intent::Delete(path) => self.request_delete(path),
                 Intent::Archive(path) => self.archive_issue(&path),
                 Intent::Diff(path) => self.show_issue_diff(&path),
+                Intent::AgentLog(path) => self.show_agent_log(path),
                 Intent::ArchiveAll(paths) => self.archive_all(&paths),
                 Intent::Build(paths) => self.start_build(paths),
                 Intent::StopBuild => self.stop_build(),

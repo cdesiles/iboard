@@ -150,6 +150,8 @@ enum CardAction {
     Archive,
     /// Show a done issue's diff: every commit that closed it.
     Diff,
+    /// Open a done issue with the build agent's log beside it.
+    AgentLog,
     /// Add the card's label to the filter.
     FilterLabel(String),
     /// Run the AI review (selected Todo card).

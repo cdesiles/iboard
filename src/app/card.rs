@@ -439,7 +439,7 @@ fn card_meta(
     let p = theme::palette(ui);
     let mut action = None;
     let mut action_rects = Vec::new();
-    // Add label, Review and Delete, or Diff and Archive on Done: 70pt.
+    // Add label, Review and Delete, or Agent log, Diff and Archive on Done: 70pt.
     let slots = 3.0;
     let slot = Vec2::new(
         slots * widgets::CARD_ACTION + (slots - 1.0) * theme::SPACE_1,
@@ -477,7 +477,7 @@ fn card_meta(
 
 /// The icon actions, right to left: Delete (Stop on the card being built),
 /// Retry on Doing's cards no agent is on, Review on the selected Todo card and Add label
-/// first of the cluster; or Archive and Diff on Done.
+/// first of the cluster; or Archive, Diff and Agent log on Done.
 fn card_actions(
     ui: &mut egui::Ui,
     issue: &Issue,
@@ -510,6 +510,14 @@ fn card_actions(
             "Show the diff",
             widgets::Tone::Plain,
             CardAction::Diff,
+        );
+        button(
+            ui,
+            Icon::Log,
+            "card_agent_log",
+            "Show the agent log",
+            widgets::Tone::Plain,
+            CardAction::AgentLog,
         );
         return;
     }

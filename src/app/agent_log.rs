@@ -54,6 +54,21 @@ impl IboardApp {
         }
     }
 
+    /// Opens the issue with its agent log beside it; or says there is none.
+    pub(super) fn show_agent_log(&mut self, path: PathBuf) {
+        if !self.has_agent_log(&path) {
+            self.session.notice = Some((
+                format!("No agent built {}", file_name(&path)),
+                Instant::now(),
+            ));
+            return;
+        }
+        self.open_issue(path.clone());
+        if !self.agent_log_open(&path) {
+            self.toggle_agent_log(&path);
+        }
+    }
+
     pub(super) fn toggle_agent_log(&mut self, path: &Path) {
         self.session.agent_log = (!self.agent_log_open(path)).then(|| LogView {
             path: path.to_path_buf(),

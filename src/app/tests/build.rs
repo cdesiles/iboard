@@ -317,3 +317,34 @@ fn stop_stops_watching_ready() {
     assert!(app.session.build.is_none());
     assert_eq!(in_column(&dir, "ready"), ["002-b.md", "003-c.md"]);
 }
+
+#[test]
+fn a_done_card_opens_its_agent_log() {
+    let (dir, _) = board("build-done-log", "true # {prompt}");
+    let done = dir.join("issues/done/003-c.md");
+    std::fs::write(&done, "# C\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let log = crate::build_log::path(&app.board.root, &done);
+    std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+    std::fs::write(&log, "built it\n").unwrap();
+    app.session.selected = Some(done.clone());
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let at = ctx
+        .read_response(egui::Id::new(("card_agent_log", &done)))
+        .expect("Done cards offer their agent log")
+        .rect
+        .center();
+    draw(&ctx, &mut app, vec![moved(at)]);
+    draw(&ctx, &mut app, vec![button(at, true)]);
+    draw(&ctx, &mut app, vec![button(at, false)]);
+    assert!(matches!(&app.session.screen, Screen::Detail(path) if *path == done));
+    draw(&ctx, &mut app, vec![]);
+    assert_eq!(app.session.agent_log.as_ref().unwrap().text, "built it\n");
+
+    std::fs::remove_file(&log).unwrap();
+    app.back_to_board();
+    app.apply(vec![Intent::AgentLog(done.clone())]);
+    assert!(matches!(app.session.screen, Screen::Board));
+    assert!(app.session.notice.is_some(), "says no agent built it");
+}

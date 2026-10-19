@@ -463,6 +463,8 @@ pub enum Icon {
     Play,
     /// A rounded square: stop the AI build.
     Stop,
+    /// A prompt in a rounded square: the build agent's log.
+    Log,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -608,6 +610,14 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             let square = Rect::from_min_max(at(5.0, 5.0), at(19.0, 19.0));
             let radius = CornerRadius::same((2.0 * s).round() as u8);
             painter.rect_stroke(square, radius, stroke, egui::StrokeKind::Middle);
+        }
+        Icon::Log => {
+            // Lucide's square-terminal.
+            let square = Rect::from_min_max(at(3.0, 3.0), at(21.0, 21.0));
+            let radius = CornerRadius::same((2.0 * s).round() as u8);
+            painter.rect_stroke(square, radius, stroke, egui::StrokeKind::Middle);
+            painter.line(vec![at(7.0, 8.0), at(10.0, 11.0), at(7.0, 14.0)], stroke);
+            painter.line_segment([at(12.0, 15.0), at(17.0, 15.0)], stroke);
         }
         Icon::Review => {
             // A speech bubble (Lucide's message-circle-question): a circle
