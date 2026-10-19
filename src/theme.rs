@@ -360,6 +360,28 @@ pub fn motion(ctx: &egui::Context, secs: f32) -> f32 {
     if reduced_motion(ctx) { 0.0 } else { secs }
 }
 
+/// A Skeleton placeholder's colour: `surface-sunken`, every one on screen
+/// pulsing together with the Thinking mark (opacity 1 → 0.5 → 1 over 1.6s).
+pub fn skeleton_fill(ctx: &egui::Context, p: &Palette) -> Color32 {
+    if reduced_motion(ctx) {
+        return p.surface_sunken;
+    }
+    ctx.request_repaint();
+    let phase = (ctx.input(|i| i.time) % 1.6 / 1.6) as f32;
+    let opacity = 0.75 + 0.25 * (phase * std::f32::consts::TAU).cos();
+    p.surface.lerp_to_gamma(p.surface_sunken, opacity)
+}
+
+/// A day of the Agenda: `surface-sunken` without commits, else one of four
+/// steps of `accent` mixed into `surface`, each `step` commits wide.
+pub fn agenda_fill(p: &Palette, commits: usize, step: usize) -> Color32 {
+    const MIX: [f32; 4] = [0.30, 0.52, 0.76, 1.0];
+    match commits.div_ceil(step.max(1)).min(MIX.len()) {
+        0 => p.surface_sunken,
+        level => p.surface.lerp_to_gamma(p.accent, MIX[level - 1]),
+    }
+}
+
 /// Draws in the chosen theme from the next frame on.
 pub fn apply(ctx: &egui::Context, appearance: Appearance) {
     ctx.set_theme(match appearance {
@@ -487,6 +509,10 @@ pub enum Icon {
     Log,
     /// The iboard "i" rocking its card: an agent is at work.
     Thinking,
+    /// A triangle with an exclamation mark: a signal is on.
+    Warning,
+    /// A flame: a hot spot, complex and often changed.
+    Flame,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -633,7 +659,7 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             let radius = CornerRadius::same((2.0 * s).round() as u8);
             painter.rect_stroke(square, radius, stroke, egui::StrokeKind::Middle);
         }
-        Icon::Thinking => thinking::icon(painter, rect),
+        Icon::Thinking | Icon::Warning | Icon::Flame => state_icon(painter, icon, rect, color),
         Icon::Log => {
             // Lucide's square-terminal.
             let square = Rect::from_min_max(at(3.0, 3.0), at(21.0, 21.0));
@@ -672,11 +698,57 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
     }
 }
 
+/// The marks of a state: an agent at work, a warning, a hot spot's flame.
+fn state_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
+    let stroke = Stroke::new(1.6, color);
+    let s = rect.width() / 24.0;
+    let at = |x: f32, y: f32| Pos2::new(rect.min.x + x * s, rect.min.y + y * s);
+    match icon {
+        Icon::Thinking => thinking::icon(painter, rect),
+        Icon::Warning => {
+            painter.add(egui::Shape::closed_line(
+                vec![at(12.0, 3.5), at(21.5, 20.0), at(2.5, 20.0)],
+                stroke,
+            ));
+            painter.line_segment([at(12.0, 9.5), at(12.0, 13.5)], stroke);
+            painter.circle_filled(at(12.0, 16.8), 0.9 * s, color);
+        }
+        Icon::Flame => {
+            painter.add(egui::Shape::closed_line(
+                vec![
+                    at(12.0, 2.5),
+                    at(16.5, 8.0),
+                    at(19.0, 13.5),
+                    at(17.5, 18.5),
+                    at(12.0, 21.5),
+                    at(6.5, 18.5),
+                    at(5.0, 13.5),
+                    at(7.5, 9.0),
+                    at(9.5, 12.0),
+                ],
+                stroke,
+            ));
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::design::{DesignSystem, Token, Tokens};
     use std::path::Path;
+
+    #[test]
+    fn agenda_days_take_four_steps_of_accent() {
+        let p = &LIGHT;
+        assert_eq!(agenda_fill(p, 0, 3), p.surface_sunken);
+        assert_eq!(agenda_fill(p, 12, 3), p.accent);
+        assert_eq!(agenda_fill(p, 40, 3), p.accent);
+        assert_eq!(agenda_fill(p, 1, 3), agenda_fill(p, 3, 3));
+        assert_ne!(agenda_fill(p, 3, 3), agenda_fill(p, 4, 3));
+    }
 
     /// Colour tokens with no `Palette` field: `focus` is `{accent}`.
     const UNMAPPED_COLORS: [&str; 1] = ["focus"];

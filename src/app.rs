@@ -37,6 +37,7 @@ use crate::{design_ui, dialog, recents, sheet};
 use iboard::design::{self, DesignSystem};
 use iboard::prompts;
 
+mod agenda;
 mod agent_log;
 mod board;
 mod build;
@@ -663,6 +664,8 @@ struct Session {
     agent_log: Option<agent_log::LogView>,
     /// The project stats panel, from Tools › Project Stats….
     stats: Option<stats::StatsPanel>,
+    /// The Agenda's range, kept between openings of the stats panel.
+    agenda_range: agenda::Range,
 }
 
 impl Default for Session {
@@ -702,6 +705,7 @@ impl Default for Session {
             agents: 1,
             agent_log: None,
             stats: None,
+            agenda_range: agenda::Range::default(),
         }
     }
 }

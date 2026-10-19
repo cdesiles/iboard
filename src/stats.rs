@@ -1,6 +1,6 @@
 //! A project's health across its history: code size, complexity, tests and
-//! TODOs at each of the last commits, the files that change most, and when
-//! work happened, and how long the issues closed took.
+//! TODOs at each of the last commits, its files and those that change most,
+//! when work happened, and how long the issues closed took.
 //!
 //! Commits are read a page of [`PAGE`] at a time along the first-parent line
 //! of `HEAD`. A commit's measures never change, so each is kept in
@@ -30,8 +30,13 @@ pub const PAGE: usize = 100;
 /// A file this long, in code lines, counts as large.
 pub const LARGE_FILE: usize = 500;
 
-/// How many days the agenda covers, up to the page's newest commit.
-pub const AGENDA_DAYS: i64 = 26 * 7;
+/// How many days the agenda covers, up to today: a year of whole weeks.
+pub const AGENDA_DAYS: i64 = 53 * 7;
+
+/// A file at least this complex, and changed at least [`HOTSPOT_CHANGES`]
+/// times on the page, is a hot spot.
+pub const HOTSPOT_COMPLEXITY: usize = 60;
+pub const HOTSPOT_CHANGES: usize = 8;
 
 /// Bumped whenever the measures change, so older caches are read again.
 const CACHE_VERSION: u32 = 1;
@@ -41,9 +46,6 @@ const MAX_BLOB: u64 = 1 << 20;
 
 /// How many files the top lists keep.
 const TOP: usize = 5;
-
-/// How many hot spots are shown.
-const HOTSPOTS: usize = 8;
 
 /// Commits read so far out of those to read, shared with the UI.
 #[derive(Debug, Default)]
@@ -113,6 +115,11 @@ impl Snapshot {
         ratio(self.comments, self.code)
     }
 
+    /// Complexity per thousand code lines, so size alone doesn't raise it.
+    pub fn complexity_per_kloc(&self) -> f32 {
+        ratio(self.complexity * 1000, self.code)
+    }
+
     /// TODO marks per thousand code lines.
     pub fn todo_density(&self) -> f32 {
         ratio(self.todos * 1000, self.code)
@@ -127,14 +134,31 @@ fn ratio(part: usize, whole: usize) -> f32 {
     }
 }
 
-/// A file that changes often, and how complex it is now: where debt costs most.
+/// A source file at the page's newest commit, and how often the page
+/// changed it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Hotspot {
+pub struct FileStat {
     pub path: String,
     /// Commits of the page that changed it.
     pub changes: usize,
     pub code: usize,
     pub complexity: usize,
+}
+
+impl FileStat {
+    /// Complex and often changed: where debt costs most.
+    pub fn is_hotspot(&self) -> bool {
+        self.complexity >= HOTSPOT_COMPLEXITY && self.changes >= HOTSPOT_CHANGES
+    }
+}
+
+/// One commit of a day, in the agenda.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DayCommit {
+    /// The author's local `HH:MM`.
+    pub time: String,
+    pub short: String,
+    pub subject: String,
 }
 
 /// One page of history, measured.
@@ -146,9 +170,11 @@ pub struct Stats {
     pub older: bool,
     /// Oldest first.
     pub snapshots: Vec<Snapshot>,
-    /// Commits per `YYYY-MM-DD`, over the [`AGENDA_DAYS`] up to the newest.
-    pub agenda: BTreeMap<String, usize>,
-    pub hotspots: Vec<Hotspot>,
+    /// The commits of each local `YYYY-MM-DD`, newest first, over the
+    /// [`AGENDA_DAYS`] up to today.
+    pub agenda: BTreeMap<String, Vec<DayCommit>>,
+    /// The source files at the page's newest commit, most code first.
+    pub files: Vec<FileStat>,
     /// The issues the page's commits closed, and how long each took.
     pub cycles: Cycles,
     /// Where the measures are kept.
@@ -204,15 +230,11 @@ pub fn collect(
         .rev()
         .filter_map(|c| cache.snapshots.get(&c.hash).cloned())
         .collect();
-    let hotspots = match commits.first() {
-        Some(newest) => hotspots(dir, page, &newest.hash)?,
+    let files = match commits.first() {
+        Some(newest) => files_at(dir, page, &newest.hash)?,
         None => Vec::new(),
     };
-    let agenda = commits
-        .first()
-        .map(|newest| agenda(dir, &newest.date))
-        .transpose()?
-        .unwrap_or_default();
+    let agenda = agenda(dir)?;
     let cycles = match commits.first() {
         Some(newest) => cycle::collect(dir, root, page, &newest.hash)?,
         None => Cycles::default(),
@@ -222,7 +244,7 @@ pub fn collect(
         older,
         snapshots,
         agenda,
-        hotspots,
+        files,
         cycles,
         cache: cache_file,
     })
@@ -372,9 +394,9 @@ fn top(items: impl Iterator<Item = (String, usize)>, count: usize) -> Vec<(Strin
     items
 }
 
-/// The page's most changed source files, weighed by their complexity at
-/// `newest`.
-fn hotspots(dir: &Path, page: usize, newest: &str) -> Result<Vec<Hotspot>, String> {
+/// The source files at `newest`, with how many of the page's commits
+/// changed each.
+fn files_at(dir: &Path, page: usize, newest: &str) -> Result<Vec<FileStat>, String> {
     let out = git(
         dir,
         &[
@@ -389,56 +411,61 @@ fn hotspots(dir: &Path, page: usize, newest: &str) -> Result<Vec<Hotspot>, Strin
     )?;
     let mut changes: HashMap<&str, usize> = HashMap::new();
     for path in out.lines().filter(|line| !line.is_empty()) {
-        if language_of(path).is_some() && measure::is_own(path) {
-            *changes.entry(path).or_default() += 1;
-        }
+        *changes.entry(path).or_default() += 1;
     }
-    let churned = top(
-        changes.into_iter().map(|(k, v)| (k.to_string(), v)),
-        HOTSPOTS * 4,
-    );
+    let tree = git(dir, &["ls-tree", "-r", "-z", "-l", "--full-tree", newest])?;
     let mut batch = Batch::open(dir)?;
-    let mut spots = Vec::new();
-    for (path, changes) in churned {
-        let Some(language) = language_of(&path) else {
-            continue;
-        };
-        let Some(bytes) = batch.read(&format!("{newest}:{path}"))? else {
+    let mut files = Vec::new();
+    for entry in entries(&tree) {
+        let Some(bytes) = batch.read(entry.sha)? else {
             continue;
         };
         let Ok(text) = std::str::from_utf8(&bytes) else {
             continue;
         };
-        let m = measure(&path, language, text);
-        spots.push(Hotspot {
-            path,
-            changes,
+        let m = measure(entry.path, entry.language, text);
+        if m.code == 0 {
+            continue;
+        }
+        files.push(FileStat {
+            path: entry.path.to_string(),
+            changes: changes.get(entry.path).copied().unwrap_or(0),
             code: m.code,
             complexity: m.complexity(),
         });
     }
-    spots.sort_by_key(|s| std::cmp::Reverse(s.changes * s.complexity));
-    spots.truncate(HOTSPOTS);
-    Ok(spots)
+    files.sort_by(|a, b| b.code.cmp(&a.code).then_with(|| a.path.cmp(&b.path)));
+    Ok(files)
 }
 
-/// Commits per day over the [`AGENDA_DAYS`] up to `newest` (RFC 3339).
-fn agenda(dir: &Path, newest: &str) -> Result<BTreeMap<String, usize>, String> {
-    let end = chrono::DateTime::parse_from_rfc3339(newest).map_err(|err| err.to_string())?;
-    let start = end - chrono::Duration::days(AGENDA_DAYS);
+/// The commits of each day over the [`AGENDA_DAYS`] up to today, by the
+/// author's local date.
+fn agenda(dir: &Path) -> Result<BTreeMap<String, Vec<DayCommit>>, String> {
+    let start = chrono::Local::now() - chrono::Duration::days(AGENDA_DAYS);
     let out = git(
         dir,
         &[
             "log",
             &format!("--since={}", start.to_rfc3339()),
-            &format!("--until={}", end.to_rfc3339()),
-            "--format=%cs",
+            "--date=format-local:%Y-%m-%d %H:%M",
+            "--format=%ad%x1f%h%x1f%s",
             "HEAD",
         ],
     )?;
-    let mut days = BTreeMap::new();
-    for day in out.lines().filter(|line| !line.is_empty()) {
-        *days.entry(day.to_string()).or_default() += 1;
+    let mut days: BTreeMap<String, Vec<DayCommit>> = BTreeMap::new();
+    for line in out.lines() {
+        let mut fields = line.splitn(3, '\x1f');
+        let (Some(when), Some(short)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        let Some((day, time)) = when.split_once(' ') else {
+            continue;
+        };
+        days.entry(day.to_string()).or_default().push(DayCommit {
+            time: time.to_string(),
+            short: short.to_string(),
+            subject: fields.next().unwrap_or_default().to_string(),
+        });
     }
     Ok(days)
 }
@@ -605,9 +632,11 @@ mod tests {
         assert_eq!((last.tests, last.test_code, last.todos), (1, 2, 1));
         assert_eq!(last.complexity, 3);
         assert!(!stats.older);
-        assert_eq!(stats.agenda.values().sum::<usize>(), 4);
-        assert_eq!(stats.hotspots[0].path, "src/lib.rs");
-        assert_eq!(stats.hotspots[0].changes, 2);
+        assert_eq!(stats.agenda.values().map(Vec::len).sum::<usize>(), 4);
+        let lib = stats.files.iter().find(|f| f.path == "src/lib.rs").unwrap();
+        assert_eq!((lib.changes, lib.code), (2, 3));
+        assert_eq!(stats.files[0].path, "src/lib.rs", "most code first");
+        assert!(!lib.is_hotspot());
         assert!(stats.cache.as_ref().unwrap().is_file());
 
         commit(dir.path(), "src/b.rs", "fn b() {}\n", "five");

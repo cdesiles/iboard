@@ -18,8 +18,8 @@
  },
  "lastChange": {
   "by": "Clément",
-  "at": "2026-10-19T21:35:00Z",
+  "at": "2026-10-19T23:25:00Z",
   "via": "Claude Code",
-  "note": "Thinking: simpler loader, the iboard i whose card-dot rocks gently (-8° to +5°, 1.6s) while an agent works."
+  "note": "Stats screen: cycle time, complexity, coverage and code size as small multiples, a Refactor watch, biggest files with hotspots, and the Agenda."
  }
 }

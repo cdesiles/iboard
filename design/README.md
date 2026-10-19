@@ -42,6 +42,9 @@ iboard is a desktop tool for developers who keep their issues as markdown files 
 - Radii: `radius-sm` 4 for controls, `radius-md` 6 for cards and pages, `radius-pill` for 18pt pills. Cards are flat; `shadow-popover` is only for the review panel, menus, dialogs and a card being dragged.
 - Scrollbars are overlays that never take layout width: a 4pt thumb (`scroll-thumb`) in `line-strong` at rest, `ink-muted` while scrolling, 8pt (`scroll-thumb-hover`) under the pointer, `accent` while dragging, and `line` in an unfocused pane or window. No track, no arrows. See Scrollbar.
 - Two panes side by side are separated by the 16pt gutter, and that gutter is the resize handle: a 2×3 dot grip in `ink-faint` at rest, a full-height 2pt `line-strong` rule under the pointer, `accent` while dragging. It never overlaps a pane's scroll strip. See PaneDivider.
+- Anything slow (stats from git history, charts, an agent's answer) shows Skeleton blocks at the content's final size: real labels and axes, data shapes in `surface-sunken`, all pulsing together on a 1.6s beat. Nothing before 300ms; the Thinking i and an elapsed clock from 2s; each block fills in on its own. See Skeleton.
+- The Agenda shows commits per day across supervised projects: 18pt day squares in one `accent` ramp whose scale is rebuilt from what is shown, today ringed in `ink`, empty stretches of 4+ weeks folded, a per-project list with weekly bars, and the selected day's commits beside it. See Agenda.
+- The Stats screen tracks maintenance cost: cycle time, complexity per kLOC, test coverage and lines of code as small multiples on one time axis with a shared crosshair (never a dual axis), a Refactor watch that turns 2+ signals into a "Draft a refactor issue" action, the biggest files with hotspots (complex and often changed), and the Agenda. See StatsScreen.
 
 ## Navigation
 

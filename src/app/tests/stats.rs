@@ -1,4 +1,4 @@
-//! Project stats' tests: measuring the history, walking it, closing the panel.
+//! Project stats' tests: measuring the history, its Agenda, closing the panel.
 
 use egui_kittest::kittest::Queryable;
 
@@ -32,10 +32,10 @@ fn project(tag: &str) -> (Scratch, Located) {
     (dir, located)
 }
 
-/// The panel measures every commit, shows the newest, walks back with `←`,
-/// and goes with `esc`.
+/// The panel measures every commit, shows its figures, trends, watch and
+/// files, moves the Agenda's day with `←`, and goes with `esc`.
 #[test]
-fn the_stats_panel_measures_and_walks_the_history() {
+fn the_stats_panel_measures_the_history_and_walks_the_agenda() {
     let (_dir, located) = project("stats");
     let mut app = IboardApp::from_located(located);
     app.open_stats();
@@ -68,18 +68,30 @@ fn the_stats_panel_measures_and_walks_the_history() {
     let panel = harness.state().1.session.stats.as_ref().unwrap();
     let code: Vec<usize> = panel.snapshots().iter().map(|s| s.code).collect();
     assert_eq!(code, [1, 2, 3]);
-    assert_eq!(panel.selected, 2);
-    harness.get_by_label("Trend across commits");
-    harness.get_by_label("three");
-    harness.get_by_label("Cycle time");
+    let today = panel.agenda.selected;
+    for label in [
+        "MEDIAN CYCLE TIME",
+        "Lines of code trend",
+        "REFACTOR WATCH",
+        "No refactor needed now",
+        "src/lib.rs",
+        "Agenda",
+    ] {
+        harness.get_by_label(label);
+    }
 
     harness.key_press(Key::ArrowLeft);
     harness.run_steps(2);
-    assert_eq!(
-        harness.state().1.session.stats.as_ref().unwrap().selected,
-        1
-    );
-    harness.get_by_label("two");
+    let selected = harness
+        .state()
+        .1
+        .session
+        .stats
+        .as_ref()
+        .unwrap()
+        .agenda
+        .selected;
+    assert_eq!(selected, today - chrono::Duration::days(7));
 
     harness.key_press(Key::Escape);
     harness.run_steps(2);
