@@ -150,7 +150,11 @@ impl IboardApp {
                 }
                 Intent::Compose => self.open_composer(),
                 Intent::SubmitComposer { close } => self.submit_composer(close),
-                Intent::CloseComposer if !submitting => self.session.composer = None,
+                Intent::CloseComposer if !submitting => {
+                    if let Some(composer) = self.session.composer.as_mut() {
+                        composer.closing = true;
+                    }
+                }
                 Intent::CloseComposer => {}
                 Intent::TitleSettings => self.open_title_settings(),
             }

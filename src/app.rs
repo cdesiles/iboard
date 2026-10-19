@@ -386,6 +386,9 @@ struct Composer {
     error: Option<String>,
     /// The images pasted before the issue has a name.
     images: Option<images::PendingImages>,
+    /// Closed by a click: it goes once the pointer is up, so the cards
+    /// below don't slide out from under that click.
+    closing: bool,
 }
 
 impl Composer {
@@ -964,6 +967,7 @@ impl IboardApp {
         self.enrichment_window(ui);
         self.commits_window(ui);
         self.flush_pending_front(ui.ctx());
+        self.flush_closing_composer(ui.ctx());
     }
 }
 

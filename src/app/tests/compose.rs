@@ -93,6 +93,7 @@ fn clicking_away_adds_the_issue_and_closes_the_composer() {
 
     let created = todo.join("export-board.md");
     assert!(created.exists(), "the new issue is written to Todo");
+    app.flush_closing_composer(&egui::Context::default());
     assert!(app.session.composer.is_none(), "the composer closes");
     assert!(
         matches!(app.session.screen, Screen::Board),
@@ -305,6 +306,7 @@ fn clicking_away_while_naming_writes_once_named() {
         created.exists(),
         "a click away never stops on the suggestion"
     );
+    app.flush_closing_composer(&ctx);
     assert!(app.session.composer.is_none(), "and closes the composer");
 }
 
@@ -377,4 +379,54 @@ fn opening_an_issue_keeps_an_unsaved_composer() {
         app.session.composer.is_none(),
         "an empty composer still closes"
     );
+}
+
+/// Bug: right after `↩` added a ticket, a click on its Add label action
+/// closed the now empty composer on the press, the cards slid up from under
+/// the held pointer, and the card started a drag: the board flickered.
+#[test]
+fn a_click_on_the_new_ticket_right_after_adding_it_lands() {
+    let dir = scratch_dir("compose-label");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::write(todo.join("001-old.md"), "# Old\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_composer();
+    let ctx = themed_ctx();
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, vec![egui::Event::Text("Fresh".into())]);
+    frame(&ctx, &mut app, vec![key(Key::Enter, egui::Modifiers::NONE)]);
+    frame(&ctx, &mut app, vec![]);
+    let fresh = todo.join("001-fresh.md");
+    assert!(fresh.is_file(), "↩ adds it at the top");
+    assert!(
+        app.session.composer.is_some(),
+        "and keeps the composer open"
+    );
+
+    let add = ctx
+        .read_response(egui::Id::new(("card_add_label", &fresh)))
+        .expect("the selected new card shows its actions")
+        .rect
+        .center();
+    frame(&ctx, &mut app, vec![moved(add)]);
+    frame(&ctx, &mut app, vec![moved(add), button(add, true)]);
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, vec![]);
+    assert!(
+        !egui::DragAndDrop::has_payload_of_type::<IssueDrag>(&ctx),
+        "the held click never turns into a drag"
+    );
+    frame(&ctx, &mut app, vec![button(add, false)]);
+    frame(&ctx, &mut app, vec![]);
+    assert_eq!(
+        app.session
+            .label_picker
+            .as_ref()
+            .map(|picker| picker.path.as_path()),
+        Some(fresh.as_path()),
+        "the click opens its LabelPicker"
+    );
+    assert!(app.session.composer.is_none(), "and closes the composer");
+    assert_eq!(app.session.selected.as_deref(), Some(fresh.as_path()));
 }

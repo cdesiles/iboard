@@ -28,6 +28,7 @@ impl IboardApp {
         }
         let composer = self.session.composer.get_or_insert_with(Composer::default);
         composer.engine = engine;
+        composer.closing = false;
         composer.focus = Some(if composer.stage == TitleStage::Idle {
             ComposerField::Description
         } else {
@@ -119,12 +120,11 @@ impl IboardApp {
                 if self.board.find(&path).is_some() {
                     self.session.pending_front = Some((dir.clone(), path.clone()));
                 }
-                if close {
-                    self.session.composer = None;
-                } else if let Some(composer) = self.session.composer.as_mut() {
+                if let Some(composer) = self.session.composer.as_mut() {
                     *composer = Composer {
                         engine: composer.engine,
-                        focus: Some(ComposerField::Description),
+                        focus: (!close).then_some(ComposerField::Description),
+                        closing: close,
                         ..Composer::default()
                     };
                 }
@@ -181,6 +181,14 @@ impl IboardApp {
                 composer.stage = TitleStage::Failed;
                 composer.focus = Some(ComposerField::Title);
             }
+        }
+    }
+
+    /// Closes a composer a click closed, once that click is over.
+    pub(super) fn flush_closing_composer(&mut self, ctx: &egui::Context) {
+        let closing = self.session.composer.as_ref().is_some_and(|c| c.closing);
+        if closing && !ctx.input(|i| i.pointer.any_down()) {
+            self.session.composer = None;
         }
     }
 
