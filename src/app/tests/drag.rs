@@ -452,3 +452,60 @@ fn done_cards_cannot_be_labelled() {
     frame(&ctx, &mut app, vec![key(Key::L, Default::default())]);
     assert!(app.session.label_picker.is_none());
 }
+
+/// The lifted copy under the pointer is tilted, as the design system draws
+/// it: its top edge rises to the right.
+#[test]
+fn the_dragged_card_is_tilted() {
+    let dir = scratch_dir("drag-tilt");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("01-demo.md");
+    std::fs::write(&file, "# Demo\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let start = ctx
+        .read_response(egui::Id::new(("issue_card", &file)))
+        .unwrap()
+        .rect
+        .center();
+    draw(&ctx, &mut app, vec![moved(start)]);
+    draw(&ctx, &mut app, vec![moved(start), button(start, true)]);
+    for _ in 0..5 {
+        draw(&ctx, &mut app, vec![moved(start + egui::vec2(40.0, 40.0))]);
+    }
+    let input = egui::RawInput {
+        screen_rect: Some(window()),
+        events: vec![moved(start + egui::vec2(60.0, 60.0))],
+        ..Default::default()
+    };
+    let ghost = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(("issue_ghost", &file)));
+    let mut vertices: Vec<egui::Pos2> = Vec::new();
+    let mut flat: Vec<String> = Vec::new();
+    let mut output = ctx.run_ui(input, |ui| {
+        app.draw(ui);
+        ui.ctx().graphics(|graphics| {
+            for clipped in graphics
+                .get(ghost)
+                .into_iter()
+                .flat_map(|l| l.all_entries())
+            {
+                match &clipped.shape {
+                    egui::Shape::Mesh(mesh) => vertices.extend(mesh.vertices.iter().map(|v| v.pos)),
+                    egui::Shape::Noop => {}
+                    other => flat.push(format!("{other:?}")),
+                }
+            }
+        });
+    });
+    output.textures_delta.clear();
+    assert!(flat.is_empty(), "the ghost is turned into meshes: {flat:?}");
+    assert!(!vertices.is_empty(), "the ghost is drawn");
+    let center = vertices
+        .iter()
+        .fold(egui::Vec2::ZERO, |sum, v| sum + v.to_vec2())
+        / vertices.len() as f32;
+    let top = vertices.iter().min_by(|a, b| a.y.total_cmp(&b.y)).unwrap();
+    assert!(top.x > center.x, "the top-right corner rises");
+}

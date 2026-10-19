@@ -208,7 +208,7 @@ fn card_edge(ui: &egui::Ui, response: &egui::Response, look: CardLook) {
 /// where it was grabbed.
 fn drag_ghost(ui: &egui::Ui, issue: &Issue, width: f32, labels: &Labels, at: Pos2) {
     let p = theme::palette(ui);
-    egui::Area::new(egui::Id::new(("issue_ghost", &issue.path)))
+    let ghost = egui::Area::new(egui::Id::new(("issue_ghost", &issue.path)))
         .order(egui::Order::Tooltip)
         .fixed_pos(at)
         .constrain(false)
@@ -230,6 +230,34 @@ fn drag_ghost(ui: &egui::Ui, issue: &Issue, width: f32, labels: &Labels, at: Pos
                 StrokeKind::Inside,
             );
         });
+    let response = ghost.response;
+    tilt_layer(ui.ctx(), response.layer_id, response.rect.center());
+}
+
+/// The lifted card's tilt, as the design system draws it.
+const GHOST_TILT_DEG: f32 = -1.5;
+
+/// Rotates what a layer painted this frame about `origin`. Rects and text
+/// can't turn in epaint, so each shape becomes a mesh first.
+fn tilt_layer(ctx: &egui::Context, layer: egui::LayerId, origin: Pos2) {
+    let font_size = ctx.fonts(|fonts| fonts.font_image_size());
+    let options = ctx.tessellation_options(|options| *options);
+    let mut tessellator =
+        egui::epaint::Tessellator::new(ctx.pixels_per_point(), options, font_size, Vec::new());
+    let rotation = egui::emath::Rot2::from_angle(GHOST_TILT_DEG.to_radians());
+    ctx.graphics_mut(|graphics| {
+        let list = graphics.entry(layer);
+        for index in 0..list.next_idx().0 {
+            list.mutate_shape(egui::layers::ShapeIdx(index), |clipped| {
+                let mut mesh = egui::epaint::Mesh::default();
+                let shape = std::mem::replace(&mut clipped.shape, Shape::Noop);
+                tessellator.tessellate_shape(shape, &mut mesh);
+                mesh.rotate(rotation, origin);
+                clipped.shape = Shape::mesh(mesh);
+                clipped.clip_rect = Rect::EVERYTHING;
+            });
+        }
+    });
 }
 
 /// One entry of a wide card's facts row: a small `meta` label, with a check
