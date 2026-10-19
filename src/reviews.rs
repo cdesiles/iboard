@@ -35,6 +35,9 @@ pub struct StoredReview {
     /// True when the agent read an unsaved editor draft.
     #[serde(default)]
     pub draft: bool,
+    /// True when the agent ran in plan mode, unable to change the repository.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub plan: bool,
     /// When the answer came in, RFC 3339.
     pub at: String,
     pub raw: String,
@@ -138,6 +141,7 @@ mod tests {
             agent: "opencode · default".into(),
             mode: "quick".into(),
             draft: false,
+            plan: false,
             at: "2026-10-12T10:00:00+02:00".into(),
             raw: "RELEVANCE: Pass\nok".into(),
         }

@@ -60,6 +60,10 @@ impl AsRef<Path> for Scratch {
 }
 
 fn scratch_dir(tag: &str) -> Scratch {
+    agent::run_tools_from(Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fakes"
+    )));
     let dir = tempfile::Builder::new()
         .prefix(&format!("iboard-{tag}-"))
         .tempdir()

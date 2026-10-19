@@ -1,6 +1,7 @@
 //! The AI review's tests: running, keeping and applying it.
 
 use super::*;
+use crate::app::review::PLAN_NOTE;
 
 /// Reviewing and "Not written yet" are for issues still in Todo.
 #[test]
@@ -89,6 +90,7 @@ pub(super) fn open_issue_with_review(tag: &str) -> (Scratch, PathBuf, IboardApp)
         path: file.clone(),
         draft: false,
         mode: ReviewMode::Quick,
+        plan: false,
         agent: "opencode · vendor/model".to_string(),
         status: ReviewStatus::Done {
             raw: raw.to_string(),
@@ -490,6 +492,7 @@ fn a_failed_review_keeps_the_last_one() {
         agent: "custom · default".to_string(),
         mode: "quick".to_string(),
         draft: false,
+        plan: false,
         at: chrono::Local::now().to_rfc3339(),
         raw: "RELEVANCE: Pass\nok\nSIZE: Block\nsplit\nCLARITY: Pass\nok\nPROPOSAL: NONE"
             .to_string(),
@@ -509,4 +512,66 @@ fn a_failed_review_keeps_the_last_one() {
     assert!(harness.query_by_label("Review ready").is_none());
     let sidecar = reviews::load(&dir.join("issues"), &file);
     assert!(sidecar.review.unwrap().raw.contains("SIZE: Block"));
+}
+
+/// The board runs `tool`'s review, which answers with its arguments.
+fn plan_review(tag: &str, tool: agent::Tool) -> (Scratch, PathBuf, Drawn) {
+    let (dir, file, mut harness) = reviewing(tag, PASSING);
+    harness.state_mut().1.agent.tool = tool;
+    (dir, file, harness)
+}
+
+/// A review asked for from the card runs Claude in plan mode, and its panel
+/// says so.
+#[test]
+fn a_background_review_runs_claude_in_plan_mode() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, file, mut harness) = plan_review("review-plan-claude", agent::Tool::Claude);
+    harness.get_by_label("Review").click();
+    harness.run_steps(1);
+    land(&mut harness, &file);
+    let stored = reviews::load(&dir.join("issues"), &file).review.unwrap();
+    assert!(stored.plan);
+    assert!(
+        stored.raw.contains("--permission-mode\nplan\n"),
+        "{}",
+        stored.raw
+    );
+
+    harness.get_by_label("Review ready").click();
+    harness.run_steps(2);
+    assert!(harness.state().1.session.review.as_ref().unwrap().plan);
+    harness.get_by_label(PLAN_NOTE);
+}
+
+/// A review asked for from the reader runs OpenCode in plan mode.
+#[test]
+fn a_reader_review_runs_opencode_in_plan_mode() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, file, mut harness) = plan_review("review-plan-opencode", agent::Tool::OpenCode);
+    harness.state_mut().1.open_issue(file.clone());
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::R);
+    harness.run_steps(1);
+    land(&mut harness, &file);
+    let stored = reviews::load(&dir.join("issues"), &file).review.unwrap();
+    assert!(stored.plan);
+    assert!(stored.raw.contains("--agent\nplan\n"), "{}", stored.raw);
+    harness.get_by_label("Review ready").click();
+    harness.run_steps(2);
+    harness.get_by_label(PLAN_NOTE);
+}
+
+/// A custom command has no plan mode: it runs as before, without the note.
+#[test]
+fn a_custom_review_has_no_plan_note() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, file, mut harness) = reviewing("review-plan-custom", PASSING);
+    harness.get_by_label("Review").click();
+    harness.run_steps(1);
+    land(&mut harness, &file);
+    harness.get_by_label("Review ready").click();
+    harness.run_steps(2);
+    assert!(!harness.state().1.session.review.as_ref().unwrap().plan);
+    assert!(harness.query_by_label(PLAN_NOTE).is_none());
 }

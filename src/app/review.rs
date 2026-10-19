@@ -24,7 +24,7 @@ impl IboardApp {
             self.open_config();
             return;
         }
-        let (answer, _) = agent::start_review(&self.agent, &prompt, &target.path, target.mode);
+        let (answer, _) = agent::start_plan_review(&self.agent, &prompt, &target.path, target.mode);
         self.mark_notes_sent(&target.path);
         self.close_review();
         let runs = &mut self.session.review_runs;
@@ -120,6 +120,7 @@ impl IboardApp {
                 path,
                 draft: past.draft,
                 mode: past.mode,
+                plan: past.plan,
                 agent: past.agent,
                 status: ReviewStatus::Done {
                     raw: past.raw,
@@ -134,7 +135,7 @@ impl IboardApp {
     /// ready; a failure goes to the status strip and leaves the last review
     /// alone. Called every frame.
     pub(super) fn poll_review(&mut self) {
-        let landed: Vec<(PathBuf, Result<String, String>)> = self
+        let landed: Vec<(PathBuf, Result<agent::Reviewed, String>)> = self
             .session
             .review_runs
             .running
@@ -145,8 +146,8 @@ impl IboardApp {
             let Some(run) = self.session.review_runs.running.remove(&path) else {
                 continue;
             };
-            let raw = match result {
-                Ok(raw) => raw,
+            let reviewed = match result {
+                Ok(reviewed) => reviewed,
                 Err(error) => {
                     self.error = Some(format!("Review of {} failed: {error}", file_name(&path)));
                     continue;
@@ -157,8 +158,9 @@ impl IboardApp {
                 agent: run.agent,
                 mode: run.mode.key().to_string(),
                 draft: run.draft,
+                plan: reviewed.plan,
                 at: chrono::Local::now().to_rfc3339(),
-                raw,
+                raw: reviewed.answer,
             };
             if let Err(err) = reviews::save_review(&self.board.root, &path, stored.clone()) {
                 self.error = Some(err);
@@ -338,6 +340,7 @@ impl IboardApp {
         let name = file_name(&review.path);
         let source = if review.draft { "draft" } else { "file" };
         let agent = format!("{} · {}", review.agent, review.mode.key());
+        let plan = review.plan;
         let mut follow_up = review.follow_up.clone();
         let mut drafts = match &review.status {
             ReviewStatus::SplitReady { drafts, .. } => Some(drafts.clone()),
@@ -360,6 +363,14 @@ impl IboardApp {
                     .inner_margin(Margin::same(theme::SPACE_4 as i8))
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
+                        if plan {
+                            ui.label(
+                                RichText::new(PLAN_NOTE)
+                                    .font(theme::meta())
+                                    .color(p.ink_muted),
+                            );
+                            ui.add_space(theme::SPACE_2);
+                        }
                         action = review_body(ui, &review.status, drafts.as_deref_mut());
                         if matches!(
                             review.status,
@@ -428,6 +439,9 @@ impl IboardApp {
     }
 }
 
+/// What the review panel says of a review run in plan mode.
+pub(super) const PLAN_NOTE: &str = "Plan mode: the agent could not change the repository";
+
 /// The reviews running in the background, one per issue, and the issues
 /// whose review landed since it was last shown.
 #[derive(Default)]
@@ -443,7 +457,7 @@ struct ReviewRun {
     agent: String,
     /// [`reviews::content_hash`] of the text the agent reads.
     hash: String,
-    answer: Job<Result<String, String>>,
+    answer: Job<Result<agent::Reviewed, String>>,
 }
 
 impl ReviewRuns {

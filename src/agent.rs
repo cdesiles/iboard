@@ -23,7 +23,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -92,6 +92,39 @@ impl Tool {
     fn from_key(key: &str) -> Option<Tool> {
         Tool::ALL.into_iter().find(|tool| tool.key() == key)
     }
+
+    /// The arguments that run a prompt in plan mode, where the agent may read
+    /// the repository but not change it; empty for a tool without one.
+    fn plan_args(self) -> &'static [&'static str] {
+        match self {
+            Tool::OpenCode => &["--agent", "plan"],
+            Tool::Claude => &["--permission-mode", "plan"],
+            Tool::Custom => &[],
+        }
+    }
+
+    /// The program that runs the tool: its binary, or the shell for a custom
+    /// command.
+    fn program(self) -> PathBuf {
+        let Some(name) = self.binary() else {
+            return PathBuf::from("sh");
+        };
+        #[cfg(test)]
+        run_tools_from(Path::new(tests::FAKES));
+        match TOOLS.get() {
+            Some(dir) => dir.join(name),
+            None => find_binary(name).unwrap_or_else(|| PathBuf::from(name)),
+        }
+    }
+}
+
+/// Where `opencode` and `claude` run from instead of `PATH`, once set.
+static TOOLS: OnceLock<PathBuf> = OnceLock::new();
+
+/// Runs `opencode` and `claude` from `dir` for the rest of the process, so
+/// tests never start a real agent. The first call wins.
+pub fn run_tools_from(dir: &Path) {
+    let _ = TOOLS.set(dir.to_path_buf());
 }
 
 /// The `[ai]` section of the user's configuration.
@@ -469,12 +502,12 @@ impl ReviewMode {
     }
 }
 
-/// What a run of the agent is for: a plain answer, a review, or implementing
-/// an issue, which edits the repository.
+/// What a run of the agent is for: a plain answer, a review (in plan mode
+/// when `plan`), or implementing an issue, which edits the repository.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Purpose {
     Answer,
-    Review(ReviewMode),
+    Review { mode: ReviewMode, plan: bool },
     Build,
 }
 
@@ -483,7 +516,7 @@ impl Purpose {
     fn key(self) -> &'static str {
         match self {
             Purpose::Answer => "",
-            Purpose::Review(mode) => mode.key(),
+            Purpose::Review { mode, .. } => mode.key(),
             Purpose::Build => "build",
         }
     }
@@ -526,9 +559,7 @@ fn command(
             command
         }
         tool => {
-            let name = tool.binary().unwrap_or_default();
-            let mut command =
-                Command::new(find_binary(name).unwrap_or_else(|| PathBuf::from(name)));
+            let mut command = Command::new(tool.program());
             // `opencode run "…"` and `claude -p "…"` answer once and exit.
             command.arg(if tool == Tool::OpenCode { "run" } else { "-p" });
             // A review or a build streams its steps as JSON events, so iboard
@@ -542,7 +573,10 @@ fn command(
                 (_, _) => {
                     command.args(["--output-format", "stream-json", "--verbose"]);
                     match purpose {
-                        Purpose::Review(ReviewMode::Quick) => {
+                        Purpose::Review {
+                            mode: ReviewMode::Quick,
+                            ..
+                        } => {
                             command.args(["--tools", ""]);
                         }
                         Purpose::Build => {
@@ -551,6 +585,9 @@ fn command(
                         _ => {}
                     }
                 }
+            }
+            if let Purpose::Review { plan: true, .. } = purpose {
+                command.args(tool.plan_args());
             }
             if !model.is_empty() {
                 command.arg("--model").arg(model);
@@ -673,8 +710,68 @@ pub fn start(config: &AgentConfig, prompt: &str, issue: &Path) -> Job<Result<Str
     Job::spawn(move |cancel| run(&config, &prompt, &issue, cancel))
 }
 
-/// [`run`] for a review on a background thread, with the [`Progress`] its
-/// steps land in. Dropping the job stops the agent.
+/// A review's answer, and whether the agent gave it in plan mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reviewed {
+    pub answer: String,
+    pub plan: bool,
+}
+
+/// Runs a review in plan mode when the tool has one, and again without it
+/// when the tool rejects the flag.
+fn review(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    cancel: &Cancel,
+    mode: ReviewMode,
+    progress: &Progress,
+) -> Result<Reviewed, String> {
+    let run = |plan| {
+        let purpose = Purpose::Review { mode, plan };
+        run_with(config, prompt, issue, cancel, purpose, Some(progress), None)
+            .map(|answer| Reviewed { answer, plan })
+    };
+    if config.tool.plan_args().is_empty() {
+        return run(false);
+    }
+    match run(true) {
+        Err(error) if !cancel.is_cancelled() && rejects_plan(&error) => run(false),
+        result => result,
+    }
+}
+
+/// Whether an agent's error says it does not know the plan-mode flag.
+fn rejects_plan(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    let signs = [
+        "--agent",
+        "--permission-mode",
+        "unknown option",
+        "unknown argument",
+        "unexpected argument",
+        "unrecognized",
+    ];
+    signs.iter().any(|sign| error.contains(sign))
+        || (error.contains("agent") && error.contains("not found"))
+}
+
+/// [`review`] on a background thread, with the [`Progress`] its steps land
+/// in. Dropping the job stops the agent.
+pub fn start_plan_review(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    mode: ReviewMode,
+) -> (Job<Result<Reviewed, String>>, Progress) {
+    let (config, prompt, issue) = (config.clone(), prompt.to_string(), issue.to_path_buf());
+    let progress = Progress::default();
+    let steps = Arc::clone(&progress);
+    let job = Job::spawn(move |cancel| review(&config, &prompt, &issue, cancel, mode, &steps));
+    (job, progress)
+}
+
+/// [`start_plan_review`] for its answer alone.
 pub fn start_review(
     config: &AgentConfig,
     prompt: &str,
@@ -685,15 +782,7 @@ pub fn start_review(
     let progress = Progress::default();
     let steps = Arc::clone(&progress);
     let job = Job::spawn(move |cancel| {
-        run_with(
-            &config,
-            &prompt,
-            &issue,
-            cancel,
-            Purpose::Review(mode),
-            Some(&steps),
-            None,
-        )
+        review(&config, &prompt, &issue, cancel, mode, &steps).map(|reviewed| reviewed.answer)
     });
     (job, progress)
 }
@@ -1085,473 +1174,4 @@ fn verdict_and_note(rest: &str) -> Option<(Verdict, &str)> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn verdicts_survive_markdown_and_punctuation() {
-        let answer = "**RELEVANCE:** Pass\nStill needed.\n\
-                      ## Size: **Challenge** — split it\nIt does two things.\n\
-                      - CLARITY: Block.\nWhich tool?\n\
-                      **PROPOSAL:**\n# Better\n";
-        let report = parse(answer).expect("a report");
-        let verdicts: Vec<(&str, Verdict)> = report
-            .findings
-            .iter()
-            .map(|finding| (finding.axis.as_str(), finding.verdict))
-            .collect();
-        assert_eq!(
-            verdicts,
-            [
-                ("Relevance", Verdict::Pass),
-                ("Size", Verdict::Challenge),
-                ("Clarity", Verdict::Block)
-            ]
-        );
-        assert_eq!(report.findings[1].body, "split it\nIt does two things.");
-        assert_eq!(report.proposal.as_deref(), Some("# Better"));
-    }
-
-    #[test]
-    fn a_line_that_only_looks_like_a_finding_stays_text() {
-        let answer = "RELEVANCE: Pass\nSize: the issue is large\nSIZE: Pass\nok\nCLARITY: Pass\nok\nPROPOSAL: NONE";
-        let report = parse(answer).expect("a report");
-        assert_eq!(report.findings[0].body, "Size: the issue is large");
-        assert_eq!(report.proposal, None);
-        let echoed = crate::prompts::review_prompt("# An issue", ReviewMode::Quick, &[]);
-        assert!(parse(&echoed).is_none(), "an agent repeating the prompt");
-    }
-
-    fn custom(command: &str) -> AgentConfig {
-        AgentConfig {
-            tool: Tool::Custom,
-            model: String::new(),
-            command: command.into(),
-            configured: true,
-        }
-    }
-
-    fn args(command: &Command) -> Vec<String> {
-        command
-            .get_args()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect()
-    }
-
-    #[test]
-    fn a_custom_command_reads_the_prompt_file_and_answers() {
-        let job = start(
-            &custom("cat {prompt}"),
-            "hello there",
-            Path::new("todo/a.md"),
-        );
-        let answer = job.wait().expect("the job answers").expect("cat succeeds");
-        assert_eq!(answer, "hello there");
-    }
-
-    #[test]
-    fn a_failing_command_reports_its_error_instead_of_panicking() {
-        let config = custom("echo nope >&2; exit 3 # {prompt}");
-        let error = run(&config, "x", Path::new("a.md"), &Cancel::default());
-        assert_eq!(error, Err("nope".to_string()));
-    }
-
-    #[test]
-    fn file_names_never_run_as_shell_code() {
-        let scratch = tempfile::tempdir().unwrap();
-        let dir = scratch.path();
-        let planted = dir.join("planted");
-        let issue = dir.join(format!(
-            "$(touch {}) `touch {}`.md",
-            planted.display(),
-            planted.display()
-        ));
-        for template in [
-            "printf %s {issue} # {prompt}",
-            "printf %s \"{issue}\" # {prompt}",
-            "printf %s '{issue}' # {prompt}",
-        ] {
-            let answer = run(&custom(template), "x", &issue, &Cancel::default());
-            assert_eq!(answer, Ok(issue.display().to_string()), "{template}");
-        }
-        assert!(!planted.exists(), "a file name ran as code");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn dropping_a_run_stops_the_agent() {
-        // SAFETY: signal 0 only checks that the process exists.
-        let alive = |pid: i32| unsafe { libc::kill(pid, 0) == 0 };
-        let eventually = |done: &dyn Fn() -> bool| {
-            let start = std::time::Instant::now();
-            while !done() && start.elapsed() < std::time::Duration::from_secs(5) {
-                std::thread::sleep(std::time::Duration::from_millis(20));
-            }
-            done()
-        };
-        let scratch = tempfile::tempdir().unwrap();
-        let dir = scratch.path();
-        let pid_file = dir.join("agent.pid");
-        let script = format!(
-            "echo $$ > '{}'; sleep 30; echo late # {{prompt}}",
-            pid_file.display()
-        );
-        let job = start(&custom(&script), "x", Path::new("a.md"));
-        let pid = || {
-            std::fs::read_to_string(&pid_file)
-                .ok()
-                .and_then(|text| text.trim().parse::<i32>().ok())
-        };
-        assert!(eventually(&|| pid().is_some()), "the agent never started");
-        let pid = pid().unwrap();
-        assert!(alive(pid));
-
-        drop(job);
-
-        assert!(eventually(&|| !alive(pid)), "the agent outlived its job");
-    }
-
-    #[test]
-    fn each_tool_gets_its_one_shot_arguments() {
-        let file = Path::new("/tmp/prompt.md");
-        let issue = Path::new("/p/todo/a b.md");
-        let opencode = AgentConfig {
-            tool: Tool::OpenCode,
-            ..AgentConfig::default()
-        };
-        let built = command(
-            &opencode,
-            "vendor/model",
-            "PROMPT",
-            file,
-            issue,
-            Purpose::Answer,
-        );
-        assert_eq!(args(&built), ["run", "--model", "vendor/model", "PROMPT"]);
-        let built = command(
-            &opencode,
-            "",
-            "PROMPT",
-            file,
-            issue,
-            Purpose::Review(ReviewMode::Quick),
-        );
-        assert_eq!(args(&built), ["run", "--format", "json", "PROMPT"]);
-
-        let claude = AgentConfig {
-            tool: Tool::Claude,
-            ..AgentConfig::default()
-        };
-        let built = command(&claude, "", "PROMPT", file, issue, Purpose::Answer);
-        assert_eq!(args(&built), ["-p", "PROMPT"]);
-        let stream = ["-p", "--output-format", "stream-json", "--verbose"];
-        let quick = Purpose::Review(ReviewMode::Quick);
-        let built = command(&claude, "", "PROMPT", file, issue, quick);
-        assert_eq!(
-            args(&built),
-            [&stream[..], &["--tools", "", "PROMPT"]].concat()
-        );
-        let deep = Purpose::Review(ReviewMode::Deep);
-        let built = command(&claude, "", "PROMPT", file, issue, deep);
-        assert_eq!(args(&built), [&stream[..], &["PROMPT"]].concat());
-        let built = command(&claude, "", "PROMPT", file, issue, Purpose::Build);
-        assert_eq!(
-            args(&built),
-            [&stream[..], &["--permission-mode", "acceptEdits", "PROMPT"]].concat()
-        );
-
-        let built = command(
-            &custom("llm -m {model} < {prompt} # {issue}"),
-            "gpt",
-            "PROMPT",
-            file,
-            issue,
-            Purpose::Review(ReviewMode::Deep),
-        );
-        assert_eq!(built.get_program(), "sh");
-        assert_eq!(
-            args(&built),
-            [
-                "-c",
-                "llm -m \"$IBOARD_MODEL\" < \"$IBOARD_PROMPT\" # \"$IBOARD_ISSUE\""
-            ]
-        );
-        let env = |name: &str| {
-            built
-                .get_envs()
-                .find(|(key, _)| *key == name)
-                .and_then(|(_, value)| value)
-                .map(|value| value.to_string_lossy().into_owned())
-        };
-        assert_eq!(env("IBOARD_MODEL").as_deref(), Some("gpt"));
-        assert_eq!(env("IBOARD_PROMPT").as_deref(), Some("/tmp/prompt.md"));
-        assert_eq!(env("IBOARD_ISSUE").as_deref(), Some("/p/todo/a b.md"));
-        assert_eq!(env("IBOARD_MODE").as_deref(), Some("deep"));
-    }
-
-    /// Events recorded from `opencode run --format json` and
-    /// `claude -p --output-format stream-json --verbose`, trimmed.
-    const OPENCODE: &str = r#"{"type":"step_start","part":{"type":"step-start"}}
-{"type":"text","part":{"type":"text","text":"Let me look."}}
-{"type":"tool_use","part":{"type":"tool","tool":"read","state":{"status":"completed","input":{"path":"/p/src/app/review.rs"}}}}
-{"type":"step_finish","part":{"type":"step-finish","reason":"tool-calls"}}
-{"type":"step_start","part":{"type":"step-start"}}
-{"type":"text","part":{"type":"text","text":"RELEVANCE: Pass"}}"#;
-    const CLAUDE: &str = r#"{"type":"system","subtype":"init"}
-{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"fn review"}}]}}
-{"type":"user","message":{"content":[{"type":"tool_result"}]}}
-{"type":"assistant","message":{"content":[{"type":"text","text":"RELEVANCE: Pass"}]}}
-{"type":"result","subtype":"success","result":"RELEVANCE: Pass"}"#;
-
-    #[test]
-    fn streamed_events_give_steps_and_the_answer() {
-        let steps: Vec<String> = OPENCODE
-            .lines()
-            .chain(CLAUDE.lines())
-            .filter_map(step_of)
-            .collect();
-        assert_eq!(steps, ["Reading app/review.rs…", "Searching fn review…"]);
-        assert_eq!(final_answer(OPENCODE), "RELEVANCE: Pass");
-        assert_eq!(final_answer(CLAUDE), "RELEVANCE: Pass");
-        assert_eq!(final_answer("plain answer\n"), "plain answer\n");
-    }
-
-    #[test]
-    fn an_agent_failing_in_its_stream_reports_its_own_error() {
-        let opencode = r#"{"type":"error","error":{"type":"provider.rate-limit","message":"[anthropic-auth category=x; [connection 1]; request-id=r] Fast mode needs usage credits."}}"#;
-        assert_eq!(
-            stream_error(opencode).as_deref(),
-            Some("Fast mode needs usage credits.")
-        );
-        let claude = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Invalid model"}"#;
-        assert_eq!(stream_error(claude).as_deref(), Some("Invalid model"));
-        assert_eq!(stream_error(CLAUDE), None);
-        assert_eq!(stream_error(OPENCODE), None);
-        let config = custom(
-            "printf '%s\\n' '{\"type\":\"error\",\"error\":{\"message\":\"no credits\"}}'; exit 1 # {prompt}",
-        );
-        let error = run(&config, "x", Path::new("a.md"), &Cancel::default());
-        assert_eq!(error, Err("no credits".to_string()));
-    }
-
-    #[test]
-    fn a_review_reports_its_steps_and_answers() {
-        let config = AgentConfig {
-            tool: Tool::Custom,
-            command: "printf %s \"$IBOARD_MODE\" # {prompt}".into(),
-            configured: true,
-            ..AgentConfig::default()
-        };
-        let (job, progress) = start_review(&config, "x", Path::new("a.md"), ReviewMode::Deep);
-        assert_eq!(job.wait().unwrap(), Ok("deep".to_string()));
-        assert_eq!(step(&progress), None, "a custom command reports no steps");
-    }
-
-    #[test]
-    fn a_custom_command_without_prompt_does_not_validate() {
-        assert!(custom("llm -m {model}").validate().is_err());
-        assert!(custom("llm < {prompt}").validate().is_ok());
-        assert!(AgentConfig::default().validate().is_ok());
-    }
-
-    #[test]
-    fn the_label_names_the_tool_and_model() {
-        let mut config = AgentConfig {
-            tool: Tool::OpenCode,
-            ..AgentConfig::default()
-        };
-        assert_eq!(config.label(), "opencode · default");
-        config.model = "vendor/model".into();
-        assert_eq!(config.label(), "opencode · vendor/model");
-    }
-
-    #[test]
-    fn a_tool_iboard_does_not_run_is_reported() {
-        let read = |text: &str| {
-            let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
-            (load(&mut config), config.problems)
-        };
-        let (agent, problems) = read("[ai]\ntool = \"claude\"\nmodel = \"Default\"\n");
-        assert_eq!(agent.tool, Tool::Claude);
-        assert!(agent.configured() && agent.model.is_empty() && problems.is_empty());
-
-        let (agent, problems) = read("[ai]\ntool = \"/usr/local/bin/claude\"\n");
-        assert!(!agent.configured());
-        assert_eq!(problems.len(), 1);
-
-        let (agent, problems) = read("");
-        assert!(!agent.configured() && problems.is_empty());
-    }
-
-    #[test]
-    fn the_build_agent_falls_back_to_the_review_agent() {
-        let read = |text: &str| {
-            let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
-            let review = load(&mut config);
-            load_build(&mut config, &review)
-        };
-        let review = "[ai]\ntool = \"claude\"\nmodel = \"opus\"\n";
-        let build = read(review);
-        assert_eq!((build.tool, build.model.as_str()), (Tool::Claude, "opus"));
-        let build = read(&format!("{review}[build]\ntool = \"opencode\"\n"));
-        assert_eq!(build.tool, Tool::OpenCode);
-        assert!(build.configured() && build.model.is_empty());
-        assert!(!read("").configured());
-    }
-
-    #[test]
-    fn versions_and_model_lists_parse() {
-        assert_eq!(
-            parse_version("opencode v2.0.20\n").as_deref(),
-            Some("v2.0.20")
-        );
-        assert_eq!(
-            parse_version("2.1.287 (Claude Code)").as_deref(),
-            Some("v2.1.287")
-        );
-        assert_eq!(parse_version("no version here"), None);
-
-        assert_eq!(
-            parse_model_list("Models available:\nanthropic/a\n\n  openai/b \n"),
-            ["anthropic/a", "openai/b"]
-        );
-        assert_eq!(
-            parse_opencode_favorites(
-                r#"{"recent":[],"favorite":[{"providerID":"deepseek","modelID":"flash"}]}"#
-            ),
-            ["deepseek/flash"]
-        );
-        assert!(parse_opencode_favorites("not json").is_empty());
-        assert_eq!(
-            parse_claude_model(r#"{"model": "opus"}"#).as_deref(),
-            Some("opus")
-        );
-        assert_eq!(parse_claude_model("{}"), None);
-    }
-
-    #[test]
-    fn a_full_answer_parses_into_three_findings_and_a_proposal() {
-        let answer = "\
-RELEVANCE: Pass
-Still needed, nothing else covers it.
-SIZE: Challenge
-Two features in one. Split them.
-CLARITY: Block
-An implementer would ask which tool runs it.
-PROPOSAL:
-# Better issue
-
-Some context.";
-        let report = parse(answer).expect("the shape is complete");
-        assert_eq!(report.findings.len(), 3);
-        assert_eq!(report.findings[0].axis, "Relevance");
-        assert_eq!(report.findings[0].verdict, Verdict::Pass);
-        assert_eq!(report.findings[1].verdict, Verdict::Challenge);
-        assert_eq!(report.findings[2].verdict, Verdict::Block);
-        assert!(report.findings[2].body.contains("which tool"));
-        assert!(
-            report
-                .proposal
-                .as_deref()
-                .unwrap()
-                .starts_with("# Better issue")
-        );
-    }
-
-    #[test]
-    fn a_split_answer_parses_into_tickets() {
-        let answer = "Here you go.\n=== TICKET ===\n# [refactor] Split design.rs\n\nInto model and load.\n\
-                      === TICKET ===\n# [refactor] Split widgets.rs\nInto button and menu.\n";
-        let drafts = parse_split(answer).expect("two tickets");
-        assert_eq!(drafts[0].title, "[refactor] Split design.rs");
-        assert_eq!(drafts[0].body, "Into model and load.");
-        assert_eq!(drafts[1].body, "Into button and menu.");
-        assert!(parse_split("=== TICKET ===\n# Only one\n").is_none());
-        assert!(parse_split("=== TICKET ===\n# A\n=== TICKET ===\nno title\n").is_none());
-        assert!(parse_split("prose").is_none());
-    }
-
-    #[test]
-    fn a_refinement_turn_parts_the_challenge_from_the_proposal() {
-        let turn = parse_refinement("Who asked for it?\n\n**PROPOSAL:** NONE\n");
-        assert_eq!(turn.text, "Who asked for it?");
-        assert_eq!(turn.proposal, None);
-        let turn = parse_refinement("Settled.\nPROPOSAL:\n# [feat] Refine\n\nThe spec.");
-        assert_eq!(turn.text, "Settled.");
-        assert_eq!(
-            turn.proposal.as_deref(),
-            Some("# [feat] Refine\n\nThe spec.")
-        );
-        let turn = parse_refinement(" Just prose. ");
-        assert_eq!((turn.text.as_str(), turn.tldr), ("Just prose.", None));
-    }
-
-    #[test]
-    fn a_refinement_turn_opens_on_its_tldr_and_ends_on_options() {
-        let turn = parse_refinement(
-            "**TL;DR:** Ship the smaller fix.\nDrop the redesign.\n\n## Why\n\nIt costs a week.\n\
-             OPTIONS:\n1. Keep the fix only\n- **Both**, later\nNONE\nPROPOSAL: NONE",
-        );
-        assert_eq!(
-            turn.tldr.as_deref(),
-            Some("Ship the smaller fix. Drop the redesign.")
-        );
-        assert_eq!(turn.text, "## Why\n\nIt costs a week.");
-        assert_eq!(turn.options, ["Keep the fix only", "**Both**, later"]);
-        assert_eq!(turn.proposal, None);
-    }
-
-    #[test]
-    fn a_choice_splits_into_its_title_and_detail() {
-        assert_eq!(
-            choice_parts("**Split it**: four tickets, one each."),
-            ("Split it".to_string(), Some("four tickets, one each."))
-        );
-        assert_eq!(
-            choice_parts("Narrow it — keep the CTA: drop the rest"),
-            ("Narrow it".to_string(), Some("keep the CTA: drop the rest"))
-        );
-        assert_eq!(
-            choice_parts("Keep the fix only"),
-            ("Keep the fix only".to_string(), None)
-        );
-    }
-
-    #[test]
-    fn a_none_proposal_is_dropped() {
-        let answer = "RELEVANCE: Pass\nok\nSIZE: Pass\nok\nCLARITY: Pass\nok\nPROPOSAL:\nnone";
-        let report = parse(answer).unwrap();
-        assert!(report.proposal.is_none());
-    }
-
-    #[test]
-    fn free_form_answers_do_not_parse() {
-        assert!(parse("This is just prose the agent wrote.").is_none());
-        let partial = "RELEVANCE: Pass\nok\nSIZE: Pass\nok";
-        assert!(parse(partial).is_none());
-    }
-
-    #[test]
-    fn the_configuration_round_trips_through_a_file() {
-        let scratch = tempfile::tempdir().unwrap();
-        let dir = scratch.path();
-        let file = dir.join("iboard.toml");
-        std::fs::write(&file, "[other]\nkey = 1\n").unwrap();
-
-        let config = AgentConfig {
-            tool: Tool::OpenCode,
-            model: "vendor/model".into(),
-            command: String::new(),
-            configured: true,
-        };
-        settings::save(&file, &[section(&config).unwrap()]).unwrap();
-        assert_eq!(load(&mut UserConfig::load(Some(&file))), config);
-        let text = std::fs::read_to_string(&file).unwrap();
-        assert!(text.contains("[other]"), "the other section survives");
-        assert!(text.contains("tool = \"opencode\""));
-
-        // A missing file is simply an unconfigured agent.
-        let absent = dir.join("absent.toml");
-        assert!(!load(&mut UserConfig::load(Some(&absent))).configured());
-    }
-}
+mod tests;

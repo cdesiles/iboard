@@ -199,6 +199,7 @@ type ReviewPill = (&'static str, Color32, &'static str);
 struct PastReview {
     draft: bool,
     mode: ReviewMode,
+    plan: bool,
     agent: String,
     raw: String,
     report: Option<Report>,
@@ -211,6 +212,7 @@ impl PastReview {
         Self {
             draft: stored.draft,
             mode: ReviewMode::from_key(&stored.mode),
+            plan: stored.plan,
             agent: stored.agent.clone(),
             raw: stored.raw.clone(),
             report: agent::parse(&stored.raw),
@@ -465,6 +467,8 @@ struct ReviewState {
     /// True when the agent read the editor draft rather than the saved file.
     draft: bool,
     mode: ReviewMode,
+    /// True when the agent ran in plan mode, unable to change the repository.
+    plan: bool,
     /// The configured tool (and model), shown in the panel header.
     agent: String,
     status: ReviewStatus,

@@ -1,0 +1,6 @@
+#!/bin/sh
+# A fake opencode or claude for the tests: it answers with its arguments, one
+# per line, and rejects plan mode when the prompt says NO-PLAN.
+for arg; do [ "$arg" = plan ] && planned=1; done
+case "$*" in *NO-PLAN*) [ -n "$planned" ] && { echo 'error: unknown option' >&2; exit 1; } ;; esac
+printf '%s\n' "$@"
