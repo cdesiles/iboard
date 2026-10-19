@@ -19,6 +19,8 @@ pub enum ButtonKind {
     Ghost,
     /// `review` text and edge on `surface`: the AI Review button.
     Review,
+    /// Filled `review`: Send in the refinement, the one main action there.
+    Send,
     /// Filled `danger`: the confirming button of a destructive dialog.
     Danger,
     /// `danger` text and edge on `surface`: Delete in the Reader and Editor
@@ -48,6 +50,7 @@ fn button_colors(p: &theme::Palette, kind: ButtonKind) -> (Color32, Color32, Col
             p.ink_muted,
         ),
         ButtonKind::Review => (p.surface, p.review_soft, p.review, p.review),
+        ButtonKind::Send => (p.review, p.review, p.review, p.on_review),
         ButtonKind::Danger => (p.danger, p.danger, p.danger, p.on_danger),
         ButtonKind::DangerOutline => (p.surface, p.danger_soft, p.danger, p.danger),
         ButtonKind::Disabled => (p.surface, p.surface, p.line, p.ink_faint),

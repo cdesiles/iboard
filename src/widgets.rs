@@ -84,7 +84,13 @@ pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
 /// returns its width. Used where the hint sits on top of another widget.
 pub fn paint_kbd(ui: &Ui, key: &str, left_center: Pos2) -> f32 {
     let p = theme::palette(ui);
-    let text = galley(ui, key, theme::meta(), p.ink_muted);
+    paint_kbd_in(ui, key, left_center, p.line_strong, p.ink_muted)
+}
+
+/// A key cap in its own edge and ink colours: `accent` on a picked choice.
+pub fn paint_kbd_in(ui: &Ui, key: &str, left_center: Pos2, edge: Color32, ink: Color32) -> f32 {
+    let p = theme::palette(ui);
+    let text = galley(ui, key, theme::meta(), ink);
     let size = Vec2::new((text.size().x + 8.0).max(18.0), 16.0);
     let rect = Rect::from_min_size(Pos2::new(left_center.x, left_center.y - size.y / 2.0), size);
     let painter = ui.painter();
@@ -92,7 +98,7 @@ pub fn paint_kbd(ui: &Ui, key: &str, left_center: Pos2) -> f32 {
         rect,
         CornerRadius::same(theme::RADIUS_SM),
         p.surface,
-        Stroke::new(1.0, p.line_strong),
+        Stroke::new(1.0, edge),
         StrokeKind::Inside,
     );
     // The heavier bottom edge that makes it read as a key.
@@ -101,10 +107,10 @@ pub fn paint_kbd(ui: &Ui, key: &str, left_center: Pos2) -> f32 {
             Pos2::new(rect.min.x + 2.0, rect.max.y - 1.0),
             Pos2::new(rect.max.x - 2.0, rect.max.y - 1.0),
         ],
-        Stroke::new(1.0, p.line_strong),
+        Stroke::new(1.0, edge),
     );
     let text_pos = rect.center() - text.size() / 2.0;
-    painter.galley(text_pos, text, p.ink_muted);
+    painter.galley(text_pos, text, ink);
     size.x
 }
 

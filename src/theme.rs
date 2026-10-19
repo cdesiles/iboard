@@ -45,6 +45,8 @@ pub struct Palette {
     pub review: Color32,
     /// Review panel header fill and the pending-review card flag.
     pub review_soft: Color32,
+    /// Label on the `review`-filled Send of the refinement.
+    pub on_review: Color32,
     /// Write failures, conflicting file on disk, the Delete drop zone.
     pub danger: Color32,
     /// The Delete drop zone while a card is over it.
@@ -79,6 +81,7 @@ pub const LIGHT: Palette = Palette {
     status_done: hex(0x1d7347),
     review: hex(0x7a3fd1),
     review_soft: hex(0xf1ebfc),
+    on_review: hex(0xffffff),
     danger: hex(0xb42318),
     danger_soft: hex(0xfdecea),
     on_danger: hex(0xffffff),
@@ -105,6 +108,7 @@ pub const DARK: Palette = Palette {
     status_done: hex(0x5fc98e),
     review: hex(0xb79cff),
     review_soft: hex(0x2a2245),
+    on_review: hex(0x1c0f3d),
     danger: hex(0xff8a7a),
     danger_soft: hex(0x3d1a17),
     on_danger: hex(0x3a0d08),
@@ -641,9 +645,8 @@ mod tests {
     use crate::design::{DesignSystem, Token, Tokens};
     use std::path::Path;
 
-    /// Colour tokens with no `Palette` field: `focus` is `{accent}`, and
-    /// nothing is drawn on a `review` fill.
-    const UNMAPPED_COLORS: [&str; 2] = ["focus", "on-review"];
+    /// Colour tokens with no `Palette` field: `focus` is `{accent}`.
+    const UNMAPPED_COLORS: [&str; 1] = ["focus"];
 
     /// Sizes the theme overrides on purpose; see [`COLUMN_MIN`].
     const OVERRIDDEN_SIZES: [&str; 1] = ["column-min"];
@@ -661,7 +664,7 @@ mod tests {
             .unwrap_or_else(|| panic!("tokens.json has no {name}"))
     }
 
-    fn colors(p: &Palette) -> [(&'static str, Color32); 23] {
+    fn colors(p: &Palette) -> [(&'static str, Color32); 24] {
         [
             ("bg", p.bg),
             ("surface", p.surface),
@@ -681,6 +684,7 @@ mod tests {
             ("status-done", p.status_done),
             ("review", p.review),
             ("review-soft", p.review_soft),
+            ("on-review", p.on_review),
             ("danger", p.danger),
             ("danger-soft", p.danger_soft),
             ("on-danger", p.on_danger),

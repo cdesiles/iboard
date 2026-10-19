@@ -136,6 +136,10 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Settings › General | Pick a theme, Save (`⌘↩`) | ThemeChosen → SettingsSaved | Back to the screen, drawn in the new theme |
 | Settings › General | Toggle "Ask before deleting an issue", Save (`⌘↩`) | DeleteConfirmToggled → SettingsSaved | Back to the screen; deletes ask or not |
 | Settings › Titles | Pick engine, Save (`⌘↩`) | TitleEngineChosen → SettingsSaved | Back to the screen; composer tag shows the engine |
+| RefinePanel | Click a choice, `1`–`9` (same key again clears) | RefineChoicePicked / RefineChoiceCleared | Choice selected; note and Send labels follow it |
+| RefinePanel | Type in the note | RefineNoteChanged | Send enabled |
+| RefinePanel | Send (`⌘↩`) | RefineAnswerSent → RefineRoundReceived | Next round, or the refined draft in the Editor, unsaved |
+| RefinePanel | Hide (`esc`) / End refining | RefinePanelHidden / RefineSessionEnded | Reader; nothing written |
 
 ## Motion
 
@@ -159,6 +163,7 @@ issue. The tool and model are chosen in the ReviewSettings dialog: a Tool select
 - **Verdicts**: Pass (`status-done`), Challenge (`review`), Block (`danger`), always with the word.
 - **From an idea to an issue**: when the issue is only a title, the review drafts the missing sections (Context, Acceptance criteria, Out of scope, Open questions) as a proposal. *Apply to draft* opens it in the Editor, unsaved; the agent never writes the file itself.
 - **States**: idle, running (button shows "Reviewing…", `esc` cancels), result (panel open), failed (inline `danger` text with retry). Only the issue text is sent; interactive agents are run in one-shot mode, so no terminal is attached yet.
+- **Refining (RefinePanel)**: an agent in a role (the Challenger) pushes back on the issue and offers numbered resolutions. The panel has two panes: the TL;DR (`ui-title` with a 3px `review` rule) and the reasoning (`read-body`, 68ch) on the left, the choices on the right so they never scroll away. Each choice is a bordered card with a short title, a muted detail, its number key and a radio; the selected one takes the `accent` edge and `accent-soft` fill. The note under the choices follows the selection ("Add a note to choice 1", or "Or answer in your own words"). Send is the one filled `review` button and names what goes out ("Send choice 1", "Send answer"). Under 820pt it stacks and folds the reasoning under the TL;DR. See `components/RefinePanel`.
 
 ## Using the tokens from Rust
 

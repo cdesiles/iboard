@@ -126,8 +126,9 @@ pub fn refine_prompt(content: &str, conversation: &[Turn], notes: &[(String, Str
          \n\
          <your challenge, in markdown: short paragraphs separated by blank lines>\n\
          OPTIONS:\n\
-         - <an answer the author could give you, or a solution they could pick, in one \
-         plain-text line; two to four of them, the one you advise first>\n\
+         - <a way to resolve it the author could pick, in one plain-text line: a title \
+         of at most six words starting with a verb, a colon, then one or two sentences of \
+         detail; two to four of them, the one you advise first>\n\
          PROPOSAL:\n\
          <once the conversation has settled the need, the full refined issue in markdown: \
          the need, the spec, out of scope and acceptance criteria; until then, the single \

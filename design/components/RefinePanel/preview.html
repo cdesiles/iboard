@@ -1,17 +1,52 @@
-<!-- @dsCard group="AI review" height=560 subtitle="A popin over the page: a conversation with a product challenger" -->
+<!-- @dsCard group="AI review" height=1320 page subtitle="Read the challenge on the left, pick a resolution on the right with 1–4, send with ⌘↩" -->
 <!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>RefinePanel</title></head>
 <body>
-<div class="ib-pad"><aside class="ib-review" aria-label="Refinement">
-<div class="ib-review__head">Refining refine-a-ticket.md<span class="ib-cap" style="color:var(--review)">challenger</span></div>
-<div class="ib-finding"><span class="ib-cap" style="color:var(--review)">Challenger</span><div class="ib-finding__body"><div style="background:var(--review-soft);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px"><span class="ib-cap" style="color:var(--review)">TL;DR</span><div style="font:600 15px/20px var(--font-sans)">Worth it for discovery tickets only; keep it one conversation.</div></div>Who loses time today without it?<ul><li>Is the review's follow-up field not enough?</li><li>What would make you drop this?</li></ul></div></div>
-<div class="ib-finding"><span class="ib-cap">You</span><div class="ib-finding__body">The review scores; it never asks. Discovery tickets need the back and forth.</div></div>
-<div class="ib-finding"><span class="ib-cap" style="color:var(--review)">Challenger</span><div class="ib-finding__body">Then keep it one conversation, not saved. Proposed a refined issue.</div></div>
-<div class="ib-opt is-active" style="height:28px;font-size:14px"><span class="ib-kbd">1</span><span class="ib-opt__name">Keep it for discovery tickets</span></div>
-<div class="ib-opt" style="height:28px;font-size:14px"><span class="ib-kbd">2</span><span class="ib-opt__name">Drop it: the review is enough</span></div>
-<label class="ib-field"><textarea class="ib-input" rows="3" placeholder="Or answer in your own words…"></textarea></label>
-<div class="ib-review__foot"><button class="ib-btn ib-btn--ghost">Hide</button><button class="ib-btn ib-btn--ghost">Dismiss</button><button class="ib-btn ib-btn--review">Apply to draft</button><button class="ib-btn ib-btn--primary">Send <span class="ib-kbd">⌘↩</span></button></div>
-</aside></div>
+<div class="ib-pad ib-stack" style="gap:24px">
+
+<div class="ib-stack"><span class="ib-cap">Wide (panel ≥ 820pt): reasoning and choices side by side, choice 1 picked with the 1 key</span>
+<section class="ib-refine" role="dialog" aria-label="Refining todo/002-toolbar.md">
+<header class="ib-refine__head">Refining <code>todo/002-toolbar.md</code><span class="ib-refine__role">Challenger</span><span class="ib-refine__agent">opencode · deepseek/deepseek-flash</span></header>
+<div class="ib-refine__main">
+<div class="ib-refine__why">
+<p class="ib-refine__tldr"><span class="ib-cap">TL;DR</span>This isn't one issue, it's four unrelated ideas sharing a ticket; split it and name the user problem behind each, or drop the ones with no answer.</p>
+<p>You've bundled four unrelated things. A toolbar is not a feature, it's a location. Which user problem does putting these four together solve that four separate tickets wouldn't? "Unicorn mode", an idesign CTA, "an igit history browser" and an ispec CTA have no shared intent, so nobody can size, order, or review this as one spec.</p>
+<p>Two of the four don't exist yet. There is no <code>igit</code> and no <code>ispec</code> in this project as described, and the board already has a Diff screen showing a commit's files and hunks and an issue's commits popup, so "igit history browser" sounds like a rename of something already built, or a duplicate. Say which, or you're asking for a second history UI and a CTA to a product that isn't there.</p>
+<p>"Unicorn mode" is undefined and looks like the weakest item. What does it change (theme? animations? a toggle?), who asked for it, and does anything about the board's current job get better because of it? If it's a joke, drop it; if not, it needs its own ticket with a user problem.</p>
+</div>
+<div class="ib-refine__pick" role="radiogroup" aria-label="How do you want to resolve this?">
+<p class="ib-refine__q">How should we resolve it?<span class="ib-n">4 choices</span></p>
+<label class="ib-choice is-selected"><input type="radio" name="r1" checked><span class="ib-kbd">1</span><span><span class="ib-choice__title">Split into four tickets</span><span class="ib-choice__detail">Unicorn mode, idesign CTA, igit history (or fold into the Diff screen), ispec CTA, each with its own user problem. This ticket is dropped.</span></span><span class="ib-choice__radio" aria-hidden="true"></span></label>
+<label class="ib-choice is-hover"><input type="radio" name="r1"><span class="ib-kbd">2</span><span><span class="ib-choice__title">Narrow to one item</span><span class="ib-choice__detail">For example "add an idesign CTA to the header toolbar for projects with a design system"; the rest is listed as out of scope.</span></span><span class="ib-choice__radio" aria-hidden="true"></span></label>
+<label class="ib-choice"><input type="radio" name="r1"><span class="ib-kbd">3</span><span><span class="ib-choice__title">Refile as discovery</span><span class="ib-choice__detail">The deliverable is a written answer: which of the four earns a toolbar slot, and why, given the header already carries the project menu and tools.</span></span><span class="ib-choice__radio" aria-hidden="true"></span></label>
+<label class="ib-choice"><input type="radio" name="r1"><span class="ib-kbd">4</span><span><span class="ib-choice__title">Restate the underlying need</span><span class="ib-choice__detail">"Make the design system, design spec and commit history discoverable from the board", with the toolbar as one candidate solution, not the spec.</span></span><span class="ib-choice__radio" aria-hidden="true"></span></label>
+<div class="ib-refine__note"><label for="n1">Add a note to choice 1 <span style="color:var(--ink-faint)">(optional)</span></label><textarea id="n1" rows="3" placeholder="e.g. drop unicorn mode instead of filing it"></textarea></div>
+</div>
+</div>
+<footer class="ib-refine__foot"><span class="ib-refine__keys"><span><span class="ib-kbd">1</span>–<span class="ib-kbd">4</span>choose</span><span><span class="ib-kbd">tab</span>note</span><span><span class="ib-kbd">esc</span>hide</span></span><span class="ib-spacer"></span><button class="ib-btn ib-btn--ghost">End refining</button><button class="ib-btn">Hide <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--send">Send choice 1 <span class="ib-btn__key">⌘↩</span></button></footer>
+</section></div>
+
+<div class="ib-stack"><span class="ib-cap">Narrow (Reader width): reasoning folds under the TL;DR, no choice picked, answering in own words</span>
+<section class="ib-refine ib-refine--narrow" role="dialog" aria-label="Refining todo/002-toolbar.md">
+<header class="ib-refine__head">Refining <code>todo/002-toolbar.md</code><span class="ib-refine__role">Challenger</span><span class="ib-refine__agent">opencode · deepseek-flash</span></header>
+<div class="ib-refine__main">
+<div class="ib-refine__why">
+<p class="ib-refine__tldr"><span class="ib-cap">TL;DR</span>This isn't one issue, it's four unrelated ideas sharing a ticket; split it and name the user problem behind each, or drop the ones with no answer.</p>
+<details><summary class="ib-refine__more">Show the reasoning (3 paragraphs)</summary><p>You've bundled four unrelated things…</p></details>
+</div>
+<div class="ib-refine__pick" role="radiogroup" aria-label="How do you want to resolve this?">
+<p class="ib-refine__q">How should we resolve it?<span class="ib-n">4 choices</span></p>
+<label class="ib-choice"><input type="radio" name="r2"><span class="ib-kbd">1</span><span><span class="ib-choice__title">Split into four tickets</span><span class="ib-choice__detail">Unicorn mode, idesign CTA, igit history (or fold into the Diff screen), ispec CTA, each with its own user problem. This ticket is dropped.</span></span><span class="ib-choice__radio" aria-hidden="true"></span></label>
+<label class="ib-choice"><input type="radio" name="r2"><span class="ib-kbd">2</span><span><span class="ib-choice__title">Narrow to one item</span><span class="ib-choice__detail">For example "add an idesign CTA to the header toolbar for projects with a design system"; the rest is listed as out of scope.</span></span><span class="ib-choice__radio" aria-hidden="true"></span></label>
+<label class="ib-choice"><input type="radio" name="r2"><span class="ib-kbd">3</span><span><span class="ib-choice__title">Refile as discovery</span><span class="ib-choice__detail">The deliverable is a written answer: which of the four earns a toolbar slot, and why, given the header already carries the project menu and tools.</span></span><span class="ib-choice__radio" aria-hidden="true"></span></label>
+<label class="ib-choice"><input type="radio" name="r2"><span class="ib-kbd">4</span><span><span class="ib-choice__title">Restate the underlying need</span><span class="ib-choice__detail">"Make the design system, design spec and commit history discoverable from the board", with the toolbar as one candidate solution, not the spec.</span></span><span class="ib-choice__radio" aria-hidden="true"></span></label>
+<div class="ib-refine__note"><label for="n2">Or answer in your own words</label><textarea id="n2" class="is-focus" rows="3">Split, but drop unicorn mode entirely and fold igit history into the Diff screen.</textarea></div>
+</div>
+</div>
+<footer class="ib-refine__foot"><span class="ib-refine__keys"><span><span class="ib-kbd">⇧tab</span>back to choices</span><span><span class="ib-kbd">esc</span>hide</span></span><span class="ib-spacer"></span><button class="ib-btn ib-btn--ghost">End refining</button><button class="ib-btn">Hide <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--send">Send answer <span class="ib-btn__key">⌘↩</span></button></footer>
+</section></div>
+
+</div>
 </body>
 </html>

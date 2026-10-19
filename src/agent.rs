@@ -1015,6 +1015,21 @@ pub fn parse_refinement(text: &str) -> Challenge {
     challenge
 }
 
+/// A suggested answer as a title and its detail: split at the first `:` or
+/// ` — `, the title's emphasis dropped. Without either, it is all title.
+pub fn choice_parts(option: &str) -> (String, Option<&str>) {
+    let split = [": ", " — "]
+        .iter()
+        .filter_map(|sep| option.find(sep).map(|at| (at, sep.len())))
+        .min();
+    let (title, detail) = match split {
+        Some((at, len)) => (&option[..at], Some(option[at + len..].trim())),
+        None => (option, None),
+    };
+    let title = title.replace("**", "").replace('`', "");
+    (title.trim().to_string(), detail.filter(|d| !d.is_empty()))
+}
+
 /// A list line without its bullet or number: `- Yes` and `2. Yes` give `Yes`.
 fn list_item(line: &str) -> &str {
     let line = line.trim();
@@ -1484,6 +1499,22 @@ Some context.";
         assert_eq!(turn.text, "## Why\n\nIt costs a week.");
         assert_eq!(turn.options, ["Keep the fix only", "**Both**, later"]);
         assert_eq!(turn.proposal, None);
+    }
+
+    #[test]
+    fn a_choice_splits_into_its_title_and_detail() {
+        assert_eq!(
+            choice_parts("**Split it**: four tickets, one each."),
+            ("Split it".to_string(), Some("four tickets, one each."))
+        );
+        assert_eq!(
+            choice_parts("Narrow it — keep the CTA: drop the rest"),
+            ("Narrow it".to_string(), Some("keep the CTA: drop the rest"))
+        );
+        assert_eq!(
+            choice_parts("Keep the fix only"),
+            ("Keep the fix only".to_string(), None)
+        );
     }
 
     #[test]
