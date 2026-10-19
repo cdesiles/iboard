@@ -620,8 +620,13 @@ pub(super) fn running_line(ui: &mut egui::Ui, elapsed: Duration, step: Option<St
     let clock = format!("{}:{:02}", seconds / 60, seconds % 60);
     let step = step.unwrap_or_else(|| "The agent is reading the issue…".to_string());
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
         ui.spinner();
-        ui.label(RichText::new(clock).font(theme::meta()).color(p.ink_muted));
-        ui.add(egui::Label::new(RichText::new(step).color(p.ink_muted)).truncate());
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.label(RichText::new(clock).font(theme::meta()).color(p.ink_muted));
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(egui::Label::new(RichText::new(step).color(p.ink_muted)).truncate());
+            });
+        });
     });
 }

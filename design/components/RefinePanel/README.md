@@ -38,7 +38,7 @@ The agent is asked to return each choice as `{ title, detail }`, title at most 6
 
 - Send is disabled until a choice is picked or the note has text. Its label says what goes out: "Send choice 2", "Send choice 2 with note", "Send answer".
 - What is sent: the choice's full text, then the note, if any.
-- While the agent answers, the pick pane is replaced by "Challenger is thinking…" and `esc` cancels; the next round replaces the why pane and the choices, and the previous round folds into a one-line "Round 1: you chose Split into four tickets" above the TL;DR.
+- The panes keep a 320px floor, so the panel holds its shape while the agent answers. Meanwhile the pick pane is replaced by a spinner and "Challenger is thinking…", the elapsed clock pinned at its right end, and `esc` cancels; the next round replaces the why pane and the choices, and the previous round folds into a one-line "Round 1: you chose Split into four tickets" above the TL;DR.
 
 | Command (user) | Event | Next state |
 | --- | --- | --- |

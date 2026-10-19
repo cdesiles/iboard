@@ -20,6 +20,9 @@ const WHY_MAX_H: f32 = 520.0;
 /// About 68 characters of `read-body`: the longest line worth reading.
 const MEASURE: f32 = 560.0;
 
+/// The panes' floor, so the panel keeps its shape while the challenger thinks.
+const MIN_PANE_H: f32 = 320.0;
+
 /// The head and the foot around the panes.
 const CHROME_H: f32 = 36.0 + 41.0;
 
@@ -431,6 +434,7 @@ fn refine_ui(
     ui.spacing_mut().item_spacing = Vec2::ZERO;
     refine_head(ui, shown, &refine.agent);
     let pane_h = (size.y - CHROME_H).max(4.0 * theme::CONTROL_H);
+    let floor = MIN_PANE_H.min(pane_h);
     let narrow = size.x < NARROW_BELOW;
     let mut unfold = false;
     if narrow {
@@ -439,6 +443,7 @@ fn refine_ui(
             .max_height(pane_h)
             .auto_shrink([false, true])
             .show(ui, |ui| {
+                ui.set_min_height(floor);
                 unfold = why_pane(ui, refine, cache, true);
                 widgets::rule(ui);
                 pick_pane(ui, refine, 0.0);
@@ -450,6 +455,7 @@ fn refine_ui(
                 Vec2::new(size.x - pick_w, pane_h),
                 Layout::top_down(Align::Min),
                 |ui| {
+                    ui.set_min_height(floor);
                     egui::ScrollArea::vertical()
                         .id_salt("refine-why")
                         .max_height(pane_h.min(WHY_MAX_H))
