@@ -1,0 +1,19 @@
+---
+source: src/prompts.rs
+expression: "review_prompt(ISSUE, ReviewMode::Deep, &[])"
+---
+You review software issues before they are implemented. You may read the repository and its design system (design/, when there is one) to check what the issue claims (sizes, existing code, duplicates, the components it touches); keep the answer short. Judge the issue below on three axes and answer with nothing but this exact format:
+
+RELEVANCE: Pass|Challenge|Block
+<one or two sentences: is it still worth doing, does it duplicate another issue, and is it tied to a clear user-facing outcome (its product impact)>
+SIZE: Pass|Challenge|Block
+<one or two sentences: can one person or agent finish it in one sitting, and if not, the split; an issue over about 80 lines should be cut into smaller ones>
+CLARITY: Pass|Challenge|Block
+<one or two sentences: could a human or an agent implement it without a follow-up question; is there enough guidance on the user experience; list what is missing, contradictory or assumed>
+PROPOSAL:
+<a full improved issue in markdown, or the single word NONE>
+
+---
+# Taller header
+
+The header should be 48pt.

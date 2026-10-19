@@ -41,9 +41,10 @@ impl IboardApp {
         );
     }
 
-    /// Starts a Quick review of the open issue (or the editor draft).
+    /// Starts a review of the open issue (or the editor draft), in the scope
+    /// Settings › AI review chose.
     pub(super) fn start_review(&mut self, path: &Path, draft: bool) {
-        self.start_review_in(path, draft, ReviewMode::Quick);
+        self.start_review_in(path, draft, self.agent.scope);
     }
 
     /// Starts a one-shot review in `mode`.
@@ -254,6 +255,10 @@ impl IboardApp {
         } else {
             "No agent set up yet".to_string()
         };
+        let other_scope = match self.agent.scope {
+            ReviewMode::Quick => ReviewMode::Deep,
+            ReviewMode::Deep => ReviewMode::Quick,
+        };
         let picked = egui::Popup::menu(&caret)
             .width(REVIEW_MENU_WIDTH)
             .align(egui::RectAlign::BOTTOM_END)
@@ -280,8 +285,12 @@ impl IboardApp {
                 if option(ui, "Review this issue", false, "⌘⇧R").clicked() {
                     picked = Some(ReviewMenu::Review);
                 }
-                if option(ui, "Deep review", false, "reads the repo").clicked() {
-                    picked = Some(ReviewMenu::Deep);
+                let (other, meta) = match other_scope {
+                    ReviewMode::Deep => ("Deep review", "reads the repo"),
+                    ReviewMode::Quick => ("Quick review", "ticket only"),
+                };
+                if option(ui, other, false, meta).clicked() {
+                    picked = Some(ReviewMenu::OtherScope);
                 }
                 ui.add_space(theme::SPACE_2);
                 ui.separator();
@@ -307,14 +316,17 @@ impl IboardApp {
             })
             .and_then(|inner| inner.inner);
         match picked {
-            Some(ReviewMenu::Review | ReviewMenu::Deep | ReviewMenu::Refine) if running => {}
+            Some(ReviewMenu::Review | ReviewMenu::OtherScope | ReviewMenu::Refine) if running => {}
             Some(ReviewMenu::Review) if configured => self.start_review(path, draft),
-            Some(ReviewMenu::Deep) if configured => {
-                self.start_review_in(path, draft, ReviewMode::Deep);
+            Some(ReviewMenu::OtherScope) if configured => {
+                self.start_review_in(path, draft, other_scope);
             }
             Some(ReviewMenu::Refine) if configured => self.start_refinement(path),
             Some(
-                ReviewMenu::Review | ReviewMenu::Deep | ReviewMenu::Refine | ReviewMenu::Settings,
+                ReviewMenu::Review
+                | ReviewMenu::OtherScope
+                | ReviewMenu::Refine
+                | ReviewMenu::Settings,
             ) => {
                 self.open_config();
             }
@@ -339,7 +351,7 @@ impl IboardApp {
         };
         let name = file_name(&review.path);
         let source = if review.draft { "draft" } else { "file" };
-        let agent = format!("{} · {}", review.agent, review.mode.key());
+        let agent = format!("{} · {}", review.agent, review.mode.scope_name());
         let plan = review.plan;
         let mut follow_up = review.follow_up.clone();
         let mut drafts = match &review.status {

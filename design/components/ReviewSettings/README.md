@@ -31,6 +31,13 @@ A select with three options, always in this order:
 - For Custom command, the model is a plain mono text field (empty = default), because iboard cannot list models for an arbitrary command.
 - Changing the tool resets the model to Default.
 
+## Review scope
+
+- AI review only, under Model: a segmented control, **Ticket only** then **Ticket + project context**, with one line of help under it.
+- Ticket only, the default for new and existing files, is the quick path: the agent reads the issue alone, without opening files or running tools.
+- Ticket + project context lets the agent also read the repository and its design system to check what the issue claims.
+- "Review this issue" (`⌘⇧R`) and the card's Review run in this scope; the Review button's menu offers the other one as a one-off (*Deep review* or *Quick review*).
+
 ## Behaviour
 
 - `⌘,` opens it from any screen; `esc` or Cancel closes without saving; `⌘↩` or Save writes the file and closes.
@@ -49,6 +56,7 @@ The Review button becomes a split button: the main part runs the review (`⌘⇧
 tool = "opencode"        # "opencode" | "claude" | "custom"
 model = "default"        # or a model ID from the tool's list
 command = ""             # custom only, e.g. "llm -m {model} < {prompt}"
+scope = "ticket"         # "ticket" | "project"; absent means "ticket"
 ```
 
 The key names are a suggestion; keep whatever the app already writes.

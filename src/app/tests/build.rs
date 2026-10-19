@@ -18,6 +18,7 @@ fn board(tag: &str, command: &str) -> (Scratch, IboardApp) {
         model: String::new(),
         command: command.to_string(),
         configured: true,
+        ..AgentConfig::default()
     };
     (dir, app)
 }

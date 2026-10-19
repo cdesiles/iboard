@@ -120,7 +120,8 @@ const REVIEW_MENU_WIDTH: f32 = 240.0;
 /// A choice made in the Review button's menu.
 enum ReviewMenu {
     Review,
-    Deep,
+    /// A review in the scope Settings › AI review did not choose.
+    OtherScope,
     Refine,
     Settings,
 }

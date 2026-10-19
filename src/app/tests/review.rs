@@ -38,6 +38,7 @@ fn a_review_is_kept_beside_the_issue() {
         command: "printf 'RELEVANCE: Pass\\nok\\nSIZE: Block\\nsplit\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}"
             .to_string(),
         configured: true,
+        ..AgentConfig::default()
     };
     app.open_issue(file.clone());
     app.start_review(&file, false);
@@ -199,6 +200,7 @@ fn a_deep_review_says_so_and_is_kept_as_deep() {
         model: String::new(),
         command: "grep -q 'read the repository' {prompt} && printf %s {mode}".to_string(),
         configured: true,
+        ..AgentConfig::default()
     };
     app.start_review_in(&file, false, ReviewMode::Deep);
     assert!(until(|| {
@@ -225,6 +227,7 @@ fn a_margin_comment_reaches_the_review() {
         model: String::new(),
         command: "grep -q 'Only design.rs matters' {prompt} && printf noted".to_string(),
         configured: true,
+        ..AgentConfig::default()
     };
     app.open_issue(file.clone());
     let mut harness = egui_kittest::Harness::builder()
@@ -301,6 +304,7 @@ fn a_size_block_splits_the_issue_in_place() {
                   else printf 'RELEVANCE: Pass\\nok\\nSIZE: Block\\ntoo big\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE'; fi"
             .to_string(),
         configured: true,
+        ..AgentConfig::default()
     };
     app.open_issue(big.clone());
     app.start_review(&big, false);
@@ -379,6 +383,7 @@ fn reviewing(tag: &str, command: &str) -> (Scratch, PathBuf, Drawn) {
         model: String::new(),
         command: command.to_string(),
         configured: true,
+        ..AgentConfig::default()
     };
     app.session.selected = Some(file.clone());
     let mut harness = egui_kittest::Harness::builder()
@@ -574,4 +579,29 @@ fn a_custom_review_has_no_plan_note() {
     harness.run_steps(2);
     assert!(!harness.state().1.session.review.as_ref().unwrap().plan);
     assert!(harness.query_by_label(PLAN_NOTE).is_none());
+}
+
+/// The scope Settings › AI review chose is what the agent is told, and what
+/// the review panel names.
+#[test]
+fn the_review_runs_in_the_scope_settings_chose() {
+    use egui_kittest::kittest::Queryable;
+    let answer =
+        "printf 'RELEVANCE: Pass\\nok\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE'";
+    for (scope, told) in [
+        (ReviewMode::Quick, "Read only the issue"),
+        (ReviewMode::Deep, "its design system"),
+    ] {
+        let command = format!("grep -q '{told}' {{prompt}} && {answer}");
+        let (_dir, file, mut harness) = reviewing("review-scope", &command);
+        harness.state_mut().1.agent.scope = scope;
+        harness.get_by_label("Review").click();
+        harness.run_steps(1);
+        land(&mut harness, &file);
+        assert_eq!(harness.state().1.past_reviews[&file].mode, scope);
+        harness.get_by_label("Review ready").click();
+        harness.run_steps(2);
+        let detail = format!("custom · default · {} · file", scope.scope_name());
+        harness.get_by_label(&detail);
+    }
 }

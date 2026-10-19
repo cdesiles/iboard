@@ -9,6 +9,7 @@
 //! tool = "opencode"        # "opencode" | "claude" | "custom"
 //! model = "default"        # or a model ID from the tool's list
 //! command = ""             # custom only, e.g. "llm -m {model} < {prompt}"
+//! scope = "ticket"         # "ticket" (the issue alone) | "project" (reads the repo)
 //! ```
 //!
 //! A `[build]` section, of the same shape, names the agent that implements
@@ -138,6 +139,8 @@ pub struct AgentConfig {
     pub command: String,
     /// Whether an agent was ever saved, so the Review button can run.
     pub configured: bool,
+    /// How far a review goes unless asked otherwise. Only `[ai]` stores it.
+    pub scope: ReviewMode,
 }
 
 impl AgentConfig {
@@ -180,6 +183,7 @@ impl AgentConfig {
             } else {
                 String::new()
             },
+            scope: self.scope.scope_key().to_string(),
         }
     }
 }
@@ -193,6 +197,8 @@ struct RawAgent {
     model: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     command: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    scope: String,
 }
 
 /// The agent in the `[ai]` section; unconfigured when there is none, or when
@@ -228,6 +234,7 @@ fn load_section(config: &mut UserConfig, name: &str) -> Option<AgentConfig> {
         },
         command: raw.command,
         configured: true,
+        scope: ReviewMode::from_scope_key(&raw.scope),
     })
 }
 
@@ -238,7 +245,11 @@ pub fn section(config: &AgentConfig) -> Result<Section, String> {
 
 /// The `[build]` section that stores `config`.
 pub fn build_section(config: &AgentConfig) -> Result<Section, String> {
-    Section::new("build", &config.to_raw())
+    let raw = RawAgent {
+        scope: String::new(),
+        ..config.to_raw()
+    };
+    Section::new("build", &raw)
 }
 
 /// The folders searched for a tool: `PATH`, then where installers put them.
@@ -495,6 +506,32 @@ impl ReviewMode {
 
     pub fn from_key(key: &str) -> Self {
         if key == "deep" {
+            ReviewMode::Deep
+        } else {
+            ReviewMode::Quick
+        }
+    }
+
+    pub const ALL: [ReviewMode; 2] = [ReviewMode::Quick, ReviewMode::Deep];
+
+    /// The review scope as Settings › AI review and the review panel name it.
+    pub fn scope_name(self) -> &'static str {
+        match self {
+            ReviewMode::Quick => "Ticket only",
+            ReviewMode::Deep => "Ticket + project context",
+        }
+    }
+
+    /// The `scope` stored in `[ai]`.
+    fn scope_key(self) -> &'static str {
+        match self {
+            ReviewMode::Quick => "ticket",
+            ReviewMode::Deep => "project",
+        }
+    }
+
+    fn from_scope_key(key: &str) -> Self {
+        if key.trim() == "project" {
             ReviewMode::Deep
         } else {
             ReviewMode::Quick

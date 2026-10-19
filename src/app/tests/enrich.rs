@@ -28,6 +28,7 @@ fn enrichment_drafts_an_artifact_for_an_issue() {
         command: "printf '<!doctype html><html><body><h1>Demo</h1></body></html>' # {prompt}"
             .to_string(),
         configured: true,
+        ..AgentConfig::default()
     };
 
     app.start_enrichment(&file);

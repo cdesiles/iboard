@@ -132,6 +132,7 @@ fn design_panel_drafts_a_component_with_the_agent() {
         command: "printf '```html\\n<button class=\"ib-btn\">Hi</button>\\n```' # {prompt}"
             .to_string(),
         configured: true,
+        ..AgentConfig::default()
     };
 
     let mut panel = app.session.design.take().expect("panel open");

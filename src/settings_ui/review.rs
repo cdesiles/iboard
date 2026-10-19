@@ -1,9 +1,10 @@
-//! Settings › AI review and AI build: which agent runs, and with which model.
+//! Settings › AI review and AI build: which agent runs, and with which model;
+//! for the review, also how far it reads.
 
 use egui::{Frame, Id, Key, Margin, Modifiers, RichText, Vec2};
 
 use super::{Catalog, Dialog, Menu};
-use crate::agent::{Detected, Models, Tool};
+use crate::agent::{Detected, Models, ReviewMode, Tool};
 use crate::format::display_path;
 use crate::theme::{self, Icon};
 use crate::widgets::{
@@ -46,6 +47,10 @@ impl Dialog {
         }
         ui.add_space(theme::SPACE_5);
         self.model_field(ui, catalog);
+        if self.tab == super::Tab::Review {
+            ui.add_space(theme::SPACE_5);
+            self.scope_field(ui);
+        }
         if let Some(error) = &self.save_error {
             ui.add_space(theme::SPACE_5);
             help(ui, error, theme::palette(ui).danger);
@@ -128,6 +133,23 @@ impl Dialog {
                 help(ui, &text, p.status_done);
             }
         }
+    }
+
+    fn scope_field(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette(ui);
+        field_label(ui, "Review scope");
+        let options = ReviewMode::ALL.map(|scope| (scope, scope.scope_name()));
+        if let Some(scope) = widgets::segmented(ui, self.form.scope, &options) {
+            self.form.scope = scope;
+        }
+        ui.add_space(theme::SPACE_2);
+        let text = match self.form.scope {
+            ReviewMode::Quick => "Quick: the agent reads the issue alone, without opening files.",
+            ReviewMode::Deep => {
+                "The agent may also read the repository and its design system to check the issue."
+            }
+        };
+        help(ui, text, p.ink_muted);
     }
 
     fn command_field(&mut self, ui: &mut egui::Ui) {

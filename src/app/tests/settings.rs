@@ -169,3 +169,49 @@ fn saving_settings_never_loses_the_users_file() {
     assert!(error.is_some_and(|error| error.contains("line 1")));
     assert_eq!(std::fs::read_to_string(&config).unwrap(), broken);
 }
+
+/// Settings › AI review starts on Ticket only; picking Ticket + project
+/// context writes `scope` into `[ai]` and keeps the file's comments.
+#[test]
+fn the_review_scope_is_saved_with_the_review_agent() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, _file, mut app) = open_issue_with_review("review-scope-save");
+    let config = dir.join("iboard.toml");
+    let mine = "# mine\n[ai]\ntool = \"claude\" # my agent\nmodel = \"default\"\n";
+    std::fs::write(&config, mine).unwrap();
+    app.agent = agent::load(&mut settings::UserConfig::load(Some(&config)));
+    assert_eq!(
+        app.agent.scope,
+        ReviewMode::Quick,
+        "an existing file is quick"
+    );
+    app.config_file = Some(config.clone());
+    app.open_config();
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    harness.get_by_label(ReviewMode::Quick.scope_name());
+    harness.get_by_label(ReviewMode::Deep.scope_name()).click();
+    harness.run_steps(2);
+    harness.get_by_label("Save").click();
+    harness.run_steps(2);
+
+    assert!(harness.state().1.settings.is_none(), "Save closed Settings");
+    assert_eq!(harness.state().1.agent.scope, ReviewMode::Deep);
+    assert_eq!(
+        std::fs::read_to_string(&config).unwrap(),
+        format!("{mine}scope = \"project\"\n")
+    );
+}

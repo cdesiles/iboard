@@ -67,14 +67,16 @@ pub fn component_prompt(
 /// The instruction sent to the agent for a review. It carries only the issue,
 /// by design: if that is not enough context, the issue is the problem. It stays
 /// issue-only on purpose, unlike the design-aware prompts below. A Deep review
-/// may check the issue against the repository; a Quick one must not. `notes`
-/// are the author's comments, each on the passage it quotes.
+/// (Ticket + project context) may check the issue against the repository and
+/// its design system; a Quick one (Ticket only) must not. `notes` are the
+/// author's comments, each on the passage it quotes.
 pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]) -> String {
     let scope = match mode {
         ReviewMode::Quick => "Read only the issue: do not open files or run tools.",
         ReviewMode::Deep => {
-            "You may read the repository to check what the issue claims \
-             (sizes, existing code, duplicates); keep the answer short."
+            "You may read the repository and its design system (design/, when there is one) \
+             to check what the issue claims (sizes, existing code, duplicates, the components \
+             it touches); keep the answer short."
         }
     };
     let mut prompt = format!(
@@ -307,6 +309,11 @@ mod tests {
     #[test]
     fn the_review_prompt() {
         insta::assert_snapshot!(review_prompt(ISSUE, ReviewMode::Quick, &[]));
+    }
+
+    #[test]
+    fn the_review_prompt_with_project_context() {
+        insta::assert_snapshot!(review_prompt(ISSUE, ReviewMode::Deep, &[]));
     }
 
     #[test]

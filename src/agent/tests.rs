@@ -40,6 +40,7 @@ fn custom(command: &str) -> AgentConfig {
         model: String::new(),
         command: command.into(),
         configured: true,
+        ..AgentConfig::default()
     }
 }
 
@@ -377,6 +378,38 @@ fn a_tool_iboard_does_not_run_is_reported() {
 }
 
 #[test]
+fn the_review_scope_defaults_to_the_ticket_alone() {
+    let read = |text: &str| load(&mut UserConfig::parse(text, Path::new("iboard.toml"))).scope;
+    assert_eq!(read("[ai]\ntool = \"claude\"\n"), ReviewMode::Quick);
+    assert_eq!(read(""), ReviewMode::Quick);
+    assert_eq!(
+        read("[ai]\ntool = \"claude\"\nscope = \"ticket\"\n"),
+        ReviewMode::Quick
+    );
+    let project = "[ai]\ntool = \"claude\"\nscope = \"project\"\n";
+    assert_eq!(read(project), ReviewMode::Deep);
+}
+
+#[test]
+fn only_the_review_section_stores_the_scope() {
+    let config = AgentConfig {
+        tool: Tool::Claude,
+        configured: true,
+        scope: ReviewMode::Deep,
+        ..AgentConfig::default()
+    };
+    let scratch = tempfile::tempdir().unwrap();
+    let file = scratch.path().join("iboard.toml");
+    let sections = [section(&config).unwrap(), build_section(&config).unwrap()];
+    settings::save(&file, &sections).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "[ai]\ntool = \"claude\"\nmodel = \"default\"\nscope = \"project\"\n\n\
+         [build]\ntool = \"claude\"\nmodel = \"default\"\n"
+    );
+}
+
+#[test]
 fn the_build_agent_falls_back_to_the_review_agent() {
     let read = |text: &str| {
         let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
@@ -536,6 +569,7 @@ fn the_configuration_round_trips_through_a_file() {
         model: "vendor/model".into(),
         command: String::new(),
         configured: true,
+        scope: ReviewMode::Deep,
     };
     settings::save(&file, &[section(&config).unwrap()]).unwrap();
     assert_eq!(load(&mut UserConfig::load(Some(&file))), config);
