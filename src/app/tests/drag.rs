@@ -182,6 +182,45 @@ fn a_card_outside_done_only_gets_delete() {
     assert!(!dir.join("issues/.archive").exists());
 }
 
+/// The dock rises under the dragged card's column only, so a drop meant for
+/// a neighbour's bottom never lands in the Trash.
+#[test]
+fn the_dock_stays_under_the_dragged_cards_column() {
+    let dir = scratch_dir("dock-column");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::create_dir_all(dir.join("issues/done")).unwrap();
+    let file = todo.join("01-demo.md");
+    std::fs::write(&file, "# Demo\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let ctx = themed_ctx();
+
+    draw(&ctx, &mut app, vec![]);
+    let start = ctx
+        .read_response(egui::Id::new(("issue_card", &file)))
+        .expect("the card is a drag source")
+        .rect
+        .center();
+    draw(&ctx, &mut app, vec![moved(start)]);
+    draw(&ctx, &mut app, vec![moved(start), button(start, true)]);
+    let lifted = start + egui::vec2(30.0, 30.0);
+    for _ in 0..20 {
+        draw(&ctx, &mut app, vec![moved(lifted)]);
+    }
+    let column = |index: usize| {
+        ctx.read_response(egui::Id::new(("column_drop", index)))
+            .expect("the column is a drop target")
+            .rect
+    };
+    let band = ctx
+        .read_response(egui::Id::new("drop_dock_band"))
+        .expect("the dock shows while dragging")
+        .rect;
+    assert_eq!(band.x_range(), column(0).x_range(), "the dock spans Todo");
+    assert!(band.max.x < column(1).min.x, "Done stays a drop target");
+    draw(&ctx, &mut app, vec![moved(lifted), button(lifted, false)]);
+}
+
 #[test]
 fn dropping_a_card_on_delete_asks_first() {
     let dir = scratch_dir("dock-delete");

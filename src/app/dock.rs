@@ -3,14 +3,16 @@
 use super::*;
 
 impl IboardApp {
-    /// The DropZones dock: while a card is dragged, Delete (and, for Done
-    /// cards, Archive) slides up over the bottom of the board, above the
-    /// status bar.
+    /// The DropZones dock: while a card is dragged, Delete (or, for Done
+    /// cards, Archive) slides up over the bottom of the card's column, above
+    /// the status bar. In ColumnFocus the column is the whole window.
     pub(super) fn drop_dock(&mut self, ui: &egui::Ui) {
         let ctx = ui.ctx().clone();
         let drag = egui::DragAndDrop::payload::<IssueDrag>(&ctx);
+        let dragged_column = self.dragged_column.take();
         if let Some(drag) = &drag {
             self.dock_archivable = drag.archivable;
+            self.dock_span = dragged_column;
         }
         let slide = theme::motion(&ctx, DOCK_SLIDE);
         let shown = ctx.animate_bool_with_time(egui::Id::new("drop_dock"), drag.is_some(), slide);
@@ -20,10 +22,13 @@ impl IboardApp {
         let p = theme::palette(ui);
         let area = ui.max_rect();
         let top = area.max.y - DOCK_H * shown;
-        let dock = Rect::from_min_max(
-            Pos2::new(area.min.x, top),
-            Pos2::new(area.max.x, top + DOCK_H),
-        );
+        let (x, margin) = match self.dock_span {
+            Some(span) if span.intersection(area.x_range()).span() > 0.0 => {
+                (span.intersection(area.x_range()), 0.0)
+            }
+            _ => (area.x_range(), theme::SPACE_5),
+        };
+        let dock = Rect::from_x_y_ranges(x, egui::Rangef::new(top, top + DOCK_H));
         let archivable = self.dock_archivable;
         let mut dropped = None;
         egui::Area::new(egui::Id::new("drop_dock_area"))
@@ -36,13 +41,13 @@ impl IboardApp {
                 let painter = ui.painter();
                 painter.rect_filled(dock, CornerRadius::ZERO, p.bg);
                 painter.hline(dock.x_range(), dock.min.y + 0.5, Stroke::new(1.0, p.line));
-                // Swallow the pointer over the whole band, so a drop between
-                // the zones never lands on the column underneath.
+                // Swallow the pointer over the whole band, so a drop beside
+                // the zone never lands on the column underneath.
                 ui.interact(dock, egui::Id::new("drop_dock_band"), Sense::hover());
 
                 let inner = Rect::from_min_max(
-                    dock.min + Vec2::new(theme::SPACE_5, 1.0 + theme::SPACE_4),
-                    dock.max - Vec2::new(theme::SPACE_5, theme::SPACE_4),
+                    dock.min + Vec2::new(margin, 1.0 + theme::SPACE_4),
+                    dock.max - Vec2::new(margin, theme::SPACE_4),
                 );
                 // Done cards are archived, never deleted; the others are
                 // deleted, never archived.

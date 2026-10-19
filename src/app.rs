@@ -542,6 +542,11 @@ pub struct IboardApp {
     /// The last drag's Archive eligibility, so the dock keeps its look while
     /// it slides away after the drop.
     dock_archivable: bool,
+    /// The dragged card's column on the board, which the dock spans; `None`
+    /// (ColumnFocus) spans the whole window. Kept while the dock slides away.
+    dock_span: Option<egui::Rangef>,
+    /// The board's report, this frame, of the column a card is dragged from.
+    dragged_column: Option<egui::Rangef>,
     /// Auto: reload when files change on disk, save edits as you type and when
     /// leaving the editor. Off, the editor asks before dropping unsaved edits.
     auto: bool,
@@ -805,6 +810,8 @@ impl IboardApp {
             past_reviews,
             column_focus: ColumnFocus::default(),
             dock_archivable: false,
+            dock_span: None,
+            dragged_column: None,
             auto: true,
             last_refresh: Instant::now(),
             board_generation: 0,

@@ -35,6 +35,9 @@ impl IboardApp {
         let agents = self.session.agents;
         let watching = self.watching_ready();
 
+        let dragged = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx())
+            .and_then(|drag| drag.path.parent().map(Path::to_path_buf));
+        let mut dragged_column = None;
         let mut intents = Vec::new();
         egui::ScrollArea::horizontal()
             .id_salt("board")
@@ -75,12 +78,17 @@ impl IboardApp {
                                 watching,
                             },
                         };
+                        if dragged.as_deref() == Some(column.dir.as_path()) {
+                            let left = ui.cursor().min.x;
+                            dragged_column = Some(egui::Rangef::new(left, left + width));
+                        }
                         intents.extend(column_ui(ui, &view, composer));
                     }
                     // Ends the scrollable width one gutter after the last column.
                     ui.allocate_space(Vec2::ZERO);
                 });
             });
+        self.dragged_column = dragged_column;
         self.apply(intents);
     }
 
