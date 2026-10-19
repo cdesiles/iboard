@@ -294,11 +294,10 @@ fn column_head(
             column_actions(ui, view, visible, shortcut, intents);
             return;
         }
-        // A running build keeps its Stop, and Doing its agents, in view.
+        // A running build keeps its Stop in view.
         if view.builds.active() {
             build_action(ui, view, visible, intents);
         }
-        agents_stepper(ui, view, intents);
         let shown = visible.len();
         // Filtered: "2/6", the total in `ink-faint`.
         let mut count = LayoutJob::default();
@@ -320,8 +319,8 @@ fn column_head(
     );
 }
 
-/// The hovered header's actions, right to left: Todo's `+`, Ready's play,
-/// Done's archive, then expand.
+/// The hovered header's actions, right to left: expand, then Todo's `+`,
+/// Ready's play, Doing's agents and Done's archive.
 fn column_actions(
     ui: &mut egui::Ui,
     view: &ColumnView,
@@ -330,6 +329,11 @@ fn column_actions(
     intents: &mut Vec<Intent>,
 ) {
     let column = view.column;
+    let id = egui::Id::new(("expand_column", view.index));
+    let hover = expand_tooltip(&column.name, shortcut);
+    if widgets::icon_button(ui, Icon::Expand, id, &hover, widgets::Tone::Plain).clicked() {
+        intents.push(Intent::FocusColumn(column.dir.clone()));
+    }
     let id = egui::Id::new(("new_issue", view.index));
     if column.accepts_new_issues()
         && widgets::icon_button(ui, Icon::Plus, id, "New issue  ⌘N", widgets::Tone::Plain).clicked()
@@ -340,11 +344,6 @@ fn column_actions(
     agents_stepper(ui, view, intents);
     if column.name.eq_ignore_ascii_case("done") && !visible.is_empty() {
         done_controls(ui, view, visible, intents);
-    }
-    let id = egui::Id::new(("expand_column", view.index));
-    let hover = expand_tooltip(&column.name, shortcut);
-    if widgets::icon_button(ui, Icon::Expand, id, &hover, widgets::Tone::Plain).clicked() {
-        intents.push(Intent::FocusColumn(column.dir.clone()));
     }
 }
 

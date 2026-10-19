@@ -898,16 +898,16 @@ fn hovering_the_done_header_offers_archive_all() {
         .read_response(egui::Id::new(("expand_column", index)))
         .expect("expand shown on hover")
         .rect;
-    assert!(expand.max.x <= at.x, "expand sits left of archive");
+    assert!(expand.min.x >= at.x, "expand sits right of archive");
     draw(&ctx, &mut app, vec![moved(at)]);
     draw(&ctx, &mut app, vec![button(at, true)]);
     draw(&ctx, &mut app, vec![button(at, false)]);
     assert!(!a.exists() && dir.join("issues/.archive/a.md").exists());
 }
 
-/// Todo's `+` is a column action: shown on hover, right of expand.
+/// Todo's `+` is a column action: shown on hover, left of expand.
 #[test]
-fn todo_offers_new_issue_on_hover_right_of_expand() {
+fn todo_offers_new_issue_on_hover_left_of_expand() {
     let dir = scratch_dir("plus-head");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
@@ -933,7 +933,7 @@ fn todo_offers_new_issue_on_hover_right_of_expand() {
         .read_response(egui::Id::new(("expand_column", index)))
         .unwrap()
         .rect;
-    assert!(expand.max.x <= at.min.x, "+ sits right of expand");
+    assert!(expand.min.x >= at.max.x, "+ sits left of expand");
     let at = at.center();
     draw(&ctx, &mut app, vec![moved(at)]);
     draw(&ctx, &mut app, vec![button(at, true)]);

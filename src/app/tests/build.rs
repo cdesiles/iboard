@@ -250,7 +250,24 @@ fn doing_header_adds_and_removes_agents() {
     let (_dir, mut app) = board("build-stepper", "true # {prompt}");
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
-    click(&ctx, &mut app, egui::Id::new(("more_agents", 2)));
+    let more = egui::Id::new(("more_agents", 2));
+    assert!(ctx.read_response(more).is_none(), "hidden at rest");
+    let column = ctx
+        .read_response(egui::Id::new(("column_drop", 2)))
+        .unwrap()
+        .rect;
+    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
+    draw(&ctx, &mut app, vec![moved(head)]);
+    let expand = ctx
+        .read_response(egui::Id::new(("expand_column", 2)))
+        .unwrap()
+        .rect;
+    let stepper = ctx.read_response(more).expect("shown on hover").rect;
+    assert!(
+        expand.min.x >= stepper.max.x,
+        "expand stays at the far right"
+    );
+    click(&ctx, &mut app, more);
     assert_eq!(app.session.agents, 2);
     click(&ctx, &mut app, egui::Id::new(("fewer_agents", 2)));
     click(&ctx, &mut app, egui::Id::new(("fewer_agents", 2)));
