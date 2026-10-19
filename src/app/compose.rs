@@ -68,9 +68,8 @@ impl IboardApp {
 
     /// `↩` or `⌘S` in the composer. With no title yet and an engine ready,
     /// it names the issue first and stops on the suggestion; otherwise it
-    /// writes the issue and clears the composer for the next one. A click
-    /// elsewhere (`close`) never stops: it names if needed, writes, and
-    /// closes the composer.
+    /// writes the issue and closes the composer. A click elsewhere (`close`)
+    /// never stops on the suggestion: it names if needed, then writes.
     pub(super) fn submit_composer(&mut self, close: bool) {
         let Some(composer) = self.session.composer.as_mut() else {
             return;
@@ -101,12 +100,12 @@ impl IboardApp {
         } else {
             titles::first_line_title(&description)
         };
-        self.write_composed(&title, &description, close);
+        self.write_composed(&title, &description);
     }
 
-    /// Writes the composed issue to Todo; on success the composer clears (or
-    /// closes), on failure it keeps everything and says why.
-    pub(super) fn write_composed(&mut self, title: &str, description: &str, close: bool) {
+    /// Writes the composed issue to Todo; on success the composer closes (`⌘N`
+    /// opens a new one), on failure it keeps everything and says why.
+    pub(super) fn write_composed(&mut self, title: &str, description: &str) {
         let Some(dir) = self.board.todo_column().map(|c| c.dir.clone()) else {
             return;
         };
@@ -122,9 +121,7 @@ impl IboardApp {
                 }
                 if let Some(composer) = self.session.composer.as_mut() {
                     *composer = Composer {
-                        engine: composer.engine,
-                        focus: (!close).then_some(ComposerField::Description),
-                        closing: close,
+                        closing: true,
                         ..Composer::default()
                     };
                 }
@@ -165,7 +162,7 @@ impl IboardApp {
         let then_close = composer.naming.take().is_some_and(|run| run.then_close);
         let description = composer.description.clone();
         match result {
-            Ok(title) if then_close => self.write_composed(&title, &description, true),
+            Ok(title) if then_close => self.write_composed(&title, &description),
             Ok(title) => {
                 composer.title = title;
                 composer.stage = TitleStage::Inferred;
@@ -175,7 +172,7 @@ impl IboardApp {
             // A click elsewhere never stops: the first line names it.
             Err(_) if then_close => {
                 let title = titles::first_line_title(&description);
-                self.write_composed(&title, &description, true);
+                self.write_composed(&title, &description);
             }
             Err(_) => {
                 composer.stage = TitleStage::Failed;

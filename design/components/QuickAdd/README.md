@@ -33,7 +33,7 @@ Typing `[bug] ` at the start of the title turns it into a Label tag as soon as t
 
 ## What gets written
 
-`todo/<slug>.md` containing `# <title>`, a blank line, then the description as typed. The slug is the title, lowercase ASCII with hyphens, at most 60 characters, with `-2`, `-3` on a collision (the meta line turns `status-doing` and shows the suffixed name). The new card appears just under the composer with an `accent-soft` fill that fades to `surface` after about 2 seconds, showing the title and the first lines of the description as its summary. The composer clears and goes back to Idle.
+`todo/<slug>.md` containing `# <title>`, a blank line, then the description as typed. The slug is the title, lowercase ASCII with hyphens, at most 60 characters, with `-2`, `-3` on a collision (the meta line turns `status-doing` and shows the suffixed name). The new card appears just under the composer with an `accent-soft` fill that fades to `surface` after about 2 seconds, showing the title and the first lines of the description as its summary. The composer closes; `⌘N` opens a new one.
 
 ## A long description in a narrow column
 

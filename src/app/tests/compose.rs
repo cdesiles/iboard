@@ -13,7 +13,7 @@ fn a_ticket_clicked_while_it_is_renumbered_stays_open() {
     std::fs::write(todo.join("001-old.md"), "# Old\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
-    app.write_composed("Fresh", "", false);
+    app.write_composed("Fresh", "");
     let written = todo.join("fresh.md");
     assert_eq!(app.session.selected.as_deref(), Some(written.as_path()));
     assert!(
@@ -44,7 +44,7 @@ fn a_ticket_clicked_while_it_is_renumbered_stays_open() {
 }
 
 #[test]
-fn the_composer_creates_issues_and_stays_open() {
+fn the_composer_creates_an_issue_and_closes() {
     let dir = scratch_dir("compose");
     let todo = dir.join("issues/todo");
     std::fs::create_dir_all(&todo).unwrap();
@@ -61,19 +61,13 @@ fn the_composer_creates_issues_and_stays_open() {
         std::fs::read_to_string(&created).unwrap(),
         "# Fix login redirect\n"
     );
-    let composer = app
-        .session
-        .composer
-        .as_ref()
-        .expect("the composer stays open");
-    assert!(
-        composer.title.is_empty(),
-        "the field clears for the next idea"
-    );
+    app.flush_closing_composer(&egui::Context::default());
+    assert!(app.session.composer.is_none(), "the composer closes");
     assert!(matches!(app.session.screen, Screen::Board));
     assert!(app.board.find(&created).is_some(), "the board sees it");
 
     // An empty title never creates a file.
+    app.open_composer();
     app.submit_composer(false);
     assert_eq!(std::fs::read_dir(&todo).unwrap().count(), 1);
 }
@@ -148,11 +142,9 @@ fn composer_keys_and_clicking_away() {
         std::fs::read_to_string(todo.join("first-line.md")).unwrap(),
         "# First line\n\nFirst line\nsecond\nthird\n"
     );
-    assert!(
-        app.session.composer.is_some(),
-        "↩ keeps it open for the next one"
-    );
+    assert!(app.session.composer.is_none(), "↩ closes it");
 
+    app.open_composer();
     frame(
         &ctx,
         &mut app,
@@ -162,7 +154,9 @@ fn composer_keys_and_clicking_away() {
     frame(&ctx, &mut app, key(Key::S, egui::Modifiers::COMMAND));
     // Adding a ticket at the top renumbers Todo's files.
     assert!(todo.join("001-saved-with-command-s.md").exists(), "⌘S adds");
-    assert!(app.session.composer.is_some());
+    assert!(app.session.composer.is_none(), "and closes it too");
+
+    app.open_composer();
     let other = todo.join("003-other.md");
     assert!(other.exists(), "the older card was renumbered too");
 
@@ -259,13 +253,8 @@ fn enter_names_the_issue_then_adds_it() {
         std::fs::read_to_string(&created).unwrap(),
         "# Export the board as checklists\n\nWhen I export the board I want a checklist.\nOne per column.\n"
     );
-    let composer = app
-        .session
-        .composer
-        .as_ref()
-        .expect("the composer stays open");
-    assert!(composer.title.is_empty() && composer.description.is_empty());
-    assert!(composer.stage == TitleStage::Idle);
+    app.flush_closing_composer(&ctx);
+    assert!(app.session.composer.is_none(), "and closes the composer");
 }
 
 #[test]
@@ -399,10 +388,7 @@ fn a_click_on_the_new_ticket_right_after_adding_it_lands() {
     frame(&ctx, &mut app, vec![]);
     let fresh = todo.join("001-fresh.md");
     assert!(fresh.is_file(), "↩ adds it at the top");
-    assert!(
-        app.session.composer.is_some(),
-        "and keeps the composer open"
-    );
+    assert!(app.session.composer.is_none(), "and closes the composer");
 
     let add = ctx
         .read_response(egui::Id::new(("card_add_label", &fresh)))
@@ -427,6 +413,5 @@ fn a_click_on_the_new_ticket_right_after_adding_it_lands() {
         Some(fresh.as_path()),
         "the click opens its LabelPicker"
     );
-    assert!(app.session.composer.is_none(), "and closes the composer");
     assert_eq!(app.session.selected.as_deref(), Some(fresh.as_path()));
 }
