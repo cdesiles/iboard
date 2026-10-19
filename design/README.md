@@ -79,7 +79,7 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 | `⌘S` | | | Save to file |
 | `⌘N` | New issue in Todo | New issue (returns to board) | New issue (asks if unsaved) |
 | `⌘F` | Focus and widen the filter; `↓` reaches the suggestions | | |
-| `⌘R` | Refresh from disk | Refresh | |
+| `⌘R` | Refresh from disk | Refine this issue (Todo; Refresh elsewhere) | Refine draft (Todo) |
 | `⌘[` | | Back | Back (asks if unsaved) |
 | `⌘⇧R` | | Review this issue | Review draft |
 | `⌘Z` | Undo the last delete, when asking is off | | Undo typing |

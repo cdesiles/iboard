@@ -246,7 +246,7 @@ impl IboardApp {
         self.filter_field(ui);
     }
 
-    /// An issue's toolbar: Review (Todo), Save and Discard in the Editor,
+    /// An issue's toolbar: Refine and its reviews (Todo), Save and Discard in the Editor,
     /// Edit, Commits (Done) and Draft design in the Reader, then the right
     /// group.
     fn detail_controls(&mut self, ui: &mut egui::Ui, path: &Path) {
@@ -405,7 +405,7 @@ impl IboardApp {
     }
 
     /// Only offered when Auto is off: with Auto on the board already reloads
-    /// itself. `⌘R` keeps working either way.
+    /// itself. `⌘R` keeps working either way, but on a Todo issue it refines.
     pub(super) fn refresh_button(&mut self, ui: &mut egui::Ui) {
         if self.auto {
             return;

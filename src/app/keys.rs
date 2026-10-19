@@ -24,6 +24,8 @@ struct KeyContext {
     selected: Option<(PathBuf, bool)>,
     /// The open issue's text can be edited.
     editable: bool,
+    /// The open issue is in Todo, so it can be refined and reviewed.
+    refinable: bool,
 }
 
 /// One thing a key asked for.
@@ -36,6 +38,8 @@ enum Command {
     Refresh,
     Undo,
     Settings,
+    /// `⌘R` on a Todo issue: refine it with the challenger.
+    Refine(PathBuf),
     /// `⌘⇧R`: review the open issue, or cancel the review running.
     ToggleReview(PathBuf),
     /// `⌘[`: one level back.
@@ -73,7 +77,10 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
         }
     }
     if command(Key::R) && !input.modifiers.shift {
-        out.push(Command::Refresh);
+        out.push(match cx.open.as_ref().filter(|_| cx.refinable) {
+            Some(path) => Command::Refine(path.clone()),
+            None => Command::Refresh,
+        });
     }
     // In a text field `⌘Z` stays the field's own undo.
     if cx.board && !cx.typing && command(Key::Z) {
@@ -379,6 +386,7 @@ impl IboardApp {
             board: matches!(self.session.screen, Screen::Board),
             focused: self.column_focus.column.is_some(),
             editable: open.as_deref().is_some_and(|path| self.can_edit(path)),
+            refinable: open.as_deref().is_some_and(|path| self.is_todo_issue(path)),
             open,
             editing: self.session.detail_mode == DetailMode::Edit,
             composer: self.session.composer.is_some(),
@@ -408,6 +416,7 @@ impl IboardApp {
             Command::Refresh => self.refresh(),
             Command::Undo => self.undo_last(),
             Command::Settings => self.open_settings(self.settings_tab),
+            Command::Refine(path) => self.start_refinement(&path),
             Command::ToggleReview(path) => {
                 if self.review_is_running(&path) {
                     self.cancel_review();

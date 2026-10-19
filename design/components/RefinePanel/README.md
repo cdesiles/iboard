@@ -53,7 +53,7 @@ The consumer provides the agent's round (role, TL;DR, paragraphs, choices) and t
 
 ## Kept from the first version
 
-- Opened from the ReviewButton's menu, "Refine with a challenger", on a Todo issue, as a modal over the Reader or Editor page on the `scrim`. Opening a review closes it, and the other way round.
+- Opened from the ReviewButton (its main part, its menu's "Refine with a challenger", or `⌘R`) on a Todo issue, as a modal over the Reader or Editor page on the `scrim`. Opening a review closes it, and the other way round.
 - The challenger is asked for the issue as it reads now (the Editor draft when open) and the conversation so far.
 - Once the need is settled the challenger proposes the refined issue: Apply to draft opens the Editor with it, unsaved, and hides the panel.
 - Hidden, or after a click on the scrim, a Review-kind pill floats at the foot of the window, "Back to the refinement" ("Refining…" while a turn runs), and brings the panel back.

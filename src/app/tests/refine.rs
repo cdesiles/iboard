@@ -119,6 +119,35 @@ fn a_refinement_and_a_review_replace_each_other() {
     assert!(app.settings.is_some() && app.session.refine.is_none());
 }
 
+/// On a Todo issue `⌘R` refines and `⌘⇧R` reviews; elsewhere `⌘R`
+/// still refreshes.
+#[test]
+fn command_r_refines_and_command_shift_r_reviews() {
+    let (dir, file, mut app) = refining("refine-keys", "printf 'Why?' # {prompt}");
+    let ctx = themed_ctx();
+    let press = |modifiers| {
+        vec![
+            egui::Event::ModifiersChanged(modifiers),
+            key(Key::R, modifiers),
+        ]
+    };
+    let command = egui::Modifiers::COMMAND;
+    frame(&ctx, &mut app, press(command | egui::Modifiers::SHIFT));
+    assert!(app.session.review.is_some() && app.session.refine.is_none());
+    frame(&ctx, &mut app, press(command));
+    assert!(app.session.refine.is_some() && app.session.review.is_none());
+
+    let done = dir.join("issues/done");
+    std::fs::create_dir_all(&done).unwrap();
+    std::fs::write(done.join("02-shipped.md"), "# Shipped\n").unwrap();
+    app.session.refine = None;
+    app.refresh();
+    app.open_issue(done.join("02-shipped.md"));
+    frame(&ctx, &mut app, press(command));
+    assert!(app.session.refine.is_none());
+    assert!(app.board.find(&file).is_some());
+}
+
 /// The panel sits over the page: Hide tucks it away and keeps the
 /// conversation, the pill at the foot brings it back, End refining ends it.
 #[test]

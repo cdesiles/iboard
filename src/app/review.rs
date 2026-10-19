@@ -202,16 +202,17 @@ impl IboardApp {
     }
 
     /// The Review split button, rightmost in the Reader and Editor header: the
-    /// main part runs the review (or cancels a running one), the caret opens a
-    /// menu naming what runs and leading to the AI settings.
+    /// main part refines the issue (or cancels a running review), the caret
+    /// opens a menu with the reviews, naming what runs and leading to the AI
+    /// settings.
     pub(super) fn review_button(&mut self, ui: &mut egui::Ui, path: &Path) {
         let running = self.review_is_running(path);
         let configured = self.agent.configured();
-        let review_label = if running { "Reviewing…" } else { "Review" };
-        let review_hint = if running {
+        let label = if running { "Reviewing…" } else { "Refine" };
+        let hint = if running {
             "Cancel the review (esc)"
         } else if configured {
-            "Ask an agent to challenge this issue"
+            "Refine this issue in a conversation with a challenger"
         } else {
             "No agent is set up yet: choose one in Settings › AI review (⌘, or the caret)"
         };
@@ -220,16 +221,16 @@ impl IboardApp {
             egui::Id::new("review-button"),
             ButtonKind::Review,
             Some(Icon::Review),
-            review_label,
-            Some(if running { "esc" } else { "⌘⇧R" }),
+            label,
+            Some(if running { "esc" } else { "⌘R" }),
             running || configured,
         );
         let draft = self.session.detail_mode == DetailMode::Edit;
-        if main.on_hover_text(review_hint).clicked() {
+        if main.on_hover_text(hint).clicked() {
             if running {
                 self.cancel_review();
             } else if configured {
-                self.start_review(path, draft);
+                self.start_refinement(path);
             } else {
                 self.open_config();
             }
@@ -261,14 +262,14 @@ impl IboardApp {
                         },
                     )
                 };
+                if option(ui, "Refine with a challenger", false, "⌘R").clicked() {
+                    picked = Some(ReviewMenu::Refine);
+                }
                 if option(ui, "Review this issue", false, "⌘⇧R").clicked() {
                     picked = Some(ReviewMenu::Review);
                 }
                 if option(ui, "Deep review", false, "reads the repo").clicked() {
                     picked = Some(ReviewMenu::Deep);
-                }
-                if option(ui, "Refine with a challenger", false, "a conversation").clicked() {
-                    picked = Some(ReviewMenu::Refine);
                 }
                 ui.add_space(theme::SPACE_2);
                 ui.separator();
