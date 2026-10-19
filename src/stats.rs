@@ -1,6 +1,6 @@
 //! A project's health across its history: code size, complexity, tests and
 //! TODOs at each of the last commits, the files that change most, and when
-//! work happened.
+//! work happened, and how long the issues closed took.
 //!
 //! Commits are read a page of [`PAGE`] at a time along the first-parent line
 //! of `HEAD`. A commit's measures never change, so each is kept in
@@ -8,6 +8,7 @@
 //! through one `git cat-file --batch`; files unchanged between commits are
 //! measured once per run.
 
+mod cycle;
 mod measure;
 
 use std::collections::{BTreeMap, HashMap};
@@ -20,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::files;
 use crate::job::Cancel;
+pub use cycle::{Cycle, Cycles, span};
 pub use measure::{FileMetrics, Language, language_of, measure};
 
 /// How many commits one page of history holds.
@@ -147,15 +149,19 @@ pub struct Stats {
     /// Commits per `YYYY-MM-DD`, over the [`AGENDA_DAYS`] up to the newest.
     pub agenda: BTreeMap<String, usize>,
     pub hotspots: Vec<Hotspot>,
+    /// The issues the page's commits closed, and how long each took.
+    pub cycles: Cycles,
     /// Where the measures are kept.
     pub cache: Option<PathBuf>,
 }
 
 /// Measures page `page` of the history of the repository holding `dir`,
-/// reading only the commits the cache lacks. Stops early, with an error,
-/// once `cancel` is set; what was read by then stays cached.
+/// whose issues are kept under `root`, reading only the commits the cache
+/// lacks. Stops early, with an error, once `cancel` is set; what was read by
+/// then stays cached.
 pub fn collect(
     dir: &Path,
+    root: &Path,
     page: usize,
     progress: &Progress,
     cancel: &Cancel,
@@ -207,12 +213,17 @@ pub fn collect(
         .map(|newest| agenda(dir, &newest.date))
         .transpose()?
         .unwrap_or_default();
+    let cycles = match commits.first() {
+        Some(newest) => cycle::collect(dir, root, page, &newest.hash)?,
+        None => Cycles::default(),
+    };
     Ok(Stats {
         page,
         older,
         snapshots,
         agenda,
         hotspots,
+        cycles,
         cache: cache_file,
     })
 }
@@ -585,7 +596,7 @@ mod tests {
         commit(dir.path(), "tests/t.rs", "#[test]\nfn t() {}\n", "three");
         commit(dir.path(), "README.md", "# Doc\n", "four");
         let progress = Progress::default();
-        let stats = collect(dir.path(), 0, &progress, &Cancel::default()).unwrap();
+        let stats = collect(dir.path(), dir.path(), 0, &progress, &Cancel::default()).unwrap();
         assert_eq!(progress.get(), (4, 4));
         let code: Vec<usize> = stats.snapshots.iter().map(|s| s.code).collect();
         assert_eq!(code, [1, 3, 5, 5]);
@@ -601,15 +612,69 @@ mod tests {
 
         commit(dir.path(), "src/b.rs", "fn b() {}\n", "five");
         let progress = Progress::default();
-        let again = collect(dir.path(), 0, &progress, &Cancel::default()).unwrap();
+        let again = collect(dir.path(), dir.path(), 0, &progress, &Cancel::default()).unwrap();
         assert_eq!(progress.get(), (1, 1), "only the new commit is read");
         assert_eq!(again.snapshots.len(), 5);
     }
 
     #[test]
+    fn a_closed_issue_takes_from_its_first_commit_to_its_closing_one() {
+        let dir = repo();
+        let at = |date: &str, args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(dir.path())
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .env("GIT_COMMITTER_DATE", date)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+        };
+        let issues = dir.path().join("issues");
+        std::fs::create_dir_all(issues.join("todo")).unwrap();
+        std::fs::create_dir_all(issues.join("done")).unwrap();
+        std::fs::write(issues.join("todo/001-a.md"), "# A\n").unwrap();
+        at("2026-10-01T10:00:00+00:00", &["add", "."]);
+        at("2026-10-01T10:00:00+00:00", &["commit", "-q", "-m", "plan"]);
+        std::fs::rename(issues.join("todo/001-a.md"), issues.join("done/a.md")).unwrap();
+        std::fs::write(issues.join("done/b.md"), "# B\n").unwrap();
+        at("2026-10-03T12:30:00+00:00", &["add", "-A"]);
+        let message = "Do it\n\ncloses a.md\ncloses b.md";
+        at(
+            "2026-10-03T12:30:00+00:00",
+            &["commit", "-q", "-m", message],
+        );
+        let stats = collect(
+            dir.path(),
+            &issues,
+            0,
+            &Progress::default(),
+            &Cancel::default(),
+        )
+        .unwrap();
+        let cycles: Vec<(&str, i64)> = stats
+            .cycles
+            .cycles
+            .iter()
+            .map(|c| (c.issue.as_str(), c.seconds))
+            .collect();
+        assert_eq!(cycles, [("a.md", 2 * 86_400 + 2 * 3600 + 30 * 60)]);
+        assert_eq!(stats.cycles.unknown, 1, "b.md was never seen before");
+    }
+
+    #[test]
     fn a_project_without_commits_says_so() {
         let dir = repo();
-        let err = collect(dir.path(), 0, &Progress::default(), &Cancel::default()).unwrap_err();
+        let err = collect(
+            dir.path(),
+            dir.path(),
+            0,
+            &Progress::default(),
+            &Cancel::default(),
+        )
+        .unwrap_err();
         assert!(err.contains("no commits"), "{err}");
     }
 
@@ -619,6 +684,6 @@ mod tests {
         commit(dir.path(), "a.rs", "fn a() {}\n", "one");
         let cancel = Cancel::default();
         cancel.cancel();
-        assert!(collect(dir.path(), 0, &Progress::default(), &cancel).is_err());
+        assert!(collect(dir.path(), dir.path(), 0, &Progress::default(), &cancel).is_err());
     }
 }

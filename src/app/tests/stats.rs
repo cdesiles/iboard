@@ -71,6 +71,7 @@ fn the_stats_panel_measures_and_walks_the_history() {
     assert_eq!(panel.selected, 2);
     harness.get_by_label("Trend across commits");
     harness.get_by_label("three");
+    harness.get_by_label("Cycle time");
 
     harness.key_press(Key::ArrowLeft);
     harness.run_steps(2);

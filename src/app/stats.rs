@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use chrono::{Datelike, NaiveDate};
-use iboard::stats::{self, Hotspot, Progress, Snapshot, Stats};
+use iboard::stats::{self, Cycles, Hotspot, Progress, Snapshot, Stats};
 
 use super::*;
 
@@ -68,11 +68,12 @@ pub(super) struct StatsPanel {
 }
 
 impl StatsPanel {
-    fn new(dir: &Path, page: usize, metric: Metric) -> Self {
+    fn new(dir: &Path, root: &Path, page: usize, metric: Metric) -> Self {
         let progress = Arc::new(Progress::default());
         let shared = Arc::clone(&progress);
         let dir = dir.to_path_buf();
-        let job = Job::spawn(move |cancel| stats::collect(&dir, page, &shared, cancel));
+        let root = root.to_path_buf();
+        let job = Job::spawn(move |cancel| stats::collect(&dir, &root, page, &shared, cancel));
         Self {
             page,
             run: Some((job, progress)),
@@ -107,7 +108,12 @@ impl IboardApp {
     /// Opens the stats panel on the project, measuring its newest commits.
     pub(super) fn open_stats(&mut self) {
         if self.session.stats.is_none() {
-            self.session.stats = Some(StatsPanel::new(&self.located.project_dir, 0, Metric::Code));
+            self.session.stats = Some(StatsPanel::new(
+                &self.located.project_dir,
+                &self.located.root,
+                0,
+                Metric::Code,
+            ));
         }
     }
 
@@ -184,7 +190,12 @@ impl IboardApp {
         match ask {
             Some(StatsAsk::Close) => self.session.stats = None,
             Some(StatsAsk::Page(page)) => {
-                self.session.stats = Some(StatsPanel::new(&self.located.project_dir, page, metric));
+                self.session.stats = Some(StatsPanel::new(
+                    &self.located.project_dir,
+                    &self.located.root,
+                    page,
+                    metric,
+                ));
             }
             None if modal.should_close() => self.session.stats = None,
             None => {}
@@ -261,6 +272,8 @@ fn stats_body(ui: &mut egui::Ui, panel: &mut StatsPanel) -> Option<usize> {
     tops(ui, shown);
     ui.add_space(theme::SPACE_5);
     hotspots(ui, &stats.hotspots);
+    ui.add_space(theme::SPACE_5);
+    cycle_time(ui, &stats.cycles);
     ui.add_space(theme::SPACE_5);
     if let Some(newest) = stats.snapshots.last() {
         agenda(ui, &stats.agenda, newest.day());
@@ -489,13 +502,8 @@ fn tiles(ui: &mut egui::Ui, base: &Snapshot, s: &Snapshot) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_3);
         for (label, value, detail, change) in tiles {
-            tile(
-                ui,
-                label,
-                &value,
-                &detail,
-                change.map(|c| (c, since.as_str())),
-            );
+            let line = change_line(ui, change, &since);
+            tile(ui, label, &value, &detail, Some(line));
         }
     });
 }
@@ -512,7 +520,7 @@ fn tile(
     label: &str,
     value: &str,
     detail: &str,
-    change: Option<((String, Up, bool), &str)>,
+    line: Option<(String, Color32)>,
 ) {
     let p = theme::palette(ui);
     Frame::new()
@@ -533,19 +541,30 @@ fn tile(
                 egui::Label::new(RichText::new(detail).font(theme::meta()).color(p.ink_muted))
                     .truncate(),
             );
-            let (text, color) = match change {
-                Some(((shown, up, rose), since)) => {
-                    let color = match (up, rose) {
-                        (Up::Neutral, _) => p.ink_muted,
-                        (Up::Better, true) | (Up::Worse, false) => p.status_done,
-                        _ => p.danger,
-                    };
-                    (format!("{shown} {since}"), color)
-                }
-                None => ("unchanged".to_string(), p.ink_faint),
-            };
-            ui.label(RichText::new(text).font(theme::meta()).color(color));
+            if let Some((text, color)) = line {
+                ui.label(RichText::new(text).font(theme::meta()).color(color));
+            }
         });
+}
+
+/// A tile's change since the page's oldest commit, coloured by how it reads.
+fn change_line(
+    ui: &egui::Ui,
+    change: Option<(String, Up, bool)>,
+    since: &str,
+) -> (String, Color32) {
+    let p = theme::palette(ui);
+    match change {
+        Some((shown, up, rose)) => {
+            let color = match (up, rose) {
+                (Up::Neutral, _) => p.ink_muted,
+                (Up::Better, true) | (Up::Worse, false) => p.status_done,
+                _ => p.danger,
+            };
+            (format!("{shown} {since}"), color)
+        }
+        None => ("unchanged".to_string(), p.ink_faint),
+    }
 }
 
 /// The largest and most complex files, and the languages, at the commit.
@@ -622,6 +641,68 @@ fn hotspots(ui: &mut egui::Ui, spots: &[Hotspot]) {
                 ))
                 .font(theme::meta())
                 .color(p.ink_muted),
+            );
+        });
+    }
+}
+
+/// How long the issues closed on this page took, and the slowest of them.
+fn cycle_time(ui: &mut egui::Ui, cycles: &Cycles) {
+    let p = theme::palette(ui);
+    heading(ui, "Cycle time");
+    ui.label(
+        RichText::new(
+            "From an issue's first build run, or its first commit on the board, \
+             to the commit that closes it.",
+        )
+        .font(theme::meta())
+        .color(p.ink_muted),
+    );
+    ui.add_space(theme::SPACE_2);
+    let (Some(median), Some(p85)) = (cycles.percentile(0.5), cycles.percentile(0.85)) else {
+        ui.label(
+            RichText::new("No commit on this page closes an issue whose start is known.")
+                .font(theme::meta())
+                .color(p.ink_faint),
+        );
+        return;
+    };
+    let unknown = match cycles.unknown {
+        0 => String::new(),
+        n => format!(", {n} more of unknown start"),
+    };
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_3);
+        let closed = cycles.cycles.len();
+        let tiles = [
+            (
+                "Median",
+                stats::span(median),
+                format!("over {closed} issues{unknown}"),
+            ),
+            (
+                "85th percentile",
+                stats::span(p85),
+                "85% close within".to_string(),
+            ),
+        ];
+        for (label, value, detail) in tiles {
+            tile(ui, label, &value, &detail, None);
+        }
+    });
+    ui.add_space(theme::SPACE_3);
+    for cycle in cycles.cycles.iter().take(5) {
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(stats::span(cycle.seconds))
+                    .font(theme::ui_strong())
+                    .color(p.ink),
+            );
+            ui.label(RichText::new(&cycle.issue).font(theme::meta()).color(p.ink));
+            ui.label(
+                RichText::new(format!("closed in {}", cycle.short))
+                    .font(theme::meta())
+                    .color(p.ink_muted),
             );
         });
     }
