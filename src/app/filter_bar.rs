@@ -90,7 +90,7 @@ impl FilterBar {
         if frame.clicked() {
             self.focus = true;
         }
-        let edge = if active && !open {
+        let edge = if open || active {
             p.accent
         } else {
             p.line_strong
@@ -99,12 +99,9 @@ impl FilterBar {
             rect,
             CornerRadius::same(theme::RADIUS_SM),
             p.surface,
-            Stroke::new(1.0, edge),
+            Stroke::new(if open { 1.5 } else { 1.0 }, edge),
             StrokeKind::Inside,
         );
-        if open {
-            widgets::paint_focus_ring(ui, rect, theme::RADIUS_SM);
-        }
         rect
     }
 
