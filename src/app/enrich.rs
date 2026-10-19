@@ -154,11 +154,11 @@ impl IboardApp {
                 ui.horizontal(|ui| {
                     match &enrichment.status {
                         EnrichStatus::Running(_) => {
-                            ui.spinner();
+                            widgets::thinking(ui, 14.0);
                             ui.label(RichText::new("Drafting the mockup…").color(p.ink_muted));
                         }
                         EnrichStatus::Rendering(_) => {
-                            ui.spinner();
+                            widgets::thinking(ui, 14.0);
                             ui.label(RichText::new("Rendering the preview…").color(p.ink_muted));
                         }
                         EnrichStatus::Failed(error) => {
@@ -189,7 +189,8 @@ impl IboardApp {
                 if enrichment.html.is_some() && !drafting {
                     ui.separator();
                     ui.label(RichText::new("Refine").color(p.ink_muted).size(11.0));
-                    ui.add(
+                    widgets::text_entry(
+                        ui,
                         egui::TextEdit::singleline(&mut enrichment.refine)
                             .hint_text("Make the header taller, use the accent for the CTA…")
                             .desired_width(f32::INFINITY),

@@ -400,18 +400,22 @@ fn commit_list(ui: &mut egui::Ui, list: &[commits::Commit]) -> Option<Vec<String
         return None;
     }
     let mut picked = None;
-    egui::ScrollArea::vertical()
-        .id_salt("commits-list")
-        .max_height(260.0)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
+    theme::scroll_area(
+        ui,
+        egui::ScrollArea::vertical()
+            .id_salt("commits-list")
+            .max_height(260.0)
+            .auto_shrink([false, true]),
+        true,
+        |ui| {
             ui.spacing_mut().item_spacing.y = theme::SPACE_1;
             for commit in list {
                 if commit_row(ui, commit).clicked() {
                     picked = Some(vec![commit.hash.clone()]);
                 }
             }
-        });
+        },
+    );
     if list.len() > 1
         && widgets::button(
             ui,

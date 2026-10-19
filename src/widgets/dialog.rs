@@ -26,6 +26,31 @@ pub fn paint_focus_ring(ui: &Ui, rect: Rect, radius: u8) {
     );
 }
 
+/// The soft 3pt `focus-halo` around a focused text field, outside its one
+/// `focus` border: text entry never shows a second ring.
+pub fn focus_halo(ui: &Ui, response: &Response) {
+    if response.has_focus() {
+        paint_focus_halo(ui, response.rect, theme::RADIUS_SM);
+    }
+}
+
+/// Adds a framed text field, with its halo while focused.
+pub fn text_entry(ui: &mut Ui, edit: egui::TextEdit<'_>) -> Response {
+    let response = ui.add(edit);
+    focus_halo(ui, &response);
+    response
+}
+
+/// Paints the `focus-halo` outside `rect`, focused or not.
+pub fn paint_focus_halo(ui: &Ui, rect: Rect, radius: u8) {
+    ui.painter().rect_stroke(
+        rect.expand(0.5),
+        CornerRadius::same(radius + 1),
+        Stroke::new(3.0, theme::palette(ui).focus_halo),
+        StrokeKind::Outside,
+    );
+}
+
 /// The raised `surface` card of a modal, menu or popover: a `line-strong`
 /// edge, `radius-md` corners and the popup shadow.
 pub fn popover_frame(ui: &Ui) -> Frame {
@@ -133,7 +158,8 @@ pub fn help(ui: &mut Ui, text: &str, color: Color32) {
 /// A full-width mono text field.
 pub fn text_field(ui: &mut Ui, text: &mut String, hint: &str) -> Response {
     let p = theme::palette(ui);
-    ui.add(
+    text_entry(
+        ui,
         egui::TextEdit::singleline(text)
             .hint_text(RichText::new(hint).color(p.ink_faint))
             .font(FontId::monospace(12.0))

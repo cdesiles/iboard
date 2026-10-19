@@ -92,6 +92,9 @@ fn main() -> eframe::Result {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])
         .with_min_inner_size([880.0, 480.0]);
+    if let Some(icon) = app_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     if app::UNIFIED_TITLEBAR {
         // macOS names the app menu after the title the window starts with
         // (given the Info.plist `build.rs` embeds), so start as "iboard" and
@@ -115,6 +118,18 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| Ok(Box::new(app::IboardApp::new(cc, located, app_title)))),
     )
+}
+
+/// The Logo's app icon, for the Dock: the "i" whose dot is a card, on its
+/// dark tile (see `design/components/Logo`).
+fn app_icon() -> Option<egui::IconData> {
+    let png = include_bytes!("../assets/iboard-256.png");
+    let image = image::load_from_memory(png).ok()?.into_rgba8();
+    Some(egui::IconData {
+        width: image.width(),
+        height: image.height(),
+        rgba: image.into_raw(),
+    })
 }
 
 /// Text-mode dump of the board, useful for scripting and for checking discovery

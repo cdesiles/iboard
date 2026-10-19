@@ -39,10 +39,13 @@ impl IboardApp {
             .and_then(|drag| drag.path.parent().map(Path::to_path_buf));
         let mut dragged_column = None;
         let mut intents = Vec::new();
-        egui::ScrollArea::horizontal()
-            .id_salt("board")
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
+        theme::scroll_area(
+            ui,
+            egui::ScrollArea::horizontal()
+                .id_salt("board")
+                .auto_shrink([false, false]),
+            true,
+            |ui| {
                 ui.add_space(gutter);
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = gutter;
@@ -87,7 +90,8 @@ impl IboardApp {
                     // Ends the scrollable width one gutter after the last column.
                     ui.allocate_space(Vec2::ZERO);
                 });
-            });
+            },
+        );
         self.dragged_column = dragged_column;
         self.apply(intents);
     }
@@ -211,10 +215,13 @@ pub(super) fn column_ui(
             if let Some(composer) = composer {
                 composer_ui(ui, composer, column, &folder, &mut intents);
             }
-            egui::ScrollArea::vertical()
-                .id_salt(("column", view.index))
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
+            theme::scroll_area(
+                ui,
+                egui::ScrollArea::vertical()
+                    .id_salt(("column", view.index))
+                    .auto_shrink([false, false]),
+                true,
+                |ui| {
                     ui.set_width(view.width);
                     ui.spacing_mut().item_spacing.y = theme::SPACE_3;
                     let cards = column_cards(ui, view, &visible, &folder, &mut intents);
@@ -228,7 +235,8 @@ pub(super) fn column_ui(
                     {
                         anchor = drop_line(ui, &cards);
                     }
-                });
+                },
+            );
         },
     );
     highlight_foreign_drop(ui, column, drop_rect, &drop_response);

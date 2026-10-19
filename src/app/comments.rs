@@ -291,7 +291,8 @@ fn note_composer(ui: &mut egui::Ui, draft: &mut NoteDraft) -> Option<NoteAction>
         .inner_margin(Margin::same(theme::SPACE_3 as i8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            let field = ui.add(
+            let field = widgets::text_entry(
+                ui,
                 egui::TextEdit::multiline(&mut draft.text)
                     .hint_text(RichText::new("What should the review know?").color(p.ink_faint))
                     .font(theme::ui_body())

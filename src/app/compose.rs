@@ -206,7 +206,7 @@ impl IboardApp {
     }
 }
 
-/// The quick-add composer: a card framed in `accent` with a reserved title
+/// The quick-add composer: a card framed in `focus`, with its halo, with a reserved title
 /// row, a description that grows from 3 to 8 lines, and the file it will
 /// write underneath. See `design/components/QuickAdd`.
 pub(super) fn composer_ui(
@@ -220,7 +220,7 @@ pub(super) fn composer_ui(
     composer_enter(ui, composer, intents);
     let frame = Frame::new()
         .fill(p.surface)
-        .stroke(Stroke::new(2.0, p.accent))
+        .stroke(Stroke::new(1.0, p.accent))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .inner_margin(Margin::symmetric(
             theme::SPACE_4 as i8,
@@ -233,6 +233,7 @@ pub(super) fn composer_ui(
             description_field(ui, composer, intents);
             composer_meta(ui, composer, column, folder);
         });
+    widgets::paint_focus_halo(ui, frame.response.rect, theme::RADIUS_MD);
 
     // A click anywhere else on the board (another card, blank space) adds
     // what was typed and closes the composer.
@@ -437,11 +438,14 @@ fn description_field(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut V
     let p = theme::palette(ui);
     let naming = composer.stage == TitleStage::Naming;
     let line = 18.0;
-    let scroll = egui::ScrollArea::vertical()
-        .id_salt("composer-description-scroll")
-        .max_height(8.0 * line)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
+    let scroll = theme::scroll_area(
+        ui,
+        egui::ScrollArea::vertical()
+            .id_salt("composer-description-scroll")
+            .max_height(8.0 * line)
+            .auto_shrink([false, true]),
+        true,
+        |ui| {
             ui.add_enabled(
                 !naming,
                 egui::TextEdit::multiline(&mut composer.description)
@@ -458,7 +462,8 @@ fn description_field(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut V
                         Key::Enter,
                     ))),
             )
-        });
+        },
+    );
     let capped = scroll.content_size.y > scroll.inner_rect.height() + 1.0;
     if capped && scroll.state.offset.y + scroll.inner_rect.height() < scroll.content_size.y - 1.0 {
         fade_out(ui, scroll.inner_rect, p.surface);

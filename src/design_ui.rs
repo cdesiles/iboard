@@ -183,6 +183,13 @@ impl Default for Panel {
     }
 }
 
+/// A vertical scroll area that fills the space it is given.
+fn filling(salt: &str) -> egui::ScrollArea {
+    egui::ScrollArea::vertical()
+        .id_salt(salt)
+        .auto_shrink(false)
+}
+
 impl Panel {
     /// Adopt a render the host started for `name`.
     pub fn start_render(&mut self, name: String, job: Job<Result<PathBuf, String>>) {
@@ -302,12 +309,9 @@ impl Panel {
             );
             ui.separator();
             ui.vertical(|ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("design-content")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        self.content(ui, system, render_available, agent_ready, &mut action);
-                    });
+                theme::scroll_area(ui, filling("design-content"), true, |ui| {
+                    self.content(ui, system, render_available, agent_ready, &mut action);
+                });
             });
         });
         action
@@ -317,7 +321,8 @@ impl Panel {
     /// other — the categories, and the Components list.
     fn sidebar(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
         ui.add_space(theme::SPACE_2);
-        ui.add(
+        widgets::text_entry(
+            ui,
             egui::TextEdit::singleline(&mut self.search)
                 .hint_text("Search")
                 .desired_width(f32::INFINITY),
@@ -351,10 +356,9 @@ impl Panel {
         if self.components_open {
             main.disable();
         }
-        egui::ScrollArea::vertical()
-            .id_salt("rail-main-scroll")
-            .auto_shrink([false, false])
-            .show(&mut main, |ui| self.categories(ui, system));
+        theme::scroll_area(&mut main, filling("rail-main-scroll"), true, |ui| {
+            self.categories(ui, system);
+        });
 
         let mut components = page(ui, "rail-components", (1.0 - slide) * width);
         if !self.components_open {
@@ -364,10 +368,14 @@ impl Panel {
             self.components_open = false;
         }
         components.add_space(theme::SPACE_2);
-        egui::ScrollArea::vertical()
-            .id_salt("rail-components-scroll")
-            .auto_shrink([false, false])
-            .show(&mut components, |ui| self.component_rows(ui, system));
+        theme::scroll_area(
+            &mut components,
+            filling("rail-components-scroll"),
+            true,
+            |ui| {
+                self.component_rows(ui, system);
+            },
+        );
     }
 
     fn categories(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
@@ -651,25 +659,17 @@ impl Panel {
             .num_columns(2)
             .spacing([8.0, 6.0])
             .show(ui, |ui| {
-                ui.label(egui::RichText::new("Name").color(p.ink_muted).size(11.0));
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.name)
-                        .hint_text("Toast")
-                        .desired_width(240.0),
-                );
-                ui.end_row();
-
-                ui.label(egui::RichText::new("Group").color(p.ink_muted).size(11.0));
-                ui.add(egui::TextEdit::singleline(&mut self.group).desired_width(240.0));
-                ui.end_row();
-
-                ui.label(egui::RichText::new("Intent").color(p.ink_muted).size(11.0));
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.intent)
-                        .hint_text("Transient confirmation")
-                        .desired_width(240.0),
-                );
-                ui.end_row();
+                let fields = [
+                    ("Name", &mut self.name, "Toast"),
+                    ("Group", &mut self.group, ""),
+                    ("Intent", &mut self.intent, "Transient confirmation"),
+                ];
+                for (label, text, hint) in fields {
+                    ui.label(egui::RichText::new(label).color(p.ink_muted).size(11.0));
+                    let edit = egui::TextEdit::singleline(text).hint_text(hint);
+                    widgets::text_entry(ui, edit.desired_width(240.0));
+                    ui.end_row();
+                }
             });
         if agent_ready {
             ui.checkbox(&mut self.draft, "Draft the preview with the agent");

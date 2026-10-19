@@ -346,7 +346,8 @@ fn find_bar(ui: &mut egui::Ui, view: &mut DiffView) {
     let mut step = None;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-        let field = ui.add(
+        let field = widgets::text_entry(
+            ui,
             egui::TextEdit::singleline(&mut find.text)
                 .id(id)
                 .hint_text(RichText::new("Find in the diff").color(p.ink_faint))
@@ -382,10 +383,13 @@ fn file_list(ui: &mut egui::Ui, view: &mut DiffView) {
         Layout::top_down(Align::Min),
         |ui| {
             ui.set_width(FILES_W);
-            egui::ScrollArea::vertical()
-                .id_salt("diff-files")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
+            theme::scroll_area(
+                ui,
+                egui::ScrollArea::vertical()
+                    .id_salt("diff-files")
+                    .auto_shrink([false, false]),
+                true,
+                |ui| {
                     for (at, row) in view.rows.iter().enumerate() {
                         let Row::File(c, f) = *row else {
                             continue;
@@ -411,7 +415,8 @@ fn file_list(ui: &mut egui::Ui, view: &mut DiffView) {
                             target = Some(at);
                         }
                     }
-                });
+                },
+            );
         },
     );
     if let Some(at) = target {
@@ -447,7 +452,7 @@ fn diff_rows(ui: &mut egui::Ui, view: &mut DiffView) {
     }
     let dark = ui.visuals().dark_mode;
     let mut expand = None;
-    let output = area.show_rows(ui, ROW_H, view.rows.len(), |ui, range| {
+    let output = theme::scroll_rows(ui, area, true, ROW_H, view.rows.len(), |ui, range| {
         ui.spacing_mut().item_spacing.y = 0.0;
         for at in range {
             let row = view.rows[at];

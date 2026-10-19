@@ -223,12 +223,15 @@ impl Dialog {
                     .inner_margin(Margin::same(theme::SPACE_5 as i8))
                     .show(ui, |ui| {
                         ui.set_width(DIALOG_WIDTH - 2.0 * theme::SPACE_5);
-                        egui::ScrollArea::vertical()
-                            .id_salt("settings-body")
-                            .min_scrolled_height(DIALOG_BODY_H)
-                            .max_height(DIALOG_BODY_H)
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| match self.tab {
+                        theme::scroll_area(
+                            ui,
+                            egui::ScrollArea::vertical()
+                                .id_salt("settings-body")
+                                .min_scrolled_height(DIALOG_BODY_H)
+                                .max_height(DIALOG_BODY_H)
+                                .auto_shrink([false, false]),
+                            true,
+                            |ui| match self.tab {
                                 Tab::General => self.general_body(ui),
                                 Tab::Review => {
                                     self.review_seen = true;
@@ -243,7 +246,8 @@ impl Dialog {
                                     self.labels_seen = true;
                                     self.labels_body(ui);
                                 }
-                            });
+                            },
+                        );
                     });
                 widgets::rule(ui);
                 match widgets::modal_footer(ui, saved_to, "Save") {

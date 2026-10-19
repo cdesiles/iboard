@@ -261,7 +261,7 @@ fn a_choice_is_picked_then_sent_with_its_note() {
     harness.run_steps(2);
     assert!(
         harness
-            .query_by_label("Round 1: you chose Ask them first")
+            .query_by_label("Round 1 · you chose Ask them first, with the note “This week.”")
             .is_some()
     );
 }

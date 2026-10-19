@@ -233,7 +233,11 @@ impl IboardApp {
             ui,
             egui::Id::new("review-button"),
             ButtonKind::Review,
-            Some(Icon::Review),
+            Some(if running {
+                Icon::Thinking
+            } else {
+                Icon::Review
+            }),
             label,
             Some(if running { "⌘⇧R" } else { "⌘R" }),
             running || configured,
@@ -389,7 +393,8 @@ impl IboardApp {
                             ReviewStatus::Done { .. } | ReviewStatus::Failed { .. }
                         ) {
                             ui.add_space(theme::SPACE_2);
-                            ui.add(
+                            widgets::text_entry(
+                                ui,
                                 egui::TextEdit::singleline(&mut follow_up)
                                     .hint_text(
                                         RichText::new("Ask again: make it smaller…")
@@ -720,7 +725,7 @@ fn review_footer(
     action
 }
 
-/// The spinner, the time the agent has taken, and the step it is on:
+/// The Thinking mark, the time the agent has taken, and the step it is on:
 /// "0:42 · Reading app/review.rs…".
 pub(super) fn running_line(ui: &mut egui::Ui, elapsed: Duration, step: Option<String>) {
     let p = theme::palette(ui);
@@ -729,7 +734,7 @@ pub(super) fn running_line(ui: &mut egui::Ui, elapsed: Duration, step: Option<St
     let step = step.unwrap_or_else(|| "The agent is reading the issue…".to_string());
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-        ui.spinner();
+        widgets::thinking(ui, 14.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(RichText::new(clock).font(theme::meta()).color(p.ink_muted));
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {

@@ -99,9 +99,12 @@ impl FilterBar {
             rect,
             CornerRadius::same(theme::RADIUS_SM),
             p.surface,
-            Stroke::new(if open { 1.5 } else { 1.0 }, edge),
+            Stroke::new(1.0, edge),
             StrokeKind::Inside,
         );
+        if open {
+            widgets::paint_focus_halo(ui, rect, theme::RADIUS_SM);
+        }
         rect
     }
 

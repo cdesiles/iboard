@@ -20,8 +20,8 @@ mod tabs;
 
 pub use button::{ButtonKind, CARD_ACTION, Tone, button, icon_button, split_button};
 pub use dialog::{
-    FooterClick, field_label, focus_ring, help, modal_footer, modal_header, paint_focus_ring,
-    popover_frame, rule, segmented, text_field,
+    FooterClick, field_label, focus_halo, focus_ring, help, modal_footer, modal_header,
+    paint_focus_halo, paint_focus_ring, popover_frame, rule, segmented, text_entry, text_field,
 };
 pub use menu::{MenuOption, menu_group, menu_note, menu_option, menu_row, menu_separator};
 pub use pill::{chip, filter_token, label_pill, pill, tag};
@@ -35,6 +35,20 @@ fn galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<Galley> {
         f32::INFINITY,
         egui::FontSelection::Default,
     )
+}
+
+/// The Thinking mark, `height` tall (28 in panels, 14 inline): an agent is
+/// at work. It rests as the logo when reduced motion is on.
+pub fn thinking(ui: &mut Ui, height: f32) -> Response {
+    let p = theme::palette(ui);
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(height / 2.0, height), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Working"));
+    let time = (!theme::reduced_motion(ui.ctx())).then(|| ui.input(|i| i.time));
+    if time.is_some() {
+        ui.ctx().request_repaint();
+    }
+    theme::thinking_mark(ui.painter(), rect, time, p.ink, p.accent);
+    response
 }
 
 /// The 14pt Auto checkbox: `accent` fill and an `on-accent` tick when checked.

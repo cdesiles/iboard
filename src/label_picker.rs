@@ -131,6 +131,23 @@ fn anchor(ctx: &egui::Context, path: &Path) -> Option<Rect> {
 }
 
 /// Draws the popup. `has` are the issue's labels, `board` every label on the
+/// "ON THIS BOARD", and how many labels show under it.
+fn group_head(ui: &mut egui::Ui, count: usize) {
+    let p = theme::palette(ui);
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new("ON THIS BOARD")
+                .font(theme::ui_label())
+                .color(p.ink_muted),
+        );
+        ui.label(
+            egui::RichText::new(count.to_string())
+                .font(theme::meta())
+                .color(p.ink_muted),
+        );
+    });
+}
+
 /// board, most used first.
 pub fn show(
     ui: &mut egui::Ui,
@@ -178,7 +195,8 @@ pub fn show(
                     ui.spacing_mut().item_spacing.y = 6.0;
 
                     // 1. The field, focused on open.
-                    let field = ui.add(
+                    let field = widgets::text_entry(
+                        ui,
                         egui::TextEdit::singleline(&mut picker.text)
                             .id(field_id)
                             .hint_text("Add a label")
@@ -210,18 +228,7 @@ pub fn show(
                         .iter()
                         .filter(|name| typed.as_deref().is_none_or(|text| name.contains(text)))
                         .collect();
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("ON THIS BOARD")
-                                .font(theme::ui_label())
-                                .color(p.ink_muted),
-                        );
-                        ui.label(
-                            egui::RichText::new(shown.len().to_string())
-                                .font(theme::meta())
-                                .color(p.ink_muted),
-                        );
-                    });
+                    group_head(ui, shown.len());
 
                     // 4. The labels, wrapping, scrolling after five rows.
                     let mut pill_ids = Vec::new();
@@ -232,11 +239,14 @@ pub fn show(
                                 .color(p.ink_muted),
                         );
                     } else {
-                        egui::ScrollArea::vertical()
-                            .id_salt("label_picker_list")
-                            .max_height(LIST_MAX_H)
-                            .auto_shrink([false, true])
-                            .show(ui, |ui| {
+                        theme::scroll_area(
+                            ui,
+                            egui::ScrollArea::vertical()
+                                .id_salt("label_picker_list")
+                                .max_height(LIST_MAX_H)
+                                .auto_shrink([false, true]),
+                            true,
+                            |ui| {
                                 ui.horizontal_wrapped(|ui| {
                                     ui.spacing_mut().item_spacing = Vec2::splat(4.0);
                                     for name in &shown {
@@ -265,7 +275,8 @@ pub fn show(
                                         }
                                     }
                                 });
-                            });
+                            },
+                        );
                     }
                     // `↓` leaves the field for the first label.
                     if field.has_focus()

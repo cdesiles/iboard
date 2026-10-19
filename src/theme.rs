@@ -4,6 +4,14 @@
 //! Sizes are points, which map 1:1 to egui points. egui has no font weights, so
 //! the Medium and SemiBold faces are registered as their own named families.
 
+mod divider;
+mod scroll;
+mod thinking;
+
+pub use divider::{pane_divider, pane_split};
+pub use scroll::{scroll_area, scroll_rows};
+pub use thinking::thinking_mark;
+
 use std::sync::Arc;
 
 use crate::general::Appearance;
@@ -34,6 +42,8 @@ pub struct Palette {
     pub ink_faint: Color32,
     /// Selection, primary button fill, links, focus ring.
     pub accent: Color32,
+    /// The soft 3pt glow around a focused text field, outside its border.
+    pub focus_halo: Color32,
     pub accent_soft: Color32,
     pub on_accent: Color32,
     pub status_todo: Color32,
@@ -73,6 +83,7 @@ pub const LIGHT: Palette = Palette {
     ink_muted: hex(0x4d5562),
     ink_faint: hex(0x626a78),
     accent: hex(0x2b54c4),
+    focus_halo: Color32::from_rgba_premultiplied(9, 17, 39, 51),
     accent_soft: hex(0xe4eafb),
     on_accent: hex(0xffffff),
     status_todo: hex(0x5e6878),
@@ -100,6 +111,7 @@ pub const DARK: Palette = Palette {
     ink_muted: hex(0xa7aeb9),
     ink_faint: hex(0x8c939e),
     accent: hex(0x86a4ff),
+    focus_halo: Color32::from_rgba_premultiplied(35, 43, 66, 66),
     accent_soft: hex(0x222c47),
     on_accent: hex(0x0b1433),
     status_todo: hex(0xa4adba),
@@ -182,6 +194,13 @@ pub const STATUSBAR_H: f32 = 24.0;
 pub const COLUMN_MIN: f32 = 200.0;
 pub const COLUMN_MAX: f32 = 420.0;
 pub const READER_MAX: f32 = 720.0;
+/// Scrollbar thumb at rest and while scrolling.
+pub const SCROLL_THUMB: f32 = 4.0;
+/// Scrollbar thumb under the pointer and while dragged.
+pub const SCROLL_THUMB_HOVER: f32 = 8.0;
+/// The strip along a pane's edge that points at its scrollbar.
+pub const SCROLL_HIT: f32 = 12.0;
+pub const SCROLL_THUMB_MIN: f32 = 24.0;
 
 // Font families beyond egui's two built-in ones.
 const SANS_MEDIUM: &str = "plex-sans-medium";
@@ -373,6 +392,7 @@ fn style(theme: Theme, p: &Palette) -> egui::Style {
     spacing.icon_spacing = 6.0;
     spacing.window_margin = Margin::same(SPACE_4 as i8);
     spacing.menu_margin = Margin::same(SPACE_2 as i8);
+    spacing.scroll = scroll::style();
     style
 }
 
@@ -401,7 +421,7 @@ fn visuals(theme: Theme, p: &Palette) -> egui::Visuals {
     v.widgets.open = control(p.surface_hover, p.line_strong);
 
     v.selection.bg_fill = p.accent_soft;
-    v.selection.stroke = Stroke::new(2.0, p.accent);
+    v.selection.stroke = Stroke::new(1.0, p.accent);
     v.hyperlink_color = p.accent;
     v.weak_text_color = Some(p.ink_muted);
     v.faint_bg_color = p.surface_sunken;
@@ -465,6 +485,8 @@ pub enum Icon {
     Stop,
     /// A prompt in a rounded square: the build agent's log.
     Log,
+    /// The iboard "i" rocking its card: an agent is at work.
+    Thinking,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -611,6 +633,7 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             let radius = CornerRadius::same((2.0 * s).round() as u8);
             painter.rect_stroke(square, radius, stroke, egui::StrokeKind::Middle);
         }
+        Icon::Thinking => thinking::icon(painter, rect),
         Icon::Log => {
             // Lucide's square-terminal.
             let square = Rect::from_min_max(at(3.0, 3.0), at(21.0, 21.0));
@@ -674,7 +697,7 @@ mod tests {
             .unwrap_or_else(|| panic!("tokens.json has no {name}"))
     }
 
-    fn colors(p: &Palette) -> [(&'static str, Color32); 24] {
+    fn colors(p: &Palette) -> [(&'static str, Color32); 25] {
         [
             ("bg", p.bg),
             ("surface", p.surface),
@@ -686,6 +709,7 @@ mod tests {
             ("ink-muted", p.ink_muted),
             ("ink-faint", p.ink_faint),
             ("accent", p.accent),
+            ("focus-halo", p.focus_halo),
             ("accent-soft", p.accent_soft),
             ("on-accent", p.on_accent),
             ("status-todo", p.status_todo),
@@ -809,6 +833,10 @@ mod tests {
             ("statusbar-h", STATUSBAR_H),
             ("column-max", COLUMN_MAX),
             ("reader-max", READER_MAX),
+            ("scroll-thumb", SCROLL_THUMB),
+            ("scroll-thumb-hover", SCROLL_THUMB_HOVER),
+            ("scroll-hit", SCROLL_HIT),
+            ("scroll-thumb-min", SCROLL_THUMB_MIN),
         ];
         for (name, points) in points {
             let value = find(all(), name).value.theme("light").unwrap();

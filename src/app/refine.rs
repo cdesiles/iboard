@@ -1,7 +1,6 @@
 //! Refinement: a conversation with an agent that challenges an issue until it
 //! is a clear spec worth building, or plainly not worth building.
 
-use super::review::running_line;
 use super::*;
 use iboard::markdown;
 
@@ -13,6 +12,18 @@ const NARROW_BELOW: f32 = 820.0;
 
 /// The width of the choices beside the reasoning.
 const PICK_WIDTH: std::ops::RangeInclusive<f32> = 320.0..=420.0;
+
+/// The narrowest the reasoning gets beside the choices (`column-min`).
+const WHY_MIN: f32 = 280.0;
+
+/// The divider's hit area, centred on its 1pt line.
+const INLINE_HIT: f32 = 9.0;
+
+/// The reasoning's scrollbar keeps this far from the divider.
+const SCROLL_STEP_IN: f32 = 4.0;
+
+/// Past this many seconds the waiting line says it is slow.
+const SLOW_SECS: u64 = 20;
 
 /// Past this height the reasoning scrolls on its own.
 const WHY_MAX_H: f32 = 520.0;
@@ -98,6 +109,21 @@ pub(super) struct Refinement {
 impl Refinement {
     pub(super) fn is_running(&self) -> bool {
         self.running.is_some()
+    }
+
+    /// The round on screen: one more than the answers sent, counting the
+    /// one the challenger is reading.
+    fn round(&self) -> usize {
+        let sent = self
+            .turns
+            .iter()
+            .filter(|turn| turn.by == Speaker::Author)
+            .count();
+        if self.is_running() {
+            sent.max(1)
+        } else {
+            sent + 1
+        }
     }
 
     /// The resolutions the challenger's last turn offers, while it waits.
@@ -428,57 +454,77 @@ fn refine_ui(
     refine: &mut Refinement,
     cache: &mut CommonMarkCache,
 ) -> Option<RefineAction> {
-    let p = theme::palette(ui);
     let keyed = refine_keys(ui, refine);
     ui.set_width(size.x);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
-    refine_head(ui, shown, &refine.agent);
+    refine_head(ui, shown, &refine.agent, refine.round());
     let pane_h = (size.y - CHROME_H).max(4.0 * theme::CONTROL_H);
     let floor = MIN_PANE_H.min(pane_h);
     let narrow = size.x < NARROW_BELOW;
     let mut unfold = false;
     if narrow {
-        egui::ScrollArea::vertical()
-            .id_salt("refine-panes")
-            .max_height(pane_h)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
+        theme::scroll_area(
+            ui,
+            egui::ScrollArea::vertical()
+                .id_salt("refine-panes")
+                .max_height(pane_h)
+                .auto_shrink([false, true]),
+            true,
+            |ui| {
                 ui.set_min_height(floor);
                 unfold = why_pane(ui, refine, cache, true);
                 widgets::rule(ui);
                 pick_pane(ui, refine, 0.0);
-            });
+            },
+        );
     } else {
         ui.horizontal_top(|ui| {
-            let pick_w = (size.x * 0.38).clamp(*PICK_WIDTH.start(), *PICK_WIDTH.end());
+            let panes = Rect::from_min_size(ui.cursor().min, Vec2::new(size.x, pane_h));
+            let default = (size.x * 0.38).clamp(*PICK_WIDTH.start(), *PICK_WIDTH.end());
+            let range = *PICK_WIDTH.start()..=(size.x - WHY_MIN).min(*PICK_WIDTH.end());
+            let split = egui::Id::new("pane-split-refine");
+            let pick_w =
+                theme::pane_split(ui.ctx(), split, default).clamp(*range.start(), *range.end());
             let why = ui.allocate_ui_with_layout(
-                Vec2::new(size.x - pick_w, pane_h),
+                Vec2::new(size.x - pick_w - SCROLL_STEP_IN, pane_h),
                 Layout::top_down(Align::Min),
                 |ui| {
                     ui.set_min_height(floor);
-                    egui::ScrollArea::vertical()
-                        .id_salt("refine-why")
-                        .max_height(pane_h.min(WHY_MAX_H))
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| why_pane(ui, refine, cache, false))
-                        .inner
+                    theme::scroll_area(
+                        ui,
+                        egui::ScrollArea::vertical()
+                            .id_salt("refine-why")
+                            .max_height(pane_h.min(WHY_MAX_H))
+                            .auto_shrink([false, true]),
+                        true,
+                        |ui| why_pane(ui, refine, cache, false),
+                    )
+                    .inner
                 },
             );
             unfold = why.inner;
+            ui.add_space(SCROLL_STEP_IN);
             let pick = ui.allocate_ui_with_layout(
                 Vec2::new(pick_w, pane_h),
                 Layout::top_down(Align::Min),
                 |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("refine-pick")
-                        .max_height(pane_h)
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| pick_pane(ui, refine, why.response.rect.height()));
+                    theme::scroll_area(
+                        ui,
+                        egui::ScrollArea::vertical()
+                            .id_salt("refine-pick")
+                            .max_height(pane_h)
+                            .auto_shrink([false, true]),
+                        true,
+                        |ui| pick_pane(ui, refine, why.response.rect.height()),
+                    );
                 },
             );
             let rect = pick.response.rect;
-            ui.painter()
-                .vline(rect.min.x, rect.y_range(), egui::Stroke::new(1.0, p.line));
+            let gutter = Rect::from_x_y_ranges(
+                rect.min.x - INLINE_HIT / 2.0..=rect.min.x + INLINE_HIT / 2.0,
+                rect.y_range(),
+            );
+            theme::pane_divider(ui, split, panes, gutter, range, default, true);
         });
     }
     if unfold {
@@ -490,7 +536,7 @@ fn refine_ui(
 
 /// "Refining `todo/x.md`", the role as a pill, and the agent at the right,
 /// which truncates first.
-fn refine_head(ui: &mut egui::Ui, shown: &str, agent: &str) {
+fn refine_head(ui: &mut egui::Ui, shown: &str, agent: &str, round: usize) {
     let p = theme::palette(ui);
     Frame::new()
         .fill(p.review_soft)
@@ -513,6 +559,13 @@ fn refine_head(ui: &mut egui::Ui, shown: &str, agent: &str) {
                     let mono = egui::FontId::new(12.0, theme::edit_body().family);
                     ui.label(review(shown, mono));
                     role_pill(ui, "Challenger");
+                    if round > 1 {
+                        ui.label(
+                            RichText::new(format!("round {round}"))
+                                .font(theme::meta())
+                                .color(p.review),
+                        );
+                    }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.add(
                             egui::Label::new(
@@ -566,6 +619,10 @@ fn why_pane(
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = theme::SPACE_4;
         rounds(ui, refine);
+        if refine.is_running() {
+            thinking_why(ui);
+            return;
+        }
         let Some((at, turn)) = refine
             .turns
             .iter()
@@ -597,7 +654,7 @@ fn why_pane(
     unfold
 }
 
-/// One line per answer already sent: "Round 1: you chose Split it".
+/// One receipt per answer already sent: "Round 1 · you chose **Split it**".
 fn rounds(ui: &mut egui::Ui, refine: &Refinement) {
     let p = theme::palette(ui);
     let answers = refine
@@ -609,24 +666,38 @@ fn rounds(ui: &mut egui::Ui, refine: &Refinement) {
         let offered = at
             .checked_sub(1)
             .map_or(&[][..], |before| &refine.turns[before].options);
-        let line = match offered
+        let round = round + 1;
+        let (verb, said, note) = match offered
             .iter()
             .find(|option| turn.text.starts_with(option.as_str()))
         {
-            Some(option) => format!(
-                "Round {}: you chose {}",
-                round + 1,
-                agent::choice_parts(option).0
+            Some(option) => (
+                "you chose",
+                agent::choice_parts(option).0.to_string(),
+                turn.text[option.len()..].trim(),
             ),
-            None => format!(
-                "Round {}: you answered “{}”",
-                round + 1,
-                turn.text.lines().next().unwrap_or_default()
+            None => (
+                "you answered",
+                format!("“{}”", turn.text.lines().next().unwrap_or_default()),
+                "",
             ),
         };
-        ui.add(
-            egui::Label::new(RichText::new(line).font(theme::meta()).color(p.ink_muted)).truncate(),
-        );
+        let mut job = egui::text::LayoutJob::default();
+        let muted = egui::TextFormat::simple(theme::ui_small(), p.ink_muted);
+        let strong = egui::TextFormat::simple(theme::ui_button(), p.ink);
+        job.append(&format!("Round {round} · {verb} "), 0.0, muted.clone());
+        job.append(&said, 0.0, strong);
+        if let Some(first) = note.lines().next().filter(|line| !line.is_empty()) {
+            job.append(&format!(", with the note “{first}”"), 0.0, muted);
+        }
+        Frame::new()
+            .fill(p.surface_sunken)
+            .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+            .inner_margin(Margin::symmetric(10, 6))
+            .show(ui, |ui| {
+                ui.set_max_width(MEASURE);
+                ui.add(egui::Label::new(job).truncate());
+            });
     }
 }
 
@@ -709,9 +780,9 @@ fn pick_pane(
             ui.set_width(ui.available_width());
             ui.set_min_height((min_height - 40.0).max(0.0));
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            if let Some((answer, progress)) = &refine.running {
-                let step = agent::step(progress).or(Some("Challenger is thinking…".into()));
-                running_line(ui, answer.elapsed(), step);
+            if let Some((answer, _)) = &refine.running {
+                let first = !refine.turns.iter().any(|turn| turn.by == Speaker::Author);
+                thinking_pick(ui, answer.elapsed(), first);
                 return;
             }
             let options = refine.options().to_vec();
@@ -849,15 +920,17 @@ fn note_field(ui: &mut egui::Ui, refine: &mut Refinement, choices: usize) {
             .font(theme::ui_small())
             .color(p.ink_muted),
     );
-    ui.add(
-        egui::TextEdit::multiline(&mut refine.note)
-            .id(note_id())
-            .font(theme::ui_body())
-            .desired_rows(3)
-            .desired_width(f32::INFINITY)
-            .lock_focus(true),
-    )
-    .labelled_by(label.id);
+    let note = ui
+        .add(
+            egui::TextEdit::multiline(&mut refine.note)
+                .id(note_id())
+                .font(theme::ui_body())
+                .desired_rows(3)
+                .desired_width(f32::INFINITY)
+                .lock_focus(true),
+        )
+        .labelled_by(label.id);
+    widgets::focus_halo(ui, &note);
 }
 
 /// The panel's keys, before its widgets read the input: `1`–`9` pick or
@@ -956,12 +1029,12 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
     if refine.is_running() {
         button(
             ui,
-            ButtonKind::Secondary,
-            "Stop",
-            Some("esc"),
-            RefineAction::Stop,
+            ButtonKind::Disabled,
+            "Send",
+            Some("⌘↩"),
+            RefineAction::Send,
         );
-        button(ui, ButtonKind::Ghost, "Hide", None, RefineAction::Hide);
+        button(ui, ButtonKind::Ghost, "Cancel", None, RefineAction::Stop);
         return action;
     }
     let send = if refine.answer().is_some() {
@@ -1014,7 +1087,7 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
 /// The keys that apply where the keyboard is.
 fn footer_hints(ui: &mut egui::Ui, refine: &Refinement) {
     if refine.is_running() {
-        widgets::hint(ui, "esc", "stop");
+        widgets::hint(ui, "esc", "cancel");
         return;
     }
     if ui.memory(|m| m.has_focus(note_id())) {
@@ -1025,4 +1098,99 @@ fn footer_hints(ui: &mut egui::Ui, refine: &Refinement) {
         widgets::hint(ui, "tab", "note");
     }
     widgets::hint(ui, "esc", "hide");
+}
+
+/// The status line while the challenger works: the mark, what it waits for
+/// and the whole seconds spent; past 20s, that it is slow and how to leave.
+fn thinking_line(ui: &mut egui::Ui, elapsed: std::time::Duration, first: bool) {
+    let p = theme::palette(ui);
+    let seconds = elapsed.as_secs();
+    let slow = seconds >= SLOW_SECS;
+    let line = match (slow, first) {
+        (true, _) => "Still working",
+        (false, true) => "Challenger is reading the issue",
+        (false, false) => "Challenger is weighing your answer",
+    };
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        widgets::thinking(ui, 28.0);
+        ui.label(RichText::new(line).font(theme::ui_button()).color(p.ink));
+        ui.label(
+            RichText::new(format!("{seconds}s"))
+                .font(theme::meta())
+                .color(p.ink_muted),
+        );
+    });
+    if slow {
+        widgets::help(
+            ui,
+            "Longer issues can take up to a minute. esc cancels and keeps your answer.",
+            p.ink_muted,
+        );
+    }
+}
+
+/// The pick pane while the challenger works: the status line, four
+/// placeholder choices and the note, not yet open.
+fn thinking_pick(ui: &mut egui::Ui, elapsed: std::time::Duration, first: bool) {
+    let p = theme::palette(ui);
+    thinking_line(ui, elapsed, first);
+    for key in 1..=4 {
+        Frame::new()
+            .fill(p.surface)
+            .stroke(Stroke::new(1.0, p.line))
+            .corner_radius(CornerRadius::same(theme::RADIUS_MD))
+            .inner_margin(Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    ui.label(
+                        RichText::new(key.to_string())
+                            .font(theme::meta())
+                            .color(p.ink_faint),
+                    );
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 7.0;
+                        skeleton(ui, 0.55, 10.0);
+                        skeleton(ui, 0.85, 8.0);
+                    });
+                });
+            });
+    }
+    ui.add_space(theme::SPACE_2);
+    ui.label(
+        RichText::new("Available once the Challenger answers")
+            .font(theme::ui_small())
+            .color(p.ink_muted),
+    );
+}
+
+/// The why pane while the challenger works: bars where the TL;DR and two
+/// paragraphs will land, so nothing jumps when they do.
+fn thinking_why(ui: &mut egui::Ui) {
+    ui.scope(|ui| {
+        ui.set_max_width(MEASURE);
+        ui.spacing_mut().item_spacing.y = 9.0;
+        skeleton(ui, 0.96, 12.0);
+        skeleton(ui, 0.70, 12.0);
+        ui.add_space(10.0);
+        for widths in [&[0.98, 0.94, 0.97, 0.60][..], &[0.95, 0.99, 0.42]] {
+            for &width in widths {
+                skeleton(ui, width, 8.0);
+            }
+            ui.add_space(10.0);
+        }
+    });
+}
+
+/// A placeholder bar, `share` of the width: `surface-sunken`, no shimmer.
+fn skeleton(ui: &mut egui::Ui, share: f32, height: f32) {
+    let width = ui.available_width() * share;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    ui.painter().rect_filled(
+        rect,
+        CornerRadius::same((height / 2.0) as u8),
+        theme::palette(ui).surface_sunken,
+    );
 }

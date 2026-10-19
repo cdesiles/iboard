@@ -6,6 +6,9 @@ use super::comments::{NoteAction, Notes, block_notes, outdated_notes};
 use super::*;
 use iboard::markdown;
 
+/// The narrowest a pane beside the Reader leaves it (`column-min`).
+const PANE_MIN: f32 = 280.0;
+
 /// The reader's own state.
 pub(super) struct Reader {
     pub(super) cache: CommonMarkCache,
@@ -53,16 +56,21 @@ impl IboardApp {
         let logged = self.agent_log_open(path);
         if reviewed || logged {
             let p = theme::palette(ui);
-            let widest = (ui.available_width() * 0.7).max(REVIEW_PANEL_WIDTH);
+            let panes = ui.max_rect();
+            let widest = (panes.width() - PANE_MIN).max(REVIEW_PANEL_WIDTH);
+            let range = REVIEW_PANEL_WIDTH..=widest;
+            let split = egui::Id::new(("pane-split", if reviewed { "review" } else { "log" }));
+            let width = theme::pane_split(ui.ctx(), split, REVIEW_PANEL_WIDTH)
+                .clamp(*range.start(), *range.end());
+            let gutter = theme::SPACE_5;
             let panel = egui::Panel::right("review")
-                .default_size(REVIEW_PANEL_WIDTH)
-                .size_range(REVIEW_PANEL_WIDTH..=widest)
-                .resizable(true)
+                .exact_size(width)
+                .resizable(false)
                 .frame(Frame::new().fill(p.bg).inner_margin(Margin {
-                    left: theme::SPACE_5 as i8,
-                    right: theme::SPACE_5 as i8,
-                    top: theme::SPACE_5 as i8,
-                    bottom: theme::SPACE_5 as i8,
+                    left: gutter as i8,
+                    right: gutter as i8,
+                    top: gutter as i8,
+                    bottom: gutter as i8,
                 }))
                 .show(ui, |ui| {
                     if reviewed {
@@ -71,7 +79,9 @@ impl IboardApp {
                         self.agent_log_panel(ui);
                     }
                 });
-            resize_grip(ui, panel.response.rect);
+            let edge = panel.response.rect;
+            let strip = Rect::from_x_y_ranges(edge.left()..=edge.left() + gutter, edge.y_range());
+            theme::pane_divider(ui, split, panes, strip, range, REVIEW_PANEL_WIDTH, false);
         }
 
         match self.session.detail_mode {
@@ -201,11 +211,14 @@ impl IboardApp {
         let mut note_actions = Vec::new();
         let cache = &mut self.reader.cache;
         let labels = &self.labels;
-        egui::ScrollArea::vertical()
-            .id_salt(("detail", path))
-            .auto_shrink([false, false])
-            .max_height(layout.scroll_height)
-            .show(ui, |ui| {
+        theme::scroll_area(
+            ui,
+            egui::ScrollArea::vertical()
+                .id_salt(("detail", path))
+                .auto_shrink([false, false])
+                .max_height(layout.scroll_height),
+            true,
+            |ui| {
                 page(ui, |ui| {
                     let top = ui.cursor().min.y;
                     let inner_height = layout.sheet_height - 2.0 * theme::SPACE_6 - 2.0;
@@ -246,7 +259,8 @@ impl IboardApp {
                         paint_rest_hint(ui, rest);
                     }
                 });
-            });
+            },
+        );
         if notes.is_some() {
             self.session.notes = notes;
         }
@@ -744,15 +758,4 @@ pub(super) fn paint_rest_hint(ui: &egui::Ui, rest: Rect) {
     );
     x += text.size().x + gap;
     widgets::paint_kbd(ui, "E", Pos2::new(x, y));
-}
-
-/// The little grip on the side panel's edge, saying it can be dragged wider.
-fn resize_grip(ui: &egui::Ui, panel: Rect) {
-    let p = theme::palette(ui);
-    let grip = Rect::from_center_size(
-        egui::pos2(panel.left(), panel.center().y),
-        Vec2::new(4.0, 32.0),
-    );
-    ui.painter()
-        .rect_filled(grip, CornerRadius::same(2), p.line_strong);
 }

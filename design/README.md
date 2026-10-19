@@ -21,7 +21,7 @@ iboard is a desktop tool for developers who keep their issues as markdown files 
 - `bg` is the window ground; `surface` is anything you can click into (card, reader page, editor, input). Do not stack `surface` on `surface` without a `line` border.
 - Text: `ink` for content, `ink-muted` for secondary text (summaries, path, counts), `ink-faint` only for placeholders and separators.
 - Control edges: `line-strong`. Card edges and dividers: `line`. A card is an object, not a control, so its rest border can be soft; on hover it takes `line-strong`, when selected `accent`.
-- Selection and focus: `accent`. Focus is always a solid 2px `focus` ring outside the element, never a color change alone.
+- Selection and focus: `accent`. Buttons, chips, cards and other controls show focus as a solid 2px `focus` ring outside the element. Text entry (fields, textareas, the composer, the editor) keeps a single border: it turns `focus` and gains a soft 3px `focus-halo` glow, so the field never looks double-bordered. Focus is never a color change alone.
 - Columns carry a status color as a 2px rule under the column title plus an 8px dot: `status-todo`, `status-ready`, `status-doing`, `status-done`. The column word is always shown, so color is never the only signal.
 - `review` (violet) is reserved for the AI review feature. Nothing else in the app may use it, so the user learns that this hue means "an agent is talking". It is inviting on purpose: distinct from the blue `accent` and never close to `danger`.
 - `danger` only for write failures, file conflicts and the Block verdict.
@@ -40,6 +40,8 @@ iboard is a desktop tool for developers who keep their issues as markdown files 
 - Columns are equal width between `column-min` 280 and `column-max` 420. On a 14" MacBook Pro (1512pt wide) four columns sit near 360; with fewer folders they cap at 420 and the spare room stays empty on the right instead of stretching cards.
 - Window skeleton, top to bottom: header bar (`bar-h` 40) · board or page · status bar (`statusbar-h` 24).
 - Radii: `radius-sm` 4 for controls, `radius-md` 6 for cards and pages, `radius-pill` for 18pt pills. Cards are flat; `shadow-popover` is only for the review panel, menus, dialogs and a card being dragged.
+- Scrollbars are overlays that never take layout width: a 4pt thumb (`scroll-thumb`) in `line-strong` at rest, `ink-muted` while scrolling, 8pt (`scroll-thumb-hover`) under the pointer, `accent` while dragging, and `line` in an unfocused pane or window. No track, no arrows. See Scrollbar.
+- Two panes side by side are separated by the 16pt gutter, and that gutter is the resize handle: a 2×3 dot grip in `ink-faint` at rest, a full-height 2pt `line-strong` rule under the pointer, `accent` while dragging. It never overlaps a pane's scroll strip. See PaneDivider.
 
 ## Navigation
 
@@ -140,10 +142,13 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | RefinePanel | Type in the note | RefineNoteChanged | Send enabled |
 | RefinePanel | Send (`⌘↩`) | RefineAnswerSent → RefineRoundReceived | Next round, or the refined draft in the Editor, unsaved |
 | RefinePanel | Hide (`esc`) / End refining | RefinePanelHidden / RefineSessionEnded | Reader; nothing written |
+| RefinePanel, waiting | `esc`, Cancel | RefineRequestCancelled | Previous round back, choice and note kept |
+| Two panes | Drag the gutter, `← →` on the focused divider | PaneSplitChanged | Panes resized; split remembered for that pair |
+| Two panes | Double-click the gutter, `↩` on the focused divider | PaneSplitReset | Default split |
 
 ## Motion
 
-Motion is short and only ever says where something went: the filter field widening (120ms), the drop zones sliding up (140ms), the Design panel's rail sliding to its components (220ms), the naming dot's pulse. When macOS asks for reduced motion (Accessibility › Display › Reduce motion), every one of them is skipped: states change in one frame and the dot stays still. The app reads the setting once at launch (`theme::reduced_motion`); `bundle.css` gates the same transitions behind `prefers-reduced-motion`, which reads the same setting in WebKit.
+Motion is short and only ever says where something went: the filter field widening (120ms), the drop zones sliding up (140ms), the Design panel's rail sliding to its components (220ms), the naming dot's pulse, the Thinking mark's rocking card. When macOS asks for reduced motion (Accessibility › Display › Reduce motion), every one of them is skipped: states change in one frame, the dot stays still and the Thinking card rests at −8°. The app reads the setting once at launch (`theme::reduced_motion`); `bundle.css` gates the same transitions behind `prefers-reduced-motion`, which reads the same setting in WebKit.
 
 ## Iconography
 
@@ -164,6 +169,7 @@ issue. The tool and model are chosen in the ReviewSettings dialog: a Tool select
 - **From an idea to an issue**: when the issue is only a title, the review drafts the missing sections (Context, Acceptance criteria, Out of scope, Open questions) as a proposal. *Apply to draft* opens it in the Editor, unsaved; the agent never writes the file itself.
 - **States**: idle, running (button shows "Reviewing…", `esc` cancels), result (panel open), failed (inline `danger` text with retry). Only the issue text is sent; interactive agents are run in one-shot mode, so no terminal is attached yet.
 - **Refining (RefinePanel)**: an agent in a role (the Challenger) pushes back on the issue and offers numbered resolutions. The panel has two panes: the TL;DR (`ui-title` with a 3px `review` rule) and the reasoning (`read-body`, 68ch) on the left, the choices on the right so they never scroll away. Each choice is a bordered card with a short title, a muted detail, its number key and a radio; the selected one takes the `accent` edge and `accent-soft` fill. The note under the choices follows the selection ("Add a note to choice 1", or "Or answer in your own words"). Send is the one filled `review` button and names what goes out ("Send choice 1", "Send answer"). Under 820pt it stacks and folds the reasoning under the TL;DR. See `components/RefinePanel`.
+- **Waiting (Thinking)**: while the agent works (often about 10s), the iboard "i" stands in for a spinner: its stem holds still and its card-dot rocks gently from −8° to +5° every 1.6s. The panel opens at its final size with placeholder bars and cards, the status line says what it waits for with an elapsed clock ("Challenger is reading the issue · 4s"), and after 20s it says it is slow and that `esc` cancels. No fake progress. See `components/Thinking`.
 
 ## Using the tokens from Rust
 

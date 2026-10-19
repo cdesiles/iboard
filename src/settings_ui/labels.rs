@@ -15,7 +15,8 @@ const LABEL_LIST_MAX_H: f32 = 240.0;
 fn hex_field(ui: &mut egui::Ui, hex: &mut String, hint: &str) -> egui::Response {
     let p = theme::palette(ui);
     let invalid = !hex.trim().is_empty() && labels::parse_hex(hex).is_none();
-    let response = ui.add(
+    let response = widgets::text_entry(
+        ui,
         egui::TextEdit::singleline(hex)
             .hint_text(RichText::new(hint).color(p.ink_faint))
             .font(FontId::monospace(12.0))
@@ -64,18 +65,22 @@ impl Dialog {
                     theme::SPACE_2 as i8,
                 ))
                 .show(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("label-rows")
-                        .max_height(rows_height)
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| {
+                    theme::scroll_area(
+                        ui,
+                        egui::ScrollArea::vertical()
+                            .id_salt("label-rows")
+                            .max_height(rows_height)
+                            .auto_shrink([false, true]),
+                        true,
+                        |ui| {
                             ui.spacing_mut().item_spacing.y = theme::SPACE_2;
                             for (index, (name, hex)) in rows.iter_mut().enumerate() {
                                 ui.horizontal(|ui| {
                                     ui.set_min_height(28.0);
                                     ui.spacing_mut().item_spacing.x = theme::SPACE_3;
                                     if renaming == Some(index) {
-                                        let field = ui.add(
+                                        let field = widgets::text_entry(
+                                            ui,
                                             egui::TextEdit::singleline(&mut self.rename_text)
                                                 .hint_text("name")
                                                 .font(FontId::monospace(12.0))
@@ -131,7 +136,8 @@ impl Dialog {
                                     });
                                 });
                             }
-                        });
+                        },
+                    );
                 });
         }
         self.label_rows = rows;
@@ -151,7 +157,8 @@ impl Dialog {
         field_label(ui, "Add a label");
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-            ui.add(
+            widgets::text_entry(
+                ui,
                 egui::TextEdit::singleline(&mut self.new_label)
                     .hint_text(RichText::new("name").color(p.ink_faint))
                     .font(FontId::monospace(12.0))

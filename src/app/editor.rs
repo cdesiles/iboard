@@ -285,7 +285,8 @@ fn editor_bar(ui: &mut egui::Ui, editor: &mut EditorState, folder: &str) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.label(RichText::new(folder).font(theme::meta()).color(p.ink_muted));
-        let response = ui.add(
+        let response = widgets::text_entry(
+            ui,
             egui::TextEdit::singleline(&mut editor.name)
                 .font(theme::meta())
                 .text_color(p.ink)
@@ -358,21 +359,24 @@ fn conflict_row(ui: &mut egui::Ui, editor: &EditorState) -> (bool, bool) {
 /// The editor's text field.
 pub(super) const EDITOR_ID: &str = "editor_body";
 
-/// The text itself, in an `accent`-edged sheet filling the window. A freshly
+/// The text itself, in a `focus`-edged sheet with its halo, filling the window. A freshly
 /// created issue gets the caret after its title.
 fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
     let p = theme::palette(ui);
     let rows = ((ui.available_height() - 2.0 * theme::SPACE_5) / 20.0).max(8.0) as usize;
-    Frame::new()
+    let sheet = Frame::new()
         .fill(p.surface)
-        .stroke(Stroke::new(2.0, p.accent))
+        .stroke(Stroke::new(1.0, p.accent))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .inner_margin(Margin::symmetric(20, theme::SPACE_5 as i8))
         .show(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .id_salt("editor_scroll")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
+            theme::scroll_area(
+                ui,
+                egui::ScrollArea::vertical()
+                    .id_salt("editor_scroll")
+                    .auto_shrink([false, false]),
+                true,
+                |ui| {
                     let id = egui::Id::new(EDITOR_ID);
                     let mut output = egui::TextEdit::multiline(&mut editor.text)
                         .id(id)
@@ -396,8 +400,10 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                         editor.last_edit = Some(Instant::now());
                         ui.ctx().request_repaint_after(AUTOSAVE_AFTER);
                     }
-                });
+                },
+            );
         });
+    widgets::paint_focus_halo(ui, sheet.response.rect, theme::RADIUS_MD);
 }
 
 /// The editor's save state as a pill word and its colour.

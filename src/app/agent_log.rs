@@ -110,11 +110,14 @@ impl IboardApp {
                 Frame::new()
                     .inner_margin(Margin::same(theme::SPACE_4 as i8))
                     .show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .id_salt("agent_log")
-                            .stick_to_bottom(true)
-                            .auto_shrink(false)
-                            .show(ui, |ui| {
+                        theme::scroll_area(
+                            ui,
+                            egui::ScrollArea::vertical()
+                                .id_salt("agent_log")
+                                .stick_to_bottom(true)
+                                .auto_shrink(false),
+                            true,
+                            |ui| {
                                 if log.text.is_empty() {
                                     ui.label(
                                         RichText::new("The agent has not said anything yet.")
@@ -122,7 +125,8 @@ impl IboardApp {
                                     );
                                 }
                                 log_entries(ui, &log.text, &mut log.cache);
-                            });
+                            },
+                        );
                     });
             });
     }

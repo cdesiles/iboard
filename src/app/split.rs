@@ -284,7 +284,8 @@ pub(super) fn drafts_ui(ui: &mut egui::Ui, drafts: &mut [SplitDraft]) {
         ui.push_id(("split-draft", index), |ui| {
             ui.horizontal(|ui| {
                 widgets::checkbox(ui, &mut draft.include, "");
-                ui.add(
+                widgets::text_entry(
+                    ui,
                     egui::TextEdit::singleline(&mut draft.title)
                         .font(theme::ui_strong())
                         .desired_width(f32::INFINITY),

@@ -214,7 +214,8 @@ impl Dialog {
             let favorites = rows.iter().filter(|row| row.favorite).count();
             let listed = rows.len().saturating_sub(1 + favorites);
             let shown = self.popup(ui, &response, Menu::Model, |dialog, ui| {
-                let filter = ui.add(
+                let filter = widgets::text_entry(
+                    ui,
                     egui::TextEdit::singleline(&mut dialog.filter)
                         .id(Id::new("review-model-filter"))
                         .hint_text(RichText::new("Filter models").color(p.ink_faint))
@@ -230,9 +231,11 @@ impl Dialog {
                     dialog.highlight = 0;
                 }
                 ui.add_space(theme::SPACE_2);
-                egui::ScrollArea::vertical()
-                    .max_height(MODEL_LIST_MAX_H)
-                    .show(ui, |ui| {
+                theme::scroll_area(
+                    ui,
+                    egui::ScrollArea::vertical().max_height(MODEL_LIST_MAX_H),
+                    true,
+                    |ui| {
                         for (index, row) in rows.iter().enumerate() {
                             if index == 1 {
                                 menu_separator(ui);
@@ -298,7 +301,8 @@ impl Dialog {
                             }
                             Some(Ok(_)) => {}
                         }
-                    });
+                    },
+                );
             });
             if retry {
                 catalog.retry_models(tool);

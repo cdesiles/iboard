@@ -332,10 +332,13 @@ pub(super) fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> Vec<Intent> {
     let cell = ((available - (columns as f32 - 1.0) * gap) / columns as f32).max(1.0);
 
     let mut cards: Vec<(PathBuf, Rect)> = Vec::new();
-    egui::ScrollArea::vertical()
-        .id_salt("focus")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
+    theme::scroll_area(
+        ui,
+        egui::ScrollArea::vertical()
+            .id_salt("focus")
+            .auto_shrink([false, false]),
+        true,
+        |ui| {
             ui.add_space(gutter);
             ui.horizontal(|ui| {
                 ui.add_space(gutter);
@@ -371,7 +374,8 @@ pub(super) fn focus_grid(ui: &mut egui::Ui, view: &FocusGrid) -> Vec<Intent> {
                     intents.extend(focus_drop(ui, view, &cards, gap));
                 });
             });
-        });
+        },
+    );
     intents
 }
 
