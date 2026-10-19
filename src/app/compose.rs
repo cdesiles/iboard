@@ -109,7 +109,9 @@ impl IboardApp {
         let Some(dir) = self.board.todo_column().map(|c| c.dir.clone()) else {
             return;
         };
-        match self.create_issue(&dir, title, description) {
+        let (name, _) = crate::issue::new_file_name(&dir, title.trim());
+        let description = self.adopt_pending_images(&name, description);
+        match self.create_issue(&dir, title, &description) {
             Ok(path) => {
                 // A new ticket lands at position 1, right after the composer.
                 // The renumbering is deferred to the end of the frame so a
@@ -243,8 +245,8 @@ pub(super) fn composer_ui(
     }
 }
 
-const TITLE_ID: &str = "composer";
-const DESCRIPTION_ID: &str = "composer-description";
+pub(super) const TITLE_ID: &str = "composer";
+pub(super) const DESCRIPTION_ID: &str = "composer-description";
 
 /// `↩` adds, from either field. `⇧↩` and `⌘↩` are a new line: the
 /// description's own return key (as `⇧↩`), or a step down from the title.

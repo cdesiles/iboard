@@ -30,7 +30,7 @@ impl IboardApp {
     /// edited too. With `force`, also overwrites a detected conflict ("Keep
     /// mine").
     pub(super) fn flush_autosave(&mut self, force: bool) {
-        let mut renamed_to: Option<PathBuf> = None;
+        let mut renamed: Option<(PathBuf, PathBuf)> = None;
         let saved = {
             let Some(editor) = self.session.editor.as_mut() else {
                 return;
@@ -65,10 +65,10 @@ impl IboardApp {
             if target != editor.path {
                 match std::fs::rename(&editor.path, &target) {
                     Ok(()) => {
-                        editor.path = target.clone();
+                        renamed = Some((editor.path.clone(), target.clone()));
+                        editor.path = target;
                         editor.baseline_name = desired.clone();
                         editor.name = desired.clone();
-                        renamed_to = Some(target);
                     }
                     Err(err) => {
                         editor.error = Some(format!("Couldn't rename to {desired}: {err}"));
@@ -89,7 +89,8 @@ impl IboardApp {
             editor.error = None;
             true
         };
-        if let Some(target) = renamed_to {
+        if let Some((old, target)) = renamed {
+            self.rename_images(&old, &target);
             // Keep the reader and the selection on the issue's new file name.
             self.session.selected = Some(target.clone());
             if let Screen::Detail(open) = &mut self.session.screen
@@ -354,6 +355,9 @@ fn conflict_row(ui: &mut egui::Ui, editor: &EditorState) -> (bool, bool) {
     .inner
 }
 
+/// The editor's text field.
+pub(super) const EDITOR_ID: &str = "editor_body";
+
 /// The text itself, in an `accent`-edged sheet filling the window. A freshly
 /// created issue gets the caret after its title.
 fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
@@ -369,7 +373,7 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                 .id_salt("editor_scroll")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    let id = egui::Id::new("editor_body");
+                    let id = egui::Id::new(EDITOR_ID);
                     let mut output = egui::TextEdit::multiline(&mut editor.text)
                         .id(id)
                         .font(theme::edit_body())

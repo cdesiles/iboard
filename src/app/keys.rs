@@ -196,6 +196,7 @@ impl IboardApp {
         }
         if !confirming {
             self.escape_keys(ctx);
+            self.paste_images(ctx);
         }
         if matches!(self.session.screen, Screen::Diff) && !confirming {
             self.diff_keys(ctx);

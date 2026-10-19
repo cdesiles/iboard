@@ -159,6 +159,7 @@ impl IboardApp {
                 "# {title}\n\n{}\n\nSplit from `{from}`.\n",
                 draft.body.trim()
             );
+            let text = self.copy_images(original, &path, &text);
             if let Err(err) = atomic_write(&path, text) {
                 self.error = Some(format!("Couldn't create {}: {err}", self.relative(&path)));
                 for child in &children {
@@ -241,6 +242,9 @@ impl IboardApp {
         for child in &split.children {
             if let Err(err) = self.trash.delete(child) {
                 self.error = Some(format!("Couldn't delete {}: {err}", self.relative(child)));
+            }
+            if reviews::slug(child) != reviews::slug(&split.original) {
+                self.trash_images(child);
             }
         }
         let restored = std::fs::rename(&split.archived, &split.original)

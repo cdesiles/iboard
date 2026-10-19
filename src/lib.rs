@@ -11,6 +11,7 @@
 //! design system, in a terminal or in its own window.
 
 pub mod agent;
+pub mod assets;
 pub mod build_log;
 pub mod commits;
 pub mod config;
@@ -31,6 +32,8 @@ pub mod markdown;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod menu;
 pub mod order;
+#[cfg(all(feature = "gui", target_os = "macos"))]
+pub mod pasteboard;
 pub mod process;
 pub mod prompts;
 pub mod reviews;

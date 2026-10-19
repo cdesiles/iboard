@@ -203,11 +203,12 @@ impl IboardApp {
             .into_iter()
             .filter_map(|path| {
                 let content = std::fs::read(&path).unwrap_or_default();
-                let trashed = self.delete_issue(&path)?;
+                let (trashed, images) = self.delete_issue(&path)?;
                 Some(Deleted {
                     path,
                     trashed,
                     content,
+                    images,
                     at: Instant::now(),
                 })
             })
@@ -265,6 +266,9 @@ impl IboardApp {
         };
         match restored {
             Ok(()) => {
+                if let Some(images) = deleted.images {
+                    self.restore_images(images);
+                }
                 self.session.notice = Some((
                     format!("Restored {}", self.relative(&deleted.path)),
                     Instant::now(),
@@ -290,10 +294,13 @@ impl IboardApp {
             .is_some_and(|undo| undo.at().elapsed() < UNDO_FOR)
     }
 
-    /// Deletes an issue's file to `self.trash` and lets the board catch
-    /// up. Returns where the Trash put it (`Some(None)` when it can't say),
-    /// or `None` when the delete failed.
-    pub(super) fn delete_issue(&mut self, path: &Path) -> Option<Option<PathBuf>> {
+    /// Deletes an issue's file and its images to `self.trash` and lets the
+    /// board catch up. Returns where the Trash put the file (`None` when it
+    /// can't say) and the images, or `None` when the delete failed.
+    pub(super) fn delete_issue(
+        &mut self,
+        path: &Path,
+    ) -> Option<(Option<PathBuf>, Option<images::TrashedImages>)> {
         self.session.confirm = None;
         self.session.undo = None;
         if self
@@ -312,11 +319,12 @@ impl IboardApp {
         self.cancel_review_run(path);
         match self.trash.delete(path) {
             Ok(trashed) => {
+                let images = self.trash_images(path);
                 self.session.notice =
                     Some((format!("Deleted {}", file_name(path)), Instant::now()));
                 self.let_go(path);
                 self.refresh();
-                Some(trashed)
+                Some((trashed, images))
             }
             Err(err) => {
                 self.error = Some(format!("Couldn't delete {}: {err}", self.relative(path)));

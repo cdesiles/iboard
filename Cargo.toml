@@ -19,7 +19,7 @@ required-features = ["gui"]
 
 [features]
 default = ["gui"]
-gui = ["dep:eframe", "dep:egui", "dep:egui_commonmark", "dep:egui_extras", "dep:image", "dep:objc2-app-kit", "dep:two-face", "dep:syntect"]
+gui = ["dep:eframe", "dep:egui", "dep:egui_commonmark", "dep:egui_extras", "dep:image", "dep:objc2-app-kit", "dep:block2", "dep:two-face", "dep:syntect"]
 
 [dependencies]
 anyhow = "1.0.104"
@@ -32,7 +32,7 @@ egui_extras = { version = "0.36.2", optional = true, default-features = false, f
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.6"
-image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
+image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg", "tiff"] }
 toml_edit = "0.25.15"
 syntect = { version = "5.3", optional = true, default-features = false, features = ["default-themes"] }
 # Syntect grammars its default set lacks (TypeScript, Swift, TOML…), for diffs.
@@ -50,6 +50,7 @@ todo = "warn"
 libc = "0.2.189"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+block2 = { version = "0.6.2", optional = true }
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", optional = true }
 objc2-foundation = "0.3.2"

@@ -52,6 +52,7 @@ mod enrich;
 mod filter_bar;
 mod focus;
 mod header;
+mod images;
 mod intent;
 mod keys;
 mod labelling;
@@ -359,6 +360,8 @@ struct Deleted {
     trashed: Option<PathBuf>,
     /// The file as it was, for when the Trash copy can't be moved back.
     content: Vec<u8>,
+    /// Its images, when they went to the Trash with it.
+    images: Option<images::TrashedImages>,
     at: Instant,
 }
 
@@ -379,6 +382,8 @@ struct Composer {
     /// Select the whole title when it gets focus, so typing replaces it.
     select_title: bool,
     error: Option<String>,
+    /// The images pasted before the issue has a name.
+    images: Option<images::PendingImages>,
 }
 
 impl Composer {
@@ -567,6 +572,9 @@ pub struct IboardApp {
     /// The label colours: the built-in preset, overridden by `[labels]` in the
     /// user configuration.
     labels: Labels,
+    /// Where a pasted image comes from: the pasteboard in the app, none in
+    /// tests unless they hold one.
+    clipboard: images::Clipboard,
     /// What belongs to the open project, rebuilt when another one opens.
     session: Session,
 }
@@ -737,8 +745,10 @@ impl IboardApp {
         {
             iboard::menu::set_context(cc.egui_ctx.clone());
             iboard::menu::install("iboard", env!("CARGO_PKG_DESCRIPTION"), true);
+            iboard::pasteboard::watch(cc.egui_ctx.clone());
         }
         let mut app = Self::from_located(located);
+        app.clipboard = images::Clipboard::System;
         // The user's real cache: only the running app records here, never a
         // test constructing the board directly.
         app.recents_file = recents::cache_file();
@@ -805,6 +815,7 @@ impl IboardApp {
             settings: None,
             catalog: Catalog::default(),
             labels: Labels::presets(),
+            clipboard: images::Clipboard::Held(None),
         }
     }
 

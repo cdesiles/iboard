@@ -12,6 +12,8 @@ pub(super) struct Reader {
     /// The rendered issue content, used to tell a double-click on the page
     /// from one on the header when deciding whether to start editing.
     pub(super) preview_rect: Rect,
+    /// The images already reported missing, by issue and link.
+    pub(super) reported: HashSet<(PathBuf, String)>,
 }
 
 impl Default for Reader {
@@ -19,6 +21,7 @@ impl Default for Reader {
         Self {
             cache: CommonMarkCache::default(),
             preview_rect: Rect::NOTHING,
+            reported: HashSet::new(),
         }
     }
 }
@@ -158,6 +161,7 @@ impl IboardApp {
         }
         self.reader.preview_rect = outline;
 
+        self.report_missing_images(path, &outcome.missing);
         if !outcome.edits.is_empty() {
             let mut text = text.clone();
             for (range, block) in outcome.edits.into_iter().rev() {
@@ -192,6 +196,7 @@ impl IboardApp {
         let mut outcome = SheetOutcome {
             body: Rect::NOTHING,
             edits: Vec::new(),
+            missing: Vec::new(),
         };
         let mut note_actions = Vec::new();
         let cache = &mut self.reader.cache;
@@ -218,10 +223,10 @@ impl IboardApp {
                         styles.insert(egui::TextStyle::Heading, theme::read_h1());
                         styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.5));
                         ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                        let (edits, actions) =
-                            issue_blocks(ui, cache, path, sheet.text, notes.as_mut());
-                        outcome.edits = edits;
-                        note_actions = actions;
+                        let drawn = issue_blocks(ui, cache, path, sheet.text, notes.as_mut());
+                        outcome.edits = drawn.edits;
+                        outcome.missing = drawn.missing;
+                        note_actions = drawn.actions;
                     });
                     outcome.body = body.response.rect;
 
@@ -270,6 +275,15 @@ struct SheetOutcome {
     body: Rect,
     /// The blocks a ticked checkbox changed.
     edits: Vec<(Range<usize>, String)>,
+    /// The links of the images that could not be shown.
+    missing: Vec<String>,
+}
+
+/// What drawing the issue's blocks did.
+struct DrawnBlocks {
+    edits: Vec<(Range<usize>, String)>,
+    actions: Vec<NoteAction>,
+    missing: Vec<String>,
 }
 
 /// The reader's two blocks: the sheet, and under it the "Not written yet"
@@ -420,31 +434,39 @@ fn paint_edit_outline(ui: &egui::Ui, outline: Rect) {
 
 /// The issue's text, one top-level block at a time so each has a margin to
 /// hang comments on (`notes`, for an issue that takes them). Returns the
-/// blocks a ticked checkbox changed, and what was asked of the comments.
+/// blocks a ticked checkbox changed, what was asked of the comments, and the
+/// images that could not be shown, drawn as placeholders.
 fn issue_blocks(
     ui: &mut egui::Ui,
     cache: &mut CommonMarkCache,
     path: &Path,
     text: &str,
     mut notes: Option<&mut Notes>,
-) -> (Vec<(Range<usize>, String)>, Vec<NoteAction>) {
+) -> DrawnBlocks {
     let blocks = markdown::blocks(text);
     let mut edits = Vec::new();
     let mut actions = Vec::new();
+    let mut missing = Vec::new();
     for (index, range) in blocks.iter().enumerate() {
         // Drawn together, the viewer would put a blank line between blocks.
         if index > 0 {
             ui.add_space(ui.text_style_height(&egui::TextStyle::Body));
         }
         let mut block = text[range.clone()].to_string();
+        let broken = images::missing_images(path, &block);
         let shown = ui
             .push_id(("block", index), |ui| {
-                CommonMarkViewer::new()
-                    .default_implicit_uri_scheme(image_base_uri(path))
-                    .show_mut(ui, cache, &mut block)
-                    .response
+                let viewer =
+                    CommonMarkViewer::new().default_implicit_uri_scheme(image_base_uri(path));
+                if broken.is_empty() {
+                    viewer.show_mut(ui, cache, &mut block).response
+                } else {
+                    let placeheld = images::with_placeholders(&block, &broken);
+                    viewer.show(ui, cache, &placeheld).response
+                }
             })
             .inner;
+        missing.extend(broken.into_iter().map(|link| link.url));
         if shown.changed() {
             edits.push((range.clone(), block));
         }
@@ -457,7 +479,11 @@ fn issue_blocks(
     if let Some(notes) = notes {
         actions.extend(outdated_notes(ui, notes, text, &blocks));
     }
-    (edits, actions)
+    DrawnBlocks {
+        edits,
+        actions,
+        missing,
+    }
 }
 
 /// The `file://` base a relative image link in `issue` resolves against: the

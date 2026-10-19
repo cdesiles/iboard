@@ -1578,6 +1578,7 @@ name = "iboard"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "block2 0.6.2",
  "chrono",
  "eframe",
  "egui",
@@ -1716,6 +1717,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
