@@ -60,7 +60,8 @@ pub fn label_pill(ui: &mut Ui, name: &str, color: Option<Rgb>) -> Response {
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_PILL), fill);
-        painter.galley(rect.center() - text.size() / 2.0, text, ink);
+        let pos = rect.center() - text.size() / 2.0 - Vec2::new(0.0, 1.0);
+        painter.galley(pos, text, ink);
     }
     response
 }
