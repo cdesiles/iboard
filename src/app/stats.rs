@@ -208,19 +208,21 @@ impl IboardApp {
                     ask = Some(StatsAsk::Page(page));
                 }
                 widgets::rule(ui);
-                Frame::new()
-                    .fill(p.bg)
-                    .inner_margin(Margin::same(theme::SPACE_5 as i8))
-                    .show(ui, |ui| {
+                Frame::new().fill(p.bg).show(ui, |ui| {
+                    theme::scroll_area(
+                        ui,
                         egui::ScrollArea::vertical()
-                            .max_height(height)
-                            .auto_shrink([false, true])
-                            .show(ui, |ui| {
-                                if let Some(draft) = stats_body(ui, panel) {
-                                    ask = Some(draft);
-                                }
-                            });
-                    });
+                            .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
+                            .max_height(height + 2.0 * theme::SPACE_5)
+                            .auto_shrink([false, true]),
+                        true,
+                        |ui| {
+                            if let Some(draft) = stats_body(ui, panel) {
+                                ask = Some(draft);
+                            }
+                        },
+                    );
+                });
                 widgets::rule(ui);
                 stats_footer(ui, panel.stats.as_ref());
             });

@@ -187,6 +187,7 @@ impl Default for Panel {
 fn filling(salt: &str) -> egui::ScrollArea {
     egui::ScrollArea::vertical()
         .id_salt(salt)
+        .content_margin(theme::scroll_margin(0.0, 0.0))
         .auto_shrink(false)
 }
 
@@ -368,14 +369,10 @@ impl Panel {
             self.components_open = false;
         }
         components.add_space(theme::SPACE_2);
-        theme::scroll_area(
-            &mut components,
-            filling("rail-components-scroll"),
-            true,
-            |ui| {
-                self.component_rows(ui, system);
-            },
-        );
+        let rows = filling("rail-components-scroll");
+        theme::scroll_area(&mut components, rows, true, |ui| {
+            self.component_rows(ui, system);
+        });
     }
 
     fn categories(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {

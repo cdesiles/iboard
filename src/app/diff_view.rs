@@ -387,6 +387,7 @@ fn file_list(ui: &mut egui::Ui, view: &mut DiffView) {
                 ui,
                 egui::ScrollArea::vertical()
                     .id_salt("diff-files")
+                    .content_margin(theme::scroll_margin(0.0, 0.0))
                     .auto_shrink([false, false]),
                 true,
                 |ui| {
@@ -446,6 +447,7 @@ fn counts(ui: &mut egui::Ui, file: &FileDiff) -> egui::Response {
 fn diff_rows(ui: &mut egui::Ui, view: &mut DiffView) {
     let mut area = egui::ScrollArea::vertical()
         .id_salt("diff-rows")
+        .content_margin(theme::scroll_margin(0.0, 0.0))
         .auto_shrink([false, false]);
     if let Some(offset) = view.scroll.take() {
         area = area.vertical_scroll_offset(offset);

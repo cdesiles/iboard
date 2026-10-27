@@ -368,12 +368,12 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
         .fill(p.surface)
         .stroke(Stroke::new(1.0, p.accent))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-        .inner_margin(Margin::symmetric(20, theme::SPACE_5 as i8))
         .show(ui, |ui| {
             theme::scroll_area(
                 ui,
                 egui::ScrollArea::vertical()
                     .id_salt("editor_scroll")
+                    .content_margin(theme::scroll_margin(20.0, theme::SPACE_5))
                     .auto_shrink([false, false]),
                 true,
                 |ui| {

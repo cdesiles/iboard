@@ -107,27 +107,24 @@ impl IboardApp {
                     &format!("Agent log of {}", file_name(&log.path)),
                     &detail,
                 );
-                Frame::new()
-                    .inner_margin(Margin::same(theme::SPACE_4 as i8))
-                    .show(ui, |ui| {
-                        theme::scroll_area(
-                            ui,
-                            egui::ScrollArea::vertical()
-                                .id_salt("agent_log")
-                                .stick_to_bottom(true)
-                                .auto_shrink(false),
-                            true,
-                            |ui| {
-                                if log.text.is_empty() {
-                                    ui.label(
-                                        RichText::new("The agent has not said anything yet.")
-                                            .color(p.ink_muted),
-                                    );
-                                }
-                                log_entries(ui, &log.text, &mut log.cache);
-                            },
-                        );
-                    });
+                theme::scroll_area(
+                    ui,
+                    egui::ScrollArea::vertical()
+                        .id_salt("agent_log")
+                        .content_margin(theme::scroll_margin(theme::SPACE_4, theme::SPACE_4))
+                        .stick_to_bottom(true)
+                        .auto_shrink(false),
+                    true,
+                    |ui| {
+                        if log.text.is_empty() {
+                            ui.label(
+                                RichText::new("The agent has not said anything yet.")
+                                    .color(p.ink_muted),
+                            );
+                        }
+                        log_entries(ui, &log.text, &mut log.cache);
+                    },
+                );
             });
     }
 }

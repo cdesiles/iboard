@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// The start of the gutter after a column, where its thumb floats clear of
+/// the cards.
+const THUMB_LANE: f32 = theme::SCROLL_HIT;
+
 impl IboardApp {
     pub(super) fn board_ui(&mut self, ui: &mut egui::Ui) {
         if self.board.columns.is_empty() {
@@ -48,7 +52,9 @@ impl IboardApp {
             |ui| {
                 ui.add_space(gutter);
                 ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = gutter;
+                    // Each column's scrollbar lane takes the start of the
+                    // gutter after it.
+                    ui.spacing_mut().item_spacing.x = gutter - THUMB_LANE;
                     // The window gutter on the left; item spacing after the last
                     // column gives the same on the right.
                     ui.add_space(gutter);
@@ -215,28 +221,38 @@ pub(super) fn column_ui(
             if let Some(composer) = composer {
                 composer_ui(ui, composer, column, &folder, &mut intents);
             }
-            theme::scroll_area(
-                ui,
-                egui::ScrollArea::vertical()
-                    .id_salt(("column", view.index))
-                    .auto_shrink([false, false]),
-                true,
-                |ui| {
-                    ui.set_width(view.width);
-                    ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                    let cards = column_cards(ui, view, &visible, &folder, &mut intents);
-                    // While the DropZones dock covers the bottom of the board,
-                    // the last cards can still scroll out from under it.
-                    if egui::DragAndDrop::has_payload_of_type::<IssueDrag>(ui.ctx()) {
-                        ui.add_space(DOCK_H);
-                    }
-                    if drop_response.dnd_hover_payload::<IssueDrag>().is_some()
-                        || drop_response.dnd_release_payload::<IssueDrag>().is_some()
-                    {
-                        anchor = drop_line(ui, &cards);
-                    }
-                },
+            let lane = Rect::from_min_size(
+                ui.cursor().min,
+                Vec2::new(view.width + THUMB_LANE, ui.available_height()),
             );
+            ui.scope_builder(egui::UiBuilder::new().max_rect(lane), |ui| {
+                theme::scroll_area(
+                    ui,
+                    egui::ScrollArea::vertical()
+                        .id_salt(("column", view.index))
+                        .content_margin(Margin {
+                            right: THUMB_LANE as i8,
+                            ..Margin::ZERO
+                        })
+                        .auto_shrink([false, false]),
+                    true,
+                    |ui| {
+                        ui.set_width(view.width);
+                        ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+                        let cards = column_cards(ui, view, &visible, &folder, &mut intents);
+                        // While the DropZones dock covers the bottom of the board,
+                        // the last cards can still scroll out from under it.
+                        if egui::DragAndDrop::has_payload_of_type::<IssueDrag>(ui.ctx()) {
+                            ui.add_space(DOCK_H);
+                        }
+                        if drop_response.dnd_hover_payload::<IssueDrag>().is_some()
+                            || drop_response.dnd_release_payload::<IssueDrag>().is_some()
+                        {
+                            anchor = drop_line(ui, &cards);
+                        }
+                    },
+                );
+            });
         },
     );
     highlight_foreign_drop(ui, column, drop_rect, &drop_response);

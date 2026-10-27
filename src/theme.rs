@@ -9,7 +9,7 @@ mod scroll;
 mod thinking;
 
 pub use divider::{pane_divider, pane_split};
-pub use scroll::{scroll_area, scroll_rows};
+pub use scroll::{SCROLL_CLEAR, scroll_area, scroll_margin, scroll_rows};
 pub use thinking::thinking_mark;
 
 use std::sync::Arc;

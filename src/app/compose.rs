@@ -439,6 +439,7 @@ fn description_field(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut V
         ui,
         egui::ScrollArea::vertical()
             .id_salt("composer-description-scroll")
+            .content_margin(theme::scroll_margin(0.0, 0.0))
             .max_height(8.0 * line)
             .auto_shrink([false, true]),
         true,

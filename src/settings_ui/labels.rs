@@ -60,16 +60,13 @@ impl Dialog {
             Frame::new()
                 .stroke(Stroke::new(1.0, p.line_strong))
                 .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-                .inner_margin(Margin::symmetric(
-                    theme::SPACE_4 as i8,
-                    theme::SPACE_2 as i8,
-                ))
                 .show(ui, |ui| {
                     theme::scroll_area(
                         ui,
                         egui::ScrollArea::vertical()
                             .id_salt("label-rows")
-                            .max_height(rows_height)
+                            .content_margin(theme::scroll_margin(theme::SPACE_4, theme::SPACE_2))
+                            .max_height(rows_height + 2.0 * theme::SPACE_2)
                             .auto_shrink([false, true]),
                         true,
                         |ui| {

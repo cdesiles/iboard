@@ -27,6 +27,6 @@ Scrolling is view state, not a command: no event is emitted and the file is unto
 ## In the consumer
 
 - **Web/CSS** (previews): wrap the scrolling element as `.ib-scroll > .ib-scroll__view` plus `.ib-scroll__rail > .ib-scroll__thumb`; the consumer places the thumb and toggles `is-scrolling`, `is-hover`, `is-drag`, `is-blur` and `is-short`.
-- **egui**: `theme::scroll_area` in `theme.rs` wraps `egui::ScrollArea` with these widths and colours (floating bars, zero allocated width) and tracks the scrolling state; pass whether the pane is focused.
+- **egui**: `theme::scroll_area` in `theme/scroll.rs` wraps `egui::ScrollArea` with these widths and colours (floating bars, zero allocated width, the rail 2pt inside every edge) and tracks the scrolling state; pass whether the pane is focused. The pane's padding goes inside the scroll area with `content_margin(theme::scroll_margin(x, y))`, never around it, so the thumb sits on the pane's edge and text keeps `SCROLL_CLEAR` (14pt) from it.
 
 The consumer provides the pane's focus state. Tokens: `scroll-thumb`, `scroll-thumb-hover`, `scroll-hit`, `scroll-thumb-min`.

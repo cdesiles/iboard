@@ -325,10 +325,18 @@ fn main(ui: &mut egui::Ui, agenda: &mut Agenda, days: &BTreeMap<String, Vec<DayC
     }
     let busiest = shown.iter().map(|(_, n)| *n).max().unwrap_or(1);
     let step = busiest.div_ceil(4).max(1);
-    egui::ScrollArea::horizontal()
-        .id_salt("agenda-grid")
-        .stick_to_right(true)
-        .show(ui, |ui| grid(ui, agenda, days, Some((&weeks, step))));
+    theme::scroll_area(
+        ui,
+        egui::ScrollArea::horizontal()
+            .id_salt("agenda-grid")
+            .content_margin(Margin {
+                bottom: theme::SCROLL_CLEAR as i8,
+                ..Margin::ZERO
+            })
+            .stick_to_right(true),
+        true,
+        |ui| grid(ui, agenda, days, Some((&weeks, step))),
+    );
     legend(ui, step);
 }
 

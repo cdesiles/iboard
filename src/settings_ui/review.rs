@@ -233,7 +233,9 @@ impl Dialog {
                 ui.add_space(theme::SPACE_2);
                 theme::scroll_area(
                     ui,
-                    egui::ScrollArea::vertical().max_height(MODEL_LIST_MAX_H),
+                    egui::ScrollArea::vertical()
+                        .content_margin(theme::scroll_margin(0.0, 0.0))
+                        .max_height(MODEL_LIST_MAX_H),
                     true,
                     |ui| {
                         for (index, row) in rows.iter().enumerate() {

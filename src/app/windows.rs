@@ -410,6 +410,7 @@ fn commit_list(ui: &mut egui::Ui, list: &[commits::Commit]) -> Option<Vec<String
         ui,
         egui::ScrollArea::vertical()
             .id_salt("commits-list")
+            .content_margin(theme::scroll_margin(0.0, 0.0))
             .max_height(260.0)
             .auto_shrink([false, true]),
         true,

@@ -243,6 +243,7 @@ pub fn show(
                             ui,
                             egui::ScrollArea::vertical()
                                 .id_salt("label_picker_list")
+                                .content_margin(theme::scroll_margin(0.0, 0.0))
                                 .max_height(LIST_MAX_H)
                                 .auto_shrink([false, true]),
                             true,

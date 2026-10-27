@@ -13,7 +13,7 @@ mod labels;
 mod review;
 mod titles;
 
-use egui::{Color32, Frame, Id, Key, Margin, Modifiers, Vec2};
+use egui::{Color32, Id, Key, Modifiers, Vec2};
 
 use crate::agent::AgentConfig;
 use crate::general::Appearance;
@@ -227,36 +227,32 @@ impl Dialog {
                     action = Action::Close;
                 }
                 widgets::rule(ui);
-                Frame::new()
-                    .inner_margin(Margin::same(theme::SPACE_5 as i8))
-                    .show(ui, |ui| {
-                        ui.set_width(DIALOG_WIDTH - 2.0 * theme::SPACE_5);
-                        theme::scroll_area(
-                            ui,
-                            egui::ScrollArea::vertical()
-                                .id_salt("settings-body")
-                                .min_scrolled_height(DIALOG_BODY_H)
-                                .max_height(DIALOG_BODY_H)
-                                .auto_shrink([false, false]),
-                            true,
-                            |ui| match self.tab {
-                                Tab::General => self.general_body(ui),
-                                Tab::Review => {
-                                    self.review_seen = true;
-                                    self.review_body(ui, catalog);
-                                }
-                                Tab::Build => {
-                                    self.build_seen = true;
-                                    self.build_body(ui, catalog);
-                                }
-                                Tab::Titles => self.titles_body(ui),
-                                Tab::Labels => {
-                                    self.labels_seen = true;
-                                    self.labels_body(ui);
-                                }
-                            },
-                        );
-                    });
+                theme::scroll_area(
+                    ui,
+                    egui::ScrollArea::vertical()
+                        .id_salt("settings-body")
+                        .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
+                        .min_scrolled_height(DIALOG_BODY_H + 2.0 * theme::SPACE_5)
+                        .max_height(DIALOG_BODY_H + 2.0 * theme::SPACE_5)
+                        .auto_shrink([false, false]),
+                    true,
+                    |ui| match self.tab {
+                        Tab::General => self.general_body(ui),
+                        Tab::Review => {
+                            self.review_seen = true;
+                            self.review_body(ui, catalog);
+                        }
+                        Tab::Build => {
+                            self.build_seen = true;
+                            self.build_body(ui, catalog);
+                        }
+                        Tab::Titles => self.titles_body(ui),
+                        Tab::Labels => {
+                            self.labels_seen = true;
+                            self.labels_body(ui);
+                        }
+                    },
+                );
                 widgets::rule(ui);
                 match widgets::modal_footer(ui, saved_to, "Save") {
                     FooterClick::None => {}
