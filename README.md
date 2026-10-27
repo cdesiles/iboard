@@ -1,115 +1,54 @@
-# iboard
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/iboard-wordmark-dark.svg">
+    <img src="assets/iboard-wordmark-light.svg" alt="iboard" height="64">
+  </picture>
+</h1>
 
-A fast, local kanban board and markdown reader for the `issues/` folders used
-across projects. Two small local binaries (`iboard` and `idesign`), no external
-service, and no browser in the app's own process — it reads the markdown you
-already keep in git.
+> [!NOTE]
+> **iboard** is an opinionated issue tracker that lives entirely as Markdown files right next to your code.
 
-Point it at any project that has an `issues/` directory:
+⚡ Why iboard?
+
+Designed for small, high-impact teams and solopreneurs, it eliminates the friction of bouncing between Jira, Notion, and GitHub. 
+It is dead simple, `iboard` is a small binary with no external services, and no browser. Navigate, create, and resolve tasks entirely from your keyboard.
+
+* Designed for tight feedback loops. Spend your time building the product, not tinkering with the project management software. 
+* Completely open-source: bring your ideas, contribute and fork it! Fit your workflow to your needs.
+
+## 🧠 How It Works
+
+Issues are just `.md` files. Columns are just folders. Issues flow from left to right through your file system:
+
+```text
+📁 issues/
+ ├── 📁 todo/   # Unrefined ideas and raw backlog
+ ├── 📁 ready/  # Refined, actionable tasks (prefix with `001-` to prioritize)
+ ├── 📁 doing/  # The active work in progress
+ └── 📁 done/   # Finished, verified, and ready to push
+```
+
+Because everything is file-based, iboard integrates flawlessly with your IDE, your terminal, and any AI agents arround.
+
+## Use-it!
 
 ```sh
-iboard                     # scan the current directory (and parents)
-iboard ~/code/my-project   # scan the given directory
-iboard init ~/new-app      # create issues/ (todo, ready, doing, done) and open it
+iboard                     # start the app on the current working directory
+iboard ~/code/my-project   # start the app on the given directory
+iboard init ~/new-app      # create issues/ (todo, ready, doing, done) and configuration
 iboard --list              # print the board to stdout, no window
 ```
 
-## What for?
+## Building from sources
 
-`iboard` is suitable for every small project that does not require a complex integration workflow with GitLab, GitHub or what not. It makes ticketing fast: creation, follow-up... It's a matter of reading and writing local files, for humans and AI agents.
-
-## Design
-
-The look follows the design system in [`design/`](design/README.md): tokens in
-`design/tokens.json`, the brand book in `design/README.md`, one guideline and
-HTML preview per component under `design/components/`.
-
-### The design-system toolchain
-
-`idesign` creates, browses, imports and renders a project's design system; the
-board's **Design** button opens the same system in a panel. Running `idesign`
-alone in a terminal opens the live catalog, an interactive page of every
-component in a WebKit window (`macos/catalog.swift`); `idesign --browser` opens
-the board's panel in its own window instead. A component preview is turned into
-a PNG by a short-lived WebKit helper (`macos/render.swift`). `build.rs` builds
-both helpers, and both run as their own processes, so the board never loads a
-browser itself: startup stays instant and a broken preview cannot take the
-window down. The binaries carry both helpers and write them out to
-`~/.cache/iboard/helpers` on first use, so an installed copy keeps them after
-`cargo clean`; `IBOARD_RENDER` and `IBOARD_CATALOG` point at other builds.
-Previews render with JavaScript off, from a folder of their own.
+From this repository:
 
 ```sh
-idesign                         # open the live catalog (in a terminal)
-idesign --browser               # open the design panel in a window
-idesign show                    # summary of the current project's system
-idesign list                    # one line per component
-idesign validate                # token references, missing previews, missing docs
-idesign add-component Toast --group Controls --intent "Transient confirmation"
-idesign import ~/packages/acme  # an Open Design package -> design/
-idesign preview Button --out /tmp/button.png
-idesign render page.html phone.png
+make build
+make install
 ```
 
-`design/` is the canonical store; an Open Design package is an import source,
-never a second format. The **New component** form can scaffold a component, and
-optionally ask the configured agent to draft its preview fragment (the same
-`idesign`/opencode tooling; the answer is written to `preview.html`). The source
-of truth for iboard's own system is the
-[iboard design system on Claude Design](https://claude.ai/artifact/G22kpooZcDnB7Dd64xsJit);
-`design/` is a local copy of it. The toolchain takes inspiration from
-[Open Design](https://github.com/nexu-io/open-design) (Apache-2.0); see
-[`NOTICE`](NOTICE).
-
-## UX enrichment
-
-Opening an issue offers **Draft design**: the configured agent drafts a static
-HTML mockup of the change, bound to the project's design system when there is
-one (read-only), and iboard renders it beside the issue with a field to refine
-it. The artifact is written to `assets/<issue-stem>/ui.html` (and `ui.png`), so
-it stays with the ticket and can be linked from its markdown. Relative image
-links — `![mockup](assets/<stem>/ui.png)` — render in the Reader, resolved
-against the issue's folder. It works with no design system too, falling back to
-restrained defaults.
-
-## Building and installing
-
-From this repository, `make` (or `make help`) lists the targets:
-
-```sh
-$ make
-
-Usage:
-  make <target>
-  help       Show this help
-
-Setup
-  hooks      Lint the staged snapshot before each commit (installs .githooks)
-
-Run
-  run        Launch a binary, iboard by default: make run, make run iboard, make run idesign
-  iboard     Launch the board directly, e.g. make iboard ARGS="~/code/moon-cull"
-  idesign    Launch the design tool directly, e.g. make idesign ARGS="show"
-  list       Print the board to stdout, e.g. make list ARGS="~/code/moon-cull"
-
-Quality
-  check      Everything a ticket needs before it is done: formatting, lints and tests
-  test       Run all tests
-  lint       Check formatting, clippy, an egui-free core and swift-format (fails on warnings)
-  fmt        Format code in place
-
-Build
-  build      Build the binaries (debug)
-  release    Build the binaries (optimized)
-  install    Install the binaries into the Cargo bin directory
-  clean      Remove build artifacts
-```
-
-`make check` is the bar for every change. The Rust version is pinned in
-`rust-toolchain.toml`, and the limits on function length (`clippy.toml`) and
-file length (`tests/layout.rs`) only ever go down. The agent prompts are
-snapshot-tested with `insta`: after a deliberate change, run
-`INSTA_UPDATE=always cargo test` and review the `.snap` diff.
+Get help with `make help`.
 
 ## Issues format 
 
@@ -179,16 +118,3 @@ has no Settings toggle; turn it on in the same file, then restart:
 [idesign]
 enabled = false     # true: the Design panel and Draft design
 ```
-
-`default` runs the tool's first favorite model: OpenCode's first favorite, or
-the `model` in Claude Code's settings. OpenCode and Claude Code run
-non-interactively (`opencode run`, `claude -p`); a custom command runs through
-`sh` with `{prompt}` (a temp file holding the issue and the review
-instructions), `{model}` and `{issue}` (the issue path) filled in, and the
-review is read from its stdout. The placeholders become the quoted variables
-`"$IBOARD_PROMPT"`, `"$IBOARD_MODEL"` and `"$IBOARD_ISSUE"`, so a file name can
-never run as shell code.
-
-An agent is stopped, with everything it started, when its window closes, when
-a new run replaces it, when iboard quits, or after 10 minutes without an
-answer.
