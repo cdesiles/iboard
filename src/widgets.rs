@@ -37,11 +37,11 @@ fn galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<Galley> {
     )
 }
 
-/// The Thinking mark, `height` tall (28 in panels, 14 inline): an agent is
-/// at work. It rests as the logo when reduced motion is on.
-pub fn thinking(ui: &mut Ui, height: f32) -> Response {
+/// The Thinking mark, `size` square (28 in panels, 14 inline): an agent is
+/// at work. It stands still when reduced motion is on.
+pub fn thinking(ui: &mut Ui, size: f32) -> Response {
     let p = theme::palette(ui);
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(height / 2.0, height), Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Working"));
     let time = (!theme::reduced_motion(ui.ctx())).then(|| ui.input(|i| i.time));
     if time.is_some() {
