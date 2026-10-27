@@ -35,7 +35,7 @@ impl IboardApp {
         });
     }
 
-    /// Board: the wordmark, then the issues path. Reader and editor: a
+    /// Board: the project name, then the issues path. Reader and editor: a
     /// `‹ Board` button, then `project / Column / Issue title`, every segment
     /// but the last a link.
     pub(super) fn breadcrumb(&mut self, ui: &mut egui::Ui) {
@@ -64,7 +64,7 @@ impl IboardApp {
                 }
             }
             Screen::Board => {
-                widgets::wordmark(ui, 20.0);
+                ui.label(RichText::new(&project).font(theme::ui_title()).color(p.ink));
                 let path = display_path(&self.board.root);
                 let response = ui
                     .horizontal(|ui| {

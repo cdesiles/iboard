@@ -418,11 +418,11 @@ fn a_scan_error_clears_itself_once_the_board_reads_again() {
     assert!(app.scan_error.is_none());
 }
 
-/// The board's header shows the wordmark, 20pt tall, just before the path.
+/// The board's header names the project, then its issues path.
 #[test]
-fn the_board_header_shows_the_wordmark_before_the_path() {
+fn the_board_header_names_the_project_before_the_path() {
     use egui_kittest::kittest::Queryable;
-    let dir = scratch_dir("wordmark");
+    let dir = scratch_dir("project-name");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     let mut harness = egui_kittest::Harness::builder()
@@ -439,12 +439,11 @@ fn the_board_header_shows_the_wordmark_before_the_path() {
             (false, app),
         );
     harness.run_steps(2);
-    let mark = harness.get_by_label("iboard").rect();
-    let path = harness
-        .get_by_label(&display_path(&harness.state().1.board.root))
-        .rect();
-    assert_eq!(mark.height(), 20.0);
-    assert!(mark.max.x <= path.min.x, "{mark:?} then {path:?}");
+    let name = harness.state().1.board.name();
+    let path = display_path(&harness.state().1.board.root);
+    let name = harness.get_by_label(&name).rect();
+    let path = harness.get_by_label(&path).rect();
+    assert!(name.max.x <= path.min.x, "{name:?} then {path:?}");
 }
 
 /// `⌘F` opens the filter with its suggestions; `↓ ↩` picks one as a token,
