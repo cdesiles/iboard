@@ -1,4 +1,5 @@
-.PHONY: build release check test lint fmt toolchain hooks run iboard idesign list install clean help
+.DEFAULT_GOAL := help
+.PHONY: help hooks run iboard idesign list check test lint fmt toolchain build release install clean
 
 # `make run` launches iboard; `make run idesign` switches to the design tool.
 BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
@@ -6,23 +7,43 @@ BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
 SWIFT_FORMAT := $(shell xcrun --find swift-format 2>/dev/null)
 PINNED_RUST := $(shell sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
 
-## Build the binary (debug)
-build:
-	cargo build
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*## "; print "\nUsage:\n  make \033[36m<target>\033[0m"} \
+		/^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2} \
+		/^##@ / {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)}' $(MAKEFILE_LIST)
+	@echo
 
-## Build the binary (optimized)
-release:
-	cargo build --release
+##@ Setup
 
-## Everything a ticket needs before it is done: formatting, lints and tests
-check: toolchain lint test
+hooks: ## Lint the staged snapshot before each commit (installs .githooks)
+	git config core.hooksPath .githooks
 
-## Run all tests
-test:
+##@ Run
+
+run: ## Launch a binary, iboard by default: make run, make run iboard, make run idesign
+	cargo run --bin $(BIN) -- $(ARGS)
+
+iboard: ## Launch the board directly, e.g. make iboard ARGS="~/code/moon-cull"
+	@if [ -z "$(filter run,$(MAKECMDGOALS))" ]; then \
+		cargo run --bin iboard -- $(ARGS); \
+	fi
+
+idesign: ## Launch the design tool directly, e.g. make idesign ARGS="show"
+	@if [ -z "$(filter run,$(MAKECMDGOALS))" ]; then \
+		cargo run --bin idesign -- $(ARGS); \
+	fi
+
+list: ## Print the board to stdout, e.g. make list ARGS="~/code/moon-cull"
+	cargo run --bin iboard -- --list $(ARGS)
+
+##@ Quality
+
+check: toolchain lint test ## Everything a ticket needs before it is done: formatting, lints and tests
+
+test: ## Run all tests
 	cargo test
 
-## Check formatting, clippy, an egui-free core and swift-format (fails on warnings)
-lint:
+lint: ## Check formatting, clippy, an egui-free core and swift-format (fails on warnings)
 	cargo fmt --all --check
 	cargo clippy --all-targets -- -D warnings
 	cargo check --lib --no-default-features
@@ -30,8 +51,7 @@ ifneq ($(SWIFT_FORMAT),)
 	$(SWIFT_FORMAT) lint --strict macos/*.swift
 endif
 
-## Format code in place
-fmt:
+fmt: ## Format code in place
 	cargo fmt
 ifneq ($(SWIFT_FORMAT),)
 	$(SWIFT_FORMAT) format --in-place macos/*.swift
@@ -43,38 +63,16 @@ toolchain:
 		*) echo "warning: $$(rustc --version) is not the pinned $(PINNED_RUST) (rust-toolchain.toml); new lints may appear" >&2 ;; \
 	esac
 
-## Lint the staged snapshot before each commit (installs .githooks)
-hooks:
-	git config core.hooksPath .githooks
+##@ Build
 
-## Launch a binary, iboard by default: make run, make run iboard, make run idesign
-run:
-	cargo run --bin $(BIN) -- $(ARGS)
+build: ## Build the binaries (debug)
+	cargo build
 
-## Launch the board directly, e.g. make iboard ARGS="~/code/moon-cull"
-iboard:
-	@if [ -z "$(filter run,$(MAKECMDGOALS))" ]; then \
-		cargo run --bin iboard -- $(ARGS); \
-	fi
+release: ## Build the binaries (optimized)
+	cargo build --release
 
-## Launch the design tool directly, e.g. make idesign ARGS="show"
-idesign:
-	@if [ -z "$(filter run,$(MAKECMDGOALS))" ]; then \
-		cargo run --bin idesign -- $(ARGS); \
-	fi
-
-## Print the board to stdout, e.g. make list ARGS="~/code/moon-cull"
-list:
-	cargo run --bin iboard -- --list $(ARGS)
-
-## Install the binaries into the Cargo bin directory
-install:
+install: ## Install the binaries into the Cargo bin directory
 	cargo install --path .
 
-## Remove build artifacts
-clean:
+clean: ## Remove build artifacts
 	cargo clean
-
-## Show this help
-help:
-	@awk '/^## /{d=substr($$0,4);next} /^[a-zA-Z_-]+:/&&d{split($$0,t,":");printf "  %-10s %s\n",t[1],d} {d=""}' $(MAKEFILE_LIST)

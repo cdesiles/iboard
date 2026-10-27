@@ -74,24 +74,35 @@ restrained defaults.
 
 ## Building and installing
 
-From this repository:
+From this repository, `make` (or `make help`) lists the targets:
 
 ```sh
-$ make help
-  build      Build the binary (debug)
-  release    Build the binary (optimized)
-  check      Everything a ticket needs before it is done: formatting, lints and tests
-  test       Run all tests
-  lint       Check formatting, run clippy and swift-format (fails on warnings)
-  fmt        Format code in place
+$ make
+
+Usage:
+  make <target>
+  help       Show this help
+
+Setup
   hooks      Lint the staged snapshot before each commit (installs .githooks)
+
+Run
   run        Launch a binary, iboard by default: make run, make run iboard, make run idesign
   iboard     Launch the board directly, e.g. make iboard ARGS="~/code/moon-cull"
   idesign    Launch the design tool directly, e.g. make idesign ARGS="show"
   list       Print the board to stdout, e.g. make list ARGS="~/code/moon-cull"
+
+Quality
+  check      Everything a ticket needs before it is done: formatting, lints and tests
+  test       Run all tests
+  lint       Check formatting, clippy, an egui-free core and swift-format (fails on warnings)
+  fmt        Format code in place
+
+Build
+  build      Build the binaries (debug)
+  release    Build the binaries (optimized)
   install    Install the binaries into the Cargo bin directory
   clean      Remove build artifacts
-  help       Show this help
 ```
 
 `make check` is the bar for every change. The Rust version is pinned in
