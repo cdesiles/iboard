@@ -16,15 +16,17 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, Sel};
 use objc2::{AllocAnyThread, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSAboutPanelOptionApplicationName, NSAboutPanelOptionApplicationVersion,
-    NSAboutPanelOptionCredits, NSAboutPanelOptionVersion, NSApplication, NSColor,
-    NSEventModifierFlags, NSFont, NSFontAttributeName, NSForegroundColorAttributeName,
-    NSLinkAttributeName, NSMenu, NSMenuItem, NSMutableParagraphStyle,
-    NSParagraphStyleAttributeName, NSTextAlignment,
+    NSAboutPanelOptionApplicationIcon, NSAboutPanelOptionApplicationName,
+    NSAboutPanelOptionApplicationVersion, NSAboutPanelOptionCredits, NSAboutPanelOptionVersion,
+    NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication,
+    NSAttributedStringAttachmentConveniences, NSColor, NSEventModifierFlags, NSFont,
+    NSFontAttributeName, NSForegroundColorAttributeName, NSImage, NSLinkAttributeName, NSMenu,
+    NSMenuItem, NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSStackView,
+    NSTextAlignment, NSTextAttachment, NSTextField,
 };
 use objc2_foundation::{
-    NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableAttributedString, NSString,
-    NSURL,
+    NSArray, NSAttributedString, NSAttributedStringKey, NSData, NSDictionary,
+    NSMutableAttributedString, NSRange, NSSize, NSString, NSURL,
 };
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -50,7 +52,18 @@ static ABOUT: OnceLock<AboutInfo> = OnceLock::new();
 struct AboutInfo {
     name: String,
     credits: String,
+    board: bool,
 }
+
+/// The Logo's app icon and wordmarks, for the board's About panel.
+const ICON: &[u8] = include_bytes!("../design/components/Logo/files/iboard-1024.png");
+const WORDMARK_LIGHT: &[u8] =
+    include_bytes!("../design/components/Logo/files/iboard-wordmark-light.svg");
+const WORDMARK_DARK: &[u8] =
+    include_bytes!("../design/components/Logo/files/iboard-wordmark-dark.svg");
+/// The wordmark's height in the About panel, and its SVG's aspect.
+const WORDMARK_H: f64 = 36.0;
+const WORDMARK_ASPECT: f64 = 155.0 / 48.0;
 
 /// Remembers the context for menu actions. Call once, from [`install`]'s caller.
 pub fn set_context(ctx: eframe::egui::Context) {
@@ -159,6 +172,7 @@ pub fn install(app_name: &str, credits: &str, board: bool) {
     let _ = ABOUT.set(AboutInfo {
         name: app_name.to_string(),
         credits: credits.to_string(),
+        board,
     });
     let app = NSApplication::sharedApplication(mtm);
     // Menu items hold their target weakly; the target lives as long as the app.
@@ -254,28 +268,107 @@ pub fn install(app_name: &str, credits: &str, board: bool) {
 }
 
 /// The standard About panel, with the app name, version and description.
+/// The board's shows the Logo instead: its sharp icon, then the wordmark in
+/// place of the name, the version under it.
 fn show_about_panel(mtm: MainThreadMarker) {
     let about = ABOUT.get();
-    let name = NSString::from_str(about.map(|a| a.name.as_str()).unwrap_or("iboard"));
-    let version = NSString::from_str(env!("CARGO_PKG_VERSION"));
+    let board = about.is_some_and(|a| a.board);
+    let app = NSApplication::sharedApplication(mtm);
+    let mut name = NSString::from_str(about.map(|a| a.name.as_str()).unwrap_or("iboard"));
+    let mut version = NSString::from_str(env!("CARGO_PKG_VERSION"));
     let empty = NSString::from_str("");
-    let credits = attributed(about.map(|a| a.credits.as_str()).unwrap_or_default());
+    let credits = NSMutableAttributedString::new();
+    let icon = board.then(|| image(ICON)).flatten();
+    if board && let Some(mark) = wordmark(&app) {
+        credits.appendAttributedString(&mark);
+        credits.appendAttributedString(&attributed(
+            &format!("\nVersion {version}\n\n"),
+            &NSColor::secondaryLabelColor(),
+        ));
+        name = empty.clone();
+        version = empty.clone();
+    }
+    credits.appendAttributedString(&attributed(
+        about.map(|a| a.credits.as_str()).unwrap_or_default(),
+        &NSColor::labelColor(),
+    ));
     // SAFETY: AppKit's own option keys, each paired with the type it documents.
     let options = unsafe {
-        NSDictionary::<NSString, AnyObject>::from_slices(
-            &[
-                NSAboutPanelOptionApplicationName,
-                NSAboutPanelOptionApplicationVersion,
-                // Without it the panel adds a "(<build>)" suffix.
-                NSAboutPanelOptionVersion,
-                NSAboutPanelOptionCredits,
-            ],
-            &[&name, &version, &empty, &credits],
-        )
+        let mut keys = vec![
+            NSAboutPanelOptionApplicationName,
+            NSAboutPanelOptionApplicationVersion,
+            // Without it the panel adds a "(<build>)" suffix.
+            NSAboutPanelOptionVersion,
+            NSAboutPanelOptionCredits,
+        ];
+        let mut values: Vec<&AnyObject> = vec![&name, &version, &empty, &credits];
+        if let Some(icon) = &icon {
+            keys.push(NSAboutPanelOptionApplicationIcon);
+            values.push(icon);
+        }
+        NSDictionary::<NSString, AnyObject>::from_slices(&keys, &values)
     };
-    let app = NSApplication::sharedApplication(mtm);
     // SAFETY: `options` only holds the About-panel keys and value types above.
     unsafe { app.orderFrontStandardAboutPanelWithOptions(&options) };
+    if board {
+        collapse_empty_rows(&app);
+    }
+}
+
+/// An image from PNG or SVG bytes.
+fn image(bytes: &[u8]) -> Option<Retained<NSImage>> {
+    NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(bytes))
+}
+
+/// The wordmark as a centred line of credits, light or dark after the app.
+fn wordmark(app: &NSApplication) -> Option<Retained<NSAttributedString>> {
+    // SAFETY: AppKit's own appearance names.
+    let names = unsafe { NSArray::from_slice(&[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) };
+    let dark = app
+        .effectiveAppearance()
+        .bestMatchFromAppearancesWithNames(&names)
+        .is_some_and(|name| name.to_string().contains("Dark"));
+    let mark = image(if dark { WORDMARK_DARK } else { WORDMARK_LIGHT })?;
+    mark.setSize(NSSize::new(WORDMARK_H * WORDMARK_ASPECT, WORDMARK_H));
+    let attachment = NSTextAttachment::new();
+    attachment.setImage(Some(&mark));
+    let line = NSMutableAttributedString::from_attributed_nsstring(
+        &NSAttributedString::attributedStringWithAttachment(&attachment),
+    );
+    let paragraph = NSMutableParagraphStyle::new();
+    paragraph.setAlignment(NSTextAlignment::Center);
+    // SAFETY: a paragraph style under its own key.
+    unsafe {
+        line.addAttribute_value_range(
+            NSParagraphStyleAttributeName,
+            &paragraph,
+            NSRange::new(0, line.length()),
+        );
+    }
+    Some(Retained::into_super(line))
+}
+
+/// Hides the About panel's emptied name and version rows; its stack view
+/// then closes the gap they leave above the wordmark.
+fn collapse_empty_rows(app: &NSApplication) {
+    for window in app.windows() {
+        let Some(content) = window.contentView() else {
+            continue;
+        };
+        let Some(stack) = content.subviews().firstObject() else {
+            continue;
+        };
+        let Some(stack) = stack.downcast_ref::<NSStackView>() else {
+            continue;
+        };
+        for row in stack.arrangedSubviews() {
+            if let Some(field) = row.downcast_ref::<NSTextField>()
+                && field.stringValue().length() == 0
+            {
+                field.setHidden(true);
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -314,13 +407,12 @@ fn spans(text: &str) -> Vec<Span<'_>> {
     out
 }
 
-/// The About panel's credits: centred, in the small system font, with
-/// [`spans`] styled.
-fn attributed(text: &str) -> Retained<NSAttributedString> {
+/// The About panel's credits: centred, in the small system font and `color`,
+/// with [`spans`] styled.
+fn attributed(text: &str, color: &NSColor) -> Retained<NSAttributedString> {
     let size = NSFont::smallSystemFontSize();
     let regular = NSFont::systemFontOfSize(size);
     let bold = NSFont::boldSystemFontOfSize(size);
-    let color = NSColor::labelColor();
     let paragraph = NSMutableParagraphStyle::new();
     paragraph.setAlignment(NSTextAlignment::Center);
     let out = NSMutableAttributedString::new();
