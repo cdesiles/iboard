@@ -77,6 +77,10 @@ use intent::Intent;
 use labelling::*;
 use reader::*;
 
+#[cfg(target_os = "macos")]
+const ABOUT: &str = "**iboard** is an opinionated issue tracker that lives entirely as Markdown \
+files right next to your code.\n\nReport issues at https://github.com/cdesiles/iboard";
+
 /// How often Auto reads the board again.
 const RESCAN_EVERY: Duration = Duration::from_secs(2);
 
@@ -765,7 +769,7 @@ impl IboardApp {
         #[cfg(target_os = "macos")]
         {
             iboard::menu::set_context(cc.egui_ctx.clone());
-            iboard::menu::install("iboard", env!("CARGO_PKG_DESCRIPTION"), true);
+            iboard::menu::install("iboard", ABOUT, true);
             iboard::pasteboard::watch(cc.egui_ctx.clone());
         }
         let mut app = Self::from_located(located);

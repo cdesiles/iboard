@@ -14,13 +14,18 @@
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, Sel};
-use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
+use objc2::{AllocAnyThread, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSAboutPanelOptionApplicationName, NSAboutPanelOptionApplicationVersion,
-    NSAboutPanelOptionCredits, NSAboutPanelOptionVersion, NSApplication, NSEventModifierFlags,
-    NSMenu, NSMenuItem,
+    NSAboutPanelOptionCredits, NSAboutPanelOptionVersion, NSApplication, NSColor,
+    NSEventModifierFlags, NSFont, NSFontAttributeName, NSForegroundColorAttributeName,
+    NSLinkAttributeName, NSMenu, NSMenuItem, NSMutableParagraphStyle,
+    NSParagraphStyleAttributeName, NSTextAlignment,
 };
-use objc2_foundation::{NSAttributedString, NSDictionary, NSString};
+use objc2_foundation::{
+    NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableAttributedString, NSString,
+    NSURL,
+};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -144,7 +149,7 @@ fn set_target(item: &NSMenuItem, target: &'static AnyObject) {
 /// Replaces winit's default menu bar. Does nothing off the main thread.
 ///
 /// `app_name` titles the application menu and the About panel; `credits` is the
-/// line under the version there. `board` adds Window › Settings… and Tools ›
+/// text under the version there, `**bold**` spans and `https://` links styled. `board` adds Window › Settings… and Tools ›
 /// Project Stats…, which the caller watches with [`take_settings_request`] and
 /// [`take_stats_request`].
 pub fn install(app_name: &str, credits: &str, board: bool) {
@@ -254,9 +259,7 @@ fn show_about_panel(mtm: MainThreadMarker) {
     let name = NSString::from_str(about.map(|a| a.name.as_str()).unwrap_or("iboard"));
     let version = NSString::from_str(env!("CARGO_PKG_VERSION"));
     let empty = NSString::from_str("");
-    let credits = NSAttributedString::from_nsstring(&NSString::from_str(
-        about.map(|a| a.credits.as_str()).unwrap_or_default(),
-    ));
+    let credits = attributed(about.map(|a| a.credits.as_str()).unwrap_or_default());
     // SAFETY: AppKit's own option keys, each paired with the type it documents.
     let options = unsafe {
         NSDictionary::<NSString, AnyObject>::from_slices(
@@ -273,6 +276,90 @@ fn show_about_panel(mtm: MainThreadMarker) {
     let app = NSApplication::sharedApplication(mtm);
     // SAFETY: `options` only holds the About-panel keys and value types above.
     unsafe { app.orderFrontStandardAboutPanelWithOptions(&options) };
+}
+
+#[derive(Debug, PartialEq)]
+enum Span<'a> {
+    Text(&'a str),
+    Bold(&'a str),
+    Link(&'a str),
+}
+
+/// Splits `text` into plain runs, `**bold**` runs and `https://` links.
+fn spans(text: &str) -> Vec<Span<'_>> {
+    let mut out = Vec::new();
+    for (i, part) in text.split("**").enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i % 2 == 1 {
+            out.push(Span::Bold(part));
+            continue;
+        }
+        let mut rest = part;
+        while let Some(start) = rest.find("https://") {
+            let end = rest[start..]
+                .find(char::is_whitespace)
+                .map_or(rest.len(), |len| start + len);
+            if start > 0 {
+                out.push(Span::Text(&rest[..start]));
+            }
+            out.push(Span::Link(&rest[start..end]));
+            rest = &rest[end..];
+        }
+        if !rest.is_empty() {
+            out.push(Span::Text(rest));
+        }
+    }
+    out
+}
+
+/// The About panel's credits: centred, in the small system font, with
+/// [`spans`] styled.
+fn attributed(text: &str) -> Retained<NSAttributedString> {
+    let size = NSFont::smallSystemFontSize();
+    let regular = NSFont::systemFontOfSize(size);
+    let bold = NSFont::boldSystemFontOfSize(size);
+    let color = NSColor::labelColor();
+    let paragraph = NSMutableParagraphStyle::new();
+    paragraph.setAlignment(NSTextAlignment::Center);
+    let out = NSMutableAttributedString::new();
+    for span in spans(text) {
+        let (run, font, url) = match span {
+            Span::Text(run) => (run, &regular, None),
+            Span::Bold(run) => (run, &bold, None),
+            Span::Link(run) => (
+                run,
+                &regular,
+                NSURL::URLWithString(&NSString::from_str(run)),
+            ),
+        };
+        // SAFETY: AppKit's attribute keys, each paired with the type it documents.
+        let attributes = unsafe {
+            let mut keys: Vec<&NSAttributedStringKey> = vec![
+                NSFontAttributeName,
+                NSForegroundColorAttributeName,
+                NSParagraphStyleAttributeName,
+            ];
+            let mut values: Vec<&AnyObject> =
+                vec![font.as_ref(), color.as_ref(), paragraph.as_ref()];
+            if let Some(url) = &url {
+                keys.push(NSLinkAttributeName);
+                values.push(url.as_ref());
+            }
+            NSDictionary::<NSAttributedStringKey, AnyObject>::from_slices(&keys, &values)
+        };
+        // SAFETY: the attributes above are all valid for an attributed string.
+        let piece = unsafe {
+            NSAttributedString::initWithString_attributes(
+                NSAttributedString::alloc(),
+                &NSString::from_str(run),
+                Some(&attributes),
+            )
+        };
+        out.appendAttributedString(&piece);
+    }
+    Retained::into_super(out)
 }
 
 /// Adds a top-level menu titled `title` to `menubar` and returns it.
@@ -303,5 +390,23 @@ fn item(
             action,
             &NSString::from_str(key),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Span, spans};
+
+    #[test]
+    fn credits_style_bold_runs_and_links() {
+        assert_eq!(
+            spans("**iboard** is a tracker.\nIssues: https://example.com/x"),
+            vec![
+                Span::Bold("iboard"),
+                Span::Text(" is a tracker.\nIssues: "),
+                Span::Link("https://example.com/x"),
+            ]
+        );
+        assert_eq!(spans("Plain text"), vec![Span::Text("Plain text")]);
     }
 }
