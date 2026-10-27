@@ -11,7 +11,7 @@ trap 'rm -rf "$staged"' EXIT
 git checkout-index --all --prefix="$staged/"
 mkdir -p "$snapshot"
 # --checksum without --times leaves unchanged files alone, so builds stay incremental.
-rsync --recursive --checksum --delete "$staged/" "$snapshot/"
+rsync --recursive --links --checksum --delete "$staged/" "$snapshot/"
 
 cd "$snapshot"
 cargo fmt --all --check
