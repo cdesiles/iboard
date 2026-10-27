@@ -171,6 +171,15 @@ engine = "apple"    # "apple" (on-device), "agent" or "manual"
 confirm = true      # false: delete without asking, with ⌘Z undo
 ```
 
+idesign is in beta and off by default: the board shows no Design button and
+no Draft design, and a project's `design/` folder stays as it is on disk. It
+has no Settings toggle; turn it on in the same file, then restart:
+
+```toml
+[idesign]
+enabled = false     # true: the Design panel and Draft design
+```
+
 `default` runs the tool's first favorite model: OpenCode's first favorite, or
 the `model` in Claude Code's settings. OpenCode and Claude Code run
 non-interactively (`opencode run`, `claude -p`); a custom command runs through

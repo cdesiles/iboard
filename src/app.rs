@@ -533,6 +533,9 @@ pub struct IboardApp {
     confirm_delete: bool,
     /// Settings › General: the theme the window draws in.
     appearance: Appearance,
+    /// `[idesign] enabled`: the beta Design panel and Draft design are
+    /// reachable. Off, no path leads to them.
+    idesign: bool,
     /// Where deleted issues go: the user's Trash in the app, a folder of its
     /// own for a board built in tests.
     trash: Trash,
@@ -784,6 +787,7 @@ impl IboardApp {
         app.confirm_delete = general::load_confirm_delete(&mut config);
         app.appearance = general::load_appearance(&mut config);
         app.auto = general::load_auto(&mut config);
+        app.idesign = general::load_idesign(&mut config);
         theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
         if !config.problems.is_empty() {
@@ -815,6 +819,7 @@ impl IboardApp {
             scan_error,
             confirm_delete: true,
             appearance: Appearance::default(),
+            idesign: false,
             trash: Trash::Folder(std::env::temp_dir().join("iboard-trash")),
             past_reviews,
             column_focus: ColumnFocus::default(),

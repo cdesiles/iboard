@@ -12,6 +12,9 @@ impl IboardApp {
     }
 
     pub(super) fn show_design(&mut self, live: bool, dark: bool) {
+        if !self.idesign {
+            return;
+        }
         if live && let Ok(system) = DesignSystem::discover(&self.located.project_dir) {
             let theme = if dark { "dark" } else { "light" };
             match design::catalog::show(&system, theme) {
@@ -27,6 +30,9 @@ impl IboardApp {
     }
 
     pub(super) fn open_design(&mut self) {
+        if !self.idesign {
+            return;
+        }
         match DesignSystem::discover(&self.located.project_dir) {
             Ok(system) => {
                 self.session.design_system = Some(system);
@@ -47,6 +53,9 @@ impl IboardApp {
         let Some(mut panel) = self.session.design.take() else {
             return;
         };
+        if !self.idesign {
+            return;
+        }
         let action = panel.show(
             ui.ctx(),
             self.session.design_system.as_ref(),
@@ -67,6 +76,9 @@ impl IboardApp {
         panel: &mut design_ui::Panel,
         action: design_ui::Action,
     ) -> bool {
+        if !self.idesign {
+            return false;
+        }
         match action {
             design_ui::Action::Keep => true,
             design_ui::Action::Close => false,
@@ -116,6 +128,9 @@ impl IboardApp {
     /// Ask the configured agent to draft a component's preview fragment. The
     /// prompt is built from the just-scaffolded component and the system.
     pub(super) fn start_design_draft(&mut self, name: &str, group: &str, intent: &str) {
+        if !self.idesign {
+            return;
+        }
         let Some(system) = self.session.design_system.as_ref() else {
             return;
         };

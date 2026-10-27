@@ -11,6 +11,14 @@
 //! [auto]
 //! enabled = true   # false: no reload from disk, no saving as you type
 //! ```
+//!
+//! Beta features stay off unless their section turns them on, and Settings
+//! does not list them:
+//!
+//! ```toml
+//! [idesign]
+//! enabled = false  # true: the Design panel and Draft design
+//! ```
 
 use serde::{Deserialize, Serialize};
 
@@ -40,26 +48,35 @@ pub fn section(confirm: bool) -> Result<Section, String> {
     )
 }
 
-/// The `[auto] enabled` section of the user configuration.
+/// A section that holds one `enabled` switch: `[auto]`, `[idesign]`.
 #[derive(Default, Deserialize, Serialize)]
-struct RawAuto {
+struct RawEnabled {
     enabled: Option<bool>,
 }
 
 /// Whether the board reloads from disk and the editor saves as you type; on
 /// unless `[auto]` says otherwise.
 pub fn load_auto(config: &mut UserConfig) -> bool {
-    config.section::<RawAuto>("auto").enabled.unwrap_or(true)
+    config.section::<RawEnabled>("auto").enabled.unwrap_or(true)
 }
 
 /// The `[auto]` section that stores `enabled`.
 pub fn auto_section(enabled: bool) -> Result<Section, String> {
     Section::new(
         "auto",
-        &RawAuto {
+        &RawEnabled {
             enabled: Some(enabled),
         },
     )
+}
+
+/// Whether idesign, still in beta, is reachable from the board: the Design
+/// panel and Draft design. Off unless `[idesign] enabled = true`.
+pub fn load_idesign(config: &mut UserConfig) -> bool {
+    config
+        .section::<RawEnabled>("idesign")
+        .enabled
+        .unwrap_or(false)
 }
 
 /// The theme the windows draw in. Light unless `[appearance]` says otherwise.
@@ -155,6 +172,19 @@ mod tests {
         assert!(!load_auto(&mut config));
         let mut config = UserConfig::parse("[auto]\nenabled = true\n", file);
         assert!(load_auto(&mut config));
+    }
+
+    #[test]
+    fn idesign_is_off_by_default_and_can_be_turned_on() {
+        let file = Path::new("iboard.toml");
+        assert!(!load_idesign(&mut UserConfig::default()));
+        let mut config = UserConfig::parse("[auto]\nenabled = true\n", file);
+        assert!(!load_idesign(&mut config));
+        let mut config = UserConfig::parse("[idesign]\nenabled = true\n", file);
+        assert!(load_idesign(&mut config));
+        let mut config = UserConfig::parse("[idesign]\nenabled = \"yes\"\n", file);
+        assert!(!load_idesign(&mut config));
+        assert_eq!(config.problems.len(), 1, "a wrong type is reported");
     }
 
     #[test]

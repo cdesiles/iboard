@@ -43,6 +43,7 @@ fn design_panel_loads_and_creates_a_component() {
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     write_min_design(&dir);
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.idesign = true;
 
     app.open_design();
     assert!(
@@ -89,6 +90,7 @@ fn design_panel_reports_a_missing_system() {
     let dir = scratch_dir("design-missing");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.idesign = true;
 
     app.open_design();
     assert!(app.session.design_system.is_none());
@@ -123,6 +125,7 @@ fn design_panel_drafts_a_component_with_the_agent() {
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     write_min_design(&dir);
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.idesign = true;
     app.open_design();
 
     // A fake agent: prints a fenced HTML fragment, ignores the prompt.
@@ -174,6 +177,7 @@ fn the_design_button_falls_back_to_the_panel() {
     let dir = scratch_dir("design-button");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.idesign = true;
     app.show_design(true, false);
     assert!(app.session.design.is_some(), "no system: the panel says so");
     assert!(app.session.design_error.is_some());
@@ -183,4 +187,70 @@ fn the_design_button_falls_back_to_the_panel() {
     app.show_design(false, false);
     assert!(app.session.design.is_some(), "no helper: the panel");
     assert!(app.session.design_system.is_some());
+}
+
+/// idesign is a beta: off by default, nothing on the board leads to it, and
+/// a project's `design/` stays on disk, out of reach.
+#[test]
+fn with_idesign_off_no_path_reaches_the_design_panel() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("design-off");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let issue = todo.join("open.md");
+    std::fs::write(&issue, "# Open\n").unwrap();
+    write_min_design(&dir);
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    assert!(!app.idesign, "off by default");
+    app.agent.configured = true;
+
+    let offers = |app: IboardApp, label: &str| {
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(window().size())
+            .build_ui_state(
+                |ui, (themed, app): &mut (bool, IboardApp)| {
+                    if !*themed {
+                        theme::install(ui.ctx());
+                        *themed = true;
+                        return;
+                    }
+                    app.draw(ui);
+                },
+                (false, app),
+            );
+        harness.run_steps(2);
+        let offered = harness.query_by_label(label).is_some();
+        (offered, harness.into_state().1)
+    };
+    let (offered, mut app) = offers(app, "Design");
+    assert!(!offered, "the board has no Design button");
+    app.open_issue(issue.clone());
+    let (offered, mut app) = offers(app, "Draft design");
+    assert!(!offered, "the reader has no Draft design");
+
+    app.show_design(true, false);
+    app.show_design(false, false);
+    app.open_design();
+    assert!(app.session.design.is_none(), "no action opens the panel");
+    assert!(app.session.design_system.is_none());
+    app.start_enrichment(&issue);
+    assert!(app.session.enrichment.is_none(), "nor drafts a mockup");
+    assert!(app.settings.is_none());
+    app.start_design_draft("Toast", "Feedback", "A toast");
+    assert!(app.session.design_draft.is_none(), "nor a component");
+    let mut panel = design_ui::Panel::default();
+    let keep = app.handle_design_action(&mut panel, design_ui::Action::Render("Button".into()));
+    assert!(!keep, "nor renders a preview");
+
+    app.session.design = Some(design_ui::Panel::default());
+    let (ctx, raw) = panel_ctx();
+    let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
+    output.textures_delta.clear();
+    assert!(app.session.design.is_none(), "a panel never shows");
+    assert!(dir.join("design/components/Button/preview.html").is_file());
+
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.idesign = true;
+    let (offered, _) = offers(app, "Design");
+    assert!(offered, "on, the board offers it again");
 }

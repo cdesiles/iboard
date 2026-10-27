@@ -235,9 +235,10 @@ impl IboardApp {
             self.open_composer();
         }
         self.refresh_button(ui);
-        if widgets::button(ui, ButtonKind::Secondary, None, "Design", None)
-            .on_hover_text("Browse the project's design system")
-            .clicked()
+        if self.idesign
+            && widgets::button(ui, ButtonKind::Secondary, None, "Design", None)
+                .on_hover_text("Browse the project's design system")
+                .clicked()
         {
             self.design_button(ui.visuals().dark_mode);
         }
@@ -293,6 +294,7 @@ impl IboardApp {
         }
         if reading
             && !done
+            && self.idesign
             && widgets::button(ui, ButtonKind::Secondary, None, "Draft design", None)
                 .on_hover_text("Ask the agent for a static mockup of this change")
                 .clicked()
