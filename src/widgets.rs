@@ -51,6 +51,18 @@ pub fn thinking(ui: &mut Ui, height: f32) -> Response {
     response
 }
 
+/// The iboard wordmark, `height` tall: `ink` letters, the i's card in `accent`.
+pub fn wordmark(ui: &mut Ui, height: f32) -> Response {
+    let p = theme::palette(ui);
+    let size = Vec2::new(height * theme::WORDMARK_ASPECT, height);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Image, true, "iboard"));
+    if ui.is_rect_visible(rect) {
+        theme::wordmark(ui.painter(), rect, p.ink, p.accent);
+    }
+    response
+}
+
 /// The 14pt checkbox: `accent` fill and an `on-accent` tick when checked.
 pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
     let p = theme::palette(ui);

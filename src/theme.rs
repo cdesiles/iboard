@@ -7,10 +7,12 @@
 mod divider;
 mod scroll;
 mod thinking;
+mod wordmark;
 
 pub use divider::{pane_divider, pane_split};
 pub use scroll::{scroll_area, scroll_rows};
 pub use thinking::thinking_mark;
+pub use wordmark::{WORDMARK_ASPECT, wordmark};
 
 use std::sync::Arc;
 

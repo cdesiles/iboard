@@ -1,4 +1,15 @@
-iboard is a desktop tool for developers who keep their issues as markdown files next to the code. Four folders (`todo/`, `ready/`, `doing/`, `done/`) are four columns; one file is one issue. Issues flow left to right: Todo holds ideas that may still need refining, Ready holds refined issues queued for an agent (a `001-` prefix is the priority), Doing is what someone is working on, Done is finished. The interface should feel like an editor panel, not a project-management suite: dense, quiet, fast, and readable at a glance on a MacBook Pro.
+iboard is a high-performance desktop tool for demanding code builders.
+
+Key takeways:
+
+- Fast: it stays dead simple
+- Modern: you can now be a product developer.
+- Opinionated: its target is small, high-impact teams and solopreneurs who build and test locally with tight feedback loops. There's no time to bounce between Jira, Notion, GitHub, GitLab and the rest. You only share on git what's already done and verified.
+- Extendable: it's open source. Come with your ideas, contribute, copy it.
+
+At its core, iboard is a kanban board built on markdown files. That's all. You can drive it entirely from the keyboard, and create and work through tasks with or without AI, and even with or without iboard itself, since it's all just files.
+
+Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`, `doing/`, `done/`) are four columns; one file is one issue. Issues flow left to right: Todo holds ideas that may still need refining, Ready holds refined issues queued for an agent (a `001-` prefix is the priority), Doing is what someone is working on, Done is finished. The interface should feel like an editor panel, not a project-management suite: dense, quiet, fast, and readable at a glance on a MacBook Pro.
 
 ## Principles
 

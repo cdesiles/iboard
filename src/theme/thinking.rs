@@ -80,7 +80,7 @@ pub(super) fn icon(painter: &Painter, rect: Rect) {
 }
 
 /// The outline of `rect` with corners of `radius`, clockwise.
-fn rounded_rect(rect: Rect, radius: f32) -> Vec<Pos2> {
+pub(super) fn rounded_rect(rect: Rect, radius: f32) -> Vec<Pos2> {
     const STEPS: usize = 4;
     let corners = [
         (
