@@ -112,3 +112,29 @@ fn the_stats_panel_explains_a_project_without_history() {
     }));
     assert!(app.session.stats.as_ref().unwrap().snapshots().is_empty());
 }
+
+/// The board's Stats button opens the panel, as Tools › Project Stats… does.
+#[test]
+fn the_stats_button_opens_the_panel() {
+    let (_dir, located) = project("stats-button");
+    let app = IboardApp::from_located(located);
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    assert!(harness.state().1.session.stats.is_none());
+    harness.get_by_label("Stats").click();
+    harness.run_steps(2);
+    assert!(harness.state().1.session.stats.is_some());
+}

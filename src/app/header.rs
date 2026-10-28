@@ -219,7 +219,7 @@ impl IboardApp {
         }
     }
 
-    /// The board's toolbar: New issue, Refresh, Design and the filter.
+    /// The board's toolbar: New issue, Refresh, Stats, Design and the filter.
     fn board_controls(&mut self, ui: &mut egui::Ui) {
         let has_todo = self.board.todo_column().is_some();
         let new_issue = ui.add_enabled_ui(has_todo, |ui| {
@@ -236,6 +236,12 @@ impl IboardApp {
             self.open_composer();
         }
         self.refresh_button(ui);
+        if widgets::button(ui, ButtonKind::Secondary, None, "Stats", None)
+            .on_hover_text("Project stats: what the commits say, and the Agenda")
+            .clicked()
+        {
+            self.open_stats();
+        }
         if self.idesign
             && widgets::button(ui, ButtonKind::Secondary, None, "Design", None)
                 .on_hover_text("Browse the project's design system")
