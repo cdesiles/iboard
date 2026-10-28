@@ -45,13 +45,33 @@ impl Output {
         if self.status.success() {
             return Ok(self.stdout);
         }
-        let stderr = self.stderr.trim();
+        let stderr = without_escapes(&self.stderr);
+        let stderr = stderr.trim();
         Err(if stderr.is_empty() {
             format!("{what} exited with {}", self.status)
         } else {
             stderr.to_string()
         })
     }
+}
+
+/// `text` without its terminal escape sequences (`\x1b[31m` colours and the
+/// like), which tools such as direnv put in their errors.
+pub fn without_escapes(text: &str) -> String {
+    let mut clean = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            clean.push(c);
+        } else if chars.next() == Some('[') {
+            for c in chars.by_ref() {
+                if ('@'..='~').contains(&c) {
+                    break;
+                }
+            }
+        }
+    }
+    clean
 }
 
 /// Runs `command` to its end, with no input and its output captured. `what`
@@ -280,6 +300,14 @@ impl Drain {
         let bytes = std::mem::take(&mut *self.bytes.lock().unwrap_or_else(PoisonError::into_inner));
         String::from_utf8_lossy(&bytes).into_owned()
     }
+}
+
+#[cfg(test)]
+#[test]
+fn errors_drop_terminal_escapes() {
+    let direnv = "\x1b[31mdirenv: error .envrc is blocked\x1b[0m";
+    assert_eq!(without_escapes(direnv), "direnv: error .envrc is blocked");
+    assert_eq!(without_escapes("plain [31m"), "plain [31m");
 }
 
 #[cfg(all(test, unix))]

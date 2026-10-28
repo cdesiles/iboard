@@ -396,6 +396,35 @@ fn move_to_sends_the_open_issue_and_keeps_it_open() {
     assert!(matches!(&app.session.screen, Screen::Detail(open) if *open == moved));
 }
 
+/// A long error keeps its Dismiss button in the window.
+#[test]
+fn a_long_error_can_still_be_dismissed() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("long-error");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.error = Some("direnv: error /a/very/long/path/.envrc is blocked. ".repeat(12));
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    let dismiss = harness.get_by_label("Dismiss").rect();
+    assert!(dismiss.max.x <= window().width(), "{dismiss:?}");
+    harness.get_by_label("Dismiss").click();
+    harness.run_steps(2);
+    assert!(harness.state().1.error.is_none());
+}
+
 #[test]
 fn moving_never_overwrites_an_existing_file() {
     let dir = scratch_dir("clobber");
