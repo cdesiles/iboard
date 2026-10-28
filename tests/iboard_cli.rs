@@ -85,3 +85,72 @@ fn help_and_version_exit_zero_and_unknown_options_two() {
     assert!(text(&version.stdout).starts_with("iboard "));
     assert_eq!(iboard(&["--print"]).status.code(), Some(2));
 }
+
+/// `--all --list` merges the projects of the user configuration's groups,
+/// names each issue's project, and skips a folder without `issues/`.
+#[test]
+fn all_lists_the_workspace_projects_merged() {
+    let config = tempfile::tempdir().unwrap();
+    let (app, site, bare) = (project(), project(), tempfile::tempdir().unwrap());
+    std::fs::write(site.path().join("issues/ready/001-ship.md"), "# Ship\n").unwrap();
+    std::fs::create_dir_all(config.path().join("iboard")).unwrap();
+    let repos = |dirs: &[&Path]| {
+        let quoted: Vec<String> = dirs
+            .iter()
+            .map(|d| format!("{:?}", d.display().to_string()))
+            .collect();
+        quoted.join(", ")
+    };
+    std::fs::write(
+        config.path().join("iboard/iboard.toml"),
+        format!(
+            "[[workspace.group]]\nname = \"Dev\"\nrepos = [{}]\n\n\
+             [[workspace.group]]\nname = \"Client\"\nrepos = [{}]\n",
+            repos(&[app.path()]),
+            repos(&[site.path(), bare.path()]),
+        ),
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_iboard"))
+            .args(args)
+            .env("XDG_CONFIG_HOME", config.path())
+            .output()
+            .unwrap()
+    };
+    let output = run(&["--all", "--list"]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    let stdout = text(&output.stdout);
+    let (app_name, site_name) = (
+        app.path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+        site.path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+    );
+    assert!(
+        stdout.starts_with("All projects  (2 repos, 2 groups)"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\nTodo (2)\n"), "{stdout}");
+    assert!(stdout.contains("\nReady (3)\n"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("  • [{site_name}] Ship")),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("  • [{app_name}] Fix login")),
+        "{stdout}"
+    );
+    assert!(text(&output.stderr).contains("skipped"));
+
+    std::fs::remove_file(config.path().join("iboard/iboard.toml")).unwrap();
+    let output = run(&["--all", "--list"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output.stderr).contains("no [[workspace.group]]"));
+}

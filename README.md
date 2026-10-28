@@ -37,6 +37,7 @@ iboard                     # start the app on the current working directory
 iboard ~/code/my-project   # start the app on the given directory
 iboard init ~/new-app      # create issues/ (todo, ready, doing, done) and configuration
 iboard --list              # print the board to stdout, no window
+iboard --all --list        # print every workspace project's board, merged
 ```
 
 ## Building from sources
@@ -124,3 +125,19 @@ has no Settings toggle; turn it on in the same file, then restart:
 [idesign]
 enabled = false     # true: the Design panel and Draft design
 ```
+
+### Workspace
+
+Several projects can be seen as one board. List them by group in the same
+user configuration:
+
+```toml
+[[workspace.group]]
+name = "Client"
+repos = ["~/code/app", "~/code/site"]
+```
+
+Their columns merge by kind (every Doing in one Doing), each issue is labelled
+`repo:<folder>` and `group:<name>` so the filter narrows the board to one
+project or one group, and each project keeps its own `issues/`. A folder
+without its own `issues/` is skipped with a warning.

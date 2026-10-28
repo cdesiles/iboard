@@ -46,6 +46,19 @@ impl Column {
     }
 }
 
+/// One project of a workspace board.
+#[derive(Clone, Debug)]
+pub struct Repo {
+    /// Its folder's name, the `repo:` label of its issues.
+    pub name: String,
+    /// The workspace group it is listed in, the `group:` label.
+    pub group: String,
+    pub project_dir: PathBuf,
+    pub root: PathBuf,
+    /// Its own column folders, the issues root included.
+    pub dirs: Vec<PathBuf>,
+}
+
 pub struct Board {
     pub project_dir: PathBuf,
     pub root: PathBuf,
@@ -55,6 +68,9 @@ pub struct Board {
     pub columns: Vec<Column>,
     /// Non-fatal problems encountered while scanning (unreadable files, ...).
     pub warnings: Vec<String>,
+    /// The projects of a workspace board, whose columns merge theirs; empty
+    /// for a single project.
+    pub repos: Vec<Repo>,
 }
 
 impl Board {
@@ -87,6 +103,7 @@ impl Board {
             reader_sections: reader_sections(located.config.as_ref()),
             columns: Vec::new(),
             warnings: Vec::new(),
+            repos: Vec::new(),
         }
     }
 
@@ -101,15 +118,24 @@ impl Board {
         self.columns.iter().map(|c| c.issues.len()).sum()
     }
 
+    /// The workspace project holding `path`; `None` on a single project.
+    pub fn repo_of(&self, path: &Path) -> Option<&Repo> {
+        self.repos
+            .iter()
+            .filter(|repo| path.starts_with(&repo.root))
+            .max_by_key(|repo| repo.root.components().count())
+    }
+
     /// The project the issue at `path` belongs to: where its agents run.
-    pub fn project_of(&self, _path: &Path) -> &Path {
-        &self.project_dir
+    pub fn project_of(&self, path: &Path) -> &Path {
+        self.repo_of(path)
+            .map_or(&self.project_dir, |repo| &repo.project_dir)
     }
 
     /// The issues folder the issue at `path` belongs to: where its sidecars
     /// (reviews, comments, build logs, images) live.
-    pub fn root_of(&self, _path: &Path) -> &Path {
-        &self.root
+    pub fn root_of(&self, path: &Path) -> &Path {
+        self.repo_of(path).map_or(&self.root, |repo| &repo.root)
     }
 }
 
@@ -374,11 +400,12 @@ pub fn build(located: &Located) -> Result<Board> {
         reader_sections: reader_sections(config),
         columns,
         warnings,
+        repos: Vec::new(),
     })
 }
 
 /// The configured reader sections, or the standard four.
-fn reader_sections(config: Option<&Config>) -> Vec<String> {
+pub(crate) fn reader_sections(config: Option<&Config>) -> Vec<String> {
     config
         .and_then(|c| c.reader.as_ref())
         .and_then(|r| r.sections.clone())
@@ -476,7 +503,7 @@ pub fn moved_name(name: &str, from_dir: &Path, to_dir: &Path) -> String {
 }
 
 /// The priority number of a Ready file name: `001-x.md` → 1.
-fn priority(name: &str) -> Option<u32> {
+pub(crate) fn priority(name: &str) -> Option<u32> {
     let rest = strip_priority(name);
     if rest.len() == name.len() {
         return None;
@@ -610,7 +637,7 @@ fn is_known_column(dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn column_rank(dir: &Path) -> u8 {
+pub(crate) fn column_rank(dir: &Path) -> u8 {
     dir.file_name()
         .and_then(|n| n.to_str())
         .and_then(canonical)
@@ -618,7 +645,7 @@ fn column_rank(dir: &Path) -> u8 {
         .unwrap_or(u8::MAX)
 }
 
-fn canonical_name(dir: &Path) -> Option<&'static str> {
+pub(crate) fn canonical_name(dir: &Path) -> Option<&'static str> {
     dir.file_name()
         .and_then(|n| n.to_str())
         .and_then(canonical)
