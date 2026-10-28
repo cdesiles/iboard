@@ -495,9 +495,9 @@ fn a_ready_review_opens_from_its_card() {
     assert!(harness.query_by_label("Review ready").is_none());
 }
 
-/// A review asked for from the reader lands there as a ready button.
+/// A review asked for from the reader opens its panel there as it lands.
 #[test]
-fn a_ready_review_opens_from_the_reader() {
+fn a_ready_review_opens_in_the_reader() {
     use egui_kittest::kittest::Queryable;
     let (_dir, file, mut harness) = reviewing("review-ready-reader", PASSING);
     harness.state_mut().1.open_issue(file.clone());
@@ -507,11 +507,11 @@ fn a_ready_review_opens_from_the_reader() {
     assert!(harness.state().1.session.review.is_none());
     land(&mut harness, &file);
 
-    harness.get_by_label("Review ready").click();
     harness.run_steps(2);
     let app = &harness.state().1;
     assert!(app.session.review.is_some(), "the panel opens");
     assert!(!app.session.review_runs.is_ready(&file));
+    assert!(harness.query_by_label("Review ready").is_none());
 }
 
 /// A failed review says so in the status strip, and the issue keeps its
@@ -590,7 +590,6 @@ fn a_reader_review_runs_opencode_in_plan_mode() {
     let stored = reviews::load(&dir.join("issues"), &file).review.unwrap();
     assert!(stored.plan);
     assert!(stored.raw.contains("--agent\nplan\n"), "{}", stored.raw);
-    harness.get_by_label("Review ready").click();
     harness.run_steps(2);
     harness.get_by_label(PLAN_NOTE);
 }
@@ -745,4 +744,57 @@ fn a_long_agent_name_keeps_the_review_panel_in_its_place() {
         title.min.x >= panel_left,
         "{title:?} starts left of {panel_left}"
     );
+}
+
+/// A finished update opens its panel on the issue being read, and when the
+/// issue is opened later; `⌘↩` applies it.
+#[test]
+fn a_finished_update_shows_by_itself_and_applies_with_cmd_enter() {
+    let dir = scratch_dir("update-shows");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let (one, two) = (
+        dir.join("issues/doing/one.md"),
+        dir.join("issues/doing/two.md"),
+    );
+    std::fs::write(&one, "# One\n").unwrap();
+    std::fs::write(&two, "# Two\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf 'RELEVANCE: Challenge\\nstale\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL:\\n# Updated' # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.start_update(&two);
+    app.open_issue(one.clone());
+    app.start_update(&one);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&one) && app.past_reviews.contains_key(&two)
+    }));
+    assert!(
+        app.session.review.as_ref().is_some_and(|r| r.path == one),
+        "shown at once"
+    );
+    app.open_issue(two.clone());
+    assert!(
+        app.session.review.as_ref().is_some_and(|r| r.path == two),
+        "shown on opening"
+    );
+
+    let ctx = themed_ctx();
+    let command = egui::Modifiers::COMMAND;
+    let press = vec![
+        egui::Event::ModifiersChanged(command),
+        key(Key::Enter, command),
+    ];
+    frame(&ctx, &mut app, press);
+    let editor = app
+        .session
+        .editor
+        .as_ref()
+        .expect("⌘↩ applies the proposal");
+    assert_eq!(editor.text.trim(), "# Updated");
 }

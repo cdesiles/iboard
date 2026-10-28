@@ -38,7 +38,9 @@ impl IboardApp {
         if !self.updatable(path) {
             return;
         }
-        if self.review_is_running(path) {
+        if self.session.review_runs.is_ready(path) {
+            self.show_past_review(path.to_path_buf());
+        } else if self.review_is_running(path) {
             self.cancel_review_run(path);
         } else if !self.agent.configured() {
             self.open_config();

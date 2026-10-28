@@ -114,10 +114,17 @@ impl IboardApp {
     /// is no longer news. While one runs, the reader shows it running.
     pub(super) fn show_past_review(&mut self, path: PathBuf) {
         self.open_issue(path.clone());
-        self.session.review_runs.ready.remove(&path);
-        if self.review_is_running(&path) {
+        self.reveal_review(&path);
+    }
+
+    /// Opens the review panel on the last review of the open issue `path`,
+    /// which is no longer news.
+    pub(super) fn reveal_review(&mut self, path: &Path) {
+        self.session.review_runs.ready.remove(path);
+        if self.review_is_running(path) {
             return;
         }
+        let path = path.to_path_buf();
         if let Some(past) = self.past_reviews.get(&path).cloned() {
             self.session.review = Some(ReviewState {
                 path,
@@ -173,8 +180,26 @@ impl IboardApp {
                 let past = PastReview::new(&stored, &issue.markdown);
                 self.past_reviews.insert(path.clone(), past);
             }
-            self.session.review_runs.ready.insert(path);
+            self.session.review_runs.ready.insert(path.clone());
+            // The issue being read shows its answer at once.
+            let reading = matches!(&self.session.screen, Screen::Detail(open) if *open == path)
+                && self.session.detail_mode == DetailMode::Preview
+                && self.session.review.is_none()
+                && !self.refinement_shown();
+            if reading {
+                self.reveal_review(&path);
+            }
         }
+    }
+
+    /// Whether the review panel shows a proposal `⌘↩` would apply.
+    pub(super) fn proposal_shown(&self) -> bool {
+        self.session.review.as_ref().is_some_and(|review| {
+            matches!(
+                &review.status,
+                ReviewStatus::Done { report: Some(report), .. } if report.proposal.is_some()
+            )
+        })
     }
 
     /// Whether a review of `path` is running in the background.
@@ -713,7 +738,7 @@ fn review_footer(
                             ui,
                             ButtonKind::Primary,
                             "Apply to draft",
-                            None,
+                            Some("⌘↩"),
                             PanelAction::Apply,
                         );
                     });
@@ -729,7 +754,13 @@ fn review_footer(
                             PanelAction::Again,
                         );
                     }
-                    button(ui, ButtonKind::Ghost, "Dismiss", None, PanelAction::Dismiss);
+                    button(
+                        ui,
+                        ButtonKind::Ghost,
+                        "Dismiss",
+                        Some("esc"),
+                        PanelAction::Dismiss,
+                    );
                 }
             }
         },

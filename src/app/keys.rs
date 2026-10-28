@@ -26,6 +26,8 @@ struct KeyContext {
     editable: bool,
     /// The open issue is in Todo, so it can be refined and reviewed.
     refinable: bool,
+    /// The review panel shows a proposal to apply.
+    proposal: bool,
 }
 
 /// One thing a key asked for.
@@ -58,6 +60,8 @@ enum Command {
     Stats,
     /// `⌘U`: Update with AI on the open issue or the selected card, or cancel it.
     Update(PathBuf),
+    /// `⌘↩` with a review's proposal shown: apply it.
+    ApplyReview,
 }
 
 /// The shortcuts that fire for `input` where the keyboard is.
@@ -74,6 +78,9 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     }
     if cx.board && !cx.typing && command(Key::I) {
         out.push(Command::Stats);
+    }
+    if cx.proposal && !cx.typing && command(Key::Enter) {
+        out.push(Command::ApplyReview);
     }
     if !cx.typing && command(Key::U) {
         let target = match cx.board {
@@ -419,6 +426,7 @@ impl IboardApp {
             focused: self.column_focus.column.is_some(),
             editable: open.as_deref().is_some_and(|path| self.can_edit(path)),
             refinable: open.as_deref().is_some_and(|path| self.is_todo_issue(path)),
+            proposal: self.proposal_shown() && !self.refinement_shown(),
             open,
             editing: self.session.detail_mode == DetailMode::Edit,
             composer: self.session.composer.is_some(),
@@ -486,6 +494,7 @@ impl IboardApp {
             Command::SwitchProject(forward) => self.switch_project(forward),
             Command::Stats => self.open_stats(),
             Command::Update(path) => self.toggle_update(&path),
+            Command::ApplyReview => self.apply_review_proposal(),
         }
     }
 
