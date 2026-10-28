@@ -75,6 +75,8 @@ fn a_review_is_kept_beside_the_issue() {
     app.close_review();
     let p = &theme::LIGHT;
     assert_eq!(app.past_reviews[&file].pill(p).0, "Block");
+    let hint = app.past_reviews[&file].card_pill(p).2;
+    assert!(hint.contains("Block") && hint.contains("clarity"), "{hint}");
     assert!(dir.join("issues/.reviews/demo.toml").exists());
 
     let mut restarted = IboardApp::from_located(discovery::locate(&dir).unwrap());

@@ -263,11 +263,36 @@ impl PastReview {
     /// The card's pill: the verdict, faint once the issue changed since.
     fn card_pill(&self, p: &Palette) -> ReviewPill {
         let (word, color) = self.pill(p);
-        if self.stale {
-            (word, p.ink_faint, "Reviewed before the last edit: show it")
-        } else {
-            (word, color, "Show the last review")
+        let color = if self.stale { p.ink_faint } else { color };
+        (word, color, verdict_hint(word, self.stale))
+    }
+}
+
+/// What a card's verdict pill means: the worst of the review's three axes.
+fn verdict_hint(word: &str, stale: bool) -> &'static str {
+    match (word, stale) {
+        ("Pass", false) => {
+            "Last AI review: Pass. Relevance, size and clarity are all fine. Click to show it"
         }
+        ("Challenge", false) => {
+            "Last AI review: Challenge. Relevance, size or clarity is worth another look, \
+             nothing blocks. Click to show it"
+        }
+        ("Block", false) => {
+            "Last AI review: Block. Relevance, size or clarity is a real problem \
+             (for an update: done, or no longer worth doing). Click to show it"
+        }
+        (_, false) => "Last AI review. Click to show it",
+        ("Pass", true) => "Last AI review: Pass, before the issue's last edit. Click to show it",
+        ("Challenge", true) => {
+            "Last AI review: Challenge (relevance, size or clarity worth another look), \
+             before the issue's last edit. Click to show it"
+        }
+        ("Block", true) => {
+            "Last AI review: Block (relevance, size or clarity a real problem), \
+             before the issue's last edit. Click to show it"
+        }
+        (_, true) => "Last AI review, before the issue's last edit. Click to show it",
     }
 }
 
