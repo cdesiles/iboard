@@ -530,6 +530,10 @@ impl CardReviews<'_> {
     }
 }
 
+/// How much of the review head the agent, mode and source may take; they
+/// truncate past it, so the panel never widens under the issue.
+const DETAIL_SHARE: f32 = 0.6;
+
 /// The panel's `review-soft` head: "Review of x.md", and the agent, mode and
 /// source on the right.
 pub(super) fn review_head(ui: &mut egui::Ui, title: &str, detail: &str) {
@@ -561,7 +565,12 @@ pub(super) fn review_head(ui: &mut egui::Ui, title: &str, detail: &str) {
                 Vec2::new(ui.available_width(), theme::CONTROL_H),
                 Layout::right_to_left(Align::Center),
                 |ui| {
-                    ui.label(RichText::new(detail).font(theme::meta()).color(p.review));
+                    let room = ui.available_width();
+                    ui.scope(|ui| {
+                        ui.set_max_width(room * DETAIL_SHARE);
+                        let detail = RichText::new(detail).font(theme::meta()).color(p.review);
+                        ui.add(egui::Label::new(detail).truncate());
+                    });
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         ui.add(
                             egui::Label::new(

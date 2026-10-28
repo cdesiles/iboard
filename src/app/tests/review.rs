@@ -700,3 +700,49 @@ fn cmd_u_starts_and_cancels_an_update() {
     frame(&ctx, &mut app, press());
     assert!(!app.review_is_running(&file));
 }
+
+/// A long agent name truncates in the review head instead of widening the
+/// panel under the issue.
+#[test]
+fn a_long_agent_name_keeps_the_review_panel_in_its_place() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("review-head");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: "a-model-whose-name-goes-on-and-on-well-past-the-panel".to_string(),
+        command: "printf 'RELEVANCE: Pass\\nok\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.start_update(&file);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&file)
+    }));
+    app.show_past_review(file);
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(3);
+    let title = harness.get_by_label("Review of migrate.md").rect();
+    let panel_left = window().width() - REVIEW_PANEL_WIDTH;
+    assert!(
+        title.min.x >= panel_left,
+        "{title:?} starts left of {panel_left}"
+    );
+}
