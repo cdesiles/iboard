@@ -32,6 +32,21 @@ impl IboardApp {
         self.run_review(target, &content, prompt);
     }
 
+    /// The button and `⌘U`: starts an update, or cancels the one running; with
+    /// no agent set up, Settings open instead.
+    pub(super) fn toggle_update(&mut self, path: &Path) {
+        if !self.updatable(path) {
+            return;
+        }
+        if self.review_is_running(path) {
+            self.cancel_review_run(path);
+        } else if !self.agent.configured() {
+            self.open_config();
+        } else {
+            self.start_update(path);
+        }
+    }
+
     /// Update with AI, in the Reader of an issue [`Self::updatable`]; once the
     /// answer is in, Update ready shows it.
     pub(super) fn update_button(&mut self, ui: &mut egui::Ui, path: &Path) {
@@ -48,17 +63,11 @@ impl IboardApp {
         } else {
             "No agent is set up yet: choose one in Settings › AI review (⌘,)"
         };
-        if widgets::button(ui, ButtonKind::Review, Some(icon), label, None)
+        if widgets::button(ui, ButtonKind::Review, Some(icon), label, Some("⌘U"))
             .on_hover_text(hint)
             .clicked()
         {
-            if running {
-                self.cancel_review_run(path);
-            } else if configured {
-                self.start_update(path);
-            } else {
-                self.open_config();
-            }
+            self.toggle_update(path);
         }
         if self.session.review_runs.is_ready(path)
             && widgets::button(ui, ButtonKind::Review, None, "Update ready", None)

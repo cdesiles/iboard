@@ -125,6 +125,8 @@ impl IboardApp {
             ]
         } else if done {
             vec![("↩", "open"), ("A", "archive")]
+        } else if self.updatable(&selected) {
+            vec![("↩", "open"), ("⌘U", "update"), ("Del", "delete")]
         } else {
             vec![("↩", "open"), ("Del", "delete")]
         }
@@ -161,11 +163,14 @@ impl IboardApp {
                 format!("modified {}", relative_time(modified)),
             ));
         }
-        if self.can_edit(path) {
-            vec![("E", "edit"), ("Del", "delete"), ("esc", "back")]
-        } else {
-            vec![("Del", "delete"), ("esc", "back")]
+        let mut hints = match self.can_edit(path) {
+            true => vec![("E", "edit"), ("Del", "delete"), ("esc", "back")],
+            false => vec![("Del", "delete"), ("esc", "back")],
+        };
+        if self.updatable(path) {
+            hints.insert(0, ("⌘U", "update"));
         }
+        hints
     }
 
     /// A dismissible `danger` line naming what failed.

@@ -56,6 +56,8 @@ enum Command {
     SwitchProject(bool),
     /// `⌘I` on the board: Project stats.
     Stats,
+    /// `⌘U`: Update with AI on the open issue or the selected card, or cancel it.
+    Update(PathBuf),
 }
 
 /// The shortcuts that fire for `input` where the keyboard is.
@@ -72,6 +74,13 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     }
     if cx.board && !cx.typing && command(Key::I) {
         out.push(Command::Stats);
+    }
+    if !cx.typing && command(Key::U) {
+        let target = match cx.board {
+            true => cx.selected.as_ref().map(|(path, _)| path),
+            false => cx.open.as_ref().filter(|_| !cx.editing),
+        };
+        out.extend(target.map(|path| Command::Update(path.clone())));
     }
     if cx.board && !cx.typing {
         for (at, key) in [Key::Num1, Key::Num2, Key::Num3, Key::Num4]
@@ -476,6 +485,7 @@ impl IboardApp {
             Command::Delete(path) => self.request_delete(path),
             Command::SwitchProject(forward) => self.switch_project(forward),
             Command::Stats => self.open_stats(),
+            Command::Update(path) => self.toggle_update(&path),
         }
     }
 

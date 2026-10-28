@@ -673,3 +673,28 @@ fn an_update_rewrites_a_doing_issue_through_the_editor() {
         "run from the project: {kept}"
     );
 }
+
+/// `⌘U` starts Update with AI on the open issue, and a second one cancels it.
+#[test]
+fn cmd_u_starts_and_cancels_an_update() {
+    let dir = scratch_dir("update-key");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "sleep 30 # {prompt}".to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.open_issue(file.clone());
+    let ctx = themed_ctx();
+    let command = egui::Modifiers::COMMAND;
+    let press = || vec![egui::Event::ModifiersChanged(command), key(Key::U, command)];
+    frame(&ctx, &mut app, press());
+    assert!(app.review_is_running(&file));
+    frame(&ctx, &mut app, press());
+    assert!(!app.review_is_running(&file));
+}
