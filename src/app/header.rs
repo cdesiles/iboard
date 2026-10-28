@@ -328,6 +328,9 @@ impl IboardApp {
         {
             self.start_editing(&path);
         }
+        if reading {
+            self.move_button(ui, &path);
+        }
         if reading && done {
             self.commits_button(ui, &path);
         }
@@ -344,6 +347,37 @@ impl IboardApp {
             self.start_enrichment(&path);
         }
         self.detail_right_group(ui, &path, exists, done);
+    }
+
+    /// Move to…, in the Reader: the other columns, to send the issue to
+    /// without going back to the board.
+    fn move_button(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let here = self.board.column_of(path).map(|column| column.dir.clone());
+        let columns: Vec<(String, PathBuf)> = self
+            .board
+            .columns
+            .iter()
+            .filter(|column| Some(&column.dir) != here.as_ref())
+            .map(|column| (column.name.clone(), column.dir.clone()))
+            .collect();
+        let button = widgets::button(ui, ButtonKind::Secondary, None, "Move to…", None)
+            .on_hover_text("Send this issue to another column");
+        let picked = egui::Popup::menu(&button)
+            .width(MOVE_MENU_WIDTH)
+            .show(|ui| {
+                ui.set_min_width(MOVE_MENU_WIDTH);
+                let mut picked = None;
+                for (name, dir) in &columns {
+                    if widgets::menu_row(ui, MOVE_MENU_WIDTH, name, "", false).clicked() {
+                        picked = Some(dir.clone());
+                    }
+                }
+                picked
+            })
+            .and_then(|inner| inner.inner);
+        if let Some(dir) = picked {
+            self.send_to(path, &dir);
+        }
     }
 
     /// Commits, `Open` while its popup shows, and the newest commit's hash.

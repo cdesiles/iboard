@@ -76,6 +76,13 @@ impl IboardApp {
         }
     }
 
+    /// Move to… in the Reader: `path` goes to the end of the column `dir`,
+    /// and the Reader follows it there.
+    pub(super) fn send_to(&mut self, path: &Path, dir: &Path) {
+        self.session.picked.clear();
+        self.place_issue(path, dir, None);
+    }
+
     /// A drop on a column tab: the issue, or the multi-selection it is in,
     /// moves to the end of `to`.
     pub(super) fn move_issues(&mut self, path: &Path, to: &Path) {

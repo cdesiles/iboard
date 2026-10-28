@@ -120,6 +120,8 @@ const ARCHIVE_DIR: &str = ".archive";
 
 /// Width of the recent-projects popup, in points.
 const PROJECT_MENU_WIDTH: f32 = 300.0;
+/// The Move to… menu: column names only.
+const MOVE_MENU_WIDTH: f32 = 180.0;
 
 /// Width of the AI review panel beside the reader or editor page.
 const REVIEW_PANEL_WIDTH: f32 = 360.0;

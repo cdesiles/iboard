@@ -378,6 +378,24 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
     assert_eq!(app.board.root, before);
 }
 
+/// Move to… sends the open issue to another column; the Reader stays on it.
+#[test]
+fn move_to_sends_the_open_issue_and_keeps_it_open() {
+    let dir = scratch_dir("move-to");
+    for column in ["ready", "doing", "done"] {
+        std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
+    }
+    let file = dir.join("issues/doing/task.md");
+    std::fs::write(&file, "# Task\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_issue(file.clone());
+    let done = dir.join("issues/done");
+    app.send_to(&file, &done);
+    let moved = done.join("task.md");
+    assert!(moved.exists() && !file.exists());
+    assert!(matches!(&app.session.screen, Screen::Detail(open) if *open == moved));
+}
+
 #[test]
 fn moving_never_overwrites_an_existing_file() {
     let dir = scratch_dir("clobber");
