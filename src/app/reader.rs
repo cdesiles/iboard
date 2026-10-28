@@ -393,8 +393,9 @@ fn label_row(ui: &mut egui::Ui, names: &[String], labels: &Labels) -> Option<Str
     let mut clicked = None;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
-        for name in names {
-            if widgets::label_pill(ui, name, labels.color(name))
+        for name in names.iter().filter(|name| !name.starts_with("group:")) {
+            let shown = name.strip_prefix("repo:").unwrap_or(name);
+            if widgets::label_pill(ui, shown, labels.color(name))
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(format!("Filter by {name}"))
                 .clicked()
