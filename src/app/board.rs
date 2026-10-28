@@ -380,7 +380,7 @@ fn build_action(
         if widgets::icon_button(ui, Icon::Stop, id, "Stop the AI build", tone).clicked() {
             intents.push(Intent::StopBuild);
         }
-    } else if !visible.is_empty()
+    } else if visible.iter().any(|issue| build::buildable(issue))
         && widgets::icon_button(ui, Icon::Play, id, "Build with AI, top to bottom", tone).clicked()
     {
         intents.push(Intent::Build(

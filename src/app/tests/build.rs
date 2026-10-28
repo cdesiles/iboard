@@ -396,3 +396,14 @@ fn a_done_card_shows_how_long_its_agent_took_until_hovered() {
     }
     assert!(actions(&ctx), "hovering the card shows its actions");
 }
+
+/// A `[manual]` issue is not code: Play leaves it in Ready and builds the rest.
+#[test]
+fn play_leaves_manual_issues_in_ready() {
+    let (dir, mut app) = board("build-manual", "printf ok # {prompt}");
+    std::fs::write(dir.join("issues/ready/001-a.md"), "# [manual] A\n").unwrap();
+    app.refresh();
+    app.start_build(ready(&app));
+    assert_eq!(in_column(&dir, "ready"), ["001-a.md"]);
+    assert_eq!(in_column(&dir, "doing"), ["b.md"]);
+}
