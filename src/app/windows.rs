@@ -328,7 +328,7 @@ impl IboardApp {
                 .take()
                 .filter(|known| known.path == path)
                 .and_then(|known| known.hash);
-            let dir = path.parent().unwrap_or(&self.board.root).to_path_buf();
+            let dir = self.board.project_of(path).to_path_buf();
             let file = file_name(path);
             let lookup = Job::spawn(move |_| {
                 commits::for_file(&dir, &file)
@@ -356,11 +356,12 @@ impl IboardApp {
         known.hash.clone()
     }
 
-    /// Opens the commits popup for `path`: the git log entries whose message
-    /// names its file (the `closes <file>.md` line a commit carries).
+    /// Opens the commits popup for `path`: the git log entries of its project
+    /// whose message names its file (the `closes <file>.md` line a commit
+    /// carries).
     pub(super) fn open_commits(&mut self, path: &Path) {
         let file = file_name(path);
-        let dir = path.parent().unwrap_or(&self.board.root).to_path_buf();
+        let dir = self.board.project_of(path).to_path_buf();
         let list = commits::for_file(&dir, &file);
         let title = self
             .board
@@ -377,7 +378,7 @@ impl IboardApp {
     /// Opens the Diff screen on every commit that closed `path`, newest
     /// first; or says there is none.
     pub(super) fn show_issue_diff(&mut self, path: &Path) {
-        let dir = path.parent().unwrap_or(&self.board.root).to_path_buf();
+        let dir = self.board.project_of(path).to_path_buf();
         let hashes: Vec<String> = commits::for_file(&dir, &file_name(path))
             .into_iter()
             .map(|commit| commit.hash)

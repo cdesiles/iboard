@@ -137,3 +137,50 @@ fn a_done_card_opens_its_diff() {
         app.session.diff.as_ref().unwrap().summary() == format!("{hash} · 1 file · +2 −0")
     }));
 }
+
+/// Tickets kept in another repository, `issues/` a symlink to it: the
+/// commits that close one are still found in the code's repository.
+#[cfg(unix)]
+#[test]
+fn an_issue_kept_elsewhere_finds_the_commits_of_its_project() {
+    let scratch = scratch_dir("diff-symlink");
+    let (code, tickets) = (scratch.join("code"), scratch.join("tickets"));
+    let git = |dir: &Path, args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
+    std::fs::create_dir_all(tickets.join("done")).unwrap();
+    std::fs::write(tickets.join("done/fixed.md"), "# Fixed\n").unwrap();
+    git(&tickets, &["init", "-q"]);
+    git(&tickets, &["add", "."]);
+    git(&tickets, &["commit", "-q", "-m", "Tickets"]);
+    std::fs::create_dir_all(code.join("src")).unwrap();
+    std::fs::write(code.join("src/lib.rs"), "fn old() {}\n").unwrap();
+    git(&code, &["init", "-q"]);
+    git(&code, &["add", "."]);
+    git(&code, &["commit", "-q", "-m", "Start"]);
+    std::fs::write(code.join("src/lib.rs"), "fn new() {}\n").unwrap();
+    git(&code, &["commit", "-q", "-am", "Fix it\n\ncloses fixed.md"]);
+    let hash = git(&code, &["rev-parse", "--short", "HEAD"]);
+    std::os::unix::fs::symlink(&tickets, code.join("issues")).unwrap();
+
+    let mut app = IboardApp::from_located(discovery::locate(&code).unwrap());
+    let issue = code.join("issues/done/fixed.md");
+    assert!(app.board.find(&issue).is_some());
+    app.open_commits(&issue);
+    let list = &app.session.commits.as_ref().unwrap().list;
+    assert_eq!(list.len(), 1, "{list:?}");
+    assert!(
+        list[0].hash.starts_with(&hash),
+        "{} vs {hash}",
+        list[0].hash
+    );
+}

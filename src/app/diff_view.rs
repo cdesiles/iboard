@@ -286,7 +286,7 @@ impl DiffView {
 impl IboardApp {
     /// Opens the Diff screen on `hashes`, the commits of `issue`.
     pub(super) fn open_diff(&mut self, issue: &Path, hashes: Vec<String>) {
-        let dir = issue.parent().unwrap_or(&self.board.root).to_path_buf();
+        let dir = self.board.project_of(issue).to_path_buf();
         self.session.commits = None;
         self.session.diff = Some(DiffView::open(issue.to_path_buf(), dir, hashes));
         self.session.screen = Screen::Diff;
