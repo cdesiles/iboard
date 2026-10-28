@@ -407,3 +407,36 @@ fn play_leaves_manual_issues_in_ready() {
     assert_eq!(in_column(&dir, "ready"), ["001-a.md"]);
     assert_eq!(in_column(&dir, "doing"), ["b.md"]);
 }
+
+/// A `[manual]` issue in Doing offers no Retry, and a retry leaves it alone.
+#[test]
+fn a_manual_issue_in_doing_is_never_retried() {
+    let (dir, mut app) = board("build-manual-retry", "printf ok # {prompt}");
+    let manual = dir.join("issues/doing/quote.md");
+    std::fs::write(&manual, "# [manual] Quote\n").unwrap();
+    std::fs::write(dir.join("issues/doing/code.md"), "# Code\n").unwrap();
+    app.refresh();
+    let doing = app
+        .board
+        .columns
+        .iter()
+        .find(|column| discovery::is_doing_column(&column.dir))
+        .unwrap();
+    let builds = Builds {
+        running: &[],
+        agents: 1,
+        watching: false,
+    };
+    let offer = |name: &str| {
+        let issue = doing
+            .issues
+            .iter()
+            .find(|i| i.path.ends_with(name))
+            .unwrap();
+        build::card_build(doing, issue, builds)
+    };
+    assert!(offer("quote.md").is_none());
+    assert!(matches!(offer("code.md"), Some(CardBuild::Retry)));
+    app.retry_build(manual);
+    assert!(app.session.build.is_none());
+}

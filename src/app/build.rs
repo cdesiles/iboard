@@ -76,12 +76,13 @@ impl Builds<'_> {
 }
 
 /// Where `issue`, in `column`, stands with the AI build: at work, or a Doing
-/// issue to retry while an agent is free.
+/// issue to retry while an agent is free, unless it is manual.
 pub(super) fn card_build(column: &Column, issue: &Issue, builds: Builds) -> Option<CardBuild> {
     if let Some((_, since)) = builds.running.iter().find(|(path, _)| *path == issue.path) {
         return Some(CardBuild::Running(*since));
     }
-    (builds.has_room() && discovery::is_doing_column(&column.dir)).then_some(CardBuild::Retry)
+    let retry = builds.has_room() && discovery::is_doing_column(&column.dir) && buildable(issue);
+    retry.then_some(CardBuild::Retry)
 }
 
 /// The label that keeps an issue away from the build agent: work that is not
@@ -164,6 +165,9 @@ impl IboardApp {
     /// Retry, on a Doing card: an agent starts `path` over where it is. The
     /// issue at work keeps its place in the run.
     pub(super) fn retry_build(&mut self, path: PathBuf) {
+        if !self.board.find(&path).is_some_and(buildable) {
+            return;
+        }
         if !self.build_agent.configured() {
             self.open_settings(settings_ui::Tab::Build);
             return;
