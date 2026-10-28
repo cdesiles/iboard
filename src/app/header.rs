@@ -156,9 +156,10 @@ impl IboardApp {
         }
     }
 
-    /// The recent-projects menu, opened from the path in the board header. Its
-    /// last row asks the OS for a folder; both a remembered and a browsed
-    /// folder go through [`Self::open_project`].
+    /// The project menu, opened from the path in the board header: All
+    /// projects, the recent projects, the workspace's other projects, and a
+    /// last row that asks the OS for a folder. Every project goes through
+    /// [`Self::open_project`].
     pub(super) fn project_menu(&mut self, anchor: &egui::Response) {
         let showing_all = self.showing_all();
         let current = match showing_all {
@@ -166,6 +167,7 @@ impl IboardApp {
             false => recents::canonical(&self.located.project_dir),
         };
         let projects = self.recents.clone();
+        let others = self.workspace_projects();
         let groups = self.workspace.is_some().then(|| self.workspace_groups());
         let picked = egui::Popup::menu(anchor)
             .width(PROJECT_MENU_WIDTH)
@@ -200,7 +202,20 @@ impl IboardApp {
                         picked = Some(ProjectChoice::Recent(project.clone()));
                     }
                 }
-                if !projects.is_empty() {
+                if !projects.is_empty() && !others.is_empty() {
+                    ui.separator();
+                }
+                for (project, group) in &others {
+                    let title = project
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("project");
+                    let detail = format!("{group} · {}", display_path(project));
+                    if widgets::menu_row(ui, PROJECT_MENU_WIDTH, title, &detail, false).clicked() {
+                        picked = Some(ProjectChoice::Recent(project.clone()));
+                    }
+                }
+                if !projects.is_empty() || !others.is_empty() {
                     ui.separator();
                 }
                 if widgets::menu_row(

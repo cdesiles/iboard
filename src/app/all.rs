@@ -86,6 +86,26 @@ impl IboardApp {
         Ok(renames)
     }
 
+    /// The workspace's projects the project menu lists below the recent ones,
+    /// each with its group: those not recent already, in the workspace's order.
+    pub(super) fn workspace_projects(&self) -> Vec<(PathBuf, String)> {
+        let mut projects: Vec<(PathBuf, String)> = Vec::new();
+        for group in self
+            .workspace
+            .iter()
+            .flat_map(|workspace| &workspace.groups)
+        {
+            for repo in &group.repos {
+                let repo = recents::canonical(repo);
+                if !self.recents.contains(&repo) && projects.iter().all(|(known, _)| *known != repo)
+                {
+                    projects.push((repo, group.name.clone()));
+                }
+            }
+        }
+        projects
+    }
+
     /// The groups of the workspace, as the header names the board's place.
     pub(super) fn workspace_groups(&self) -> String {
         self.workspace

@@ -192,3 +192,21 @@ fn reordering_across_projects_renames_nothing() {
     assert!(app_dir.join("issues/ready/002-a.md").exists());
     assert!(b.exists(), "the other project keeps its names");
 }
+
+/// The project menu lists the workspace's projects that are not recent yet.
+#[test]
+fn the_menu_lists_the_workspace_projects_below_the_recent_ones() {
+    let (_scratch, app_dir, site_dir, mut app) = two_projects("all-menu");
+    assert_eq!(
+        app.workspace_projects(),
+        [
+            (app_dir.clone(), "Clients".to_string()),
+            (site_dir.clone(), "Clients".to_string())
+        ]
+    );
+    app.recents = vec![app_dir];
+    assert_eq!(
+        app.workspace_projects(),
+        [(site_dir, "Clients".to_string())]
+    );
+}
