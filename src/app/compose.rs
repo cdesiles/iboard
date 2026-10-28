@@ -106,8 +106,15 @@ impl IboardApp {
     /// Writes the composed issue to Todo; on success the composer closes (`⌘N`
     /// opens a new one), on failure it keeps everything and says why.
     pub(super) fn write_composed(&mut self, title: &str, description: &str) {
-        let Some(dir) = self.board.todo_column().map(|c| c.dir.clone()) else {
+        let Some(column_dir) = self.board.todo_column().map(|c| c.dir.clone()) else {
             return;
+        };
+        let dir = match self.compose_dir(&column_dir) {
+            Ok(dir) => dir,
+            Err(err) => {
+                self.error = Some(err);
+                return;
+            }
         };
         let (name, _) = crate::issue::new_file_name(&dir, title.trim());
         let description = self.adopt_pending_images(&name, description);
@@ -117,7 +124,7 @@ impl IboardApp {
                 // The renumbering is deferred to the end of the frame so a
                 // click that added the ticket still reaches the card under it.
                 if self.board.find(&path).is_some() {
-                    self.session.pending_front = Some((dir.clone(), path.clone()));
+                    self.session.pending_front = Some((column_dir.clone(), path.clone()));
                 }
                 if let Some(composer) = self.session.composer.as_mut() {
                     *composer = Composer {
@@ -209,7 +216,7 @@ impl IboardApp {
 pub(super) fn composer_ui(
     ui: &mut egui::Ui,
     composer: &mut Composer,
-    column: &Column,
+    dir: &Path,
     folder: &str,
     intents: &mut Vec<Intent>,
 ) {
@@ -228,7 +235,7 @@ pub(super) fn composer_ui(
             ui.spacing_mut().item_spacing.y = theme::SPACE_2;
             title_row(ui, composer, intents);
             description_field(ui, composer, intents);
-            composer_meta(ui, composer, column, folder);
+            composer_meta(ui, composer, dir, folder);
         });
     widgets::paint_focus_halo(ui, frame.response.rect, theme::RADIUS_MD);
 
@@ -483,7 +490,7 @@ fn description_field(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut V
 
 /// The composer's last line: the file it will write (or why it can't name
 /// it yet) on the left, the keys that apply on the right.
-pub(super) fn composer_meta(ui: &mut egui::Ui, composer: &Composer, column: &Column, folder: &str) {
+pub(super) fn composer_meta(ui: &mut egui::Ui, composer: &Composer, dir: &Path, folder: &str) {
     let p = theme::palette(ui);
     let meta = |text: &str, color: Color32| RichText::new(text).font(theme::meta()).color(color);
     ui.horizontal(|ui| {
@@ -507,7 +514,7 @@ pub(super) fn composer_meta(ui: &mut egui::Ui, composer: &Composer, column: &Col
                 )],
             ),
             _ if !title.is_empty() => {
-                let (name, taken) = crate::issue::new_file_name(&column.dir, title);
+                let (name, taken) = crate::issue::new_file_name(dir, title);
                 let color = if taken {
                     p.status_doing
                 } else if composer.stage == TitleStage::Inferred {

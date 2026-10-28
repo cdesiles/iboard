@@ -139,8 +139,9 @@ fn absorb(board: &mut Board, project: Board, group: &str) {
         dirs: Vec::new(),
     };
     for column in project.columns {
-        let dir = board.root.join(kind(&column, &project.root));
-        repo.dirs.push(column.dir.clone());
+        let kind = kind(&column, &project.root);
+        let dir = board.root.join(&kind);
+        repo.dirs.push((kind, column.dir.clone()));
         let at = match board.columns.iter().position(|merged| merged.dir == dir) {
             Some(at) => at,
             None => {

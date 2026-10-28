@@ -58,6 +58,11 @@ impl IboardApp {
                     // The window gutter on the left; item spacing after the last
                     // column gives the same on the right.
                     ui.add_space(gutter);
+                    let compose_into = self.board.todo_column().and_then(|todo| {
+                        let dir = self.compose_preview(&todo.dir)?;
+                        let folder = self.compose_folder(&dir);
+                        Some((dir, folder))
+                    });
                     for (index, column) in self.board.columns.iter().enumerate() {
                         let composer = if column.accepts_new_issues() {
                             self.session.composer.as_mut()
@@ -75,6 +80,8 @@ impl IboardApp {
                             scroll_to_selected,
                             picked: &self.session.picked,
                             root: &self.board.root,
+                            board: &self.board,
+                            compose_into: compose_into.clone(),
                             labels: &self.labels,
                             reviews: review::CardReviews {
                                 past: &self.past_reviews,
@@ -219,7 +226,11 @@ pub(super) fn column_ui(
             column_head(ui, view, &visible, &mut intents);
             // The composer stays at the top of Todo; the cards scroll under it.
             if let Some(composer) = composer {
-                composer_ui(ui, composer, column, &folder, &mut intents);
+                let (dir, folder) = match &view.compose_into {
+                    Some((dir, folder)) => (dir.as_path(), folder.as_str()),
+                    None => (column.dir.as_path(), folder.as_str()),
+                };
+                composer_ui(ui, composer, dir, folder, &mut intents);
             }
             let lane = Rect::from_min_size(
                 ui.cursor().min,
@@ -255,7 +266,7 @@ pub(super) fn column_ui(
             });
         },
     );
-    highlight_foreign_drop(ui, column, drop_rect, &drop_response);
+    highlight_foreign_drop(ui, view, column, drop_rect, &drop_response);
     if let Some(drag) = drop_response.dnd_release_payload::<IssueDrag>() {
         intents.push(Intent::Place {
             path: drag.path.clone(),
@@ -540,6 +551,7 @@ fn drop_line(ui: &egui::Ui, cards: &[(PathBuf, Rect)]) -> Option<PathBuf> {
 /// cards' area, under the header and its status rule.
 fn highlight_foreign_drop(
     ui: &egui::Ui,
+    view: &ColumnView,
     column: &Column,
     drop_rect: Rect,
     drop_response: &egui::Response,
@@ -547,7 +559,7 @@ fn highlight_foreign_drop(
     let p = theme::palette(ui);
     let hovering_foreign = drop_response
         .dnd_hover_payload::<IssueDrag>()
-        .filter(|drag| drag.path.parent() != Some(column.dir.as_path()))
+        .filter(|drag| !view.board.in_column(&drag.path, &column.dir))
         .is_some();
     if !hovering_foreign {
         return;

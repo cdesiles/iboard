@@ -33,12 +33,14 @@ use crate::theme::{self, Icon, Palette};
 use crate::titles::{self, Engine};
 use crate::trash::{self, Trash};
 use crate::widgets::{self, ButtonKind};
+use crate::workspace::{self, Workspace};
 use crate::{design_ui, dialog, recents, sheet};
 use iboard::design::{self, DesignSystem};
 use iboard::prompts;
 
 mod agenda;
 mod agent_log;
+mod all;
 mod board;
 mod build;
 mod card;
@@ -67,6 +69,7 @@ mod stats;
 mod status;
 mod windows;
 
+use all::Source;
 use board::*;
 use build::{Builds, card_build};
 use card::*;
@@ -135,6 +138,8 @@ enum ReviewMenu {
 
 /// A choice made in the header's project menu.
 enum ProjectChoice {
+    /// Every project of the workspace on one board.
+    All,
     /// Switch to a remembered project.
     Recent(PathBuf),
     /// Ask the OS for a folder.
@@ -520,6 +525,10 @@ enum ReviewStatus {
 
 pub struct IboardApp {
     located: Located,
+    /// The `[[workspace.group]]` projects, when the user lists some.
+    workspace: Option<Workspace>,
+    /// The board shows every project of `workspace` rather than `located`.
+    all: bool,
     board: Board,
     /// The reader's markdown cache, and where its text was drawn.
     reader: Reader,
@@ -758,7 +767,12 @@ enum EnrichOutcome {
 impl IboardApp {
     /// `window_title` names the window in Mission Control and the Window menu;
     /// see `main.rs` for why it is set here rather than at startup.
-    pub fn new(cc: &eframe::CreationContext<'_>, located: Located, window_title: String) -> Self {
+    /// `located` is `None` for the All projects board.
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        located: Option<Located>,
+        window_title: String,
+    ) -> Self {
         theme::install(&cc.egui_ctx);
         // Images in a ticket's markdown (`![shot](assets/<stem>/ui.png)`) load
         // from disk through egui's file loader.
@@ -772,6 +786,12 @@ impl IboardApp {
             iboard::menu::install("iboard", ABOUT, true);
             iboard::pasteboard::watch(cc.egui_ctx.clone());
         }
+        let all = located.is_none();
+        let located = located.unwrap_or_else(|| Located {
+            project_dir: workspace::virtual_root(),
+            root: workspace::virtual_root(),
+            config: None,
+        });
         let mut app = Self::from_located(located);
         app.clipboard = images::Clipboard::System;
         // The user's real cache: only the running app records here, never a
@@ -795,25 +815,31 @@ impl IboardApp {
         agent::set_direnv(general::load_direnv(&mut config));
         theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
+        app.workspace = workspace::load(&mut config);
         if !config.problems.is_empty() {
             let problem = config.problems.join(" ");
             app.error = Some(format!("Settings: {problem}"));
             app.config_problem = Some(problem);
         }
         app.catalog = Catalog::probing();
-        let project = app.located.project_dir.clone();
-        app.remember(&project);
+        if all {
+            app.open_all();
+        } else {
+            let project = app.located.project_dir.clone();
+            app.remember(&project);
+        }
         app
     }
 
     fn from_located(located: Located) -> Self {
-        let ((board, sidecars), scan_error) = match scan(&located) {
+        let ((board, past_reviews), scan_error) = match scan(&Source::Project(located.clone())) {
             Ok(scanned) => (scanned, None),
             Err(err) => ((Board::empty(&located), HashMap::new()), Some(err)),
         };
-        let past_reviews = past_reviews(&board, &sidecars);
         Self {
             located,
+            workspace: None,
+            all: false,
             session: Session::default(),
             board,
             reader: Reader::default(),
@@ -871,13 +897,8 @@ impl IboardApp {
                 self.pending_title = Some(discovery::window_title(&located));
                 let project_dir = located.project_dir.clone();
                 self.located = located;
-                self.close_review();
-                self.session = Session::default();
-                self.past_reviews.clear();
-                self.column_focus.column = None;
-                self.filter_bar.filter.clear();
-                self.error = None;
-                self.scan_error = None;
+                self.all = false;
+                self.leave_project();
                 // Remember the project root discovery settled on, not the
                 // folder the user happened to pick inside it.
                 self.remember(&project_dir);
@@ -887,18 +908,29 @@ impl IboardApp {
         }
     }
 
+    /// Drops everything that belongs to the board shown until now.
+    fn leave_project(&mut self) {
+        self.close_review();
+        self.session = Session::default();
+        self.past_reviews.clear();
+        self.column_focus.column = None;
+        self.filter_bar.filter.clear();
+        self.error = None;
+        self.scan_error = None;
+    }
+
     /// Reads the board again, now: what an action that changed files needs
     /// before it goes on.
     fn refresh(&mut self) {
-        self.adopt(scan(&self.located));
+        self.adopt(scan(&self.source()));
     }
 
     /// Takes a fresh scan of the board, or why it could not be read.
     fn adopt(&mut self, scanned: Result<Scanned, String>) {
         self.board_generation += 1;
         match scanned {
-            Ok((board, sidecars)) => {
-                self.past_reviews = past_reviews(&board, &sidecars);
+            Ok((board, reviews)) => {
+                self.past_reviews = reviews;
                 self.board = board;
                 self.scan_error = None;
             }
@@ -998,25 +1030,39 @@ impl IboardApp {
     }
 }
 
-/// A board and the review sidecars beside it, by slug.
-type Scanned = (Board, HashMap<String, reviews::Sidecar>);
+/// A board and the last review of each of its issues that has one.
+type Scanned = (Board, HashMap<PathBuf, PastReview>);
 
-/// Reads the board of `located` and its reviews, or says why it could not.
-fn scan(located: &Located) -> Result<Scanned, String> {
-    let board = discovery::build(located).map_err(|err| format!("{err:#}"))?;
-    let sidecars = reviews::load_all(&board.root);
-    Ok((board, sidecars))
+/// Reads the board of `source` and its reviews, or says why it could not.
+/// Each project's reviews are read from its own issues folder: names are only
+/// unique within one.
+fn scan(source: &Source) -> Result<Scanned, String> {
+    let board = match source {
+        Source::Project(located) => discovery::build(located).map_err(|err| format!("{err:#}"))?,
+        Source::All(workspace) => workspace::build(workspace, &workspace::virtual_root()),
+    };
+    let roots: Vec<PathBuf> = match board.repos.as_slice() {
+        [] => vec![board.root.clone()],
+        repos => repos.iter().map(|repo| repo.root.clone()).collect(),
+    };
+    let mut reviews = HashMap::new();
+    for root in roots {
+        reviews.extend(past_reviews(&board, &root, &reviews::load_all(&root)));
+    }
+    Ok((board, reviews))
 }
 
-/// The last review of every issue on `board` that has one.
+/// The last review of every issue of `board` under `root` that has one.
 fn past_reviews(
     board: &Board,
+    root: &Path,
     sidecars: &HashMap<String, reviews::Sidecar>,
 ) -> HashMap<PathBuf, PastReview> {
     board
         .columns
         .iter()
         .flat_map(|column| &column.issues)
+        .filter(|issue| board.root_of(&issue.path) == root)
         .filter_map(|issue| {
             let stored = sidecars.get(&reviews::slug(&issue.path))?.review.as_ref()?;
             Some((issue.path.clone(), PastReview::new(stored, &issue.markdown)))
@@ -1050,6 +1096,11 @@ struct ColumnView<'a> {
     /// The multi-selection.
     picked: &'a [PathBuf],
     root: &'a Path,
+    /// The board, which knows each card's project.
+    board: &'a Board,
+    /// On the All projects board, the folder new issues land in, and how the
+    /// composer names it.
+    compose_into: Option<(PathBuf, String)>,
     /// The label colours, for the chip on each card.
     labels: &'a Labels,
     /// The cards' review pills.

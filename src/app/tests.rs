@@ -17,6 +17,7 @@ mod review;
 mod select;
 mod settings;
 mod stats;
+mod workspace;
 use review::open_issue_with_review;
 
 /// A context with the design system installed, past the first frame so

@@ -148,9 +148,10 @@ impl IboardApp {
     /// Opens the stats panel on the project, measuring its newest commits.
     pub(super) fn open_stats(&mut self) {
         if self.session.stats.is_none() {
+            let (project, root) = self.stats_project();
             self.session.stats = Some(StatsPanel::new(
-                &self.located.project_dir,
-                &self.located.root,
+                &project,
+                &root,
                 0,
                 self.session.agenda_range,
             ));
@@ -231,12 +232,8 @@ impl IboardApp {
         match ask {
             Some(StatsAsk::Close) => self.session.stats = None,
             Some(StatsAsk::Page(page)) => {
-                self.session.stats = Some(StatsPanel::new(
-                    &self.located.project_dir,
-                    &self.located.root,
-                    page,
-                    range,
-                ));
+                let (project, root) = self.stats_project();
+                self.session.stats = Some(StatsPanel::new(&project, &root, page, range));
             }
             Some(StatsAsk::DraftRefactor(title, description)) => {
                 self.session.stats = None;

@@ -6,9 +6,13 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
+/// iboard on `args`, with no user configuration: the user's own workspace
+/// would change what a folder without issues opens.
 fn iboard(args: &[&str]) -> Output {
+    let config = tempfile::tempdir().unwrap();
     Command::new(env!("CARGO_BIN_EXE_iboard"))
         .args(args)
+        .env("XDG_CONFIG_HOME", config.path())
         .output()
         .expect("iboard runs")
 }
@@ -121,6 +125,12 @@ fn all_lists_the_workspace_projects_merged() {
     let output = run(&["--all", "--list"]);
     assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
     let stdout = text(&output.stdout);
+    let outside = run(&["--list", bare.path().to_str().unwrap()]);
+    assert_eq!(
+        text(&outside.stdout),
+        stdout,
+        "outside any project, the workspace opens"
+    );
     let (app_name, site_name) = (
         app.path()
             .file_name()

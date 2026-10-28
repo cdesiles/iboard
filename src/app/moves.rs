@@ -6,11 +6,20 @@ impl IboardApp {
     /// Moves a dragged issue into another column's directory, keeping its file
     /// name apart from the Ready priority number (see
     /// [`discovery::moved_name`]). An existing file with the same name is never
-    /// overwritten. Returns the issue's new path on success.
+    /// overwritten. On a workspace board the issue stays in its own project.
+    /// Returns the issue's new path on success.
     pub(super) fn move_issue(&mut self, path: &Path, target_dir: &Path) -> Option<PathBuf> {
         let (Some(name), Some(from_dir)) = (path.file_name(), path.parent()) else {
             return None;
         };
+        let target_dir = match self.board.dir_for(path, target_dir) {
+            Ok(dir) => dir,
+            Err(err) => {
+                self.error = Some(format!("Couldn't move {}: {err}", self.relative(path)));
+                return None;
+            }
+        };
+        let target_dir = target_dir.as_path();
         if from_dir == target_dir {
             return Some(path.to_path_buf());
         }
@@ -51,7 +60,11 @@ impl IboardApp {
     pub(super) fn place_issue(&mut self, path: &Path, target_dir: &Path, anchor: Option<PathBuf>) {
         let paths = self.selection_of(path);
         let orderable = discovery::is_orderable_column(target_dir);
-        if !orderable && paths.iter().all(|path| path.parent() == Some(target_dir)) {
+        if !orderable
+            && paths
+                .iter()
+                .all(|path| self.board.in_column(path, target_dir))
+        {
             return;
         }
         let moved: Vec<PathBuf> = paths
@@ -67,7 +80,7 @@ impl IboardApp {
     /// moves to the end of `to`.
     pub(super) fn move_issues(&mut self, path: &Path, to: &Path) {
         for path in self.selection_of(path) {
-            if path.parent() != Some(to) {
+            if !self.board.in_column(&path, to) {
                 self.move_issue(&path, to);
             }
         }
@@ -127,7 +140,7 @@ impl IboardApp {
             .and_then(|anchor| order.iter().position(|path| path == anchor))
             .unwrap_or(order.len());
         order.splice(at..at, moved.iter().cloned());
-        match discovery::renumber(dir, &order) {
+        match discovery::renumber_each(&order) {
             Ok(renames) => self.apply_renames(&renames),
             Err(err) => self.error = Some(err),
         }

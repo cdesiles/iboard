@@ -47,14 +47,9 @@ fn main() -> eframe::Result {
         }
     }
 
-    if all {
-        let board = workspace_board();
-        if list {
-            print_listing(&board);
-            return Ok(());
-        }
-        eprintln!("iboard: --all only lists, with --list");
-        std::process::exit(2);
+    if all && list {
+        print_listing(&workspace_board());
+        return Ok(());
     }
 
     let start = match path {
@@ -79,12 +74,22 @@ fn main() -> eframe::Result {
         }
     }
 
+    // Outside any project, a workspace opens instead of failing.
     let located = match discovery::locate(&start) {
-        Ok(located) => located,
+        _ if all => None,
+        Ok(located) => Some(located),
+        Err(_) if !init && has_workspace() => None,
         Err(err) => {
             eprintln!("iboard: {err:#}");
             std::process::exit(1);
         }
+    };
+    let Some(located) = located else {
+        if list {
+            print_listing(&workspace_board());
+            return Ok(());
+        }
+        return run_app(None, workspace::TITLE.to_string());
     };
 
     if list {
@@ -101,7 +106,11 @@ fn main() -> eframe::Result {
     }
 
     let app_title = discovery::window_title(&located);
+    run_app(Some(located), app_title)
+}
 
+/// Opens the window on `located`, or on the All projects board.
+fn run_app(located: Option<discovery::Located>, app_title: String) -> eframe::Result {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])
         .with_min_inner_size([880.0, 480.0]);
@@ -143,6 +152,12 @@ fn app_icon() -> Option<egui::IconData> {
         height: image.height(),
         rgba: image.into_raw(),
     })
+}
+
+/// Whether the user configuration lists `[[workspace.group]]` projects.
+fn has_workspace() -> bool {
+    let file = settings::config_file();
+    workspace::load(&mut settings::UserConfig::load(file.as_deref())).is_some()
 }
 
 /// The merged board of the user's `[[workspace.group]]` projects, or exits

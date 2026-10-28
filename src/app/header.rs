@@ -65,7 +65,11 @@ impl IboardApp {
             }
             Screen::Board => {
                 ui.label(RichText::new(&project).font(theme::ui_title()).color(p.ink));
-                let path = display_path(&self.board.root);
+                let path = if self.showing_all() {
+                    self.workspace_groups()
+                } else {
+                    display_path(&self.board.root)
+                };
                 let response = ui
                     .horizontal(|ui| {
                         let label = ui.add(
@@ -156,14 +160,28 @@ impl IboardApp {
     /// last row asks the OS for a folder; both a remembered and a browsed
     /// folder go through [`Self::open_project`].
     pub(super) fn project_menu(&mut self, anchor: &egui::Response) {
-        let current = recents::canonical(&self.located.project_dir);
+        let showing_all = self.showing_all();
+        let current = match showing_all {
+            true => PathBuf::new(),
+            false => recents::canonical(&self.located.project_dir),
+        };
         let projects = self.recents.clone();
+        let groups = self.workspace.is_some().then(|| self.workspace_groups());
         let picked = egui::Popup::menu(anchor)
             .width(PROJECT_MENU_WIDTH)
             .show(|ui| {
                 ui.set_min_width(PROJECT_MENU_WIDTH);
                 ui.spacing_mut().item_spacing.y = theme::SPACE_1;
                 let mut picked = None;
+                if let Some(groups) = &groups {
+                    let title = workspace::TITLE;
+                    if widgets::menu_row(ui, PROJECT_MENU_WIDTH, title, groups, showing_all)
+                        .clicked()
+                    {
+                        picked = Some(ProjectChoice::All);
+                    }
+                    ui.separator();
+                }
                 for project in &projects {
                     let title = project
                         .file_name()
@@ -200,6 +218,7 @@ impl IboardApp {
             })
             .and_then(|inner| inner.inner);
         match picked {
+            Some(ProjectChoice::All) => self.open_all(),
             Some(ProjectChoice::Recent(path)) => self.open_project(path),
             Some(ProjectChoice::Browse) => {
                 if let Some(dir) = dialog::pick_folder() {
@@ -242,7 +261,7 @@ impl IboardApp {
         {
             self.open_stats();
         }
-        if self.idesign
+        if self.design_reachable()
             && widgets::button(ui, ButtonKind::Secondary, None, "Design", None)
                 .on_hover_text("Browse the project's design system")
                 .clicked()
@@ -301,7 +320,7 @@ impl IboardApp {
         }
         if reading
             && !done
-            && self.idesign
+            && self.design_reachable()
             && widgets::button(ui, ButtonKind::Secondary, None, "Draft design", None)
                 .on_hover_text("Ask the agent for a static mockup of this change")
                 .clicked()

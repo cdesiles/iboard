@@ -173,9 +173,7 @@ impl IboardApp {
         self.refresh();
         let order: Vec<PathBuf> = self
             .board
-            .columns
-            .iter()
-            .find(|column| column.dir == dir)
+            .column_of(original)
             .map(|column| {
                 column
                     .issues
@@ -192,7 +190,7 @@ impl IboardApp {
             return;
         };
         if discovery::is_orderable_column(&dir) {
-            match discovery::renumber(&dir, &order) {
+            match discovery::renumber_each(&order) {
                 Ok(renames) => {
                     for child in &mut children {
                         if let Some((_, new)) = renames.iter().find(|(old, _)| old == child) {

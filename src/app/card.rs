@@ -385,7 +385,11 @@ fn card_labels(
             .review_pill
             .map(|(word, color, hint)| review_pill(ui, word, color, hint));
         for label in &issue.labels {
-            let pill = widgets::label_pill(ui, label, labels.color(label))
+            if label.starts_with("group:") {
+                continue;
+            }
+            let shown = label.strip_prefix("repo:").unwrap_or(label);
+            let pill = widgets::label_pill(ui, shown, labels.color(label))
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(format!("Filter by {label}"));
             clicks.push((label.clone(), pill.rect, pill.clicked()));

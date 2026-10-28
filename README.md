@@ -141,3 +141,9 @@ Their columns merge by kind (every Doing in one Doing), each issue is labelled
 `repo:<folder>` and `group:<name>` so the filter narrows the board to one
 project or one group, and each project keeps its own `issues/`. A folder
 without its own `issues/` is skipped with a warning.
+
+The board is the first row of the project menu, *All projects*, and opens by
+itself when iboard starts outside any project (from the Dock, or in a folder
+holding several of them). Cards move within their own project; a new issue
+goes to the project the filter names (`repo:app`), else the selected card's;
+reviews and builds run in the card's project.

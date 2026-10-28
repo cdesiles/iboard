@@ -55,8 +55,9 @@ pub struct Repo {
     pub group: String,
     pub project_dir: PathBuf,
     pub root: PathBuf,
-    /// Its own column folders, the issues root included.
-    pub dirs: Vec<PathBuf>,
+    /// Its own column folders, the issues root included, each with the
+    /// merged column it joins (the folder name of that column).
+    pub dirs: Vec<(String, PathBuf)>,
 }
 
 pub struct Board {
@@ -137,6 +138,68 @@ impl Board {
     pub fn root_of(&self, path: &Path) -> &Path {
         self.repo_of(path).map_or(&self.root, |repo| &repo.root)
     }
+
+    /// Where the issue at `path` goes when dropped on the column `dir`: `dir`
+    /// itself on a single project, else that column's folder in the issue's
+    /// own project (see [`Self::dir_in`]).
+    pub fn dir_for(&self, path: &Path, dir: &Path) -> Result<PathBuf, String> {
+        match self.repo_of(path) {
+            Some(repo) => dir_in(repo, dir),
+            None => Ok(dir.to_path_buf()),
+        }
+    }
+
+    /// Whether the issue at `path` already sits in the column `dir`.
+    pub fn in_column(&self, path: &Path, dir: &Path) -> bool {
+        match self.repo_of(path) {
+            Some(repo) => {
+                let kind = files::file_name(dir);
+                repo.dirs
+                    .iter()
+                    .any(|(of, folder)| *of == kind && path.parent() == Some(folder.as_path()))
+            }
+            None => path.parent() == Some(dir),
+        }
+    }
+}
+
+/// The folder of `repo` behind the merged column `dir`. A missing Todo,
+/// Ready, Doing or Done is created; another column the project lacks is an
+/// error.
+pub fn dir_in(repo: &Repo, dir: &Path) -> Result<PathBuf, String> {
+    let kind = files::file_name(dir);
+    if let Some((_, folder)) = repo.dirs.iter().find(|(of, _)| *of == kind) {
+        return Ok(folder.clone());
+    }
+    if !INIT_COLUMNS.contains(&kind.as_str()) {
+        let column = display_name(dir);
+        return Err(format!("{} has no {column} column", repo.name));
+    }
+    let folder = repo.root.join(&kind);
+    fs::create_dir_all(&folder)
+        .map_err(|err| format!("Couldn't create {}: {err}", folder.display()))?;
+    Ok(folder)
+}
+
+/// [`renumber`] for an order that may span several folders: each folder
+/// keeps the relative order of its own issues.
+pub fn renumber_each(order: &[PathBuf]) -> Result<Vec<(PathBuf, PathBuf)>, String> {
+    let mut folders: Vec<&Path> = Vec::new();
+    for parent in order.iter().filter_map(|path| path.parent()) {
+        if !folders.contains(&parent) {
+            folders.push(parent);
+        }
+    }
+    let mut renames = Vec::new();
+    for folder in folders {
+        let own: Vec<PathBuf> = order
+            .iter()
+            .filter(|path| path.parent() == Some(folder))
+            .cloned()
+            .collect();
+        renames.extend(renumber(folder, &own)?);
+    }
+    Ok(renames)
 }
 
 /// Walks up from `start` looking for a configured project or an `issues/`

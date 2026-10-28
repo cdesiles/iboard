@@ -301,6 +301,7 @@ impl IboardApp {
             .iter()
             .flat_map(|column| column.issues.iter())
             .flat_map(|issue| issue.labels.iter().cloned())
+            .filter(|label| !labels::is_origin(label))
             .collect();
         let mut dialog =
             settings_ui::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)

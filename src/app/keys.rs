@@ -492,8 +492,8 @@ impl IboardApp {
         if self.auto || self.watching_ready() {
             if self.session.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
                 self.last_refresh = Instant::now();
-                let located = self.located.clone();
-                let rescan = Job::spawn(move |_| scan(&located));
+                let source = self.source();
+                let rescan = Job::spawn(move |_| scan(&source));
                 self.session.scan = Some((rescan, self.board_generation));
             }
             ctx.request_repaint_after(RESCAN_EVERY);
