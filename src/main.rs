@@ -172,7 +172,8 @@ fn workspace_board() -> discovery::Board {
         eprintln!("iboard: no [[workspace.group]] in {file}");
         std::process::exit(1);
     };
-    workspace::build(&workspace, &workspace::virtual_root())
+    let order = workspace::Order::load(workspace::order::file().as_deref());
+    workspace::build(&workspace, &workspace::virtual_root(), &order)
 }
 
 /// Text-mode dump of the board, useful for scripting and for checking discovery

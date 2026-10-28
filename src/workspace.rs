@@ -22,6 +22,10 @@ use crate::issue::Issue;
 use crate::labels;
 use crate::settings::{self, UserConfig};
 
+pub mod order;
+
+pub use order::Order;
+
 /// What the workspace board is called, in the project menu and the title.
 pub const TITLE: &str = "All projects";
 
@@ -80,8 +84,9 @@ pub fn virtual_root() -> PathBuf {
 }
 
 /// The merged board of every project in `workspace`, its columns under
-/// `virtual_root`. A project that cannot be read is left out, with a warning.
-pub fn build(workspace: &Workspace, virtual_root: &Path) -> Board {
+/// `virtual_root`, Todo and Ready interleaved as `order` says. A project that
+/// cannot be read is left out, with a warning.
+pub fn build(workspace: &Workspace, virtual_root: &Path, order: &Order) -> Board {
     let mut board = Board {
         project_dir: virtual_root.to_path_buf(),
         root: virtual_root.to_path_buf(),
@@ -109,6 +114,7 @@ pub fn build(workspace: &Workspace, virtual_root: &Path) -> Board {
     for column in &mut board.columns {
         sort(column, &repos);
     }
+    order::arrange(&mut board, order);
     board
 }
 

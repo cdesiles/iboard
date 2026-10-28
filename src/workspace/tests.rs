@@ -44,7 +44,7 @@ fn projects_merge_by_column_and_tag_their_issues() {
             },
         ],
     };
-    let board = build(&workspace, &parent.join("virtual"));
+    let board = build(&workspace, &parent.join("virtual"), &Order::default());
 
     let names: Vec<&str> = board.columns.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["Ready", "Doing"], "wip/ joins Doing");

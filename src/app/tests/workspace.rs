@@ -149,3 +149,38 @@ fn the_header_names_the_groups_instead_of_a_path() {
     harness.get_by_label(crate::workspace::TITLE);
     harness.get_by_label("Clients");
 }
+
+fn ready_titles(app: &IboardApp) -> Vec<String> {
+    app.board.columns[1]
+        .issues
+        .iter()
+        .map(|issue| issue.title.clone())
+        .collect()
+}
+
+#[test]
+fn reordering_across_projects_renames_nothing() {
+    let (scratch, app_dir, site_dir, mut app) = two_projects("all-order");
+    let file = scratch.join("order.toml");
+    app.order_file = Some(file.clone());
+    std::fs::write(app_dir.join("issues/ready/002-x.md"), "# X\n").unwrap();
+    app.refresh();
+    assert_eq!(ready_titles(&app), ["A", "B", "X"]);
+    let ready = column_dir(&app, "Ready");
+
+    let b = site_dir.join("issues/ready/001-b.md");
+    let a = app_dir.join("issues/ready/001-a.md");
+    app.reorder_column(&ready, std::slice::from_ref(&b), Some(&a));
+    assert!(app.error.is_none(), "{:?}", app.error);
+    assert_eq!(ready_titles(&app), ["B", "A", "X"]);
+    assert!(a.exists() && b.exists(), "no file renamed");
+    let stored = std::fs::read_to_string(&file).unwrap();
+    assert!(stored.contains("site/b.md"), "{stored}");
+
+    let x = app_dir.join("issues/ready/002-x.md");
+    app.reorder_column(&ready, &[x], Some(&a));
+    assert_eq!(ready_titles(&app), ["B", "X", "A"]);
+    assert!(app_dir.join("issues/ready/001-x.md").exists());
+    assert!(app_dir.join("issues/ready/002-a.md").exists());
+    assert!(b.exists(), "the other project keeps its names");
+}

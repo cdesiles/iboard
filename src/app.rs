@@ -529,6 +529,9 @@ pub struct IboardApp {
     workspace: Option<Workspace>,
     /// The board shows every project of `workspace` rather than `located`.
     all: bool,
+    /// Where the All projects board keeps its order across projects; `None`
+    /// keeps none (a board built in tests).
+    order_file: Option<PathBuf>,
     board: Board,
     /// The reader's markdown cache, and where its text was drawn.
     reader: Reader,
@@ -816,6 +819,7 @@ impl IboardApp {
         theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
         app.workspace = workspace::load(&mut config);
+        app.order_file = workspace::order::file();
         if !config.problems.is_empty() {
             let problem = config.problems.join(" ");
             app.error = Some(format!("Settings: {problem}"));
@@ -840,6 +844,7 @@ impl IboardApp {
             located,
             workspace: None,
             all: false,
+            order_file: None,
             session: Session::default(),
             board,
             reader: Reader::default(),
@@ -1039,7 +1044,10 @@ type Scanned = (Board, HashMap<PathBuf, PastReview>);
 fn scan(source: &Source) -> Result<Scanned, String> {
     let board = match source {
         Source::Project(located) => discovery::build(located).map_err(|err| format!("{err:#}"))?,
-        Source::All(workspace) => workspace::build(workspace, &workspace::virtual_root()),
+        Source::All(workspace, file) => {
+            let order = workspace::Order::load(file.as_deref());
+            workspace::build(workspace, &workspace::virtual_root(), &order)
+        }
     };
     let roots: Vec<PathBuf> = match board.repos.as_slice() {
         [] => vec![board.root.clone()],

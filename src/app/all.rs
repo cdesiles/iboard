@@ -8,14 +8,15 @@ use crate::discovery::Repo;
 #[derive(Clone)]
 pub(super) enum Source {
     Project(Located),
-    All(Workspace),
+    /// The workspace, and where its order across projects is kept.
+    All(Workspace, Option<PathBuf>),
 }
 
 impl IboardApp {
     /// What the next scan reads.
     pub(super) fn source(&self) -> Source {
         match (&self.workspace, self.all) {
-            (Some(workspace), true) => Source::All(workspace.clone()),
+            (Some(workspace), true) => Source::All(workspace.clone(), self.order_file.clone()),
             _ => Source::Project(self.located.clone()),
         }
     }
@@ -50,6 +51,48 @@ impl IboardApp {
             Some(repo) => (repo.project_dir.clone(), repo.root.clone()),
             None => (self.located.project_dir.clone(), self.located.root.clone()),
         }
+    }
+
+    /// After a drop in the merged column `dir` that left it in `order`:
+    /// renumbers only the projects whose own order changed, then keeps the
+    /// interleaving. Returns the renames.
+    pub(super) fn reorder_across(
+        &mut self,
+        dir: &Path,
+        before: &[PathBuf],
+        order: &[PathBuf],
+    ) -> Result<Vec<(PathBuf, PathBuf)>, String> {
+        let mut folders: Vec<&Path> = Vec::new();
+        for parent in order.iter().filter_map(|path| path.parent()) {
+            if !folders.contains(&parent) {
+                folders.push(parent);
+            }
+        }
+        let own = |list: &[PathBuf], folder: &Path| -> Vec<PathBuf> {
+            let of = |path: &&PathBuf| path.parent() == Some(folder);
+            list.iter().filter(of).cloned().collect()
+        };
+        let mut renames = Vec::new();
+        for folder in folders {
+            let after = own(order, folder);
+            if own(before, folder) != after {
+                renames.extend(discovery::renumber(folder, &after)?);
+            }
+        }
+        let renamed: Vec<PathBuf> = order
+            .iter()
+            .map(|path| match renames.iter().find(|(old, _)| old == path) {
+                Some((_, new)) => new.clone(),
+                None => path.clone(),
+            })
+            .collect();
+        if let Some(file) = &self.order_file {
+            let mut stored = workspace::Order::load(Some(file));
+            let keys = workspace::order::keys(&self.board, &renamed);
+            stored.columns.insert(file_name(dir), keys);
+            stored.save(file)?;
+        }
+        Ok(renames)
     }
 
     /// The groups of the workspace, as the header names the board's place.

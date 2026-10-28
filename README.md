@@ -147,3 +147,8 @@ itself when iboard starts outside any project (from the Dock, or in a folder
 holding several of them). Cards move within their own project; a new issue
 goes to the project the filter names (`repo:app`), else the selected card's;
 reviews and builds run in the card's project.
+
+Todo and Ready keep each project's own order in its file names (`001-`). How
+the projects interleave is kept apart, in `all-projects-order.toml` beside the
+user configuration: moving a card among other projects' cards renames nothing,
+and only a project whose own order changed is renumbered.
