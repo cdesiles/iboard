@@ -111,6 +111,7 @@ fn main() -> eframe::Result {
 
 /// Opens the window on `located`, or on the All projects board.
 fn run_app(located: Option<discovery::Located>, app_title: String) -> eframe::Result {
+    app::on_signals();
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])
         .with_min_inner_size([880.0, 480.0]);

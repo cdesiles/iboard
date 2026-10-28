@@ -518,6 +518,11 @@ impl ReviewRuns {
         !self.running.is_empty()
     }
 
+    /// How many reviews run in the background.
+    pub(super) fn running_count(&self) -> usize {
+        self.running.len()
+    }
+
     /// Stops the run on `path`, if any, and drops its ready mark.
     pub(super) fn forget(&mut self, path: &Path) {
         self.running.remove(path);

@@ -61,6 +61,7 @@ mod keys;
 mod labelling;
 mod moves;
 mod nav;
+mod quitting;
 mod reader;
 mod refine;
 mod review;
@@ -79,6 +80,7 @@ use filter_bar::*;
 use focus::ColumnFocus;
 use intent::Intent;
 use labelling::*;
+pub use quitting::on_signals;
 use reader::*;
 
 #[cfg(target_os = "macos")]
@@ -300,6 +302,8 @@ fn verdict_hint(word: &str, stale: bool) -> &'static str {
 #[derive(Clone)]
 enum Confirm {
     Delete(Vec<PathBuf>),
+    /// Quitting while this many AI runs are at work.
+    Quit(usize),
 }
 
 /// Which half of the detail view is showing.
@@ -824,6 +828,7 @@ impl IboardApp {
             config: None,
         });
         let mut app = Self::from_located(located);
+        quitting::watch(&cc.egui_ctx);
         app.clipboard = images::Clipboard::System;
         // The user's real cache: only the running app records here, never a
         // test constructing the board directly.
@@ -1050,8 +1055,10 @@ impl IboardApp {
                 }
             });
         self.label_picker_ui(ui);
-        if let Some(Confirm::Delete(paths)) = self.session.confirm.clone() {
-            self.confirm_dialog(ui, &paths);
+        match self.session.confirm.clone() {
+            Some(Confirm::Delete(paths)) => self.confirm_dialog(ui, &paths),
+            Some(Confirm::Quit(runs)) => self.quit_dialog(ui, runs),
+            None => {}
         }
         self.config_window(ui);
         self.design_window(ui);

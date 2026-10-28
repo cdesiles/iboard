@@ -119,6 +119,34 @@ pub fn run_with(
     })
 }
 
+/// Calls `on_signal`, on a thread of its own, each time SIGTERM, SIGINT or
+/// SIGHUP asks the process to end; they reach no other thread. Call it before
+/// any other thread starts, so they all inherit the blocked signals.
+#[cfg(unix)]
+pub fn on_termination(on_signal: impl Fn() + Send + 'static) {
+    // SAFETY: the set is initialised by `sigemptyset` before use, and
+    // `pthread_sigmask` only changes this thread's mask, inherited by those it
+    // starts.
+    let set = unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
+            libc::sigaddset(&mut set, signal);
+        }
+        libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
+        set
+    };
+    std::thread::spawn(move || {
+        loop {
+            let mut signal = 0;
+            // SAFETY: `sigwait` waits on the blocked set, then writes the signal.
+            if unsafe { libc::sigwait(&set, &mut signal) } == 0 {
+                on_signal();
+            }
+        }
+    });
+}
+
 /// Stops every process still running, with what it started. For quitting,
 /// which exits before the jobs can clean up after themselves.
 pub fn stop_all() {

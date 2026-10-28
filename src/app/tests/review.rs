@@ -798,3 +798,42 @@ fn a_finished_update_shows_by_itself_and_applies_with_cmd_enter() {
         .expect("⌘↩ applies the proposal");
     assert_eq!(editor.text.trim(), "# Updated");
 }
+
+/// Quitting while an AI run is at work asks first; `esc` keeps iboard open,
+/// `↩` quits. With nothing at work it quits at once.
+#[test]
+fn quitting_with_a_run_at_work_asks_first() {
+    let dir = scratch_dir("quit-runs");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "sleep 30 # {prompt}".to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.start_update(&file);
+    app.request_quit();
+    assert!(matches!(app.session.confirm, Some(Confirm::Quit(1))));
+    assert!(!app.closing);
+    let ctx = themed_ctx();
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(Key::Escape, egui::Modifiers::NONE)],
+    );
+    assert!(
+        app.session.confirm.is_none() && !app.closing,
+        "esc keeps iboard open"
+    );
+    app.request_quit();
+    app.quit_anyway();
+    assert!(app.closing);
+
+    let mut idle = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    idle.request_quit();
+    assert!(idle.session.confirm.is_none() && idle.closing);
+}

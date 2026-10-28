@@ -103,6 +103,60 @@ impl IboardApp {
         }
     }
 
+    /// The quit confirmation, while AI runs are at work: Quit stops them and
+    /// loses their answers; `esc`, Cancel or the scrim keeps iboard open.
+    pub(super) fn quit_dialog(&mut self, ui: &egui::Ui, runs: usize) {
+        let p = theme::palette(ui);
+        let (width, pad) = (360.0, 20.0);
+        let mut confirmed = false;
+        let mut cancelled = false;
+        let frame = widgets::popover_frame(ui).inner_margin(Margin {
+            left: pad as i8,
+            right: pad as i8,
+            top: pad as i8,
+            bottom: theme::SPACE_5 as i8,
+        });
+        let modal = egui::Modal::new(egui::Id::new("confirm-quit"))
+            .frame(frame)
+            .backdrop_color(p.scrim)
+            .show(ui.ctx(), |ui| {
+                ui.set_width(width - 2.0 * pad);
+                ui.style_mut().interaction.selectable_labels = false;
+                ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+                let title = RichText::new("Quit iboard?")
+                    .font(theme::ui_title())
+                    .color(p.ink);
+                ui.label(title);
+                let what = match runs {
+                    1 => "An AI run is at work: quitting stops it, and its answer is lost."
+                        .to_string(),
+                    n => format!(
+                        "{n} AI runs are at work: quitting stops them, and their answers are lost."
+                    ),
+                };
+                ui.label(
+                    RichText::new(what)
+                        .font(theme::ui_small())
+                        .color(p.ink_muted),
+                );
+                ui.add_space(theme::SPACE_3);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                    let quit = widgets::button(ui, ButtonKind::Danger, None, "Quit", Some("↩"));
+                    widgets::paint_focus_ring(ui, quit.rect, theme::RADIUS_SM);
+                    confirmed = quit.clicked();
+                    cancelled =
+                        widgets::button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc"))
+                            .clicked();
+                });
+            });
+        if confirmed {
+            self.quit_anyway();
+        } else if cancelled || modal.should_close() {
+            self.session.confirm = None;
+        }
+    }
+
     /// The commits popup: the hashes whose message names the ticket's file,
     /// read from git when its node button was pressed. `esc` or the scrim
     /// closes it.

@@ -325,7 +325,11 @@ impl IboardApp {
         // so it can run the save prompt before we exit.
         #[cfg(target_os = "macos")]
         if iboard::menu::take_quit_request() {
-            self.leave(Leave::Quit);
+            self.request_quit();
+        }
+        if quitting::requested() {
+            self.save_pending();
+            self.quit(ctx);
         }
         #[cfg(target_os = "macos")]
         if iboard::menu::take_settings_request() && self.settings.is_none() {
@@ -337,7 +341,7 @@ impl IboardApp {
         }
         let close_requested = ctx.input(|i| i.viewport().close_requested());
         if close_requested && !self.closing {
-            self.leave(Leave::Quit);
+            self.request_quit();
             if !self.closing {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
@@ -350,13 +354,16 @@ impl IboardApp {
     /// The delete confirmation owns Escape and Enter while it is up. True
     /// while it is.
     fn confirm_keys(&mut self, ctx: &egui::Context) -> bool {
-        let Some(Confirm::Delete(paths)) = self.session.confirm.clone() else {
+        let Some(confirm) = self.session.confirm.clone() else {
             return false;
         };
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             self.session.confirm = None;
         } else if ctx.input(|i| i.key_pressed(Key::Enter)) {
-            self.delete_issues(&paths);
+            match confirm {
+                Confirm::Delete(paths) => self.delete_issues(&paths),
+                Confirm::Quit(_) => self.quit_anyway(),
+            }
         }
         true
     }
