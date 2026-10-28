@@ -56,7 +56,10 @@ impl IboardApp {
             .as_ref()
             .filter(|(_, at)| at.elapsed() < NOTICE_FOR)
             .map(|(text, at)| (text.clone(), *at));
-        let idle = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
+        let mut idle = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
+        if self.project_cycle().len() > 1 {
+            idle.push(("⌃⇥", "project"));
+        }
         if let Some(drag) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx()) {
             ui.label(status_meta(ui, self.relative(&drag.path)));
             return vec![("esc", "cancel drag")];

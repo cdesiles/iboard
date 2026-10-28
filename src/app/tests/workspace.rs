@@ -210,3 +210,29 @@ fn the_menu_lists_the_workspace_projects_below_the_recent_ones() {
         [(site_dir, "Clients".to_string())]
     );
 }
+
+/// `⌃⇥` goes round All projects and each project, `⌃⇧⇥` the other way.
+#[test]
+fn ctrl_tab_switches_to_the_next_project() {
+    let (_scratch, app_dir, site_dir, mut app) = two_projects("all-switch");
+    assert_eq!(
+        app.project_cycle(),
+        [None, Some(app_dir.clone()), Some(site_dir.clone())]
+    );
+    let ctx = themed_ctx();
+    let ctrl = egui::Modifiers::CTRL;
+    let shift_ctrl = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+    let board = |app: &IboardApp| match app.showing_all() {
+        true => None,
+        false => Some(recents::canonical(&app.located.project_dir)),
+    };
+    frame(&ctx, &mut app, vec![key(Key::Tab, ctrl)]);
+    assert_eq!(board(&app), Some(app_dir.clone()));
+    frame(&ctx, &mut app, vec![key(Key::Tab, ctrl)]);
+    assert_eq!(board(&app), Some(site_dir));
+    frame(&ctx, &mut app, vec![key(Key::Tab, ctrl)]);
+    assert_eq!(board(&app), None, "round the end to All projects");
+    frame(&ctx, &mut app, vec![key(Key::Tab, shift_ctrl)]);
+    assert!(!app.showing_all(), "⌃⇧⇥ goes back");
+    assert_eq!(app.project_cycle().len(), 3, "the order stays steady");
+}

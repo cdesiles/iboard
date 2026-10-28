@@ -90,7 +90,7 @@ impl IboardApp {
                     })
                     .inner
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text("Switch project");
+                    .on_hover_text("Switch project  ⌃⇥");
                 self.project_menu(&response);
             }
             Screen::Detail(path) => self.detail_breadcrumb(ui, &path, &project),

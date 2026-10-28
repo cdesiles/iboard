@@ -52,6 +52,8 @@ enum Command {
     Archive(PathBuf),
     Labels(PathBuf),
     Delete(PathBuf),
+    /// `⌃⇥` / `⌃⇧⇥` on the board: the next or the previous project.
+    SwitchProject(bool),
 }
 
 /// The shortcuts that fire for `input` where the keyboard is.
@@ -103,6 +105,18 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     }
     if cx.board && !cx.typing && !cx.confirming {
         out.extend(board_keys(input, cx));
+    }
+    let ctrl_tab = input.events.iter().find_map(|event| match event {
+        egui::Event::Key {
+            key: Key::Tab,
+            pressed: true,
+            modifiers,
+            ..
+        } if modifiers.ctrl && !modifiers.mac_cmd && !modifiers.alt => Some(modifiers.shift),
+        _ => None,
+    });
+    if let Some(shift) = ctrl_tab.filter(|_| cx.board && !cx.composer && !cx.confirming) {
+        out.push(Command::SwitchProject(!shift));
     }
     let reading = cx.open.as_ref().filter(|_| !cx.editing);
     if let Some(path) = reading
@@ -463,6 +477,7 @@ impl IboardApp {
             Command::Archive(path) => self.archive_issue(&path),
             Command::Labels(path) => self.toggle_label_picker(path),
             Command::Delete(path) => self.request_delete(path),
+            Command::SwitchProject(forward) => self.switch_project(forward),
         }
     }
 

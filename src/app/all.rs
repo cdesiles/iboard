@@ -106,6 +106,52 @@ impl IboardApp {
         projects
     }
 
+    /// The boards `⌃⇥` goes through, in a steady order: All projects (`None`)
+    /// when there is a workspace, its projects, then the other recent ones.
+    pub(super) fn project_cycle(&self) -> Vec<Option<PathBuf>> {
+        let mut cycle = Vec::new();
+        if self.workspace.is_some() {
+            cycle.push(None);
+        }
+        let groups = self
+            .workspace
+            .iter()
+            .flat_map(|workspace| &workspace.groups);
+        let listed = groups
+            .flat_map(|group| &group.repos)
+            .map(|repo| recents::canonical(repo));
+        for project in listed.chain(self.recents.iter().cloned()) {
+            let project = Some(project);
+            if !cycle.contains(&project) {
+                cycle.push(project);
+            }
+        }
+        cycle
+    }
+
+    /// `⌃⇥`: the next board of [`Self::project_cycle`], or with `forward`
+    /// false the previous one, round the end.
+    pub(super) fn switch_project(&mut self, forward: bool) {
+        let cycle = self.project_cycle();
+        let len = cycle.len();
+        if len < 2 {
+            return;
+        }
+        let current = match self.showing_all() {
+            true => None,
+            false => Some(recents::canonical(&self.located.project_dir)),
+        };
+        let next = match cycle.iter().position(|board| *board == current) {
+            Some(at) if forward => (at + 1) % len,
+            Some(at) => (at + len - 1) % len,
+            None => 0,
+        };
+        match cycle[next].clone() {
+            Some(project) => self.open_project(project),
+            None => self.open_all(),
+        }
+    }
+
     /// The groups of the workspace, as the header names the board's place.
     pub(super) fn workspace_groups(&self) -> String {
         self.workspace
