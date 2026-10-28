@@ -469,15 +469,23 @@ fn issue_blocks(
         }
         let mut block = text[range.clone()].to_string();
         let broken = images::missing_images(path, &block);
+        let table = markdown::is_table(&block);
         let shown = ui
             .push_id(("block", index), |ui| {
-                let viewer =
-                    CommonMarkViewer::new().default_implicit_uri_scheme(image_base_uri(path));
-                if broken.is_empty() {
-                    viewer.show_mut(ui, cache, &mut block).response
-                } else {
-                    let placeheld = images::with_placeholders(&block, &broken);
-                    viewer.show(ui, cache, &placeheld).response
+                let mut draw = |ui: &mut egui::Ui| {
+                    let viewer =
+                        CommonMarkViewer::new().default_implicit_uri_scheme(image_base_uri(path));
+                    if broken.is_empty() {
+                        viewer.show_mut(ui, cache, &mut block).response
+                    } else {
+                        let placeheld = images::with_placeholders(&block, &broken);
+                        viewer.show(ui, cache, &placeheld).response
+                    }
+                };
+                // Table cells do not wrap: a wide table scrolls within the page.
+                match table {
+                    true => egui::ScrollArea::horizontal().show(ui, draw).inner,
+                    false => draw(ui),
                 }
             })
             .inner;
