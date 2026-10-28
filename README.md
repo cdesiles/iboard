@@ -108,7 +108,13 @@ engine = "apple"    # "apple" (on-device), "agent" or "manual"
 
 [delete]
 confirm = true      # false: delete without asking, with ⌘Z undo
+
+[direnv]
+enabled = false     # true: agents run through `direnv exec` in projects with an .envrc
 ```
+
+Issues labelled `manual` (a quote, an email: work that is not code) stay in
+Ready when Play hands the column to the build agent.
 
 idesign is in beta and off by default: the board shows no Design button and
 no Draft design, and a project's `design/` folder stays as it is on disk. It

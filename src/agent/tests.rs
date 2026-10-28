@@ -598,3 +598,31 @@ fn the_configuration_round_trips_through_a_file() {
     let absent = dir.join("absent.toml");
     assert!(!load(&mut UserConfig::load(Some(&absent))).configured());
 }
+
+#[test]
+fn direnv_wraps_the_command_and_keeps_its_environment() {
+    use std::ffi::OsStr;
+    let mut command = std::process::Command::new("claude");
+    command
+        .args(["-p", "x"])
+        .env("PATH", "/bin")
+        .current_dir("/tmp");
+    let project = Path::new("/code/app");
+    let wrapped = direnv::wrap(&command, Path::new("/opt/direnv"), project);
+    assert_eq!(wrapped.get_program(), "/opt/direnv");
+    let args: Vec<_> = wrapped.get_args().collect();
+    assert_eq!(args, ["exec", "/code/app", "claude", "-p", "x"]);
+    let envs: Vec<_> = wrapped.get_envs().collect();
+    assert_eq!(envs, [(OsStr::new("PATH"), Some(OsStr::new("/bin")))]);
+    assert_eq!(wrapped.get_current_dir(), Some(Path::new("/tmp")));
+}
+
+#[test]
+fn direnv_applies_only_when_on_and_the_project_has_an_envrc() {
+    let scratch = tempfile::tempdir().unwrap();
+    let project = scratch.path();
+    assert!(!direnv::applies(true, project));
+    std::fs::write(project.join(".envrc"), "export A=1\n").unwrap();
+    assert!(direnv::applies(true, project));
+    assert!(!direnv::applies(false, project));
+}

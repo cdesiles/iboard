@@ -792,6 +792,7 @@ impl IboardApp {
         app.appearance = general::load_appearance(&mut config);
         app.auto = general::load_auto(&mut config);
         app.idesign = general::load_idesign(&mut config);
+        agent::set_direnv(general::load_direnv(&mut config));
         theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
         if !config.problems.is_empty() {

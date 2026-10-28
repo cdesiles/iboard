@@ -24,6 +24,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
@@ -126,6 +127,15 @@ static TOOLS: OnceLock<PathBuf> = OnceLock::new();
 /// tests never start a real agent. The first call wins.
 pub fn run_tools_from(dir: &Path) {
     let _ = TOOLS.set(dir.to_path_buf());
+}
+
+/// `[direnv] enabled`, read once at launch.
+static DIRENV: AtomicBool = AtomicBool::new(false);
+
+/// Runs agents through `direnv exec` in projects that have an `.envrc`, for
+/// the rest of the process.
+pub fn set_direnv(enabled: bool) {
+    DIRENV.store(enabled, Ordering::Relaxed);
 }
 
 /// The `[ai]` section of the user's configuration.
@@ -720,6 +730,11 @@ fn run_with(
     let mut command = command(config, &model, prompt, &prompt_file, issue, purpose);
     if let Some(workspace) = workspace {
         command.current_dir(workspace.dir);
+        if direnv::applies(DIRENV.load(Ordering::Relaxed), workspace.dir)
+            && let Some(binary) = find_binary("direnv")
+        {
+            command = direnv::wrap(&command, &binary, workspace.dir);
+        }
     }
     let mut log = workspace
         .and_then(|workspace| workspace.log)
@@ -1266,6 +1281,8 @@ fn verdict_and_note(rest: &str) -> Option<(Verdict, &str)> {
         .trim_end();
     Some((verdict, note))
 }
+
+mod direnv;
 
 #[cfg(test)]
 mod tests;
