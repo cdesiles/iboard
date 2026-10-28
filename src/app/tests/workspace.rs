@@ -73,8 +73,15 @@ fn a_new_issue_goes_to_the_filtered_project() {
     assert!(app.error.is_none(), "{:?}", app.error);
     assert!(site_dir.join("issues/todo/fresh-idea.md").exists());
     assert!(!app_dir.join("issues/todo/fresh-idea.md").exists());
-    let (project, _) = app.stats_project();
-    assert_eq!(project, site_dir, "Stats measure the filtered project too");
+}
+
+/// Stats measure one history: on the All projects board they say so instead.
+#[test]
+fn the_all_projects_board_has_no_stats() {
+    let (_scratch, _app_dir, _site_dir, mut app) = two_projects("all-stats");
+    app.open_stats();
+    assert!(app.session.stats.is_none());
+    assert!(app.session.notice.is_some());
 }
 
 #[test]
@@ -148,6 +155,7 @@ fn the_header_names_the_groups_instead_of_a_path() {
     harness.run_steps(2);
     harness.get_by_label(crate::workspace::TITLE);
     harness.get_by_label("Clients");
+    assert!(harness.query_by_label("Stats").is_none(), "no Stats button");
 }
 
 fn ready_titles(app: &IboardApp) -> Vec<String> {

@@ -44,15 +44,6 @@ impl IboardApp {
         self.idesign && !self.showing_all()
     }
 
-    /// The project Stats measure: the board's own, or on the All projects
-    /// board the one [`Self::target_repo`] picks.
-    pub(super) fn stats_project(&self) -> (PathBuf, PathBuf) {
-        match self.target_repo() {
-            Some(repo) => (repo.project_dir.clone(), repo.root.clone()),
-            None => (self.located.project_dir.clone(), self.located.root.clone()),
-        }
-    }
-
     /// After a drop in the merged column `dir` that left it in `order`:
     /// renumbers only the projects whose own order changed, then keeps the
     /// interleaving. Returns the renames.
@@ -105,7 +96,7 @@ impl IboardApp {
             .join(" · ")
     }
 
-    /// The project new issues and Stats go to on the All projects board: the
+    /// The project new issues go to on the All projects board: the
     /// one the filter names, else the first of the group it names, else the
     /// selected card's, else the first. `None` on a single project.
     pub(super) fn target_repo(&self) -> Option<&Repo> {

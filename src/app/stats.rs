@@ -146,12 +146,17 @@ enum StatsAsk {
 
 impl IboardApp {
     /// Opens the stats panel on the project, measuring its newest commits.
+    /// Stats measure one history: the All projects board has none to show.
     pub(super) fn open_stats(&mut self) {
+        if self.showing_all() {
+            let notice = "Stats measure one project: open it from the project menu";
+            self.session.notice = Some((notice.to_string(), Instant::now()));
+            return;
+        }
         if self.session.stats.is_none() {
-            let (project, root) = self.stats_project();
             self.session.stats = Some(StatsPanel::new(
-                &project,
-                &root,
+                &self.located.project_dir,
+                &self.located.root,
                 0,
                 self.session.agenda_range,
             ));
@@ -232,8 +237,8 @@ impl IboardApp {
         match ask {
             Some(StatsAsk::Close) => self.session.stats = None,
             Some(StatsAsk::Page(page)) => {
-                let (project, root) = self.stats_project();
-                self.session.stats = Some(StatsPanel::new(&project, &root, page, range));
+                let (project, root) = (&self.located.project_dir, &self.located.root);
+                self.session.stats = Some(StatsPanel::new(project, root, page, range));
             }
             Some(StatsAsk::DraftRefactor(title, description)) => {
                 self.session.stats = None;

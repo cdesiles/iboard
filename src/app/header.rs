@@ -255,9 +255,10 @@ impl IboardApp {
             self.open_composer();
         }
         self.refresh_button(ui);
-        if widgets::button(ui, ButtonKind::Secondary, None, "Stats", None)
-            .on_hover_text("Project stats: what the commits say, and the Agenda")
-            .clicked()
+        if !self.showing_all()
+            && widgets::button(ui, ButtonKind::Secondary, None, "Stats", None)
+                .on_hover_text("Project stats: what the commits say, and the Agenda")
+                .clicked()
         {
             self.open_stats();
         }
