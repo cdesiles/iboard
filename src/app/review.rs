@@ -24,7 +24,9 @@ impl IboardApp {
             self.open_config();
             return;
         }
-        let (answer, _) = agent::start_plan_review(&self.agent, &prompt, &target.path, target.mode);
+        let project = Some(self.board.project_of(&target.path));
+        let (answer, _) =
+            agent::start_plan_review(&self.agent, &prompt, &target.path, project, target.mode);
         self.mark_notes_sent(&target.path);
         self.close_review();
         let runs = &mut self.session.review_runs;
@@ -163,7 +165,8 @@ impl IboardApp {
                 at: chrono::Local::now().to_rfc3339(),
                 raw: reviewed.answer,
             };
-            if let Err(err) = reviews::save_review(&self.board.root, &path, stored.clone()) {
+            if let Err(err) = reviews::save_review(self.board.root_of(&path), &path, stored.clone())
+            {
                 self.error = Some(err);
             }
             if let Some(issue) = self.board.find(&path) {

@@ -100,6 +100,17 @@ impl Board {
     pub fn issue_count(&self) -> usize {
         self.columns.iter().map(|c| c.issues.len()).sum()
     }
+
+    /// The project the issue at `path` belongs to: where its agents run.
+    pub fn project_of(&self, _path: &Path) -> &Path {
+        &self.project_dir
+    }
+
+    /// The issues folder the issue at `path` belongs to: where its sidecars
+    /// (reviews, comments, build logs, images) live.
+    pub fn root_of(&self, _path: &Path) -> &Path {
+        &self.root
+    }
 }
 
 /// Walks up from `start` looking for a configured project or an `issues/`

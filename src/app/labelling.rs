@@ -117,7 +117,7 @@ impl IboardApp {
         }
         Some(match paths.as_slice() {
             [one] => one
-                .strip_prefix(&self.board.root)
+                .strip_prefix(self.board.root_of(one))
                 .unwrap_or(one)
                 .display()
                 .to_string(),

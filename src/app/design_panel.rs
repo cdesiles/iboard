@@ -142,7 +142,12 @@ impl IboardApp {
             .join("preview.html");
         self.session.design_draft = Some(DraftJob {
             name: name.to_string(),
-            job: agent::start(&self.agent, &prompt, &preview),
+            job: agent::start(
+                &self.agent,
+                &prompt,
+                &preview,
+                Some(&self.board.project_dir),
+            ),
         });
     }
 

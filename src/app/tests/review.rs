@@ -22,6 +22,32 @@ fn only_todo_issues_are_reviewed() {
     );
 }
 
+/// The agent reads the issue's project, wherever iboard was started from.
+#[test]
+fn a_review_runs_from_the_issue_project() {
+    let dir = std::fs::canonicalize(scratch_dir("review-cwd")).unwrap();
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("demo.md");
+    std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf 'RELEVANCE: Pass\\n%s\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' \"$(pwd -P)\" # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.start_review(&file, false);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&file)
+    }));
+    let kept = std::fs::read_to_string(dir.join("issues/.reviews/demo.toml")).unwrap();
+    assert!(kept.contains(&dir.display().to_string()), "{kept}");
+}
+
 /// A finished review is kept beside the issue: it stays behind the card's
 /// verdict pill, survives a restart, and turns stale once the issue changes.
 #[test]

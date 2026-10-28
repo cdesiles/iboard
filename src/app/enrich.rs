@@ -26,7 +26,12 @@ impl IboardApp {
             path: path.to_path_buf(),
             html: None,
             png: None,
-            status: EnrichStatus::Running(agent::start(&self.agent, &prompt, path)),
+            status: EnrichStatus::Running(agent::start(
+                &self.agent,
+                &prompt,
+                path,
+                Some(self.board.project_of(path)),
+            )),
             refine: String::new(),
             texture: None,
             note: None,
@@ -60,7 +65,12 @@ impl IboardApp {
             Some((&html, &instruction)),
             "light",
         );
-        let answer = agent::start(&self.agent, &prompt, &path);
+        let answer = agent::start(
+            &self.agent,
+            &prompt,
+            &path,
+            Some(self.board.project_of(&path)),
+        );
         if let Some(enrichment) = self.session.enrichment.as_mut() {
             enrichment.status = EnrichStatus::Running(answer);
             enrichment.refine.clear();

@@ -920,7 +920,7 @@ impl IboardApp {
 
     /// A path relative to the issues folder, as the file system names it.
     fn relative(&self, path: &Path) -> String {
-        match path.strip_prefix(&self.board.root) {
+        match path.strip_prefix(self.board.root_of(path)) {
             Ok(relative) if relative.as_os_str().is_empty() => "./".to_string(),
             Ok(relative) if path.is_dir() => format!("{}/", relative.display()),
             Ok(relative) => relative.display().to_string(),

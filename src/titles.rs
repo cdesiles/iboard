@@ -153,7 +153,7 @@ pub fn start(
                 let file = files::temp_path("title", "md");
                 std::fs::write(&file, &description)
                     .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
-                let result = agent::run(&agent, &agent_prompt(&description), &file, cancel);
+                let result = agent::run(&agent, &agent_prompt(&description), &file, None, cancel);
                 let _ = std::fs::remove_file(&file);
                 result.and_then(|raw| clean(&raw))
             })

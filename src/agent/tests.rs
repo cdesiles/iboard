@@ -57,6 +57,7 @@ fn a_custom_command_reads_the_prompt_file_and_answers() {
         &custom("cat {prompt}"),
         "hello there",
         Path::new("todo/a.md"),
+        None,
     );
     let answer = job.wait().expect("the job answers").expect("cat succeeds");
     assert_eq!(answer, "hello there");
@@ -65,8 +66,23 @@ fn a_custom_command_reads_the_prompt_file_and_answers() {
 #[test]
 fn a_failing_command_reports_its_error_instead_of_panicking() {
     let config = custom("echo nope >&2; exit 3 # {prompt}");
-    let error = run(&config, "x", Path::new("a.md"), &Cancel::default());
+    let error = run(&config, "x", Path::new("a.md"), None, &Cancel::default());
     assert_eq!(error, Err("nope".to_string()));
+}
+
+#[test]
+fn an_agent_runs_from_its_project() {
+    let scratch = tempfile::tempdir().unwrap();
+    let project = std::fs::canonicalize(scratch.path()).unwrap();
+    let config = custom("pwd -P # {prompt}");
+    let answer = run(
+        &config,
+        "x",
+        Path::new("a.md"),
+        Some(&project),
+        &Cancel::default(),
+    );
+    assert_eq!(answer, Ok(project.display().to_string()));
 }
 
 #[test]
@@ -84,7 +100,7 @@ fn file_names_never_run_as_shell_code() {
         "printf %s \"{issue}\" # {prompt}",
         "printf %s '{issue}' # {prompt}",
     ] {
-        let answer = run(&custom(template), "x", &issue, &Cancel::default());
+        let answer = run(&custom(template), "x", &issue, None, &Cancel::default());
         assert_eq!(answer, Ok(issue.display().to_string()), "{template}");
     }
     assert!(!planted.exists(), "a file name ran as code");
@@ -109,7 +125,7 @@ fn dropping_a_run_stops_the_agent() {
         "echo $$ > '{}'; sleep 30; echo late # {{prompt}}",
         pid_file.display()
     );
-    let job = start(&custom(&script), "x", Path::new("a.md"));
+    let job = start(&custom(&script), "x", Path::new("a.md"), None);
     let pid = || {
         std::fs::read_to_string(&pid_file)
             .ok()
@@ -255,7 +271,7 @@ fn an_agent_failing_in_its_stream_reports_its_own_error() {
     let config = custom(
         "printf '%s\\n' '{\"type\":\"error\",\"error\":{\"message\":\"no credits\"}}'; exit 1 # {prompt}",
     );
-    let error = run(&config, "x", Path::new("a.md"), &Cancel::default());
+    let error = run(&config, "x", Path::new("a.md"), None, &Cancel::default());
     assert_eq!(error, Err("no credits".to_string()));
 }
 
@@ -267,7 +283,7 @@ fn a_review_reports_its_steps_and_answers() {
         configured: true,
         ..AgentConfig::default()
     };
-    let (job, progress) = start_review(&config, "x", Path::new("a.md"), ReviewMode::Deep);
+    let (job, progress) = start_review(&config, "x", Path::new("a.md"), None, ReviewMode::Deep);
     assert_eq!(job.wait().unwrap(), Ok("deep".to_string()));
     assert_eq!(step(&progress), None, "a custom command reports no steps");
 }
@@ -286,7 +302,7 @@ fn tool(tool: Tool) -> AgentConfig {
 }
 
 fn reviewed(config: &AgentConfig, prompt: &str, mode: ReviewMode) -> Reviewed {
-    let (job, _) = start_plan_review(config, prompt, Path::new("a.md"), mode);
+    let (job, _) = start_plan_review(config, prompt, Path::new("a.md"), None, mode);
     job.wait().unwrap().unwrap()
 }
 
@@ -309,6 +325,7 @@ fn opencode_and_claude_review_in_plan_mode() {
         &tool(Tool::Claude),
         "PROMPT",
         Path::new("a.md"),
+        None,
         &Cancel::default(),
     );
     let answer = answer.unwrap();

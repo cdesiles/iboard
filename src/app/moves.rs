@@ -382,7 +382,7 @@ impl IboardApp {
             self.close_review();
         }
         self.cancel_review_run(path);
-        let archive = self.board.root.join(ARCHIVE_DIR);
+        let archive = self.board.root_of(path).join(ARCHIVE_DIR);
         if let Err(err) = std::fs::create_dir_all(&archive) {
             self.error = Some(format!(
                 "Couldn't create {}: {err}",

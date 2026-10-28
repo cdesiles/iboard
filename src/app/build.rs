@@ -271,8 +271,8 @@ impl IboardApp {
     fn start_agent(&mut self, issue: PathBuf, at: usize) -> Option<Run> {
         let content = self.board.find(&issue)?.markdown.clone();
         let prompt = prompts::build_prompt(&self.relative(&issue), &content);
-        let project = self.located.project_dir.clone();
-        let log = build_log::path(&self.board.root, &issue);
+        let project = self.board.project_of(&issue).to_path_buf();
+        let log = build_log::path(self.board.root_of(&issue), &issue);
         let (answer, _) = agent::start_build(&self.build_agent, &prompt, &issue, &project, &log);
         Some(Run {
             issue,
