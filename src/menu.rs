@@ -63,7 +63,7 @@ const WORDMARK_DARK: &[u8] =
     include_bytes!("../design/components/Logo/files/iboard-wordmark-dark.svg");
 /// The wordmark's height in the About panel, and its SVG's aspect.
 const WORDMARK_H: f64 = 36.0;
-const WORDMARK_ASPECT: f64 = 155.0 / 48.0;
+const WORDMARK_ASPECT: f64 = 153.0 / 48.0;
 
 /// Remembers the context for menu actions. Call once, from [`install`]'s caller.
 pub fn set_context(ctx: eframe::egui::Context) {

@@ -6,7 +6,8 @@
 
 - **Glyph**: a 12×27 stem with 3pt corners and a 20×13 card above it, rotated −8°, offset to the right. On a 64 grid. Stem in `ink`, card in `accent`, so it follows the theme.
 - **App icon**: the glyph on a `#15181d` tile with macOS corners (22.5%) and a faint `#353b45` edge so it holds on dark docks, on Apple's 1024 grid (824 tile, 100 margin). From 64pt up, the card shows two text lines and two faint column rules frame the stem; at 32 and 16 those details drop.
-- **Wordmark**: "iboard" drawn, not typeset, from the same parts: 6pt stems and rings, the i's dot is the card. It needs no font, so it renders the same everywhere. Lowercase, always one word.
+- **Wordmark**: "iboard" drawn, not typeset, from the same parts: 6pt stems and rings, the i's dot is the card, centred on the i's stem (it only looks offset because of its −8° tilt). It needs no font, so it renders the same everywhere. Lowercase, always one word.
+- **Wordmark spacing**: optical, not equal. Gaps are 5 between two straight sides (a|r), 3 between two rounds (b|o, o|a) and 1.5 from the r's arm to the d's bowl, because the open space under the arm already reads as gap. i|b is 8 from stem to stem, so the tilted card (which overhangs the stem by about 3) keeps the same 5 to the b's ascender. Equal gaps made straight pairs look cramped and round pairs loose. Keep these ratios if the wordmark is redrawn.
 
 ## Use
 
