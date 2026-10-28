@@ -626,3 +626,21 @@ fn direnv_applies_only_when_on_and_the_project_has_an_envrc() {
     assert!(direnv::applies(true, project));
     assert!(!direnv::applies(false, project));
 }
+
+#[test]
+fn a_proposal_wrapped_in_one_fence_is_what_is_inside() {
+    let issue = "---\ntitre: T\n---\n\n# T\n\nBody.";
+    for fence in ["```markdown", "```md", "```"] {
+        let wrapped = format!("{fence}\n{issue}\n```\n");
+        assert_eq!(proposal_of(&wrapped).as_deref(), Some(issue), "{fence}");
+    }
+    let with_code = "# T\n\n```sh\nmake check\n```";
+    assert_eq!(proposal_of(with_code).as_deref(), Some(with_code));
+    let other = "```rust\nfn main() {}\n```";
+    assert_eq!(
+        proposal_of(other).as_deref(),
+        Some(other),
+        "only a markdown fence"
+    );
+    assert_eq!(proposal_of("NONE"), None);
+}

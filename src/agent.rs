@@ -1162,8 +1162,22 @@ pub fn parse(text: &str) -> Option<Report> {
 
 /// A proposed rewrite, unless it is empty or the word `NONE`.
 fn proposal_of(text: &str) -> Option<String> {
-    let text = text.trim();
+    let text = unfenced(text.trim());
     (!text.is_empty() && !text.eq_ignore_ascii_case("none")).then(|| text.to_string())
+}
+
+/// `text` without the one fence around all of it (```` ``` ````,
+/// ```` ```markdown ```` or ```` ```md ````): agents sometimes wrap the whole
+/// rewritten issue in one.
+fn unfenced(text: &str) -> &str {
+    let Some((first, rest)) = text.split_once('\n') else {
+        return text;
+    };
+    let opening = first.trim().strip_prefix("```").map(str::trim);
+    match (opening, rest.trim_end().strip_suffix("```")) {
+        (Some("" | "markdown" | "md"), Some(inside)) => inside.trim(),
+        _ => text,
+    }
 }
 
 /// One turn of a refinement, as the challenger answered it.
