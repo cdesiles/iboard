@@ -61,7 +61,7 @@ impl IboardApp {
             idle.push(("⌘I", "stats"));
         }
         if self.project_cycle().len() > 1 {
-            idle.push(("⌃⇥", "project"));
+            idle.push(("Ctrl⇥", "project"));
         }
         if let Some(drag) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx()) {
             ui.label(status_meta(ui, self.relative(&drag.path)));
