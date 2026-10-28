@@ -271,7 +271,7 @@ impl IboardApp {
         }
         self.refresh_button(ui);
         if !self.showing_all()
-            && widgets::button(ui, ButtonKind::Secondary, None, "Stats", None)
+            && widgets::button(ui, ButtonKind::Secondary, None, "Stats", Some("⌘I"))
                 .on_hover_text("Project stats: what the commits say, and the Agenda")
                 .clicked()
         {

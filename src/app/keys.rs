@@ -54,6 +54,8 @@ enum Command {
     Delete(PathBuf),
     /// `⌃⇥` / `⌃⇧⇥` on the board: the next or the previous project.
     SwitchProject(bool),
+    /// `⌘I` on the board: Project stats.
+    Stats,
 }
 
 /// The shortcuts that fire for `input` where the keyboard is.
@@ -67,6 +69,9 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     }
     if cx.board && command(Key::F) {
         out.push(Command::FocusFilter);
+    }
+    if cx.board && !cx.typing && command(Key::I) {
+        out.push(Command::Stats);
     }
     if cx.board && !cx.typing {
         for (at, key) in [Key::Num1, Key::Num2, Key::Num3, Key::Num4]
@@ -106,17 +111,9 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     if cx.board && !cx.typing && !cx.confirming {
         out.extend(board_keys(input, cx));
     }
-    let ctrl_tab = input.events.iter().find_map(|event| match event {
-        egui::Event::Key {
-            key: Key::Tab,
-            pressed: true,
-            modifiers,
-            ..
-        } if modifiers.ctrl && !modifiers.mac_cmd && !modifiers.alt => Some(modifiers.shift),
-        _ => None,
-    });
-    if let Some(shift) = ctrl_tab.filter(|_| cx.board && !cx.composer && !cx.confirming) {
-        out.push(Command::SwitchProject(!shift));
+    let ctrl = input.modifiers.ctrl && !input.modifiers.mac_cmd && !input.modifiers.alt;
+    if cx.board && !cx.composer && !cx.confirming && ctrl && pressed(Key::Tab) {
+        out.push(Command::SwitchProject(!input.modifiers.shift));
     }
     let reading = cx.open.as_ref().filter(|_| !cx.editing);
     if let Some(path) = reading
@@ -478,6 +475,7 @@ impl IboardApp {
             Command::Labels(path) => self.toggle_label_picker(path),
             Command::Delete(path) => self.request_delete(path),
             Command::SwitchProject(forward) => self.switch_project(forward),
+            Command::Stats => self.open_stats(),
         }
     }
 

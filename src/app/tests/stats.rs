@@ -138,3 +138,15 @@ fn the_stats_button_opens_the_panel() {
     harness.run_steps(2);
     assert!(harness.state().1.session.stats.is_some());
 }
+
+/// `⌘I` on the board opens the panel too.
+#[test]
+fn cmd_i_opens_the_stats() {
+    let (_dir, located) = project("stats-key");
+    let mut app = IboardApp::from_located(located);
+    let ctx = themed_ctx();
+    let command = egui::Modifiers::COMMAND;
+    let press = vec![egui::Event::ModifiersChanged(command), key(Key::I, command)];
+    frame(&ctx, &mut app, press);
+    assert!(app.session.stats.is_some());
+}

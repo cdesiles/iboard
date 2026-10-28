@@ -57,6 +57,9 @@ impl IboardApp {
             .filter(|(_, at)| at.elapsed() < NOTICE_FOR)
             .map(|(text, at)| (text.clone(), *at));
         let mut idle = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
+        if !self.showing_all() {
+            idle.push(("⌘I", "stats"));
+        }
         if self.project_cycle().len() > 1 {
             idle.push(("⌃⇥", "project"));
         }

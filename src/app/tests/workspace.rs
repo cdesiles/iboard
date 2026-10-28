@@ -222,17 +222,23 @@ fn ctrl_tab_switches_to_the_next_project() {
     let ctx = themed_ctx();
     let ctrl = egui::Modifiers::CTRL;
     let shift_ctrl = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+    let press = |modifiers: egui::Modifiers| {
+        vec![
+            egui::Event::ModifiersChanged(modifiers),
+            key(Key::Tab, modifiers),
+        ]
+    };
     let board = |app: &IboardApp| match app.showing_all() {
         true => None,
         false => Some(recents::canonical(&app.located.project_dir)),
     };
-    frame(&ctx, &mut app, vec![key(Key::Tab, ctrl)]);
+    frame(&ctx, &mut app, press(ctrl));
     assert_eq!(board(&app), Some(app_dir.clone()));
-    frame(&ctx, &mut app, vec![key(Key::Tab, ctrl)]);
+    frame(&ctx, &mut app, press(ctrl));
     assert_eq!(board(&app), Some(site_dir));
-    frame(&ctx, &mut app, vec![key(Key::Tab, ctrl)]);
+    frame(&ctx, &mut app, press(ctrl));
     assert_eq!(board(&app), None, "round the end to All projects");
-    frame(&ctx, &mut app, vec![key(Key::Tab, shift_ctrl)]);
+    frame(&ctx, &mut app, press(shift_ctrl));
     assert!(!app.showing_all(), "⌃⇧⇥ goes back");
     assert_eq!(app.project_cycle().len(), 3, "the order stays steady");
 }
