@@ -205,7 +205,7 @@ impl IboardApp {
             .as_ref()
             .is_some_and(|editor| editor.path == path)
         {
-            self.start_editing(&path);
+            self.open_editor(&path);
         }
         if let Some(editor) = self.session.editor.as_mut()
             && editor.path == path

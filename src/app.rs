@@ -67,6 +67,7 @@ mod review;
 mod split;
 mod stats;
 mod status;
+mod update;
 mod windows;
 
 use all::Source;

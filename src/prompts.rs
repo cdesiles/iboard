@@ -103,6 +103,32 @@ pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]
     prompt
 }
 
+/// The instruction for Update with AI: the agent checks, in the issue's
+/// project, where the issue stands on `today`, changes nothing, and answers in
+/// the review's format so the review panel shows it.
+pub fn update_prompt(content: &str, today: &str) -> String {
+    format!(
+        "You keep a project's issue up to date. Today is {today}. Check in this repository \
+         (its files, its git history, read-only commands) where the issue below stands: done, \
+         under way, blocked, or no longer worth doing. Change nothing. Answer with nothing but \
+         this exact format:\n\
+         \n\
+         RELEVANCE: Pass|Challenge|Block\n\
+         <Pass: still to do as written; Challenge: still to do, but out of date; Block: done, or \
+         no longer worth doing. Say what you found, naming the commits or files that show it>\n\
+         SIZE: Pass|Challenge|Block\n\
+         <what is left to do, and whether one person or agent can finish it in one sitting>\n\
+         CLARITY: Pass|Challenge|Block\n\
+         <what the issue says that is no longer true, or lacks to be picked up today>\n\
+         PROPOSAL:\n\
+         <the whole issue rewritten as things stand, keeping its front matter and its structure, \
+         its next step brought up to date; or the single word NONE when it is still accurate>\n\
+         \n\
+         ---\n\
+         {content}"
+    )
+}
+
 /// One turn of a refinement for the agent to read again: who spoke
 /// (`Challenger` or `Author`) and what they said.
 pub type Turn<'a> = (&'a str, &'a str);
@@ -309,6 +335,11 @@ mod tests {
     #[test]
     fn the_review_prompt() {
         insta::assert_snapshot!(review_prompt(ISSUE, ReviewMode::Quick, &[]));
+    }
+
+    #[test]
+    fn the_update_prompt() {
+        insta::assert_snapshot!(update_prompt(ISSUE, "2026-10-28"));
     }
 
     #[test]

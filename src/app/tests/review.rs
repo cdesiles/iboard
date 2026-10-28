@@ -631,3 +631,45 @@ fn the_review_runs_in_the_scope_settings_chose() {
         harness.get_by_label(&detail);
     }
 }
+
+/// Update with AI: an issue past Todo is checked in its project, and Apply
+/// opens the editor with the update even where the board keeps it read-only.
+#[test]
+fn an_update_rewrites_a_doing_issue_through_the_editor() {
+    let dir = std::fs::canonicalize(scratch_dir("update")).unwrap();
+    for column in ["todo", "doing", "done"] {
+        std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
+    }
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n\nNext: check the dumps.\n").unwrap();
+    std::fs::write(dir.join("issues/done/old.md"), "# Old\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf 'RELEVANCE: Block\\ndone in %s\\nSIZE: Pass\\nnothing left\\nCLARITY: Challenge\\nstale\\nPROPOSAL:\\n# Migrate\\n\\nDone.' \"$(pwd -P)\" # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    assert!(app.updatable(&file));
+    assert!(!app.updatable(&dir.join("issues/done/old.md")));
+    app.start_update(&file);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&file)
+    }));
+    app.show_past_review(file.clone());
+    app.apply_review_proposal();
+    let editor = app
+        .session
+        .editor
+        .as_ref()
+        .expect("the editor opens on a Doing issue");
+    assert_eq!(editor.text.trim(), "# Migrate\n\nDone.");
+    let kept = std::fs::read_to_string(dir.join("issues/.reviews/migrate.toml")).unwrap();
+    assert!(
+        kept.contains(&dir.display().to_string()),
+        "run from the project: {kept}"
+    );
+}

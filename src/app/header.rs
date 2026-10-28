@@ -299,9 +299,12 @@ impl IboardApp {
             .map(Column::is_done)
             .unwrap_or(false);
         let reading = self.session.detail_mode == DetailMode::Preview && exists;
-        // Reviewing refines an issue, so only Todo issues offer it.
+        // Reviewing refines an issue, so only Todo issues offer it; the
+        // later ones can be brought up to date.
         if self.is_todo_issue(&path) {
             self.review_button(ui, &path);
+        } else if self.updatable(&path) {
+            self.update_button(ui, &path);
         }
         // In the Editor, Save and Discard take Edit's place.
         if self.session.detail_mode == DetailMode::Edit && exists {
