@@ -644,3 +644,49 @@ fn a_proposal_wrapped_in_one_fence_is_what_is_inside() {
     );
     assert_eq!(proposal_of("NONE"), None);
 }
+
+fn asked(config: &AgentConfig, leash: Leash) -> String {
+    let scratch = tempfile::tempdir().unwrap();
+    let log = scratch.path().join("ask.log");
+    let ends = (scratch.path(), log.as_path());
+    let (job, _) = start_ask(config, "PROMPT", Path::new("a.md"), ends, leash);
+    job.wait().unwrap().unwrap()
+}
+
+#[test]
+fn ask_edits_or_reads_and_claude_is_denied_what_the_leash_holds() {
+    let free = Leash {
+        edits: true,
+        commits: true,
+        deploys: false,
+    };
+    let answer = asked(&tool(Tool::Claude), free);
+    assert!(
+        answer.contains("--permission-mode\nacceptEdits\n"),
+        "{answer}"
+    );
+    assert!(
+        answer.contains("--disallowedTools\nBash(git push:*),Bash(ssh:*),"),
+        "{answer}"
+    );
+    assert!(!answer.contains("git commit"), "{answer}");
+
+    let held = Leash {
+        edits: false,
+        commits: false,
+        deploys: true,
+    };
+    let answer = asked(&tool(Tool::Claude), held);
+    assert!(answer.contains("--permission-mode\nplan\n"), "{answer}");
+    assert!(
+        answer.contains("--disallowedTools\nBash(git commit:*),Bash(git push:*)\n"),
+        "{answer}"
+    );
+
+    let open = Leash {
+        edits: true,
+        commits: true,
+        deploys: true,
+    };
+    assert!(!asked(&tool(Tool::Claude), open).contains("--disallowedTools"));
+}

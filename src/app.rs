@@ -41,6 +41,7 @@ use iboard::prompts;
 mod agenda;
 mod agent_log;
 mod all;
+mod ask;
 mod board;
 mod build;
 mod card;
@@ -654,6 +655,10 @@ struct Session {
     new_card: Option<(PathBuf, Instant)>,
     /// A destructive action waiting for the user to confirm it.
     confirm: Option<Confirm>,
+    /// The Ask AI dialog, while it is open.
+    ask_draft: Option<ask::AskDraft>,
+    /// The asks the agent works on, by issue.
+    asks: HashMap<PathBuf, ask::AskRun>,
     /// The LabelPicker, open on one issue.
     label_picker: Option<LabelPicker>,
     /// The commits popup, open on one issue.
@@ -727,6 +732,8 @@ impl Default for Session {
             editor: None,
             composer: None,
             confirm: None,
+            ask_draft: None,
+            asks: HashMap::new(),
             new_card: None,
             leave_prompt: None,
             notes: None,
@@ -1055,6 +1062,7 @@ impl IboardApp {
                 }
             });
         self.label_picker_ui(ui);
+        self.ask_dialog(ui);
         match self.session.confirm.clone() {
             Some(Confirm::Delete(paths)) => self.confirm_dialog(ui, &paths),
             Some(Confirm::Quit(runs)) => self.quit_dialog(ui, runs),

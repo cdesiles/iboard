@@ -837,3 +837,50 @@ fn quitting_with_a_run_at_work_asks_first() {
     idle.request_quit();
     assert!(idle.session.confirm.is_none() && idle.closing);
 }
+
+/// `⌘K` opens Ask AI with its boxes at their defaults; Send hands the request
+/// to the build agent in the issue's project, whose answer lands in the status
+/// bar and the agent log.
+#[test]
+fn cmd_k_asks_the_agent_about_the_open_issue() {
+    let dir = std::fs::canonicalize(scratch_dir("ask")).unwrap();
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n\n- [ ] point 1\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.build_agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf 'Did point 1 in %s, as %s' \"$(pwd -P)\" \"$IBOARD_MODE\" # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.open_issue(file.clone());
+    let ctx = themed_ctx();
+    let command = egui::Modifiers::COMMAND;
+    let press = |k: Key| vec![egui::Event::ModifiersChanged(command), key(k, command)];
+    frame(&ctx, &mut app, press(Key::K));
+    let draft = app.session.ask_draft.as_mut().expect("⌘K opens the dialog");
+    assert_eq!(
+        draft.leash(),
+        agent::Leash {
+            edits: true,
+            commits: true,
+            deploys: false
+        }
+    );
+    draft.request = "Take care of point 1".to_string();
+    frame(&ctx, &mut app, press(Key::Enter));
+    assert!(app.session.ask_draft.is_none() && app.asking(&file));
+    assert!(until(|| {
+        app.poll_asks(&ctx);
+        !app.asking(&file)
+    }));
+    let (notice, _) = app.session.notice.clone().expect("the answer shows");
+    assert!(
+        notice.contains(&format!("Did point 1 in {}, as ask", dir.display())),
+        "{notice}"
+    );
+    assert!(app.has_agent_log(&file));
+}

@@ -6,7 +6,7 @@
 //! token block is a binding contract. The design system is read-only here; only
 //! the agent's answer changes files.
 
-use crate::agent::ReviewMode;
+use crate::agent::{Leash, ReviewMode};
 use crate::design::{DesignSystem, css};
 
 /// The design context: the brief, the token contract and the component
@@ -126,6 +126,43 @@ pub fn update_prompt(content: &str, today: &str) -> String {
          \n\
          ---\n\
          {content}"
+    )
+}
+
+/// The instruction for Ask AI: what the author asked about the issue at
+/// `issue` (relative to the project), whose text is `content`, within `leash`.
+pub fn ask_prompt(issue: &str, content: &str, request: &str, leash: Leash) -> String {
+    let mut rules = vec![match leash.edits {
+        true => "You may edit files in this repository.",
+        false => "Change nothing, the issue included: read, run read-only commands, and answer.",
+    }];
+    if !leash.commits {
+        rules.push("Do not commit or push.");
+    }
+    if !leash.deploys {
+        rules.push(
+            "Do not deploy: no deploy script, no push, no connection to a server, nothing that \
+             changes a running service.",
+        );
+    }
+    if leash.edits {
+        rules.push(
+            "When you are done, bring the issue's file up to date: tick what you finished and \
+             rewrite its next step; leave it in its column unless all of it is done.",
+        );
+    }
+    format!(
+        "You work on one issue of this repository, `{issue}`, as its author asks below. Read the \
+         project's own instructions first (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, whichever \
+         exist) and follow them. Do only what is asked. {rules} End with a two or three line \
+         summary of what you did or found.\n\
+         \n\
+         The author asks:\n\
+         {request}\n\
+         \n\
+         ---\n\
+         {content}",
+        rules = rules.join(" ")
     )
 }
 
@@ -335,6 +372,31 @@ mod tests {
     #[test]
     fn the_review_prompt() {
         insta::assert_snapshot!(review_prompt(ISSUE, ReviewMode::Quick, &[]));
+    }
+
+    #[test]
+    fn the_ask_prompt() {
+        let leash = Leash {
+            edits: true,
+            commits: true,
+            deploys: false,
+        };
+        insta::assert_snapshot!(ask_prompt(
+            "doing/x.md",
+            ISSUE,
+            "Take care of point 1",
+            leash
+        ));
+    }
+
+    #[test]
+    fn the_read_only_ask_prompt() {
+        let leash = Leash {
+            edits: false,
+            commits: false,
+            deploys: false,
+        };
+        insta::assert_snapshot!(ask_prompt("doing/x.md", ISSUE, "Where is point 3?", leash));
     }
 
     #[test]

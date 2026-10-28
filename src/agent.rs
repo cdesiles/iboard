@@ -549,13 +549,57 @@ impl ReviewMode {
     }
 }
 
+/// What Ask AI lets the agent do beyond reading the project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Leash {
+    pub edits: bool,
+    pub commits: bool,
+    pub deploys: bool,
+}
+
+/// Commands that deploy, or reach a server: denied while deploying is not
+/// allowed. A push can start a deploy, so it is one.
+const DEPLOYING: [&str; 10] = [
+    "Bash(git push:*)",
+    "Bash(ssh:*)",
+    "Bash(scp:*)",
+    "Bash(rsync:*)",
+    "Bash(ansible-playbook:*)",
+    "Bash(kubectl:*)",
+    "Bash(gcloud:*)",
+    "Bash(docker push:*)",
+    "Bash(vercel:*)",
+    "Bash(fly:*)",
+];
+
+impl Leash {
+    /// The Claude Code tools the leash denies, as `--disallowedTools` takes
+    /// them.
+    fn denied(self) -> Vec<&'static str> {
+        let mut tools = Vec::new();
+        if !self.commits {
+            tools.extend(["Bash(git commit:*)", "Bash(git push:*)"]);
+        }
+        if !self.deploys {
+            for tool in DEPLOYING {
+                if !tools.contains(&tool) {
+                    tools.push(tool);
+                }
+            }
+        }
+        tools
+    }
+}
+
 /// What a run of the agent is for: a plain answer, a review (in plan mode
-/// when `plan`), or implementing an issue, which edits the repository.
+/// when `plan`), implementing an issue, which edits the repository, or what
+/// its author asked on a leash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Purpose {
     Answer,
     Review { mode: ReviewMode, plan: bool },
     Build,
+    Ask(Leash),
 }
 
 impl Purpose {
@@ -565,7 +609,13 @@ impl Purpose {
             Purpose::Answer => "",
             Purpose::Review { mode, .. } => mode.key(),
             Purpose::Build => "build",
+            Purpose::Ask(_) => "ask",
         }
+    }
+
+    /// Whether the run works on the repository, with a build's time to do it.
+    fn works(self) -> bool {
+        matches!(self, Purpose::Build | Purpose::Ask(_))
     }
 }
 
@@ -626,15 +676,23 @@ fn command(
                         } => {
                             command.args(["--tools", ""]);
                         }
-                        Purpose::Build => {
+                        Purpose::Build | Purpose::Ask(Leash { edits: true, .. }) => {
                             command.args(["--permission-mode", "acceptEdits"]);
                         }
                         _ => {}
                     }
                 }
             }
-            if let Purpose::Review { plan: true, .. } = purpose {
+            if let Purpose::Review { plan: true, .. } | Purpose::Ask(Leash { edits: false, .. }) =
+                purpose
+            {
                 command.args(tool.plan_args());
+            }
+            if let (Tool::Claude, Purpose::Ask(leash)) = (tool, purpose) {
+                let denied = leash.denied();
+                if !denied.is_empty() {
+                    command.arg("--disallowedTools").arg(denied.join(","));
+                }
             }
             if !model.is_empty() {
                 command.arg("--model").arg(model);
@@ -739,7 +797,7 @@ fn run_with(
     let mut log = workspace
         .and_then(|workspace| workspace.log)
         .and_then(|log| build_log::open(log).ok());
-    let timeout = if purpose == Purpose::Build {
+    let timeout = if purpose.works() {
         BUILD_TIMEOUT
     } else {
         ANSWER_TIMEOUT
@@ -770,7 +828,7 @@ fn run_with(
         None => answer,
     };
     match answer.trim() {
-        "" if purpose != Purpose::Build => {
+        "" if !purpose.works() => {
             Err(failure.unwrap_or_else(|| "the agent returned no answer".to_string()))
         }
         answer => Ok(answer.to_string()),
@@ -905,6 +963,27 @@ pub fn start_build(
     project: &Path,
     log: &Path,
 ) -> (Job<Result<String, String>>, Progress) {
+    start_logged(config, prompt, issue, (project, log), Purpose::Build)
+}
+
+/// [`start_build`] for what the author of `issue` asked, within `leash`.
+pub fn start_ask(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    (project, log): (&Path, &Path),
+    leash: Leash,
+) -> (Job<Result<String, String>>, Progress) {
+    start_logged(config, prompt, issue, (project, log), Purpose::Ask(leash))
+}
+
+fn start_logged(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    (project, log): (&Path, &Path),
+    purpose: Purpose,
+) -> (Job<Result<String, String>>, Progress) {
     let (config, prompt) = (config.clone(), prompt.to_string());
     let (issue, project, log) = (
         issue.to_path_buf(),
@@ -921,7 +1000,7 @@ pub fn start_build(
             dir: &project,
             log: Some(&log),
         };
-        let (purpose, steps) = (Purpose::Build, Some(&steps));
+        let steps = Some(&steps);
         let result = run_with(
             &config,
             &prompt,

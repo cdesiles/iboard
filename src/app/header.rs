@@ -306,6 +306,9 @@ impl IboardApp {
         } else if self.updatable(&path) {
             self.update_button(ui, &path);
         }
+        if reading && self.askable(&path) {
+            self.ask_button(ui, &path);
+        }
         // In the Editor, Save and Discard take Edit's place.
         if self.session.detail_mode == DetailMode::Edit && exists {
             if widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S")).clicked() {

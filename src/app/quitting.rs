@@ -39,9 +39,10 @@ pub(super) fn requested() -> bool {
 }
 
 impl IboardApp {
-    /// The AI runs at work: reviews, updates and builds.
+    /// The AI runs at work: reviews, updates, builds and asks.
     pub(super) fn runs_at_work(&self) -> usize {
-        self.session.review_runs.running_count() + self.building_now().len()
+        let runs = self.session.review_runs.running_count() + self.building_now().len();
+        runs + self.session.asks.len()
     }
 
     /// ⌘Q or the window closing: quits, asking first while agents work.

@@ -170,6 +170,9 @@ impl IboardApp {
         if self.updatable(path) {
             hints.insert(0, ("⌘U", "update"));
         }
+        if self.askable(path) {
+            hints.insert(0, ("⌘K", "ask"));
+        }
         hints
     }
 

@@ -62,6 +62,8 @@ enum Command {
     Update(PathBuf),
     /// `⌘↩` with a review's proposal shown: apply it.
     ApplyReview,
+    /// `⌘K`: Ask AI on the open issue or the selected card, or stop the ask.
+    Ask(PathBuf),
 }
 
 /// The shortcuts that fire for `input` where the keyboard is.
@@ -82,12 +84,15 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     if cx.proposal && !cx.typing && command(Key::Enter) {
         out.push(Command::ApplyReview);
     }
+    let target = match cx.board {
+        true => cx.selected.as_ref().map(|(path, _)| path),
+        false => cx.open.as_ref().filter(|_| !cx.editing),
+    };
     if !cx.typing && command(Key::U) {
-        let target = match cx.board {
-            true => cx.selected.as_ref().map(|(path, _)| path),
-            false => cx.open.as_ref().filter(|_| !cx.editing),
-        };
         out.extend(target.map(|path| Command::Update(path.clone())));
+    }
+    if !cx.typing && command(Key::K) {
+        out.extend(target.map(|path| Command::Ask(path.clone())));
     }
     if cx.board && !cx.typing {
         for (at, key) in [Key::Num1, Key::Num2, Key::Num3, Key::Num4]
@@ -209,6 +214,7 @@ impl IboardApp {
         self.poll_design_draft(ctx);
         self.poll_enrichment(ctx);
         self.poll_build(ctx);
+        self.poll_asks(ctx);
         self.poll_stats(ctx);
         self.window_requests(ctx);
 
@@ -224,6 +230,11 @@ impl IboardApp {
         }
         if self.session.stats.is_some() {
             self.stats_keys(ctx);
+            self.background(ctx);
+            return;
+        }
+        if self.session.ask_draft.is_some() {
+            self.ask_keys(ctx);
             self.background(ctx);
             return;
         }
@@ -502,6 +513,7 @@ impl IboardApp {
             Command::Stats => self.open_stats(),
             Command::Update(path) => self.toggle_update(&path),
             Command::ApplyReview => self.apply_review_proposal(),
+            Command::Ask(path) => self.toggle_ask(&path),
         }
     }
 
