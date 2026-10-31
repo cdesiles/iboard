@@ -1,5 +1,7 @@
 # QuickAdd
 
+> **Replaced by NewIssueModal (31 Oct 2026).** The inline composer in the Todo column is too narrow for long notes and for an agent's draft, which it cut short. `⌘N` and the Todo `+` now open NewIssueModal. Its title states, keys, labels and naming rules below still apply there, on the sheet's title row; the column composer and its 8-line cap go.
+
 An inline composer at the top of the Todo column. You describe the issue; iboard names it. The title is inferred from the description when you press `↩`, and the title names the file.
 
 ## Anatomy

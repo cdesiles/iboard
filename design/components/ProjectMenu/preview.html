@@ -1,0 +1,39 @@
+<!-- @dsCard group="Navigation" height=520 subtitle="Header project menu: groups, Edit groups…, recent projects, Open folder…" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ProjectMenu</title></head>
+<body>
+<div class="ib-pad ib-stack" style="gap:16px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:24px;align-items:start">
+
+<div class="ib-stack"><span class="ib-cap">With groups: Edit groups… sits under the group rows (hovered)</span>
+<button class="ib-ptrigger is-open" style="align-self:flex-start" aria-haspopup="menu" aria-expanded="true"><span class="ib-project">Personal</span><span class="ib-path">group · 3 projects</span><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+<div class="ib-pmenu" role="menu" aria-label="Projects">
+<div class="ib-prow is-current" role="menuitemradio" aria-checked="true"><span class="ib-prow__name">Personal</span><span class="ib-prow__path">3 projects</span></div>
+<div class="ib-prow" role="menuitemradio" aria-checked="false"><span class="ib-prow__name">Client</span><span class="ib-prow__path">2 projects</span></div>
+<div class="ib-prow ib-prow--quiet is-hover" role="menuitem"><span class="ib-prow__name">Edit groups…</span><span class="ib-prow__hint">2 groups</span></div>
+<div class="ib-menu__sep" role="separator"></div>
+<div class="ib-prow" role="menuitemradio" aria-checked="false"><span class="ib-prow__name">mucus-labs</span><span class="ib-prow__path">~/workspace/perso/mucus-labs</span></div>
+<div class="ib-prow" role="menuitemradio" aria-checked="false"><span class="ib-prow__name">ansible-playbooks</span><span class="ib-prow__path">~/workspace/perso/ansible-playbooks</span></div>
+<div class="ib-prow" role="menuitemradio" aria-checked="false"><span class="ib-prow__name">iboard</span><span class="ib-prow__path">~/workspace/perso/iboard</span></div>
+<div class="ib-prow" role="menuitemradio" aria-checked="false"><span class="ib-prow__name">sunboat</span><span class="ib-prow__path">~/sunboat</span></div>
+<div class="ib-menu__sep" role="separator"></div>
+<div class="ib-prow" role="menuitem"><span class="ib-prow__name">Open folder…</span><span class="ib-prow__path">Choose a project containing an issues/ folder</span></div>
+</div></div>
+
+<div class="ib-stack"><span class="ib-cap">No group yet: the same slot offers New group…</span>
+<button class="ib-ptrigger is-open" style="align-self:flex-start" aria-haspopup="menu" aria-expanded="true"><span class="ib-project">iboard</span><span class="ib-path">~/workspace/perso/iboard/issues</span><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+<div class="ib-pmenu" role="menu" aria-label="Projects">
+<div class="ib-prow ib-prow--quiet" role="menuitem"><span class="ib-prow__name">New group…</span><span class="ib-prow__hint">several projects, one board</span></div>
+<div class="ib-menu__sep" role="separator"></div>
+<div class="ib-prow is-current" role="menuitemradio" aria-checked="true"><span class="ib-prow__name">iboard</span><span class="ib-prow__path">~/workspace/perso/iboard</span></div>
+<div class="ib-prow" role="menuitemradio" aria-checked="false"><span class="ib-prow__name">mucus-labs</span><span class="ib-prow__path">~/workspace/perso/mucus-labs</span></div>
+<div class="ib-prow" role="menuitemradio" aria-checked="false"><span class="ib-prow__name">sunboat</span><span class="ib-prow__path">~/sunboat</span></div>
+<div class="ib-menu__sep" role="separator"></div>
+<div class="ib-prow" role="menuitem"><span class="ib-prow__name">Open folder…</span><span class="ib-prow__path">Choose a project containing an issues/ folder</span></div>
+</div></div>
+
+</div>
+</div>
+</body>
+</html>

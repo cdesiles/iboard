@@ -1,0 +1,46 @@
+<!-- @dsCard group="Foundations" height=1080 subtitle="One frame, four sizes: S asks, M sets, L reads, XL is where work happens" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Modal</title></head>
+<body>
+<div class="ib-pad ib-stack" style="gap:24px">
+
+<div class="ib-stack"><span class="ib-cap">Size map on a 14" MacBook Pro window (1512 × 945pt), drawn at 40%. XL leaves the 32pt inset on every side, so the board still shows round the edge.</span>
+<div class="ib-stage" style="width:605px;height:378px;max-width:100%">
+<div class="ib-stage__board"><i></i><i></i><i></i><i></i></div>
+<div class="ib-modal-scrim" style="padding:0"></div>
+<div class="ib-sizemap is-xl" style="left:62px;top:13px;width:480px;height:352px">XL 1200 × 880 · NewIssueModal, RefinePanel</div>
+<div class="ib-sizemap is-l" style="left:150px;top:45px;width:304px;height:280px">L 760 · one document</div>
+<div class="ib-sizemap is-m" style="left:206px;top:75px;width:192px;height:160px">M 480 · Settings, Groups</div>
+<div class="ib-sizemap is-s" style="left:230px;top:150px;width:144px;height:64px">S 360 · Confirm</div>
+</div></div>
+
+<div class="ib-stack"><span class="ib-cap">Anatomy, M at real size: head 40 · body (the only part that scrolls) · foot 40. One primary, rightmost, with its key.</span>
+<div class="ib-stage" style="height:300px">
+<div class="ib-stage__board"><i></i><i></i><i></i><i></i></div>
+<div class="ib-modal-scrim">
+<section class="ib-modal ib-modal--m" role="dialog" aria-modal="true" aria-labelledby="m1">
+<header class="ib-modal__head"><h2 class="ib-modal__title" id="m1">Project groups</h2><span class="ib-spacer"></span><span class="ib-pill" style="color:var(--status-doing)">Unsaved</span><button class="ib-btn ib-btn--ghost ib-btn--icon ib-modal__close" aria-label="Close (esc)"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+<div class="ib-modal__body">
+<p style="margin:0;font:12px/17px var(--font-sans);color:var(--ink-muted)">Body: fields, lists or panes. Padding 16. Scrolls past 520pt with the overlay scrollbar; head and foot never move.</p>
+<div style="display:flex;flex-direction:column;gap:6px"><span class="ib-skel" style="width:70%"></span><span class="ib-skel" style="width:92%"></span><span class="ib-skel" style="width:84%"></span><span class="ib-skel" style="width:60%"></span></div>
+</div>
+<footer class="ib-modal__foot"><span class="ib-modal__hints">~/.config/iboard/iboard.toml</span><button class="ib-btn">Cancel <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--primary">Save <span class="ib-btn__key">⌘↩</span></button></footer>
+</section></div></div></div>
+
+<div class="ib-stack"><span class="ib-cap">S has no head bar: the title is the question and Cancel is the close. Centred, the only size that a scrim click closes.</span>
+<div class="ib-stage" style="height:240px">
+<div class="ib-stage__board"><i></i><i></i><i></i><i></i></div>
+<div class="ib-modal-scrim ib-modal-scrim--center">
+<section class="ib-confirm" role="alertdialog" aria-modal="true" aria-labelledby="s1" style="position:relative;box-shadow:0 12px 40px rgba(21,24,29,.18)">
+<h2 class="ib-confirm__title" id="s1">Delete this issue?</h2>
+<div class="ib-confirm__subject"><b>Sidebar collapse toggle</b><span>done/sidebar-collapse-toggle.md</span></div>
+<div class="ib-confirm__foot"><button class="ib-btn">Cancel <span class="ib-cap" style="color:inherit">esc</span></button><button class="ib-btn ib-btn--danger is-focus">Delete <span class="ib-cap" style="color:inherit">↩</span></button></div>
+</section></div></div></div>
+
+<div class="ib-stack"><span class="ib-cap">Primary colour follows meaning: accent saves or adds, danger destroys, review sends to an agent. Never two filled buttons.</span>
+<div class="ib-row"><button class="ib-btn ib-btn--ghost">Discard</button><button class="ib-btn">Close <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--primary">Add to Todo <span class="ib-btn__key">↩</span></button><span class="ib-cap" style="margin:0 8px">·</span><button class="ib-btn">Cancel <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--danger">Delete <span class="ib-btn__key">↩</span></button><span class="ib-cap" style="margin:0 8px">·</span><button class="ib-btn">Hide <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--send">Send choice 1 <span class="ib-btn__key">⌘↩</span></button></div></div>
+
+</div>
+</body>
+</html>

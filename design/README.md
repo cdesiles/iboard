@@ -51,7 +51,8 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 - 4pt base: `space-1` 2 … `space-7` 32. Window gutter and column gap `space-5` (16). Gap between cards `space-3` (8). Card padding `space-4` × 10.
 - Columns are equal width between `column-min` 280 and `column-max` 420. On a 14" MacBook Pro (1512pt wide) four columns sit near 360; with fewer folders they cap at 420 and the spare room stays empty on the right instead of stretching cards.
 - Window skeleton, top to bottom: header bar (`bar-h` 40) · board or page · status bar (`statusbar-h` 24).
-- Radii: `radius-sm` 4 for controls, `radius-md` 6 for cards and pages, `radius-pill` for 18pt pills. Cards are flat; `shadow-popover` is only for the review panel, menus, dialogs and a card being dragged.
+- Radii: `radius-sm` 4 for controls, `radius-md` 6 for cards and pages, `radius-pill` for 18pt pills. Cards are flat; `shadow-popover` is only for the review panel, menus and a card being dragged; modals use the stronger `shadow-modal`.
+- Modals come in four sizes and one anatomy (head 40 · scrolling body · foot 40 with one primary, rightmost): **S** 360 asks a question (ConfirmDialog), **M** 480 holds a form (Settings, GroupsDialog), **L** 760 holds one document, **XL** fills the window minus a 32pt inset, at most 1200 × 900, for work surfaces where you write at length or an agent's answer streams in (NewIssueModal, RefinePanel). Only S closes on a scrim click; XL never asks on `esc`, it parks your input. See Modal.
 - Scrollbars are overlays that never take layout width: a 4pt thumb (`scroll-thumb`) in `line-strong` at rest, `ink-muted` while scrolling, 8pt (`scroll-thumb-hover`) under the pointer, `accent` while dragging, and `line` in an unfocused pane or window. No track, no arrows. See Scrollbar.
 - Two panes side by side are separated by the 16pt gutter, and that gutter is the resize handle: a 2×3 dot grip in `ink-faint` at rest, a full-height 2pt `line-strong` rule under the pointer, `accent` while dragging. It never overlaps a pane's scroll strip. See PaneDivider.
 - Anything slow (stats from git history, charts, an agent's answer) shows Skeleton blocks at the content's final size: real labels and axes, data shapes in `surface-sunken`, all pulsing together on a 1.6s beat. Nothing before 300ms; the Thinking i and an elapsed clock from 2s; each block fills in on its own. See Skeleton.
@@ -63,27 +64,28 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 Navigation is three discreet pieces:
 
 1. **Board button** at the far left of the Reader and Editor header: a bordered secondary button, chevron, "Board" and `esc`. Discreet means small, not invisible: it keeps the `line-strong` edge every control has.
-2. **Breadcrumb in the header**, in `ink-muted`: `iboard / Todo / AI assist to refine an issue`. Every segment but the last is a link back, with a hover fill and underline. On the board it shows only the project name and path.
+2. **Breadcrumb in the header**, in `ink-muted`: `iboard / Todo / AI assist to refine an issue`. Every segment but the last is a link back, with a hover fill and underline. On the board it shows only the project name and path. There the project name opens the ProjectMenu: one row per group, each its own board, with a quiet **Edit groups…** row, recent projects, and Open folder…. Groups are created and edited in GroupsDialog, which writes the `[[workspace.group]]` tables back to `~/.config/iboard/iboard.toml`; the board reloads in place.
 3. **Status bar at the bottom**: the current file path on the left, save state and the two or three shortcuts that apply to the current screen on the right.
 
 There is no sidebar and no tab bar. Three screens are enough: Board, Reader, Editor. The Board has one extra mode, **ColumnFocus**: clicking a column title (or `⌘1` to `⌘4`) gives that column the whole window, with wide cards and its own sort, and `esc` goes back.
 
 ## Adding an issue
 
-Capturing an idea takes one shortcut and a sentence. iboard names the issue from what you wrote; writing the rest can wait for the Editor or the AI review.
+Capturing an idea takes one shortcut and a sentence. iboard names the issue from what you wrote; writing the rest can wait for the Editor, or Review can draft it while you watch.
 
-- **Two entry points, one composer.** The "New issue" button in the board header (primary, `⌘N`) and the `+` icon button in the Todo column header both open the same inline composer at the top of the Todo column. `⌘N` works from every screen: from the Reader or Editor it returns to the board first.
-- **Description first.** The composer is a card with a reserved title row on top, a description that grows from 3 to 8 lines, and the meta line naming the file. See QuickAdd for its six states (idle, typing, naming, inferred, manual, failed).
-- **`↩` names, then adds.** With an empty title, `↩` infers one from the description and stops on it, selected and tagged Inferred, so you can rename it by typing. `↩` again writes `todo/<slug>.md` (`# <title>`, then the description) and clears the composer. A title you typed yourself skips the stop.
+- **Two entry points, one composer.** The "New issue" button in the board header (primary, `⌘N`) and the `+` icon button in the Todo column header both open the same **NewIssueModal**, an XL modal over the board. `⌘N` works from every screen.
+- **Notes left, the file right.** You write (or dictate) in the notes pane; the right pane is a Reader sheet showing exactly what `↩` will write, at reading size and never cut short. The title states (naming, inferred, manual, failed) are QuickAdd's, shown on the sheet's title row.
+- **Draft with Review (`⌘⇧R`) fills the sheet in place.** The known section headings appear at once with Skeleton bars, the section being written carries a `review` rule and caret, and the sheet follows the writing line. `esc` stops and keeps what arrived. The agent never writes the file. See NewIssueModal.
+- **`↩` names, then adds.** With an empty title, `↩` infers one from the description and stops on it, selected and tagged Inferred, so you can rename it by typing. `↩` again writes `todo/<slug>.md` (`# <title>`, then the notes, or the draft when there is one) and closes the modal. A title you typed yourself skips the stop.
 - **`⌘↩` names, adds and opens the Editor** in one go. `⇧↩` is a new line in the description.
 - **Never blocked.** With the engine Off, unavailable, failing or too slow, the first line of the description becomes the title.
-- **Long notes** stop growing at 8 lines and scroll inside the composer, which stays sticky at the top of Todo. The board stays usable; `⌘↩` moves to the Editor.
-- **`esc` closes** the composer; an empty composer never creates a file.
+- **Long notes** have the whole notes pane; nothing is capped or truncated.
+- **`esc` closes** the modal and parks the notes (`.iboard/new-issue.md`); the next `⌘N` brings them back. Discard drops them. An empty note never creates a file.
 - **Labels** come from `[Brackets]` at the start of the title: `[Discovery]` gives the label discovery, and `[BUG]` gives bug (see Label). The title is shown without them everywhere except the Editor.
 - **File name** is the title without its labels, slugified (lowercase ASCII, hyphens, at most 60 characters). If the file exists, append `-2`, `-3`; the meta line shows the final name before the file is written.
 - **The engine** (On-device Apple by default, Review agent, or Off) is chosen in Settings › Titles (`⌘,`).
 - New issues always land in Todo. Creating directly in Doing or Done is not offered; move the card afterwards.
-- **A new Todo issue lands at position 1**, right under the composer: the column is file-name ordered, so the files are renumbered (`001-…`) once the click that created it has settled.
+- **A new Todo issue lands at position 1**, at the top of Todo: the column is file-name ordered, so the files are renumbered (`001-…`) once the click that created it has settled.
 - **Editing is open in Todo and Ready only.** Doing and Done tickets open read-only: no Edit button, no `E`, no click-to-edit. A Done ticket's Reader header instead offers **Commits**, with the newest hash shown beside it.
 
 | Key | Board | Reader | Editor |
@@ -94,7 +96,7 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 | `⌘↩` | Move selected issue to the next column (no composer open) | | |
 | `esc` | Clear filter | Back to board | Leave editor (asks if unsaved) |
 | `⌘S` | | | Save to file |
-| `⌘N` | New issue in Todo | New issue (returns to board) | New issue (asks if unsaved) |
+| `⌘N` | New issue (NewIssueModal) | New issue, over the page | New issue, over the page (the unsaved edit stays open behind it) |
 | `⌘F` | Focus and widen the filter; `↓` reaches the suggestions | | |
 | `⌘R` | Refresh from disk | Refine this issue (Todo; Refresh elsewhere) | Refine draft (Todo) |
 | `⌘[` | | Back | Back (asks if unsaved) |
@@ -102,7 +104,7 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 | `⌘Z` | Undo the last delete, when asking is off | | Undo typing |
 | `⌘1`–`⌘4` | Show Todo, Ready, Doing or Done full screen (again: back to the board) | | |
 | `⌘,` | Open Settings (last tab used) | Open Settings | Open Settings |
-| `⇧↩` | New line in the composer's description | | |
+| `⇧↩` | New line in the new issue's notes | | |
 | `A` | Archive selected (Done only) | | |
 | `L` | Add a label to the selected issue (Todo, Ready) | Add a label to this issue (Todo, Ready) | |
 | `Del` | Delete selected (asks first unless turned off in Settings › General) | Delete this issue (same) | Delete key deletes text; use the header button |
@@ -115,13 +117,15 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | --- | --- | --- | --- |
 | Board | Select card | IssueSelected | Board, card selected |
 | Board | Open issue (click, `↩`) | IssueOpened | Reader |
-| Any | New issue (`⌘N`, header button, Todo `+`) | ComposerOpened | Board, composer focused in Todo |
-| Board | Describe, `↩` (no title yet) | TitleInferenceRequested → TitleInferred | Composer shows the selected title, tagged Inferred |
-| Board | `↩` while naming fails or times out | TitleInferenceFailed | Composer: description kept, cursor in the title |
+| Any | New issue (`⌘N`, header button, Todo `+`) | NewIssueOpened | NewIssueModal (XL), focus in the notes; a parked note is restored |
+| NewIssueModal | Draft with Review (`⌘⇧R`) | DraftRequested → DraftSectionStarted / DraftTextAppended … → DraftCompleted / DraftFailed | The sheet fills in place, section by section |
+| NewIssueModal | `esc` while drafting | DraftStopped | Partial draft kept; unwritten sections become ghost tiles |
+| NewIssueModal | Close, `esc` | NewIssueParked / NewIssueClosed | Board; Todo `+` shows a parked dot |
+| NewIssueModal | Describe, `↩` (no title yet) | TitleInferenceRequested → TitleInferred | Sheet title row shows the selected title, tagged Inferred |
+| NewIssueModal | `↩` while naming fails or times out | TitleInferenceFailed | Notes kept, cursor in the title |
 | Board | Type in the title row | TitleEdited | Inferred tag drops; meta shows the new file name |
-| Board | `↩` with a title (or the first line as fallback) | IssueCreated | Board, new card under the composer, composer cleared |
+| NewIssueModal | `↩` with a title (or the first line as fallback) | IssueCreated | Board, new card flashes at the top of Todo |
 | Board | `⌘↩` | (TitleInferred →) IssueCreated → EditStarted | Editor on the new file |
-| Board | `esc` in composer | ComposerClosed | Board |
 | Reader | Click description, `E`, `↩` | EditStarted | Editor, cursor at click point |
 | Reader | Click a ghost section or an "Add a section" chip | SectionAddRequested → EditStarted | Editor with `## <Section>` appended, cursor under it |
 | Reader | Click the empty sheet below the text | EditStarted | Editor, cursor at the end of the file |
@@ -153,11 +157,15 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Board | `⌘Z` after a delete | IssueRestored | Board; file and card back in place |
 | ConfirmDialog | Delete (`↩`) / Cancel (`esc`) | IssueDeleted / DeleteCancelled | Board |
 | Reader, Editor | Review (`⌘⇧R`) | ReviewRequested → ReviewReceived | Review panel opens beside the page |
-| Any | Settings (`⌘,`, Review menu, composer engine tag) | SettingsOpened | Settings dialog on the matching tab |
+| Any | Settings (`⌘,`, Review menu, new issue engine tag) | SettingsOpened | Settings dialog on the matching tab |
 | Settings › AI review | Pick tool, pick model, Save (`⌘↩`) | ReviewToolChosen, ReviewModelChosen → SettingsSaved | Back to the screen; Review menu shows the new tool and model |
 | Settings › General | Pick a theme, Save (`⌘↩`) | ThemeChosen → SettingsSaved | Back to the screen, drawn in the new theme |
 | Settings › General | Toggle "Ask before deleting an issue", Save (`⌘↩`) | DeleteConfirmToggled → SettingsSaved | Back to the screen; deletes ask or not |
-| Settings › Titles | Pick engine, Save (`⌘↩`) | TitleEngineChosen → SettingsSaved | Back to the screen; composer tag shows the engine |
+| Settings › Titles | Pick engine, Save (`⌘↩`) | TitleEngineChosen → SettingsSaved | Back to the screen; new issue tag shows the engine |
+| Board | Edit groups… (or New group… with none yet) in the ProjectMenu | GroupsEditorOpened | GroupsDialog over the board, draft read from the config |
+| GroupsDialog | New group, rename, Add project, remove a project | GroupDrafted / GroupRenamed / ProjectAddedToGroup / ProjectRemovedFromGroup | Same dialog, Unsaved; nothing on disk changes |
+| GroupsDialog | Delete group (trash, `⌘⌫`) | GroupDeleteRequested → GroupDeleteConfirmRequested → GroupDeleted | ConfirmDialog, then the group leaves the draft; projects untouched |
+| GroupsDialog | Save (`⌘↩`) | GroupsSaved → UserConfigWritten → WorkspaceReloaded / GroupsSaveFailed | Board reloaded in place / dialog with the error |
 | RefinePanel | Click a choice, `1`–`9` (same key again clears) | RefineChoicePicked / RefineChoiceCleared | Choice selected; note and Send labels follow it |
 | RefinePanel | Type in the note | RefineNoteChanged | Send enabled |
 | RefinePanel | Send (`⌘↩`) | RefineAnswerSent → RefineRoundReceived | Next round, or the refined draft in the Editor, unsaved |
@@ -168,7 +176,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Agenda | Click a day | AgendaDaySelected | Day panel lists that day's commits by project |
 | Agenda | Pick a range, click a project row | AgendaRangeChanged / AgendaProjectFiltered | Grid, scale and legend rebuilt for what is shown |
 | Stats | Refresh, or the repo changes | MetricsScanned | Tiles, trends, watch and files update in place |
-| Stats | Draft a refactor issue | RefactorIssueDrafted → ComposerOpened | Board, composer prefilled in Todo with the signals and hotspot files |
+| Stats | Draft a refactor issue | RefactorIssueDrafted → NewIssueOpened | NewIssueModal, notes prefilled with the signals and hotspot files |
 
 ## Motion
 

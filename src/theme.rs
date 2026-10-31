@@ -66,6 +66,8 @@ pub struct Palette {
     /// Dims the board behind a modal confirmation.
     pub scrim: Color32,
     pub popover_shadow: Color32,
+    /// Under a modal, above the scrim.
+    pub modal_shadow: Color32,
 }
 
 const fn hex(rgb: u32) -> Color32 {
@@ -98,6 +100,7 @@ pub const LIGHT: Palette = Palette {
     on_danger: hex(0xffffff),
     scrim: Color32::from_rgba_premultiplied(7, 8, 9, 82),
     popover_shadow: Color32::from_rgba_premultiplied(3, 3, 3, 31),
+    modal_shadow: Color32::from_rgba_premultiplied(4, 4, 5, 46),
 };
 
 pub const DARK: Palette = Palette {
@@ -126,6 +129,7 @@ pub const DARK: Palette = Palette {
     on_danger: hex(0x3a0d08),
     scrim: Color32::from_rgba_premultiplied(0, 0, 0, 140),
     popover_shadow: Color32::from_rgba_premultiplied(0, 0, 0, 128),
+    modal_shadow: Color32::from_rgba_premultiplied(0, 0, 0, 153),
 };
 
 /// The palette of the theme the given UI is drawn in.
@@ -201,6 +205,14 @@ pub const SCROLL_THUMB_HOVER: f32 = 8.0;
 /// The strip along a pane's edge that points at its scrollbar.
 pub const SCROLL_HIT: f32 = 12.0;
 pub const SCROLL_THUMB_MIN: f32 = 24.0;
+/// Modal widths: S (one question), M (forms), L (one document), XL (at most).
+pub const MODAL_S: f32 = 360.0;
+pub const MODAL_M: f32 = 480.0;
+pub const MODAL_L: f32 = 760.0;
+pub const MODAL_XL: f32 = 1200.0;
+pub const MODAL_XL_H: f32 = 900.0;
+/// The gap a modal keeps from the window's edge.
+pub const MODAL_INSET: f32 = 32.0;
 
 // Font families beyond egui's two built-in ones.
 const SANS_MEDIUM: &str = "inter-medium";
@@ -812,7 +824,7 @@ mod tests {
             .unwrap_or_else(|| panic!("tokens.json has no {name}"))
     }
 
-    fn colors(p: &Palette) -> [(&'static str, Color32); 25] {
+    fn colors(p: &Palette) -> [(&'static str, Color32); 26] {
         [
             ("bg", p.bg),
             ("surface", p.surface),
@@ -839,6 +851,7 @@ mod tests {
             ("on-danger", p.on_danger),
             ("scrim", p.scrim),
             ("shadow-popover", p.popover_shadow),
+            ("shadow-modal", p.modal_shadow),
         ]
     }
 
@@ -952,6 +965,12 @@ mod tests {
             ("scroll-thumb-hover", SCROLL_THUMB_HOVER),
             ("scroll-hit", SCROLL_HIT),
             ("scroll-thumb-min", SCROLL_THUMB_MIN),
+            ("modal-s", MODAL_S),
+            ("modal-m", MODAL_M),
+            ("modal-l", MODAL_L),
+            ("modal-xl", MODAL_XL),
+            ("modal-xl-h", MODAL_XL_H),
+            ("modal-inset", MODAL_INSET),
         ];
         for (name, points) in points {
             let value = find(all(), name).value.theme("light").unwrap();

@@ -18,8 +18,8 @@
   },
   "lastChange": {
     "by": "Clément",
-    "at": "2026-10-31T16:35:58Z",
+    "at": "2026-10-31T16:58:15Z",
     "via": "Claude Code",
-    "note": "Synced from the iboard repo: Theme and Auto settings, AI build, multi-select, the Labels tab, DesignPanel, MarginComment and SettingsLabels; Agenda, Stats and LabelPicker interactions and the L key in the brief."
+    "note": "Each project group is its own board (ProjectMenu, GroupsDialog, brief); GroupsDialog is a Modal M and ConfirmDialog a Modal S, both on shadow-modal."
   }
 }
