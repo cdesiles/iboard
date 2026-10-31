@@ -31,6 +31,7 @@ pub mod labels;
 pub mod markdown;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod menu;
+pub mod new_issue;
 pub mod order;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod pasteboard;

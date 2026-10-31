@@ -73,6 +73,16 @@ pub fn modal_frame(ui: &Ui) -> Frame {
     })
 }
 
+/// A Modal of `size`: placed for its size, over the `scrim`, in
+/// [`modal_frame`] with no margin of its own.
+pub fn modal(ui: &Ui, id: &str, size: theme::ModalSize) -> egui::Modal {
+    let id = egui::Id::new(id);
+    egui::Modal::new(id)
+        .area(theme::modal_area(id, size, ui.ctx().content_rect()))
+        .frame(modal_frame(ui))
+        .backdrop_color(theme::palette(ui).scrim)
+}
+
 /// What a [`confirm`] asks: its question, the subject (a title and a path),
 /// what follows, and the verb on its danger button.
 pub struct Ask<'a> {

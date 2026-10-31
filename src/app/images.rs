@@ -117,12 +117,11 @@ impl IboardApp {
         if editing && focused(EDITOR_ID) {
             return Some(Target::Editor);
         }
-        let composing = matches!(self.session.screen, Screen::Board)
-            && self
-                .session
-                .composer
-                .as_ref()
-                .is_some_and(|c| c.stage != TitleStage::Naming);
+        let composing =
+            matches!(self.session.screen, Screen::Board)
+                && self.session.composer.as_ref().is_some_and(|c| {
+                    c.open && c.stage != TitleStage::Naming && c.drafting.is_none()
+                });
         (composing && (focused(TITLE_ID) || focused(DESCRIPTION_ID))).then_some(Target::Composer)
     }
 

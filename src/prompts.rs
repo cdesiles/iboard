@@ -230,6 +230,39 @@ pub fn build_prompt(issue: &str, content: &str) -> String {
     )
 }
 
+/// The instruction for Draft with Review: the agent turns its author's notes
+/// into a new issue, one JSON line per piece so iboard can tell which
+/// section it is writing. `sections` are the project's standard ones;
+/// `labels` the ones its issues already use.
+pub fn draft_prompt(notes: &str, sections: &[String], labels: &[String]) -> String {
+    let sections = if sections.is_empty() {
+        "whichever sections the notes call for".to_string()
+    } else {
+        sections.join(", ")
+    };
+    let labels = if labels.is_empty() {
+        "one kind: bug, feat, discovery, chore, refactor or perf".to_string()
+    } else {
+        format!("from those this project uses: {}", labels.join(", "))
+    };
+    format!(
+        "You write one issue for a software project's kanban board from its author's notes \
+         below. Keep every fact the notes give and invent none; say plainly what is unknown. \
+         Change no file. Answer with nothing but JSON lines, one object per line, in this order:\n\
+         \n\
+         {{\"title\": \"<the outcome, at most 80 characters, no labels>\"}}\n\
+         {{\"labels\": [\"<label>\"]}}\n\
+         {{\"summary\": \"<one or two sentences: what and why>\"}}\n\
+         {{\"section\": \"<heading>\", \"text\": \"<markdown body>\"}}\n\
+         \n\
+         Labels: {labels}. Sections, one line each, in this order: {sections}. Leave a \
+         section's text empty when the notes say nothing for it.\n\
+         \n\
+         ---\n\
+         {notes}"
+    )
+}
+
 /// The line each ticket of a split answer starts with.
 pub const SPLIT_MARK: &str = "=== TICKET ===";
 
@@ -487,6 +520,15 @@ mod tests {
             prompt.ends_with("> Three files.\n> Over 1,100 lines.\nOnly design.rs matters now.\n")
         );
         assert!(!review_prompt("# Split", ReviewMode::Quick, &[]).contains("notes"));
+    }
+
+    #[test]
+    fn the_draft_prompt() {
+        insta::assert_snapshot!(draft_prompt(
+            "Export the board as checklists, one per column.",
+            &["Context".to_string(), "Acceptance criteria".to_string()],
+            &["feat".to_string(), "bug".to_string()],
+        ));
     }
 
     #[test]

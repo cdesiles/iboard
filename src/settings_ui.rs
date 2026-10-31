@@ -13,7 +13,7 @@ mod labels;
 mod review;
 mod titles;
 
-use egui::{Color32, Id, Key, Modifiers, Vec2};
+use egui::{Key, Modifiers, Vec2};
 
 use crate::agent::AgentConfig;
 use crate::general::Appearance;
@@ -23,9 +23,6 @@ use crate::theme;
 use crate::titles::{Availability, Engine};
 use crate::widgets::{self, FooterClick};
 pub use catalog::Catalog;
-
-/// Width of the dialog, in points.
-const DIALOG_WIDTH: f32 = 440.0;
 
 /// Height of the tab body. Fixed, so the panel stands still when the tab
 /// changes; taller content scrolls inside it.
@@ -216,50 +213,46 @@ impl Dialog {
             }
         }
 
-        let dark = ui.visuals().dark_mode;
-        egui::Modal::new(Id::new("review-settings"))
-            .frame(widgets::popover_frame(ui))
-            .backdrop_color(Color32::from_black_alpha(if dark { 110 } else { 60 }))
-            .show(ctx, |ui| {
-                ui.set_width(DIALOG_WIDTH);
-                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                if self.header(ui) {
-                    action = Action::Close;
-                }
-                widgets::rule(ui);
-                theme::scroll_area(
-                    ui,
-                    egui::ScrollArea::vertical()
-                        .id_salt("settings-body")
-                        .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
-                        .min_scrolled_height(DIALOG_BODY_H + 2.0 * theme::SPACE_5)
-                        .max_height(DIALOG_BODY_H + 2.0 * theme::SPACE_5)
-                        .auto_shrink([false, false]),
-                    true,
-                    |ui| match self.tab {
-                        Tab::General => self.general_body(ui),
-                        Tab::Review => {
-                            self.review_seen = true;
-                            self.review_body(ui, catalog);
-                        }
-                        Tab::Build => {
-                            self.build_seen = true;
-                            self.build_body(ui, catalog);
-                        }
-                        Tab::Titles => self.titles_body(ui),
-                        Tab::Labels => {
-                            self.labels_seen = true;
-                            self.labels_body(ui);
-                        }
-                    },
-                );
-                widgets::rule(ui);
-                match widgets::modal_footer(ui, saved_to, "Save") {
-                    FooterClick::None => {}
-                    FooterClick::Primary => action = Action::Save,
-                    FooterClick::Cancel => action = Action::Close,
-                }
-            });
+        widgets::modal(ui, "review-settings", theme::ModalSize::M).show(ctx, |ui| {
+            ui.set_width(theme::modal_size(theme::ModalSize::M, ctx.content_rect()).x);
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            if self.header(ui) {
+                action = Action::Close;
+            }
+            widgets::rule(ui);
+            theme::scroll_area(
+                ui,
+                egui::ScrollArea::vertical()
+                    .id_salt("settings-body")
+                    .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
+                    .min_scrolled_height(DIALOG_BODY_H + 2.0 * theme::SPACE_5)
+                    .max_height(DIALOG_BODY_H + 2.0 * theme::SPACE_5)
+                    .auto_shrink([false, false]),
+                true,
+                |ui| match self.tab {
+                    Tab::General => self.general_body(ui),
+                    Tab::Review => {
+                        self.review_seen = true;
+                        self.review_body(ui, catalog);
+                    }
+                    Tab::Build => {
+                        self.build_seen = true;
+                        self.build_body(ui, catalog);
+                    }
+                    Tab::Titles => self.titles_body(ui),
+                    Tab::Labels => {
+                        self.labels_seen = true;
+                        self.labels_body(ui);
+                    }
+                },
+            );
+            widgets::rule(ui);
+            match widgets::modal_footer(ui, saved_to, "Save") {
+                FooterClick::None => {}
+                FooterClick::Primary => action = Action::Save,
+                FooterClick::Cancel => action = Action::Close,
+            }
+        });
         action
     }
 

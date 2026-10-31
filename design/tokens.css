@@ -1,0 +1,153 @@
+/* iboard — generated from tokens.json */
+:root, [data-theme="light"] {
+  --bg: #f4f5f7; /* App ground: board, header, status bar. */
+  --surface: #ffffff; /* Cards, reader page, editor, inputs, buttons. */
+  --surface-hover: #eef0f3; /* Hover fill for buttons, crumbs and menu rows. */
+  --surface-sunken: #eceef2; /* Inline code, empty-column well, editor gutter. */
+  --line: #cfd4db; /* Card borders, dividers, header and status bar rules. Decorative only, never the only edge of a control. */
+  --line-strong: #7c8491; /* Every control edge: input, button, checkbox, kbd. 3.2:1 or better on every surface in both themes. */
+  --ink: #15181d; /* Primary text on bg, surface, surface-hover, surface-sunken. */
+  --ink-muted: #4d5562; /* Card summaries, path, counts, status bar text. At least 6.4:1 on all surfaces. */
+  --ink-faint: #626a78; /* Placeholders, separators, empty-state text. At least 4.5:1 on all surfaces; never smaller than 11px. */
+  --accent: #2b54c4; /* Selection, primary button fill, links, focus ring. */
+  --accent-soft: #e4eafb; /* Selected card fill, text selection, active crumb. */
+  --on-accent: #ffffff; /* Text and icons on accent fills. */
+  --focus: var(--accent); /* 2px keyboard focus ring on every focusable element. */
+  --focus-halo: rgba(43,84,196,0.20); /* Soft 3px glow around a focused text field, textarea, composer or editor, outside its single focus-coloured border. Never a second ring. */
+  --status-todo: #5e6878; /* Todo column marker and label. Always shown with the word Todo. */
+  --status-ready: #0f6e78; /* Ready column marker: refined issues queued for an agent to take. */
+  --status-doing: #a04f00; /* Doing column marker; unsaved-changes pill in the editor. */
+  --status-done: #1d7347; /* Done column marker; Saved pill; Pass verdict in a review. */
+  --review: #7a3fd1; /* Violet. The AI review button and the Challenge verdict. Reserved: nothing else uses this hue. Kept clearly apart from the blue accent and from danger red. */
+  --review-soft: #f1ebfc; /* Review panel header fill and the pending-review card flag. */
+  --on-review: #ffffff; /* Text on a review fill. */
+  --danger: #b42318; /* Write failures, conflicting file on disk, Block verdict. */
+  --danger-soft: #fdecea; /* Delete drop zone when a card is over it. danger text reads 5.7:1 on it. */
+  --on-danger: #ffffff; /* Label on the danger-filled Delete button in the confirmation dialog. */
+  --scrim: rgba(21,24,29,0.32); /* Dims the board behind a modal confirmation. */
+  --shadow-popover: 0 4px 16px rgba(21,24,29,0.12); /* Review panel and menus only. Cards stay flat. */
+}
+[data-theme="dark"] {
+  --bg: #15171a;
+  --surface: #1d2024;
+  --surface-hover: #262a2f;
+  --surface-sunken: #111316;
+  --line: #353a42;
+  --line-strong: #737c89;
+  --ink: #e7e9ec;
+  --ink-muted: #a7aeb9;
+  --ink-faint: #8c939e;
+  --accent: #86a4ff;
+  --accent-soft: #222c47;
+  --on-accent: #0b1433;
+  --focus: var(--accent);
+  --focus-halo: rgba(134,164,255,0.26);
+  --status-todo: #a4adba;
+  --status-ready: #4fc4cf;
+  --status-doing: #eda24a;
+  --status-done: #5fc98e;
+  --review: #b79cff;
+  --review-soft: #2a2245;
+  --on-review: #1c0f3d;
+  --danger: #ff8a7a;
+  --danger-soft: #3d1a17;
+  --on-danger: #3a0d08;
+  --scrim: rgba(0,0,0,0.55);
+  --shadow-popover: 0 4px 16px rgba(0,0,0,0.5);
+}
+:root {
+  --space-1: 2px; /* Icon to label nudges, kbd padding. */
+  --space-2: 4px; /* Gap inside a card between title and summary. */
+  --space-3: 8px; /* Gap between cards and between header controls. */
+  --space-4: 12px; /* Card horizontal padding, review row padding. */
+  --space-5: 16px; /* Window gutter, column gap. */
+  --space-6: 24px; /* Reader page vertical padding. */
+  --space-7: 32px; /* Reader page horizontal padding. */
+  --radius-sm: 4px; /* Buttons, inputs, kbd, crumbs. */
+  --radius-md: 6px; /* Cards, reader page, editor, review panel. */
+  --radius-pill: 9px; /* 18px-tall pills (Saved, Unsaved, verdicts). */
+  --control-h: 24px; /* Buttons, filter input, checkbox row. */
+  --bar-h: 40px; /* Header bar. */
+  --statusbar-h: 24px; /* Bottom status bar. */
+  --column-min: 280px; /* Narrowest column before the board scrolls horizontally. */
+  --column-max: 420px; /* Widest column; extra width stays empty on the right. */
+  --reader-max: 720px; /* Reader and editor page width. */
+  --scroll-thumb: 4px; /* Scrollbar thumb width at rest and while scrolling. Overlay: takes no layout width. */
+  --scroll-thumb-hover: 8px; /* Scrollbar thumb width under the pointer and while dragging. */
+  --scroll-hit: 12px; /* Scrollbar pointer target along the pane's edge, wider than the thumb so a trackpad finds it. */
+  --scroll-thumb-min: 24px; /* Shortest thumb on a very long page, the same as control-h. */
+  --font-sans: "IBM Plex Sans", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", Menlo, monospace;
+  --text-ui-title: 600 15px/20px var(--font-sans); /* Project name in the header; reader h2. */
+  --text-ui-body: 400 13px/18px var(--font-sans); /* Default UI text, inputs, card titles (at 500). */
+  --text-ui-strong: 500 13px/18px var(--font-sans); /* Card title, current crumb, button labels at 12px. */
+  --text-ui-small: 400 12px/17px var(--font-sans); /* Card summary, review findings. */
+  --text-ui-label: 600 11px/14px var(--font-sans); /* Column titles, uppercase only. */
+  --text-read-h1: 600 20px/26px var(--font-sans); /* Issue title in the reader. */
+  --text-read-body: 400 14px/22px var(--font-sans); /* Rendered markdown paragraphs and lists, max 68ch. */
+  --text-edit-body: 400 13px/20px var(--font-mono); /* The plain-text editor. */
+  --text-meta: 500 11px/14px var(--font-mono); /* Counts, file names, kbd hints, status bar. */
+}
+.ui-title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.ui-body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.ui-strong {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.ui-small {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 17px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.ui-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.read-h1 {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.read-body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.edit-body {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}

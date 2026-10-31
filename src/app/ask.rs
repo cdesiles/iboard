@@ -175,12 +175,12 @@ impl IboardApp {
             .find(&draft.path)
             .map(|issue| issue.title.clone())
             .unwrap_or_else(|| file_name(&draft.path));
-        let (width, pad) = (480.0, 20.0);
+        let width = theme::modal_size(theme::ModalSize::M, ui.ctx().content_rect()).x;
+        let pad = 20.0;
         let (mut send, mut cancel) = (false, false);
-        let frame = widgets::popover_frame(ui).inner_margin(Margin::same(pad as i8));
-        let modal = egui::Modal::new(egui::Id::new("ask-ai"))
+        let frame = widgets::modal_frame(ui).inner_margin(Margin::same(pad as i8));
+        let modal = widgets::modal(ui, "ask-ai", theme::ModalSize::M)
             .frame(frame)
-            .backdrop_color(p.scrim)
             .show(ui.ctx(), |ui| {
                 let inner = width - 2.0 * pad;
                 ui.set_width(inner);
@@ -215,7 +215,7 @@ impl IboardApp {
                     let ready = !draft.request.trim().is_empty();
                     send = ui
                         .add_enabled_ui(ready, |ui| {
-                            widgets::button(ui, ButtonKind::Primary, None, "Send", Some("⌘↩"))
+                            widgets::button(ui, ButtonKind::Send, None, "Send", Some("⌘↩"))
                         })
                         .inner
                         .clicked();
@@ -226,7 +226,7 @@ impl IboardApp {
             });
         if send {
             self.send_ask();
-        } else if cancel || modal.should_close() {
+        } else if cancel || (!modal.backdrop_response.clicked() && modal.should_close()) {
             self.session.ask_draft = None;
         }
     }

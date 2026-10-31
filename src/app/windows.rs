@@ -269,7 +269,7 @@ impl IboardApp {
                         self.config_problem = None;
                         self.settings = None;
                         // The composer follows the new engine at once.
-                        if self.session.composer.is_some() {
+                        if self.composer_open() {
                             self.show_composer();
                         }
                     }

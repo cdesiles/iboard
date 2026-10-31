@@ -58,17 +58,8 @@ impl IboardApp {
                     // The window gutter on the left; item spacing after the last
                     // column gives the same on the right.
                     ui.add_space(gutter);
-                    let compose_into = self.board.todo_column().and_then(|todo| {
-                        let dir = self.compose_preview(&todo.dir)?;
-                        let folder = self.compose_folder(&dir);
-                        Some((dir, folder))
-                    });
+                    let parked = self.has_parked_note();
                     for (index, column) in self.board.columns.iter().enumerate() {
-                        let composer = if column.accepts_new_issues() {
-                            self.session.composer.as_mut()
-                        } else {
-                            None
-                        };
                         let view = ColumnView {
                             column,
                             index,
@@ -81,7 +72,7 @@ impl IboardApp {
                             picked: &self.session.picked,
                             root: &self.board.root,
                             board: &self.board,
-                            compose_into: compose_into.clone(),
+                            parked: parked && column.accepts_new_issues(),
                             labels: &self.labels,
                             reviews: review::CardReviews {
                                 past: &self.past_reviews,
@@ -98,7 +89,7 @@ impl IboardApp {
                             let left = ui.cursor().min.x;
                             dragged_column = Some(egui::Rangef::new(left, left + width));
                         }
-                        intents.extend(column_ui(ui, &view, composer));
+                        intents.extend(column_ui(ui, &view));
                     }
                     // Ends the scrollable width one gutter after the last column.
                     ui.allocate_space(Vec2::ZERO);
@@ -183,11 +174,7 @@ fn expand_tooltip(name: &str, shortcut: Option<&str>) -> String {
     }
 }
 
-pub(super) fn column_ui(
-    ui: &mut egui::Ui,
-    view: &ColumnView,
-    composer: Option<&mut Composer>,
-) -> Vec<Intent> {
+pub(super) fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
     let column = view.column;
     let mut intents = Vec::new();
     let visible: Vec<&Issue> = column
@@ -224,14 +211,6 @@ pub(super) fn column_ui(
             ui.set_width(view.width);
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
             column_head(ui, view, &visible, &mut intents);
-            // The composer stays at the top of Todo; the cards scroll under it.
-            if let Some(composer) = composer {
-                let (dir, folder) = match &view.compose_into {
-                    Some((dir, folder)) => (dir.as_path(), folder.as_str()),
-                    None => (column.dir.as_path(), folder.as_str()),
-                };
-                composer_ui(ui, composer, dir, folder, &mut intents);
-            }
             let lane = Rect::from_min_size(
                 ui.cursor().min,
                 Vec2::new(view.width + THUMB_LANE, ui.available_height()),
@@ -321,6 +300,10 @@ fn column_head(
             column_actions(ui, view, visible, shortcut, intents);
             return;
         }
+        // Parked notes keep Todo's `+` and its dot in view.
+        if view.parked {
+            new_issue_button(ui, view, intents);
+        }
         // A running build keeps its Stop in view.
         if view.builds.active() {
             build_action(ui, view, visible, intents);
@@ -361,16 +344,32 @@ fn column_actions(
     if widgets::icon_button(ui, Icon::Expand, id, &hover, widgets::Tone::Plain).clicked() {
         intents.push(Intent::FocusColumn(column.dir.clone()));
     }
-    let id = egui::Id::new(("new_issue", view.index));
-    if column.accepts_new_issues()
-        && widgets::icon_button(ui, Icon::Plus, id, "New issue  ⌘N", widgets::Tone::Plain).clicked()
-    {
-        intents.push(Intent::Compose);
+    if column.accepts_new_issues() {
+        new_issue_button(ui, view, intents);
     }
     build_action(ui, view, visible, intents);
     agents_stepper(ui, view, intents);
     if column.name.eq_ignore_ascii_case("done") && !visible.is_empty() {
         done_controls(ui, view, visible, intents);
+    }
+}
+
+/// Todo's `+`, with an `accent` dot while NewIssueModal holds parked notes.
+fn new_issue_button(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent>) {
+    let id = egui::Id::new(("new_issue", view.index));
+    let hover = if view.parked {
+        "1 parked note  ⌘N"
+    } else {
+        "New issue  ⌘N"
+    };
+    let plus = widgets::icon_button(ui, Icon::Plus, id, hover, widgets::Tone::Plain);
+    if view.parked {
+        let p = theme::palette(ui);
+        ui.painter()
+            .circle_filled(plus.rect.right_top() + Vec2::new(-4.0, 4.0), 3.0, p.accent);
+    }
+    if plus.clicked() {
+        intents.push(Intent::Compose);
     }
 }
 

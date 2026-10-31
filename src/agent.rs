@@ -597,9 +597,14 @@ impl Leash {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Purpose {
     Answer,
-    Review { mode: ReviewMode, plan: bool },
+    Review {
+        mode: ReviewMode,
+        plan: bool,
+    },
     Build,
     Ask(Leash),
+    /// A new issue drafted from its author's notes, its text streamed.
+    Draft,
 }
 
 impl Purpose {
@@ -610,6 +615,7 @@ impl Purpose {
             Purpose::Review { mode, .. } => mode.key(),
             Purpose::Build => "build",
             Purpose::Ask(_) => "ask",
+            Purpose::Draft => "draft",
         }
     }
 
@@ -670,6 +676,9 @@ fn command(
                 (_, _) => {
                     command.args(["--output-format", "stream-json", "--verbose"]);
                     match purpose {
+                        Purpose::Draft => {
+                            command.args(["--include-partial-messages", "--tools", ""]);
+                        }
                         Purpose::Review {
                             mode: ReviewMode::Quick,
                             ..
@@ -1376,6 +1385,9 @@ fn verdict_and_note(rest: &str) -> Option<(Verdict, &str)> {
 }
 
 mod direnv;
+mod draft;
+
+pub use draft::{DraftText, start_draft};
 
 #[cfg(test)]
 mod tests;

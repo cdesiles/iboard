@@ -152,44 +152,40 @@ impl Dialog {
     pub fn show(&mut self, ui: &egui::Ui, projects: &[PathBuf], config_file: &str) -> Action {
         let ctx = ui.ctx().clone();
         let mut action = self.keys(&ctx);
-        let p = theme::palette(ui);
-        egui::Modal::new(Id::new("groups-dialog"))
-            .frame(widgets::modal_frame(ui))
-            .backdrop_color(p.scrim)
-            .show(&ctx, |ui| {
-                ui.set_width(theme::MODAL_M);
-                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                if widgets::modal_header(ui, "Project groups", |_| {}) {
-                    action = self.cancel();
-                }
-                widgets::rule(ui);
-                theme::scroll_area(
-                    ui,
-                    egui::ScrollArea::vertical()
-                        .id_salt("groups-body")
-                        .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
-                        .max_height(BODY_MAX_H)
-                        .auto_shrink([false, true]),
-                    true,
-                    |ui| self.body(ui, projects),
-                );
-                widgets::rule(ui);
-                if let Some(picked) = self.error_bar(ui) {
-                    action = picked;
-                }
-                if self.discarding {
-                    self.discard_bar(ui, &mut action);
-                }
-                let note = match self.draft.is_dirty() {
-                    true => format!("{config_file} · Unsaved"),
-                    false => config_file.to_string(),
-                };
-                match widgets::modal_footer(ui, &note, "Save") {
-                    FooterClick::None => {}
-                    FooterClick::Primary => action = self.save(self.conflict),
-                    FooterClick::Cancel => action = self.cancel(),
-                }
-            });
+        widgets::modal(ui, "groups-dialog", theme::ModalSize::M).show(&ctx, |ui| {
+            ui.set_width(theme::modal_size(theme::ModalSize::M, ctx.content_rect()).x);
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            if widgets::modal_header(ui, "Project groups", |_| {}) {
+                action = self.cancel();
+            }
+            widgets::rule(ui);
+            theme::scroll_area(
+                ui,
+                egui::ScrollArea::vertical()
+                    .id_salt("groups-body")
+                    .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
+                    .max_height(BODY_MAX_H)
+                    .auto_shrink([false, true]),
+                true,
+                |ui| self.body(ui, projects),
+            );
+            widgets::rule(ui);
+            if let Some(picked) = self.error_bar(ui) {
+                action = picked;
+            }
+            if self.discarding {
+                self.discard_bar(ui, &mut action);
+            }
+            let note = match self.draft.is_dirty() {
+                true => format!("{config_file} · Unsaved"),
+                false => config_file.to_string(),
+            };
+            match widgets::modal_footer(ui, &note, "Save") {
+                FooterClick::None => {}
+                FooterClick::Primary => action = self.save(self.conflict),
+                FooterClick::Cancel => action = self.cancel(),
+            }
+        });
         if let Some(at) = self.deleting {
             self.confirm_delete(ui, at);
         }

@@ -211,6 +211,7 @@ impl IboardApp {
         self.poll_refinement();
         self.poll_split();
         self.poll_naming(ctx);
+        self.poll_draft(ctx);
         self.poll_design_draft(ctx);
         self.poll_enrichment(ctx);
         self.poll_build(ctx);
@@ -246,6 +247,13 @@ impl IboardApp {
         }
         if self.session.ask_draft.is_some() {
             self.ask_keys(ctx);
+            self.background(ctx);
+            return;
+        }
+        // NewIssueModal owns the keyboard while it is up.
+        if self.composer_open() && !confirming {
+            self.new_issue_keys(ctx);
+            self.paste_images(ctx);
             self.background(ctx);
             return;
         }
@@ -427,7 +435,6 @@ impl IboardApp {
                 _ if self.session.leave_prompt.is_some() => {
                     self.answer_leave(LeaveChoice::KeepEditing)
                 }
-                Screen::Board if self.session.composer.is_some() => self.composer_escape(),
                 Screen::Board if !self.filter_bar.filter.is_empty() => {
                     self.filter_bar.filter.clear()
                 }
@@ -459,7 +466,7 @@ impl IboardApp {
             proposal: self.proposal_shown() && !self.refinement_shown(),
             open,
             editing: self.session.detail_mode == DetailMode::Edit,
-            composer: self.session.composer.is_some(),
+            composer: self.composer_open(),
             selected: self.selected_issue().map(|path| {
                 let done = self
                     .board
@@ -484,7 +491,11 @@ impl IboardApp {
                 }
             }
             Command::Refresh => self.refresh(),
-            Command::Undo => self.undo_last(),
+            Command::Undo => {
+                if !self.restore_discarded() {
+                    self.undo_last();
+                }
+            }
             Command::Settings => self.open_settings(self.settings_tab),
             Command::Refine(path) => self.start_refinement(&path),
             Command::ToggleReview(path) => {
@@ -500,12 +511,9 @@ impl IboardApp {
             Command::Back if matches!(self.session.screen, Screen::Diff) => self.close_diff(),
             Command::Back => self.back_to_board(),
             // `⌘S` is the header's Save: it forces a save (overwriting a
-            // conflict) and, when it went through, shows the issue again. On
-            // the board it adds the composer's issue, as `↩` does.
+            // conflict) and, when it went through, shows the issue again.
             Command::Save => {
-                if matches!(self.session.screen, Screen::Board) && self.session.composer.is_some() {
-                    self.submit_composer(false);
-                } else if self.session.detail_mode == DetailMode::Edit {
+                if self.session.detail_mode == DetailMode::Edit {
                     self.save_and_preview();
                 } else {
                     self.flush_autosave(true);

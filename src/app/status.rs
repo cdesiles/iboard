@@ -67,6 +67,21 @@ impl IboardApp {
             ui.label(status_meta(ui, self.relative(&drag.path)));
             return vec![("esc", "cancel drag")];
         }
+        if let Some((_, at)) = self
+            .session
+            .discarded
+            .as_ref()
+            .filter(|(_, at)| at.elapsed() < DISCARD_UNDO)
+        {
+            ui.label(
+                RichText::new("Discarded the new issue · ⌘Z")
+                    .font(theme::meta())
+                    .color(p.ink),
+            );
+            ui.ctx()
+                .request_repaint_after(DISCARD_UNDO.saturating_sub(at.elapsed()));
+            return vec![("⌘Z", "undo"), ("⌘N", "new")];
+        }
         if let Some(undo) = self.session.undo.as_ref().filter(|_| self.can_undo()) {
             let text = match undo {
                 Undo::Deleted(deleted) => self.trashed_notice(deleted),
@@ -102,7 +117,7 @@ impl IboardApp {
             ui.label(status_meta(ui, text));
             return vec![("↩", "open"), ("⌘1–4", "column"), ("esc", "board")];
         }
-        if self.session.composer.is_some()
+        if self.composer_open()
             && let Some(todo) = self.board.todo_column()
         {
             ui.label(status_meta(ui, self.relative(&todo.dir)));

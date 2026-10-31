@@ -6,15 +6,9 @@ impl IboardApp {
     /// Opens an issue in the reader. Editing is a separate step, entered from
     /// the detail view.
     pub(super) fn open_issue(&mut self, path: PathBuf) {
-        // A composer with text is an unsaved issue: it waits on the board
-        // until the user adds or closes it. Only an empty one goes.
-        if self
-            .session
-            .composer
-            .as_ref()
-            .is_some_and(Composer::is_empty)
-        {
-            self.session.composer = None;
+        // An open NewIssueModal is closed: its notes are parked.
+        if self.composer_open() {
+            self.close_composer();
         }
         self.close_review();
         self.session.picked.clear();

@@ -1,9 +1,11 @@
-//! The quick-add composer: typing a new issue, naming it, and writing it.
+//! NewIssueModal's logic: opening and parking it, naming the issue, Draft
+//! with Review, and writing the issue to Todo. Its look is `new_issue_ui`.
 
 use super::*;
+use iboard::new_issue::{self, Parked};
 
 impl IboardApp {
-    /// Opens the quick-add composer at the top of Todo, from any screen.
+    /// Opens NewIssueModal over the board, from any screen.
     pub(super) fn open_composer(&mut self) {
         if self.board.todo_column().is_none() {
             return;
@@ -26,35 +28,132 @@ impl IboardApp {
         if let Some(engine) = engine {
             titles::prewarm(engine);
         }
-        let composer = self.session.composer.get_or_insert_with(Composer::default);
+        if self.session.composer.is_none() {
+            self.session.composer = Some(self.parked_composer().unwrap_or_default());
+        }
+        let Some(composer) = self.session.composer.as_mut() else {
+            return;
+        };
         composer.engine = engine;
-        composer.closing = false;
-        composer.focus = Some(if composer.stage == TitleStage::Idle {
-            ComposerField::Description
-        } else {
-            ComposerField::Title
-        });
+        composer.open = true;
+        composer.focus = Some(ComposerField::Description);
     }
 
-    /// Writes `# <title>`, then the description, to a new file in Todo named
-    /// after the title. Returns the new file's path; the caller decides
-    /// whether to open it.
+    /// Whether NewIssueModal is up.
+    pub(super) fn composer_open(&self) -> bool {
+        self.session.composer.as_ref().is_some_and(|c| c.open)
+    }
+
+    /// Notes left in a closed modal, in memory or in the park file.
+    pub(super) fn has_parked_note(&self) -> bool {
+        match &self.session.composer {
+            Some(composer) => !composer.open && !composer.is_empty(),
+            None => self.park_file().is_some_and(|path| path.exists()),
+        }
+    }
+
+    fn park_file(&self) -> Option<PathBuf> {
+        self.board
+            .todo_column()
+            .map(|_| new_issue::park_path(&self.board.project_dir))
+    }
+
+    fn parked_composer(&self) -> Option<Composer> {
+        let parked = Parked::load(&self.park_file()?)?;
+        let draft = parked.draft.map(|draft| Drafted {
+            draft,
+            notes_hash: new_issue::notes_hash(&parked.notes),
+            receipt: None,
+            stopped: false,
+            title_before: (String::new(), TitleStage::Idle),
+        });
+        Some(Composer {
+            stage: if parked.title.trim().is_empty() {
+                TitleStage::Idle
+            } else {
+                TitleStage::Skipped
+            },
+            title: parked.title,
+            description: parked.notes,
+            draft,
+            ..Composer::default()
+        })
+    }
+
+    /// Close, `esc` or ×: notes are parked for the next `⌘N`; with none,
+    /// the modal simply goes.
+    pub(super) fn close_composer(&mut self) {
+        self.stop_draft();
+        let Some(composer) = self.session.composer.as_mut() else {
+            return;
+        };
+        composer.naming = None;
+        if composer.stage == TitleStage::Naming {
+            composer.stage = TitleStage::Idle;
+        }
+        let parked = Parked {
+            title: composer.title.clone(),
+            notes: composer.description.clone(),
+            draft: composer.draft.as_ref().map(|d| d.draft.clone()),
+        };
+        if composer.is_empty() {
+            self.session.composer = None;
+        } else {
+            composer.open = false;
+        }
+        if let Some(path) = self.park_file()
+            && let Err(err) = parked.save(&path)
+        {
+            self.error = Some(format!("Couldn't park the new issue: {err}"));
+        }
+    }
+
+    /// Discard: drops the notes and the draft without asking; `⌘Z` in the
+    /// next [`DISCARD_UNDO`] brings them back.
+    pub(super) fn discard_composer(&mut self) {
+        let Some(mut composer) = self.session.composer.take() else {
+            return;
+        };
+        composer.drafting = None;
+        composer.naming = None;
+        composer.open = false;
+        if let Some(path) = self.park_file() {
+            let _ = new_issue::clear(&path);
+        }
+        self.session.discarded = Some((composer, Instant::now()));
+    }
+
+    /// `⌘Z` after Discard: the modal opens again as it was. True when there
+    /// was one to bring back.
+    pub(super) fn restore_discarded(&mut self) -> bool {
+        match self.session.discarded.take() {
+            Some((composer, at)) if at.elapsed() < DISCARD_UNDO => {
+                self.session.composer = Some(composer);
+                self.show_composer();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The text of a new issue named `title`, as `↩` writes it, and as the
+    /// issue pane shows it.
+    fn composed_text(&self, composer: &Composer, title: &str, notes: &str) -> String {
+        let draft = composer.draft.as_ref().map(|d| &d.draft);
+        new_issue::render(title, notes, draft, self.keep_notes)
+    }
+
+    /// Writes `content` to a new file in `dir` named after `title`. Returns
+    /// the new file's path; the caller decides whether to open it.
     pub(super) fn create_issue(
         &mut self,
         dir: &Path,
         title: &str,
-        description: &str,
+        content: &str,
     ) -> Result<PathBuf, String> {
-        let title = title.trim();
-        let (name, _) = crate::issue::new_file_name(dir, title);
+        let (name, _) = crate::issue::new_file_name(dir, title.trim());
         let path = dir.join(&name);
-        let body = description.trim_end();
-        let content = if body.trim().is_empty() {
-            format!("# {title}\n")
-        } else {
-            format!("# {title}\n\n{body}\n")
-        };
-        match atomic_write(&path, &content) {
+        match atomic_write(&path, content) {
             Ok(()) => {
                 self.refresh();
                 Ok(path)
@@ -66,17 +165,25 @@ impl IboardApp {
         }
     }
 
-    /// `↩` or `⌘S` in the composer. With no title yet and an engine ready,
-    /// it names the issue first and stops on the suggestion; otherwise it
-    /// writes the issue and closes the composer. A click elsewhere (`close`)
-    /// never stops on the suggestion: it names if needed, then writes.
-    pub(super) fn submit_composer(&mut self, close: bool) {
+    /// `↩`: with no title yet and an engine ready, it names the issue first
+    /// and stops on the suggestion; otherwise it writes the issue. `⌘↩`
+    /// (`edit`) never stops: it names if needed, writes, and opens the
+    /// Editor. While Review drafts, it adds what is shown.
+    pub(super) fn submit_composer(&mut self, edit: bool) {
+        if self
+            .session
+            .composer
+            .as_ref()
+            .is_some_and(|c| c.drafting.is_some())
+        {
+            self.stop_draft();
+        }
         let Some(composer) = self.session.composer.as_mut() else {
             return;
         };
         if composer.stage == TitleStage::Naming {
-            if close && let Some(run) = composer.naming.as_mut() {
-                run.then_close = true;
+            if edit && let Some(run) = composer.naming.as_mut() {
+                run.then_edit = true;
             }
             return;
         }
@@ -92,7 +199,7 @@ impl IboardApp {
         {
             composer.naming = Some(NamingRun {
                 answer: titles::start(engine, &self.agent, &description),
-                then_close: close,
+                then_edit: edit,
             });
             composer.stage = TitleStage::Naming;
             composer.error = None;
@@ -100,12 +207,13 @@ impl IboardApp {
         } else {
             titles::first_line_title(&description)
         };
-        self.write_composed(&title, &description);
+        self.write_composed(&title, edit);
     }
 
-    /// Writes the composed issue to Todo; on success the composer closes (`⌘N`
-    /// opens a new one), on failure it keeps everything and says why.
-    pub(super) fn write_composed(&mut self, title: &str, description: &str) {
+    /// Writes the new issue to Todo; on success the modal closes and the
+    /// card flashes at the top of Todo, on failure it keeps everything and
+    /// says why.
+    pub(super) fn write_composed(&mut self, title: &str, edit: bool) {
         let Some(column_dir) = self.board.todo_column().map(|c| c.dir.clone()) else {
             return;
         };
@@ -116,24 +224,32 @@ impl IboardApp {
                 return;
             }
         };
+        let Some(composer) = self.session.composer.as_ref() else {
+            return;
+        };
         let (name, _) = crate::issue::new_file_name(&dir, title.trim());
-        let description = self.adopt_pending_images(&name, description);
-        match self.create_issue(&dir, title, &description) {
+        let notes = composer.description.clone();
+        let notes = self.adopt_pending_images(&name, &notes);
+        let Some(composer) = self.session.composer.as_ref() else {
+            return;
+        };
+        let content = self.composed_text(composer, title, &notes);
+        match self.create_issue(&dir, title, &content) {
             Ok(path) => {
-                // A new ticket lands at position 1, right after the composer.
-                // The renumbering is deferred to the end of the frame so a
-                // click that added the ticket still reaches the card under it.
+                // A new ticket lands at position 1 of Todo, deferred to the
+                // end of the frame.
                 if self.board.find(&path).is_some() {
                     self.session.pending_front = Some((column_dir.clone(), path.clone()));
                 }
-                if let Some(composer) = self.session.composer.as_mut() {
-                    *composer = Composer {
-                        closing: true,
-                        ..Composer::default()
-                    };
+                self.session.composer = None;
+                if let Some(park) = self.park_file() {
+                    let _ = new_issue::clear(&park);
                 }
                 self.session.selected = Some(path.clone());
-                self.session.new_card = Some((path, Instant::now()));
+                self.session.new_card = Some((path.clone(), Instant::now()));
+                if edit {
+                    self.start_editing(&path);
+                }
             }
             Err(err) => {
                 if let Some(composer) = self.session.composer.as_mut() {
@@ -166,20 +282,20 @@ impl IboardApp {
         let Some(composer) = self.session.composer.as_mut() else {
             return;
         };
-        let then_close = composer.naming.take().is_some_and(|run| run.then_close);
+        let then_edit = composer.naming.take().is_some_and(|run| run.then_edit);
         let description = composer.description.clone();
         match result {
-            Ok(title) if then_close => self.write_composed(&title, &description),
+            Ok(title) if then_edit => self.write_composed(&title, true),
             Ok(title) => {
                 composer.title = title;
                 composer.stage = TitleStage::Inferred;
                 composer.select_title = true;
                 composer.focus = Some(ComposerField::Title);
             }
-            // A click elsewhere never stops: the first line names it.
-            Err(_) if then_close => {
+            // `⌘↩` never stops: the first line names it.
+            Err(_) if then_edit => {
                 let title = titles::first_line_title(&description);
-                self.write_composed(&title, &description);
+                self.write_composed(&title, true);
             }
             Err(_) => {
                 composer.stage = TitleStage::Failed;
@@ -188,396 +304,180 @@ impl IboardApp {
         }
     }
 
-    /// Closes a composer a click closed, once that click is over.
-    pub(super) fn flush_closing_composer(&mut self, ctx: &egui::Context) {
-        let closing = self.session.composer.as_ref().is_some_and(|c| c.closing);
-        if closing && !ctx.input(|i| i.pointer.any_down()) {
-            self.session.composer = None;
-        }
-    }
-
-    /// `esc` in the composer: while naming, stop and type the title instead;
-    /// otherwise close it.
+    /// `esc`: stops Review and keeps what arrived; while naming, stops and
+    /// lets you type the title; otherwise closes and parks.
     pub(super) fn composer_escape(&mut self) {
         match self.session.composer.as_mut() {
+            Some(composer) if composer.drafting.is_some() => self.stop_draft(),
             Some(composer) if composer.stage == TitleStage::Naming => {
                 composer.naming = None;
                 composer.stage = TitleStage::Skipped;
                 composer.focus = Some(ComposerField::Title);
             }
-            _ => self.session.composer = None,
+            _ => self.close_composer(),
         }
     }
-}
 
-/// The quick-add composer: a card framed in `focus`, with its halo, with a reserved title
-/// row, a description that grows from 3 to 8 lines, and the file it will
-/// write underneath. See `design/components/QuickAdd`.
-pub(super) fn composer_ui(
-    ui: &mut egui::Ui,
-    composer: &mut Composer,
-    dir: &Path,
-    folder: &str,
-    intents: &mut Vec<Intent>,
-) {
-    let p = theme::palette(ui);
-    composer_enter(ui, composer, intents);
-    let frame = Frame::new()
-        .fill(p.surface)
-        .stroke(Stroke::new(1.0, p.accent))
-        .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_4 as i8,
-            theme::SPACE_3 as i8,
-        ))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-            title_row(ui, composer, intents);
-            description_field(ui, composer, intents);
-            composer_meta(ui, composer, dir, folder);
-        });
-    widgets::paint_focus_halo(ui, frame.response.rect, theme::RADIUS_MD);
-
-    // A click anywhere else on the board (another card, blank space) adds
-    // what was typed and closes the composer.
-    let pressed = ui.input(|i| {
-        i.pointer
-            .press_origin()
-            .filter(|_| i.pointer.primary_pressed())
-    });
-    let clicked_away = pressed.is_some_and(|pos| {
-        !frame.response.rect.contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id())
-    });
-    if clicked_away {
-        intents.push(if composer.is_empty() {
-            Intent::CloseComposer
-        } else {
-            Intent::SubmitComposer { close: true }
-        });
-    }
-}
-
-pub(super) const TITLE_ID: &str = "composer";
-pub(super) const DESCRIPTION_ID: &str = "composer-description";
-
-/// `↩` adds, from either field. `⇧↩` and `⌘↩` are a new line: the
-/// description's own return key (as `⇧↩`), or a step down from the title.
-/// Taken before the fields see the key.
-fn composer_enter(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut Vec<Intent>) {
-    let in_title = ui.memory(|m| m.has_focus(egui::Id::new(TITLE_ID)));
-    let in_description = ui.memory(|m| m.has_focus(egui::Id::new(DESCRIPTION_ID)));
-    if !in_title && !in_description {
-        return;
-    }
-    let (mut add, mut new_line) = (false, false);
-    ui.input_mut(|i| {
-        i.events.retain_mut(|event| match event {
-            egui::Event::Key {
-                key: Key::Enter,
-                pressed: true,
-                modifiers,
-                ..
-            } if modifiers.shift || modifiers.command => {
-                new_line = true;
-                *modifiers = egui::Modifiers::SHIFT;
-                in_description
-            }
-            egui::Event::Key {
-                key: Key::Enter,
-                pressed: true,
-                ..
-            } => {
-                add = true;
-                false
-            }
-            _ => true,
-        })
-    });
-    let naming = composer.stage == TitleStage::Naming;
-    if !naming && add {
-        intents.push(Intent::SubmitComposer { close: false });
-    }
-    if in_title && new_line && !naming {
-        composer.focus = Some(ComposerField::Description);
-    }
-}
-
-/// The title row, always 22pt so no state makes the card jump: the title
-/// (or "Naming…"), the character count near the limit, and the engine tag,
-/// over a rule that says how the title will be named.
-fn title_row(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut Vec<Intent>) {
-    let p = theme::palette(ui);
-    let width = ui.available_width();
-    let (row, _) = ui.allocate_exact_size(Vec2::new(width, 22.0), Sense::hover());
-    let rule_y = row.max.y - 0.5;
-    let rule = [Pos2::new(row.min.x, rule_y), Pos2::new(row.max.x, rule_y)];
-    // A title typed by hand is Manual, whatever the engine: `↩` won't infer
-    // one.
-    let manual = composer.stage != TitleStage::Inferred && !composer.title.trim().is_empty();
-    let engine = if manual { None } else { composer.engine };
-    match (composer.stage, engine) {
-        (TitleStage::Failed | TitleStage::Skipped, _) => {
-            ui.painter()
-                .line_segment(rule, Stroke::new(1.0, p.status_doing));
-        }
-        (_, None) => {
-            ui.painter().extend(Shape::dashed_line(
-                &rule,
-                Stroke::new(1.0, p.line_strong),
-                4.0,
-                3.0,
-            ));
-        }
-        _ => {
-            ui.painter().line_segment(rule, Stroke::new(1.0, p.line));
-        }
-    }
-    let mut row_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(row.with_max_y(row.max.y - 4.0))
-            .layout(Layout::right_to_left(Align::Center)),
-    );
-    row_ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-    let (tag, inferred) = match (composer.stage, engine) {
-        (TitleStage::Inferred, _) => (Some("Inferred"), true),
-        (TitleStage::Failed | TitleStage::Skipped, _) => (None, false),
-        (_, Some(engine)) => (Some(engine.tag()), false),
-        (_, None) => (Some(Engine::Manual.tag()), false),
-    };
-    if let Some(tag) = tag {
-        let response = widgets::tag(&mut row_ui, tag, inferred);
-        if !inferred
-            && response
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .on_hover_text("Title inference (⌘, › Titles)")
-                .clicked()
+    /// Why Draft with Review can't run, if it can't.
+    pub(super) fn draft_blocked(&self) -> Option<&'static str> {
+        if !self.agent.configured() {
+            Some("Set up Review in ⌘, › AI review")
+        } else if self
+            .session
+            .composer
+            .as_ref()
+            .is_none_or(|c| c.description.trim().is_empty())
         {
-            intents.push(Intent::TitleSettings);
+            Some("Write some notes first")
+        } else {
+            None
         }
     }
-    let chars = composer.title.chars().count();
-    if chars >= titles::MAX_TITLE_CHARS - 10 {
-        row_ui.label(
-            RichText::new(format!("{chars}/{}", titles::MAX_TITLE_CHARS))
-                .font(theme::meta())
-                .color(p.ink_muted),
-        );
-    }
-    if composer.stage == TitleStage::Naming {
-        row_ui.with_layout(Layout::left_to_right(Align::Center), naming_dot);
-    } else {
-        title_field(&mut row_ui, composer);
-    }
-}
 
-/// "Naming…" with its pulsing `status-doing` dot, steady with reduced motion.
-fn naming_dot(ui: &mut egui::Ui) {
-    let p = theme::palette(ui);
-    ui.spacing_mut().item_spacing.x = 6.0;
-    let (dot, _) = ui.allocate_exact_size(Vec2::splat(6.0), Sense::hover());
-    let pulse = if theme::reduced_motion(ui.ctx()) {
-        1.0
-    } else {
-        (ui.input(|i| i.time) * std::f64::consts::TAU).sin() as f32
-    };
-    ui.painter().circle_filled(
-        dot.center(),
-        3.0,
-        p.status_doing.gamma_multiply(0.65 + 0.35 * pulse),
-    );
-    ui.label(
-        RichText::new("Naming…")
-            .font(theme::ui_body())
-            .color(p.ink_muted),
-    );
-    ui.ctx().request_repaint();
-}
-
-/// The title's text field; focused on request, with the whole suggestion
-/// selected so typing replaces it.
-fn title_field(row: &mut egui::Ui, composer: &mut Composer) {
-    let p = theme::palette(row);
-    let title_id = egui::Id::new(TITLE_ID);
-    let hint = match (composer.stage, composer.engine) {
-        (TitleStage::Failed | TitleStage::Skipped, _) => "Type a title",
-        (_, None) => "Add a title",
-        _ => "Title is named from the description",
-    };
-    let width = row.available_width();
-    let mut output = egui::TextEdit::singleline(&mut composer.title)
-        .id(title_id)
-        .font(theme::ui_strong())
-        .hint_text(
-            RichText::new(hint)
-                .font(theme::ui_body())
-                .color(p.ink_faint),
-        )
-        .char_limit(titles::MAX_TITLE_CHARS)
-        .frame(Frame::NONE)
-        .margin(Margin::ZERO)
-        .desired_width(width)
-        .show(row);
-    if composer.focus == Some(ComposerField::Title) {
-        composer.focus = None;
-        output.response.request_focus();
-        if std::mem::take(&mut composer.select_title) {
-            let end = CCursor::new(composer.title.chars().count());
-            output
-                .state
-                .cursor
-                .set_char_range(Some(CCursorRange::two(CCursor::new(0), end)));
-            output.state.store(row.ctx(), title_id);
-        }
-    }
-    // Editing a suggestion makes it the user's own title.
-    if output.response.changed() && composer.stage == TitleStage::Inferred {
-        composer.stage = TitleStage::Idle;
-    }
-}
-
-/// The description: 3 lines to start, 8 at most, then it scrolls with its
-/// last line fading out. Leaving an empty composer closes it.
-fn description_field(ui: &mut egui::Ui, composer: &mut Composer, intents: &mut Vec<Intent>) {
-    let p = theme::palette(ui);
-    let naming = composer.stage == TitleStage::Naming;
-    let line = 18.0;
-    let scroll = theme::scroll_area(
-        ui,
-        egui::ScrollArea::vertical()
-            .id_salt("composer-description-scroll")
-            .content_margin(theme::scroll_margin(0.0, 0.0))
-            .max_height(8.0 * line)
-            .auto_shrink([false, true]),
-        true,
-        |ui| {
-            ui.add_enabled(
-                !naming,
-                egui::TextEdit::multiline(&mut composer.description)
-                    .id(egui::Id::new(DESCRIPTION_ID))
-                    .font(theme::ui_body())
-                    .text_color(if naming { p.ink_muted } else { p.ink })
-                    .hint_text(RichText::new("Describe the issue").color(p.ink_faint))
-                    .frame(Frame::NONE)
-                    .margin(Margin::ZERO)
-                    .desired_rows(3)
-                    .desired_width(f32::INFINITY)
-                    .return_key(Some(egui::KeyboardShortcut::new(
-                        egui::Modifiers::SHIFT,
-                        Key::Enter,
-                    ))),
-            )
-        },
-    );
-    let capped = scroll.content_size.y > scroll.inner_rect.height() + 1.0;
-    if capped && scroll.state.offset.y + scroll.inner_rect.height() < scroll.content_size.y - 1.0 {
-        fade_out(ui, scroll.inner_rect, p.surface);
-    }
-    let description = scroll.inner;
-    if composer.focus == Some(ComposerField::Description) {
-        composer.focus = None;
-        description.request_focus();
-    }
-    // Clicking elsewhere closes an empty composer; one with text stays.
-    let empty = composer.title.trim().is_empty() && composer.description.trim().is_empty();
-    let still_focused = ui.memory(|m| {
-        m.has_focus(egui::Id::new(TITLE_ID)) || m.has_focus(egui::Id::new(DESCRIPTION_ID))
-    });
-    if empty && description.lost_focus() && !still_focused && composer.focus.is_none() {
-        intents.push(Intent::CloseComposer);
-    }
-}
-
-/// The composer's last line: the file it will write (or why it can't name
-/// it yet) on the left, the keys that apply on the right.
-pub(super) fn composer_meta(ui: &mut egui::Ui, composer: &Composer, dir: &Path, folder: &str) {
-    let p = theme::palette(ui);
-    let meta = |text: &str, color: Color32| RichText::new(text).font(theme::meta()).color(color);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        if let Some(error) = &composer.error {
-            ui.add(egui::Label::new(meta(error, p.danger)).truncate());
+    /// Draft with Review (`⌘⇧R`), or Redraft: the agent writes the issue
+    /// from the notes, which stay read-only meanwhile.
+    pub(super) fn start_draft(&mut self) {
+        if self.draft_blocked().is_some() {
             return;
         }
-        let title = composer.title.trim();
-        let described = !composer.description.trim().is_empty();
-        let (hints, left): (&[(&str, &str)], Vec<RichText>) = match composer.stage {
-            TitleStage::Naming => (
-                &[("esc", "type it")],
-                vec![meta(folder, p.ink_muted), meta("naming", p.ink_faint)],
-            ),
-            TitleStage::Failed if title.is_empty() => (
-                &[("↩", "add")],
-                vec![meta(
-                    "Couldn't name it · ↩ uses the first line",
-                    p.status_doing,
-                )],
-            ),
-            _ if !title.is_empty() => {
-                let (name, taken) = crate::issue::new_file_name(dir, title);
-                let color = if taken {
-                    p.status_doing
-                } else if composer.stage == TitleStage::Inferred {
-                    p.status_done
-                } else {
-                    p.ink_muted
-                };
-                (
-                    &[("↩", "add"), ("⇧↩", "new line")],
-                    vec![meta(&format!("{folder}{name}"), color)],
-                )
-            }
-            TitleStage::Skipped | TitleStage::Failed => (
-                &[("↩", "add")],
-                vec![
-                    meta(folder, p.ink_muted),
-                    meta("empty title uses the first line", p.ink_faint),
-                ],
-            ),
-            _ if composer.engine.is_none() => (
-                &[("↩", "add")],
-                vec![
-                    meta(folder, p.ink_muted),
-                    meta("empty title uses the first line", p.ink_faint),
-                ],
-            ),
-            _ => (
-                if described {
-                    &[("↩", "add"), ("⇧↩", "new line")]
-                } else {
-                    &[("↩", "add"), ("esc", "close")]
-                },
-                vec![
-                    meta(folder, p.ink_muted),
-                    meta("named on save", p.ink_faint),
-                ],
-            ),
+        let labels = self.known_labels();
+        let sections = self.board.reader_sections.clone();
+        let project = self.board.project_dir.clone();
+        let agent = self.agent.clone();
+        let Some(composer) = self.session.composer.as_mut() else {
+            return;
         };
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-            for (key, action) in hints.iter().rev() {
-                ui.horizontal(|ui| widgets::hint(ui, key, action));
-            }
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                for part in left {
-                    ui.add(egui::Label::new(part).truncate());
-                }
-            });
+        if composer.drafting.is_some() {
+            return;
+        }
+        let notes = composer.description.clone();
+        let prompt = prompts::draft_prompt(&notes, &sections, &labels);
+        let (job, text) = agent::start_draft(&agent, &prompt, Some(&project));
+        let title_before = match composer.draft.take() {
+            Some(drafted) => drafted.title_before,
+            None => (composer.title.clone(), composer.stage),
+        };
+        composer.naming = None;
+        composer.draft = Some(Drafted {
+            draft: new_issue::Draft::default(),
+            notes_hash: new_issue::notes_hash(&notes),
+            receipt: None,
+            stopped: false,
+            title_before,
         });
-    });
+        composer.drafting = Some(DraftRun {
+            job,
+            text,
+            agent: agent.label(),
+        });
+        composer.draft_error = None;
+        composer.follow = true;
+    }
+
+    /// The labels the board's issues already use, most used first.
+    fn known_labels(&self) -> Vec<String> {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for issue in self.board.columns.iter().flat_map(|c| &c.issues) {
+            for label in &issue.labels {
+                *counts.entry(label.to_lowercase()).or_default() += 1;
+            }
+        }
+        let mut labels: Vec<(String, usize)> = counts.into_iter().collect();
+        labels.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        labels
+            .into_iter()
+            .map(|(label, _)| label)
+            .take(12)
+            .collect()
+    }
+
+    /// Fills the draft with what the agent wrote so far, and adopts its
+    /// answer once it is in.
+    pub(super) fn poll_draft(&mut self, ctx: &egui::Context) {
+        let Some(composer) = self.session.composer.as_mut() else {
+            return;
+        };
+        let Some(run) = composer.drafting.as_ref() else {
+            return;
+        };
+        let answer = run.job.answer();
+        let elapsed = run.job.elapsed();
+        let so_far = run
+            .text
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let agent = run.agent.clone();
+        let Some(drafted) = composer.draft.as_mut() else {
+            return;
+        };
+        match answer {
+            None => {
+                drafted.draft = new_issue::parse(&so_far, false);
+                ctx.request_repaint_after(Duration::from_millis(50));
+            }
+            Some(Ok(text)) => {
+                composer.drafting = None;
+                drafted.draft = new_issue::parse(&text, true);
+                drafted.receipt = Some(format!("{agent} · {}s", elapsed.as_secs()));
+                adopt_draft_title(composer);
+            }
+            Some(Err(err)) => {
+                composer.drafting = None;
+                if let Some(drafted) = composer.draft.take() {
+                    (composer.title, composer.stage) = drafted.title_before;
+                }
+                composer.draft_error = Some(err);
+            }
+        }
+    }
+
+    /// `esc` while drafting: the agent stops, what arrived stays.
+    pub(super) fn stop_draft(&mut self) {
+        let Some(composer) = self.session.composer.as_mut() else {
+            return;
+        };
+        let Some(run) = composer.drafting.take() else {
+            return;
+        };
+        let text = run
+            .text
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let draft = new_issue::parse(&text, true);
+        if draft.is_empty() {
+            if let Some(drafted) = composer.draft.take() {
+                (composer.title, composer.stage) = drafted.title_before;
+            }
+            return;
+        }
+        if let Some(drafted) = composer.draft.as_mut() {
+            drafted.draft = draft;
+            drafted.stopped = true;
+        }
+        adopt_draft_title(composer);
+    }
+
+    /// Undo draft (`⌘Z` outside the notes): back to the mirror.
+    pub(super) fn undo_draft(&mut self) {
+        self.stop_draft();
+        let Some(composer) = self.session.composer.as_mut() else {
+            return;
+        };
+        if let Some(drafted) = composer.draft.take() {
+            (composer.title, composer.stage) = drafted.title_before;
+        }
+    }
 }
 
-/// Fades the bottom 22pt of `rect` into `ground`, to show more text below.
-pub(super) fn fade_out(ui: &egui::Ui, rect: Rect, ground: Color32) {
-    let band = Rect::from_min_max(Pos2::new(rect.min.x, rect.max.y - 22.0), rect.max);
-    let mut mesh = egui::Mesh::default();
-    let clear = Color32::from_rgba_unmultiplied(ground.r(), ground.g(), ground.b(), 0);
-    mesh.colored_vertex(band.left_top(), clear);
-    mesh.colored_vertex(band.right_top(), clear);
-    mesh.colored_vertex(band.right_bottom(), ground);
-    mesh.colored_vertex(band.left_bottom(), ground);
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
-    ui.painter().add(Shape::mesh(mesh));
+/// The draft's title becomes the issue's, selected so typing renames it.
+fn adopt_draft_title(composer: &mut Composer) {
+    let Some(title) = composer.draft.as_ref().and_then(|d| d.draft.title.clone()) else {
+        return;
+    };
+    composer.title = title;
+    composer.stage = TitleStage::Drafted;
+    composer.select_title = true;
+    composer.focus = Some(ComposerField::Title);
 }

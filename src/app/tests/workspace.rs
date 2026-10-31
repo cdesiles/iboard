@@ -75,7 +75,9 @@ fn the_board_merges_the_projects_and_moves_stay_in_their_own() {
 fn a_new_issue_goes_to_the_filtered_project() {
     let (_scratch, app_dir, site_dir, mut app) = two_projects("all-compose");
     app.filter_bar.filter.pick("repo:site");
-    app.write_composed("Fresh idea", "Body.");
+    app.open_composer();
+    app.session.composer.as_mut().unwrap().description = "Body.".into();
+    app.write_composed("Fresh idea", false);
     assert!(app.error.is_none(), "{:?}", app.error);
     assert!(site_dir.join("issues/todo/fresh-idea.md").exists());
     assert!(!app_dir.join("issues/todo/fresh-idea.md").exists());

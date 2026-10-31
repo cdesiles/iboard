@@ -1,0 +1,213 @@
+{
+  "manifestVersion": 3,
+  "name": "iboard",
+  "namespace": "iboard",
+  "files": [
+    "components/Agenda/README.md",
+    "components/Button/README.md",
+    "components/Checkbox/README.md",
+    "components/Column/README.md",
+    "components/ColumnFocus/README.md",
+    "components/ConfirmDialog/README.md",
+    "components/DropZones/README.md",
+    "components/Editor/README.md",
+    "components/FilterField/README.md",
+    "components/GeneralSettings/README.md",
+    "components/HeaderBar/README.md",
+    "components/IssueCard/README.md",
+    "components/Kbd/README.md",
+    "components/Label/README.md",
+    "components/LabelPicker/README.md",
+    "components/Logo/README.md",
+    "components/Logo/files/iboard-glyph-dark.svg",
+    "components/Logo/files/iboard-glyph-light.svg",
+    "components/Logo/files/iboard-icon-small.svg",
+    "components/Logo/files/iboard-icon.svg",
+    "components/Logo/files/iboard-wordmark-dark.svg",
+    "components/Logo/files/iboard-wordmark-light.svg",
+    "components/PaneDivider/README.md",
+    "components/QuickAdd/README.md",
+    "components/Reader/README.md",
+    "components/RefinePanel/README.md",
+    "components/ReviewButton/README.md",
+    "components/ReviewPanel/README.md",
+    "components/ReviewSettings/README.md",
+    "components/Scrollbar/README.md",
+    "components/Skeleton/README.md",
+    "components/StatsScreen/README.md",
+    "components/StatusBar/README.md",
+    "components/StatusPill/README.md",
+    "components/TextField/README.md",
+    "components/Thinking/README.md",
+    "components/TitleSettings/README.md",
+    "components/bundle.css",
+    "tokens.css"
+  ],
+  "libraries": [],
+  "components": [
+    {
+      "name": "Agenda",
+      "group": "Activity",
+      "summary": "Commits per day across every project iboard supervises, so you can see at a glance when work happened, on what, and open any day to read its commits."
+    },
+    {
+      "name": "BoardScreen",
+      "group": "Screens",
+      "page": true
+    },
+    {
+      "name": "Button",
+      "group": "Controls",
+      "summary": "Buttons are 24pt-tall verbs with a line-strong edge, so they stay visible while taking little room."
+    },
+    {
+      "name": "Checkbox",
+      "group": "Controls",
+      "summary": "A 14pt checkbox with a line-strong edge and a 12pt label, used for Auto (auto-reload from disk and save on leave)."
+    },
+    {
+      "name": "Column",
+      "group": "Board",
+      "summary": "One column per folder: todo/, ready/, doing/, done/."
+    },
+    {
+      "name": "ColumnFocus",
+      "group": "Screens",
+      "summary": "One column expanded to the whole window, to read more of each issue and sort them differently.",
+      "page": true
+    },
+    {
+      "name": "ConfirmDialog",
+      "group": "Board",
+      "summary": "A small modal, centred in the window over a dimmed board, that asks before an action that cannot be undone from iboard."
+    },
+    {
+      "name": "DropZones",
+      "group": "Board",
+      "summary": "Two large drop targets, Archive and Delete, that slide up from the bottom of the board only while a card is being dragged."
+    },
+    {
+      "name": "Editor",
+      "group": "Issue",
+      "summary": "The same page in plain text: the raw file, in edit-body mono, inside an accent 2pt frame that says \"you are editing\"."
+    },
+    {
+      "name": "FilterField",
+      "group": "Navigation",
+      "summary": "The board's filter in the header: compact at rest, wide while you use it, with one-click keyword suggestions for the filters people use most."
+    },
+    {
+      "name": "GeneralSettings",
+      "group": "Board",
+      "summary": "The General tab of the Settings dialog (⌘,), first of three: General, AI review, Titles."
+    },
+    {
+      "name": "HeaderBar",
+      "group": "Navigation",
+      "summary": "The one top bar: 40pt tall, bg ground, a line rule below."
+    },
+    {
+      "name": "IssueCard",
+      "group": "Board",
+      "summary": "An issue on the board: its labels, the file's first heading as title, its first paragraph as summary, its file name as meta."
+    },
+    {
+      "name": "Kbd",
+      "group": "Controls",
+      "summary": "A keyboard hint in meta (mono 11pt) with a line-strong key outline."
+    },
+    {
+      "name": "Label",
+      "group": "Board",
+      "summary": "A short tag that groups issues, read straight from the title. # [Discovery] Offline mode gives the label discovery, and # [BUG] Hover actions gives bug."
+    },
+    {
+      "name": "LabelPicker",
+      "group": "Board",
+      "summary": "Adds labels to one issue without opening the Editor."
+    },
+    {
+      "name": "Logo",
+      "group": "Brand",
+      "summary": "An i whose dot is a card."
+    },
+    {
+      "name": "PaneDivider",
+      "group": "Foundations",
+      "summary": "The resize handle between two panes side by side (Reader and Agent log, Reader and Review panel, the two panes of RefinePanel)."
+    },
+    {
+      "name": "QuickAdd",
+      "group": "Board",
+      "summary": "An inline composer at the top of the Todo column."
+    },
+    {
+      "name": "Reader",
+      "group": "Issue",
+      "summary": "The rendered markdown of one issue, laid out as a sheet: a surface page up to reader-max (720pt) wide, centred, that always reaches down to the status bar."
+    },
+    {
+      "name": "RefinePanel",
+      "group": "AI review",
+      "summary": "The dialog where a refinement agent (the Challenger) pushes back on an issue and offers numbered ways to resolve it.",
+      "page": true
+    },
+    {
+      "name": "ReviewButton",
+      "group": "AI review",
+      "summary": "The entry point to ask an agent (OpenCode, Claude Code or a custom command) to challenge an issue."
+    },
+    {
+      "name": "ReviewPanel",
+      "group": "AI review",
+      "summary": "The result of a review: a 360pt panel beside the Reader or Editor page with three findings in a fixed order."
+    },
+    {
+      "name": "ReviewSettings",
+      "group": "AI review",
+      "summary": "The AI review tab of the Settings dialog: which agent runs the AI review, and with which model."
+    },
+    {
+      "name": "Scrollbar",
+      "group": "Foundations",
+      "summary": "One overlay scrollbar for every scrolling pane (Reader sheet, Editor, a column, ColumnFocus, the RefinePanel reasoning, popup lists)."
+    },
+    {
+      "name": "Skeleton",
+      "group": "Foundations",
+      "summary": "Loading blocks shaped like what is coming, for anything that takes more than a moment: stats gathered from git history, charts, lists, and the RefinePanel whil…"
+    },
+    {
+      "name": "StatsScreen",
+      "group": "Screens",
+      "summary": "The maintenance view of one project.",
+      "page": true
+    },
+    {
+      "name": "StatusBar",
+      "group": "Navigation",
+      "summary": "A 24pt strip at the bottom of the window in meta, ink-muted on bg with a line rule above."
+    },
+    {
+      "name": "StatusPill",
+      "group": "Controls",
+      "summary": "An 18pt pill with a dot and a word, outlined in its state color on surface."
+    },
+    {
+      "name": "TextField",
+      "group": "Controls",
+      "summary": "The filter input: 24pt tall, line-strong border, ink text, ink-faint placeholder."
+    },
+    {
+      "name": "Thinking",
+      "group": "AI review",
+      "summary": "What iboard shows while an agent works, usually around 10s for a Challenger round."
+    },
+    {
+      "name": "TitleSettings",
+      "group": "AI review",
+      "summary": "The Titles tab of the Settings dialog: which engine names new issues from their description."
+    }
+  ],
+  "assetGroups": []
+}

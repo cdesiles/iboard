@@ -1,4 +1,5 @@
-//! The composer's tests: typing, naming, adding, and the ticket just written.
+//! NewIssueModal's tests: typing, naming, drafting, parking, adding, and the
+//! ticket just written.
 
 use super::*;
 
@@ -13,7 +14,7 @@ fn a_ticket_clicked_while_it_is_renumbered_stays_open() {
     std::fs::write(todo.join("001-old.md"), "# Old\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
-    app.write_composed("Fresh", "");
+    app.write_composed("Fresh", false);
     let written = todo.join("fresh.md");
     assert_eq!(app.session.selected.as_deref(), Some(written.as_path()));
     assert!(
@@ -44,15 +45,14 @@ fn a_ticket_clicked_while_it_is_renumbered_stays_open() {
 }
 
 #[test]
-fn the_composer_creates_an_issue_and_closes() {
+fn the_modal_creates_an_issue_and_closes() {
     let dir = scratch_dir("compose");
     let todo = dir.join("issues/todo");
     std::fs::create_dir_all(&todo).unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
     app.open_composer();
+    assert!(app.composer_open());
     app.session.composer.as_mut().unwrap().title = "Fix login redirect".to_string();
     app.submit_composer(false);
 
@@ -61,10 +61,9 @@ fn the_composer_creates_an_issue_and_closes() {
         std::fs::read_to_string(&created).unwrap(),
         "# Fix login redirect\n"
     );
-    app.flush_closing_composer(&egui::Context::default());
-    assert!(app.session.composer.is_none(), "the composer closes");
-    assert!(matches!(app.session.screen, Screen::Board));
+    assert!(app.session.composer.is_none(), "the modal closes");
     assert!(app.board.find(&created).is_some(), "the board sees it");
+    assert_eq!(app.session.selected.as_deref(), Some(created.as_path()));
 
     // An empty title never creates a file.
     app.open_composer();
@@ -72,39 +71,13 @@ fn the_composer_creates_an_issue_and_closes() {
     assert_eq!(std::fs::read_dir(&todo).unwrap().count(), 1);
 }
 
+/// The modal's keys, as typed: `⇧↩` is a new line, `↩` adds, `⌘↩` adds and
+/// opens the Editor.
 #[test]
-fn clicking_away_adds_the_issue_and_closes_the_composer() {
-    let dir = scratch_dir("compose-away");
-    let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
-
-    app.open_composer();
-    app.session.composer.as_mut().unwrap().title = "Export board".to_string();
-    app.submit_composer(true);
-
-    let created = todo.join("export-board.md");
-    assert!(created.exists(), "the new issue is written to Todo");
-    app.flush_closing_composer(&egui::Context::default());
-    assert!(app.session.composer.is_none(), "the composer closes");
-    assert!(
-        matches!(app.session.screen, Screen::Board),
-        "the board stays"
-    );
-    assert_eq!(app.session.selected.as_deref(), Some(created.as_path()));
-}
-
-/// The composer's keys, as typed: `⇧↩` and `⌘↩` are new lines, `↩` and
-/// `⌘S` add, and a click on another card adds and closes it.
-#[test]
-fn composer_keys_and_clicking_away() {
+fn modal_keys() {
     let dir = scratch_dir("compose-keys");
     let todo = dir.join("issues/todo");
     std::fs::create_dir_all(&todo).unwrap();
-    let other = todo.join("other.md");
-    std::fs::write(&other, "# Other\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
 
@@ -129,18 +102,16 @@ fn composer_keys_and_clicking_away() {
     frame(&ctx, &mut app, text("First line"));
     frame(&ctx, &mut app, key(Key::Enter, egui::Modifiers::SHIFT));
     frame(&ctx, &mut app, text("second"));
-    frame(&ctx, &mut app, key(Key::Enter, egui::Modifiers::COMMAND));
-    frame(&ctx, &mut app, text("third"));
     assert_eq!(
         app.session.composer.as_ref().unwrap().description,
-        "First line\nsecond\nthird"
+        "First line\nsecond"
     );
-    assert_eq!(files(), 1, "new lines never add");
+    assert_eq!(files(), 0, "a new line never adds");
 
     frame(&ctx, &mut app, key(Key::Enter, egui::Modifiers::NONE));
     assert_eq!(
         std::fs::read_to_string(todo.join("first-line.md")).unwrap(),
-        "# First line\n\nFirst line\nsecond\nthird\n"
+        "# First line\n\nFirst line\nsecond\n"
     );
     assert!(app.session.composer.is_none(), "↩ closes it");
 
@@ -150,51 +121,148 @@ fn composer_keys_and_clicking_away() {
         &mut app,
         vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)],
     );
-    frame(&ctx, &mut app, text("Saved with command S"));
-    frame(&ctx, &mut app, key(Key::S, egui::Modifiers::COMMAND));
-    // Adding a ticket at the top renumbers Todo's files.
-    assert!(todo.join("001-saved-with-command-s.md").exists(), "⌘S adds");
-    assert!(app.session.composer.is_none(), "and closes it too");
+    frame(&ctx, &mut app, text("Edit me next"));
+    frame(&ctx, &mut app, key(Key::Enter, egui::Modifiers::COMMAND));
+    let created = todo.join("edit-me-next.md");
+    frame(&ctx, &mut app, vec![]);
+    assert!(created.exists(), "⌘↩ adds");
+    assert_eq!(
+        app.session.detail_mode,
+        DetailMode::Edit,
+        "and opens the Editor"
+    );
+}
+
+/// Closing with notes parks them, even across a restart; Discard drops
+/// them, and `⌘Z` brings them back.
+#[test]
+fn closing_parks_the_notes_and_discard_can_be_undone() {
+    let dir = scratch_dir("compose-park");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
     app.open_composer();
-    let other = todo.join("003-other.md");
-    assert!(other.exists(), "the older card was renumbered too");
+    app.session.composer.as_mut().unwrap().description = "Half a thought".into();
+    app.composer_escape();
+    assert!(!app.composer_open() && app.has_parked_note());
+    let parked = dir.join(".iboard/new-issue.md");
+    assert!(parked.is_file(), "parked on disk");
 
-    frame(
-        &ctx,
-        &mut app,
-        vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)],
-    );
-    frame(&ctx, &mut app, text("Clicked away"));
-    let card = ctx
-        .read_response(egui::Id::new(("issue_card", &other)))
-        .unwrap()
-        .rect
-        .center();
-    let button = |pressed| egui::Event::PointerButton {
-        pos: card,
-        button: egui::PointerButton::Primary,
-        pressed,
-        modifiers: Default::default(),
-    };
-    frame(&ctx, &mut app, vec![egui::Event::PointerMoved(card)]);
-    frame(
-        &ctx,
-        &mut app,
-        vec![egui::Event::PointerMoved(card), button(true)],
-    );
-    frame(&ctx, &mut app, vec![button(false)]);
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     assert!(
-        todo.join("001-clicked-away.md").exists(),
-        "the click adds it"
+        app.has_parked_note(),
+        "Todo's + shows the dot after a restart"
     );
-    assert!(app.session.composer.is_none(), "and closes the composer");
-    assert!(matches!(app.session.screen, Screen::Board));
+    app.open_composer();
     assert_eq!(
-        app.session.selected,
-        Some(todo.join("004-other.md")),
-        "the clicked card is still selected"
+        app.session.composer.as_ref().unwrap().description,
+        "Half a thought"
     );
+
+    app.discard_composer();
+    assert!(app.session.composer.is_none() && !parked.exists());
+    assert!(app.restore_discarded(), "⌘Z brings it back");
+    assert!(app.composer_open());
+    assert_eq!(
+        app.session.composer.as_ref().unwrap().description,
+        "Half a thought"
+    );
+
+    app.session.composer.as_mut().unwrap().description.clear();
+    app.close_composer();
+    assert!(app.session.composer.is_none(), "empty notes park nothing");
+    assert!(!app.has_parked_note());
+}
+
+/// A modal whose Review agent answers with `answer`'s JSON lines.
+fn drafting(tag: &str, answer: &str) -> (Scratch, PathBuf, IboardApp) {
+    let dir = scratch_dir(tag);
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::write(
+        dir.join("iboard.toml"),
+        "[reader]\nsections = [\"Context\", \"Acceptance criteria\", \"Out of scope\"]\n",
+    )
+    .unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        command: format!("printf '%s\\n' {answer} # {{prompt}}"),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.open_composer();
+    app.session.composer.as_mut().unwrap().description = "Export the board. One per column.".into();
+    (dir, todo, app)
+}
+
+#[test]
+fn review_drafts_the_issue_and_add_writes_the_draft() {
+    let answer = r#"'{"title":"Export the board as checklists"}' '{"labels":["feat"]}' '{"summary":"One checklist per column."}' '{"section":"Context","text":"People print boards."}'"#;
+    let (_dir, todo, mut app) = drafting("compose-draft", answer);
+    let ctx = egui::Context::default();
+    app.start_draft();
+    assert!(app.session.composer.as_ref().unwrap().drafting.is_some());
+    assert!(until(|| {
+        app.poll_draft(&ctx);
+        app.session.composer.as_ref().unwrap().drafting.is_none()
+    }));
+    let composer = app.session.composer.as_ref().unwrap();
+    assert!(composer.draft_error.is_none(), "{:?}", composer.draft_error);
+    assert_eq!(composer.title, "Export the board as checklists");
+    assert!(composer.stage == TitleStage::Drafted);
+    let drafted = composer.draft.as_ref().unwrap();
+    assert!(drafted.receipt.is_some());
+    assert_eq!(
+        drafted.draft.unwritten(&app.board.reader_sections),
+        ["Acceptance criteria", "Out of scope"]
+    );
+
+    app.submit_composer(false);
+    assert_eq!(
+        std::fs::read_to_string(todo.join("export-the-board-as-checklists.md")).unwrap(),
+        "# [feat] Export the board as checklists\n\nOne checklist per column.\n\n\
+         ## Context\n\nPeople print boards.\n\n## Notes\n\nExport the board. One per column.\n"
+    );
+}
+
+#[test]
+fn undo_draft_goes_back_to_the_notes() {
+    let (_dir, todo, mut app) = drafting("compose-undo", r#"'{"title":"Drafted"}'"#);
+    let ctx = egui::Context::default();
+    app.session.composer.as_mut().unwrap().title = "Mine".into();
+    app.start_draft();
+    assert!(until(|| {
+        app.poll_draft(&ctx);
+        app.session.composer.as_ref().unwrap().drafting.is_none()
+    }));
+    assert_eq!(app.session.composer.as_ref().unwrap().title, "Drafted");
+    app.undo_draft();
+    let composer = app.session.composer.as_ref().unwrap();
+    assert!(composer.draft.is_none());
+    assert_eq!(composer.title, "Mine", "the title comes back");
+    app.submit_composer(false);
+    assert_eq!(
+        std::fs::read_to_string(todo.join("mine.md")).unwrap(),
+        "# Mine\n\nExport the board. One per column.\n"
+    );
+}
+
+#[test]
+fn a_failed_draft_keeps_the_notes() {
+    let (_dir, _todo, mut app) = drafting("compose-draft-fail", "");
+    app.agent.command = "exit 3 # {prompt}".into();
+    let ctx = egui::Context::default();
+    app.start_draft();
+    assert!(until(|| {
+        app.poll_draft(&ctx);
+        app.session.composer.as_ref().unwrap().drafting.is_none()
+    }));
+    let composer = app.session.composer.as_ref().unwrap();
+    assert!(composer.draft.is_none(), "back to the mirror");
+    assert!(composer.draft_error.is_some());
+    assert_eq!(composer.description, "Export the board. One per column.");
 }
 
 /// A composer whose engine answers through `sender`, as the real ones do.
@@ -253,8 +321,7 @@ fn enter_names_the_issue_then_adds_it() {
         std::fs::read_to_string(&created).unwrap(),
         "# Export the board as checklists\n\nWhen I export the board I want a checklist.\nOne per column.\n"
     );
-    app.flush_closing_composer(&ctx);
-    assert!(app.session.composer.is_none(), "and closes the composer");
+    assert!(app.session.composer.is_none(), "and closes the modal");
 }
 
 #[test]
@@ -282,21 +349,19 @@ fn a_failed_name_falls_back_to_the_first_line() {
 }
 
 #[test]
-fn clicking_away_while_naming_writes_once_named() {
-    let (_dir, todo, mut app) = composer_with_engine("compose-name-away");
+fn command_enter_while_naming_writes_once_named() {
+    let (_dir, todo, mut app) = composer_with_engine("compose-name-edit");
     let ctx = egui::Context::default();
 
     app.submit_composer(false);
     app.submit_composer(true);
     answer_with(&mut app, Ok("Export checklists".into()));
     app.poll_naming(&ctx);
-    let created = todo.join("export-checklists.md");
     assert!(
-        created.exists(),
-        "a click away never stops on the suggestion"
+        todo.join("export-checklists.md").exists(),
+        "⌘↩ never stops on the suggestion"
     );
-    app.flush_closing_composer(&ctx);
-    assert!(app.session.composer.is_none(), "and closes the composer");
+    assert!(app.session.composer.is_none(), "and closes the modal");
 }
 
 #[test]
@@ -315,6 +380,7 @@ fn esc_while_naming_lets_you_type_the_title() {
     app.session.composer.as_mut().unwrap().title = "Board export".into();
     app.submit_composer(false);
     assert!(todo.join("board-export.md").exists());
+    app.open_composer();
     app.composer_escape();
     assert!(app.session.composer.is_none(), "esc closes it otherwise");
 }
@@ -339,37 +405,6 @@ fn without_an_engine_the_first_line_names_the_issue() {
     );
 }
 
-/// Bug: opening another issue dropped the composer and what was typed.
-#[test]
-fn opening_an_issue_keeps_an_unsaved_composer() {
-    let dir = scratch_dir("compose-keep");
-    let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    let other = todo.join("other.md");
-    std::fs::write(&other, "# Other\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-
-    app.open_composer();
-    app.session.composer.as_mut().unwrap().description = "Half a thought".into();
-    app.open_issue(other.clone());
-    app.back_to_board();
-    assert_eq!(
-        app.session
-            .composer
-            .as_ref()
-            .map(|c| c.description.as_str()),
-        Some("Half a thought"),
-        "the draft waits on the board"
-    );
-
-    app.session.composer.as_mut().unwrap().description.clear();
-    app.open_issue(other);
-    assert!(
-        app.session.composer.is_none(),
-        "an empty composer still closes"
-    );
-}
-
 /// Bug: right after `↩` added a ticket, a click on its Add label action
 /// closed the now empty composer on the press, the cards slid up from under
 /// the held pointer, and the card started a drag: the board flickered.
@@ -388,7 +423,7 @@ fn a_click_on_the_new_ticket_right_after_adding_it_lands() {
     frame(&ctx, &mut app, vec![]);
     let fresh = todo.join("001-fresh.md");
     assert!(fresh.is_file(), "↩ adds it at the top");
-    assert!(app.session.composer.is_none(), "and closes the composer");
+    assert!(app.session.composer.is_none(), "and closes the modal");
 
     let add = ctx
         .read_response(egui::Id::new(("card_add_label", &fresh)))

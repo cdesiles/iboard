@@ -213,6 +213,63 @@ pub const MODAL_XL: f32 = 1200.0;
 pub const MODAL_XL_H: f32 = 900.0;
 /// The gap a modal keeps from the window's edge.
 pub const MODAL_INSET: f32 = 32.0;
+/// Under this window width the inset drops to 16.
+const MODAL_NARROW_WINDOW: f32 = 720.0;
+/// XL's two panes stack under this modal width.
+pub const MODAL_XL_STACK_BELOW: f32 = 900.0;
+
+/// The four Modal sizes: one question, a form, one document, a work surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModalSize {
+    S,
+    M,
+    L,
+    Xl,
+}
+
+/// The gap every modal keeps from the edges of `window`.
+pub fn modal_inset(window: Rect) -> f32 {
+    if window.width() < MODAL_NARROW_WINDOW {
+        16.0
+    } else {
+        MODAL_INSET
+    }
+}
+
+/// The largest frame a modal of `size` takes in `window`: its width, and
+/// the height it may grow to (S, M and L fit their content up to it; XL is
+/// always that tall).
+pub fn modal_size(size: ModalSize, window: Rect) -> Vec2 {
+    let inset = modal_inset(window);
+    let room = Vec2::new(
+        (window.width() - 2.0 * inset).max(0.0),
+        (window.height() - 2.0 * inset).max(0.0),
+    );
+    let width = match size {
+        ModalSize::S => MODAL_S,
+        ModalSize::M => MODAL_M,
+        ModalSize::L => MODAL_L,
+        ModalSize::Xl => MODAL_XL,
+    };
+    let height = match size {
+        ModalSize::Xl => MODAL_XL_H,
+        _ => f32::INFINITY,
+    };
+    Vec2::new(width.min(room.x), height.min(room.y))
+}
+
+/// Where a modal of `size` sits: S and XL centred, M and L 12% from the
+/// top, so only their bottom edge moves as their content grows.
+pub fn modal_area(id: egui::Id, size: ModalSize, window: Rect) -> egui::Area {
+    let area = egui::Modal::default_area(id);
+    match size {
+        ModalSize::S | ModalSize::Xl => area,
+        ModalSize::M | ModalSize::L => area.anchor(
+            egui::Align2::CENTER_TOP,
+            Vec2::new(0.0, (window.height() * 0.12).max(modal_inset(window))),
+        ),
+    }
+}
 
 // Font families beyond egui's two built-in ones.
 const SANS_MEDIUM: &str = "inter-medium";

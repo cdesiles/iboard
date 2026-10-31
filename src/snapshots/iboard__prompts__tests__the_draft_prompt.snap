@@ -1,0 +1,15 @@
+---
+source: src/prompts.rs
+expression: "draft_prompt(\"Export the board as checklists, one per column.\",\n&[\"Context\".to_string(), \"Acceptance criteria\".to_string()],\n&[\"feat\".to_string(), \"bug\".to_string()],)"
+---
+You write one issue for a software project's kanban board from its author's notes below. Keep every fact the notes give and invent none; say plainly what is unknown. Change no file. Answer with nothing but JSON lines, one object per line, in this order:
+
+{"title": "<the outcome, at most 80 characters, no labels>"}
+{"labels": ["<label>"]}
+{"summary": "<one or two sentences: what and why>"}
+{"section": "<heading>", "text": "<markdown body>"}
+
+Labels: from those this project uses: feat, bug. Sections, one line each, in this order: Context, Acceptance criteria. Leave a section's text empty when the notes say nothing for it.
+
+---
+Export the board as checklists, one per column.

@@ -4,11 +4,8 @@
 use super::*;
 use iboard::markdown;
 
-/// The panel's widest, on a large window.
-const PANEL_WIDTH: f32 = 1080.0;
-
 /// Under this width the panes stack and the reasoning folds under the TL;DR.
-const NARROW_BELOW: f32 = 820.0;
+const NARROW_BELOW: f32 = theme::MODAL_XL_STACK_BELOW;
 
 /// The width of the choices beside the reasoning.
 const PICK_WIDTH: std::ops::RangeInclusive<f32> = 320.0..=420.0;
@@ -25,14 +22,12 @@ const SCROLL_STEP_IN: f32 = 4.0;
 /// Past this many seconds the waiting line says it is slow.
 const SLOW_SECS: u64 = 20;
 
-/// Past this height the reasoning scrolls on its own.
-const WHY_MAX_H: f32 = 520.0;
-
 /// About 68 characters of `read-body`: the longest line worth reading.
 const MEASURE: f32 = 560.0;
 
-/// The panes' floor, so the panel keeps its shape while the challenger thinks.
-const MIN_PANE_H: f32 = 320.0;
+/// Stacked panes fit their content from this height, and scroll past the
+/// modal's.
+const STACKED_MIN_H: f32 = 320.0;
 
 /// The head and the foot around the panes.
 const CHROME_H: f32 = 36.0 + 41.0;
@@ -386,25 +381,13 @@ impl IboardApp {
         let action = if refine.hidden {
             resume_pill(ui, &refine)
         } else {
-            let p = theme::palette(ui);
-            let window = ui.ctx().content_rect();
-            let size = Vec2::new(
-                PANEL_WIDTH.min(window.width() - 2.0 * theme::SPACE_7),
-                window.height() * 0.8,
-            );
+            let size = theme::modal_size(theme::ModalSize::Xl, ui.ctx().content_rect());
             let shown = self.relative(&refine.path);
-            let modal = egui::Modal::new(egui::Id::new("refine"))
-                .frame(widgets::popover_frame(ui).inner_margin(Margin::ZERO))
-                .backdrop_color(p.scrim)
+            widgets::modal(ui, "refine", theme::ModalSize::Xl)
                 .show(ui.ctx(), |ui| {
                     refine_ui(ui, size, &shown, &mut refine, &mut self.reader.cache)
-                });
-            modal.inner.or_else(|| {
-                modal
-                    .backdrop_response
-                    .clicked()
-                    .then_some(RefineAction::Hide)
-            })
+                })
+                .inner
         };
         self.session.refine = Some(refine);
         match action {
@@ -461,7 +444,6 @@ fn refine_ui(
     ui.spacing_mut().item_spacing = Vec2::ZERO;
     refine_head(ui, shown, &refine.agent, refine.round());
     let pane_h = (size.y - CHROME_H).max(4.0 * theme::CONTROL_H);
-    let floor = MIN_PANE_H.min(pane_h);
     let narrow = size.x < NARROW_BELOW;
     let mut unfold = false;
     if narrow {
@@ -473,7 +455,7 @@ fn refine_ui(
                 .auto_shrink([false, true]),
             true,
             |ui| {
-                ui.set_min_height(floor);
+                ui.set_min_height(STACKED_MIN_H.min(pane_h));
                 unfold = why_pane(ui, refine, cache, true);
                 widgets::rule(ui);
                 pick_pane(ui, refine, 0.0);
@@ -491,13 +473,12 @@ fn refine_ui(
                 Vec2::new(size.x - pick_w - SCROLL_STEP_IN, pane_h),
                 Layout::top_down(Align::Min),
                 |ui| {
-                    ui.set_min_height(floor);
                     theme::scroll_area(
                         ui,
                         egui::ScrollArea::vertical()
                             .id_salt("refine-why")
-                            .max_height(pane_h.min(WHY_MAX_H))
-                            .auto_shrink([false, true]),
+                            .max_height(pane_h)
+                            .auto_shrink([false, false]),
                         true,
                         |ui| why_pane(ui, refine, cache, false),
                     )
@@ -515,7 +496,7 @@ fn refine_ui(
                         egui::ScrollArea::vertical()
                             .id_salt("refine-pick")
                             .max_height(pane_h)
-                            .auto_shrink([false, true]),
+                            .auto_shrink([false, false]),
                         true,
                         |ui| pick_pane(ui, refine, why.response.rect.height()),
                     );

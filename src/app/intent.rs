@@ -66,13 +66,6 @@ pub(super) enum Intent {
         sort: Sort,
     },
     Compose,
-    /// Add what the composer holds; `close` also closes it.
-    SubmitComposer {
-        close: bool,
-    },
-    CloseComposer,
-    /// The composer's engine tag: open Settings › Titles.
-    TitleSettings,
 }
 
 impl CardAction {
@@ -100,11 +93,6 @@ impl CardAction {
 impl IboardApp {
     /// Applies the frame's intents, in the order they were asked for.
     pub(super) fn apply(&mut self, intents: Vec<Intent>) {
-        // A click elsewhere both blurs the composer and adds what it holds:
-        // adding wins over closing it empty.
-        let submitting = intents
-            .iter()
-            .any(|intent| matches!(intent, Intent::SubmitComposer { .. }));
         for intent in intents {
             match intent {
                 Intent::Open(path) => self.open_issue(path),
@@ -149,14 +137,6 @@ impl IboardApp {
                     self.column_focus.sorts.insert(column, sort);
                 }
                 Intent::Compose => self.open_composer(),
-                Intent::SubmitComposer { close } => self.submit_composer(close),
-                Intent::CloseComposer if !submitting => {
-                    if let Some(composer) = self.session.composer.as_mut() {
-                        composer.closing = true;
-                    }
-                }
-                Intent::CloseComposer => {}
-                Intent::TitleSettings => self.open_title_settings(),
             }
         }
     }

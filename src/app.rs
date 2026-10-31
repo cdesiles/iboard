@@ -1,4 +1,4 @@
-//! The egui application: a kanban board with an inline quick-add composer, a
+//! The egui application: a kanban board with a new-issue modal, a
 //! rendered markdown reader, and an editor with debounced autosave. Its look
 //! follows the design system in `design/` (see `theme.rs`).
 
@@ -66,6 +66,7 @@ mod keys;
 mod labelling;
 mod moves;
 mod nav;
+mod new_issue_ui;
 mod projects;
 mod quitting;
 mod reader;
@@ -81,11 +82,11 @@ use all::Source;
 use board::*;
 use build::{Builds, card_build};
 use card::*;
-use compose::*;
 use filter_bar::*;
 use focus::ColumnFocus;
 use intent::Intent;
 use labelling::*;
+use new_issue_ui::*;
 pub use quitting::on_signals;
 use reader::*;
 
@@ -104,6 +105,9 @@ const NEW_CARD_FLASH: Duration = Duration::from_secs(2);
 
 /// How long the composer waits for a title before the user types one.
 const NAMING_BUDGET: Duration = Duration::from_secs(3);
+
+/// How long `⌘Z` can bring back a discarded new issue.
+const DISCARD_UNDO: Duration = Duration::from_secs(10);
 
 /// On macOS the header bar doubles as the window's title bar (the native
 /// title is hidden and the content runs under the traffic lights).
@@ -320,7 +324,7 @@ enum Screen {
 enum Leave {
     Reader,
     Board,
-    /// The board with the quick-add composer open (`⌘N`).
+    /// The board with NewIssueModal open (`⌘N`).
     Composer,
     /// The board a later `iboard` asked for.
     Open(all::Target),
@@ -406,12 +410,16 @@ struct Deleted {
     at: Instant,
 }
 
-/// The inline quick-add composer at the top of the Todo column: you describe
-/// the issue, and iboard names it from the description.
+/// NewIssueModal's read model: your notes, the title iboard names from them,
+/// and the agent's draft. Closed with notes, it stays parked for the next
+/// `⌘N`. Nothing touches Todo until the issue is added.
 #[derive(Default)]
 struct Composer {
     title: String,
+    /// Your notes.
     description: String,
+    /// Shown over the board; closed, it holds the parked notes.
+    open: bool,
     /// The engine that names issues, checked when the composer opened;
     /// `None` when it is Off or unavailable, so titles are typed (Manual).
     engine: Option<Engine>,
@@ -425,9 +433,32 @@ struct Composer {
     error: Option<String>,
     /// The images pasted before the issue has a name.
     images: Option<images::PendingImages>,
-    /// Closed by a click: it goes once the pointer is up, so the cards
-    /// below don't slide out from under that click.
-    closing: bool,
+    /// What the agent wrote, once it has started writing.
+    draft: Option<Drafted>,
+    /// The agent at work on the draft.
+    drafting: Option<DraftRun>,
+    /// Why the last draft failed, until the next one.
+    draft_error: Option<String>,
+    /// The issue pane keeps the line being written in view.
+    follow: bool,
+}
+
+/// A draft in the issue pane, and what it was made from.
+struct Drafted {
+    draft: iboard::new_issue::Draft,
+    notes_hash: u64,
+    /// `tool · model · 14s`, once the agent is done.
+    receipt: Option<String>,
+    /// `esc` stopped the agent before it finished.
+    stopped: bool,
+    /// The title before the draft, for Undo draft.
+    title_before: (String, TitleStage),
+}
+
+struct DraftRun {
+    job: Job<Result<String, String>>,
+    text: agent::DraftText,
+    agent: String,
 }
 
 impl Composer {
@@ -453,6 +484,8 @@ enum TitleStage {
     Naming,
     /// The engine's suggestion, untouched.
     Inferred,
+    /// The title Review drafted, untouched.
+    Drafted,
     /// The engine failed or was too slow: the first line names the issue.
     Failed,
     /// `esc` while naming: the user types the title.
@@ -461,8 +494,8 @@ enum TitleStage {
 
 struct NamingRun {
     answer: Job<Result<String, String>>,
-    /// Clicked away: write and close as soon as the title is in.
-    then_close: bool,
+    /// `⌘↩`: write and open the Editor as soon as the title is in.
+    then_edit: bool,
 }
 
 /// The in-progress edit of one issue.
@@ -567,6 +600,8 @@ pub struct IboardApp {
     filter_bar: FilterBar,
     /// What names the composer's new issues.
     title_engine: Engine,
+    /// NewIssueModal keeps your notes under `## Notes` after a draft.
+    keep_notes: bool,
     /// The Settings tab `⌘,` reopens.
     settings_tab: settings_ui::Tab,
     /// The last action that failed, until it is dismissed.
@@ -665,6 +700,8 @@ struct Session {
     detail_mode: DetailMode,
     editor: Option<EditorState>,
     composer: Option<Composer>,
+    /// A new issue discarded, for `⌘Z` in the next [`DISCARD_UNDO`].
+    discarded: Option<(Composer, Instant)>,
     /// The issue the composer just wrote, highlighted for a moment.
     new_card: Option<(PathBuf, Instant)>,
     /// A destructive action waiting for the user to confirm it.
@@ -745,6 +782,7 @@ impl Default for Session {
             detail_mode: DetailMode::Preview,
             editor: None,
             composer: None,
+            discarded: None,
             confirm: None,
             ask_draft: None,
             asks: HashMap::new(),
@@ -916,6 +954,7 @@ impl IboardApp {
             reader: Reader::default(),
             filter_bar: FilterBar::default(),
             title_engine: Engine::Manual,
+            keep_notes: true,
             settings_tab: settings_ui::Tab::General,
             error: None,
             uninitialised: None,
@@ -1124,8 +1163,8 @@ impl IboardApp {
         self.enrichment_window(ui);
         self.commits_window(ui);
         self.stats_window(ui);
+        self.new_issue_modal(ui);
         self.flush_pending_front(ui.ctx());
-        self.flush_closing_composer(ui.ctx());
     }
 }
 
@@ -1200,9 +1239,8 @@ struct ColumnView<'a> {
     root: &'a Path,
     /// The board, which knows each card's project.
     board: &'a Board,
-    /// On a group's board, the folder new issues land in, and how the
-    /// composer names it.
-    compose_into: Option<(PathBuf, String)>,
+    /// NewIssueModal holds parked notes: Todo's `+` shows a dot.
+    parked: bool,
     /// The label colours, for the chip on each card.
     labels: &'a Labels,
     /// The cards' review pills.
