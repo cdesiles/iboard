@@ -1,5 +1,5 @@
-//! A workspace: the boards of several projects seen as one. The user
-//! configuration lists the projects by group:
+//! A workspace: groups of projects, each group a board of its own projects
+//! seen as one. The user configuration lists the projects by group:
 //!
 //! ```toml
 //! [[workspace.group]]
@@ -7,9 +7,9 @@
 //! repos = ["~/code/app", "~/code/site"]
 //! ```
 //!
-//! Their columns merge by kind (every Doing in one Doing), and each issue
+//! A group's columns merge by kind (every Doing in one Doing), and each issue
 //! carries `repo:<folder>` and `group:<name>` labels, so the board's filter
-//! narrows it to one project or one group.
+//! narrows it to one project.
 
 use std::path::{Path, PathBuf};
 
@@ -26,9 +26,6 @@ pub mod order;
 
 pub use order::Order;
 
-/// What the workspace board is called, in the project menu and the title.
-pub const TITLE: &str = "All projects";
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Group {
     pub name: String,
@@ -38,6 +35,22 @@ pub struct Group {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Workspace {
     pub groups: Vec<Group>,
+}
+
+impl Workspace {
+    pub fn group(&self, name: &str) -> Option<&Group> {
+        self.groups.iter().find(|group| group.name == name)
+    }
+}
+
+impl Group {
+    /// "1 project", "3 projects".
+    pub fn count(&self) -> String {
+        match self.repos.len() {
+            1 => "1 project".to_string(),
+            n => format!("{n} projects"),
+        }
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -75,36 +88,43 @@ fn expand(path: &str) -> PathBuf {
     }
 }
 
-/// Where the merged columns pretend to live. Nothing is ever written there:
-/// a move resolves to the column of the card's own project.
-pub fn virtual_root() -> PathBuf {
+/// Where the merged columns of `group` pretend to live. Nothing is ever
+/// written there: a move resolves to the column of the card's own project.
+pub fn virtual_root(group: &str) -> PathBuf {
     settings::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("all-projects")
+        .join("groups")
+        .join(file_stem(group))
 }
 
-/// The merged board of every project in `workspace`, its columns under
+/// A group's name as a file name: `Client side` is `client-side`.
+pub fn file_stem(group: &str) -> String {
+    match files::slugify(group) {
+        slug if slug.is_empty() => "group".to_string(),
+        slug => slug,
+    }
+}
+
+/// The merged board of every project in `group`, its columns under
 /// `virtual_root`, Todo and Ready interleaved as `order` says. A project that
 /// cannot be read is left out, with a warning.
-pub fn build(workspace: &Workspace, virtual_root: &Path, order: &Order) -> Board {
+pub fn build(group: &Group, virtual_root: &Path, order: &Order) -> Board {
     let mut board = Board {
         project_dir: virtual_root.to_path_buf(),
         root: virtual_root.to_path_buf(),
-        title: Some(TITLE.to_string()),
+        title: Some(group.name.clone()),
         reader_sections: discovery::reader_sections(None),
         columns: Vec::new(),
         warnings: Vec::new(),
         repos: Vec::new(),
     };
-    for group in &workspace.groups {
-        for dir in &group.repos {
-            match open(dir) {
-                Ok(project) if board.repos.iter().any(|r| r.root == project.root) => {}
-                Ok(project) => absorb(&mut board, project, &group.name),
-                Err(err) => board
-                    .warnings
-                    .push(format!("{}: {err:#}, skipped", dir.display())),
-            }
+    for dir in &group.repos {
+        match open(dir) {
+            Ok(project) if board.repos.iter().any(|r| r.root == project.root) => {}
+            Ok(project) => absorb(&mut board, project, &group.name),
+            Err(err) => board
+                .warnings
+                .push(format!("{}: {err:#}, skipped", dir.display())),
         }
     }
     board

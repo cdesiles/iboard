@@ -48,7 +48,7 @@ fn main() -> eframe::Result {
     }
 
     if all && list {
-        print_listing(&workspace_board());
+        print_groups(&workspace_or_exit());
         return Ok(());
     }
 
@@ -85,11 +85,13 @@ fn main() -> eframe::Result {
         }
     };
     let Some(located) = located else {
+        let workspace = workspace_or_exit();
         if list {
-            print_listing(&workspace_board());
+            print_groups(&workspace);
             return Ok(());
         }
-        return run_app(None, workspace::TITLE.to_string());
+        let first = workspace.groups.first().map(|group| group.name.clone());
+        return run_app(None, first.unwrap_or_default());
     };
 
     if list {
@@ -109,7 +111,7 @@ fn main() -> eframe::Result {
     run_app(Some(located), app_title)
 }
 
-/// Opens the window on `located`, or on the All projects board.
+/// Opens the window on `located`, or on the first group's board.
 fn run_app(located: Option<discovery::Located>, app_title: String) -> eframe::Result {
     app::on_signals();
     let mut viewport = egui::ViewportBuilder::default()
@@ -161,9 +163,28 @@ fn has_workspace() -> bool {
     workspace::load(&mut settings::UserConfig::load(file.as_deref())).is_some()
 }
 
-/// The merged board of the user's `[[workspace.group]]` projects, or exits
-/// when there is none.
-fn workspace_board() -> discovery::Board {
+/// Each group's board, one after the other.
+fn print_groups(workspace: &workspace::Workspace) {
+    let dir = workspace::order::dir();
+    for group in &workspace.groups {
+        let file = dir
+            .as_deref()
+            .map(|dir| workspace::order::file(dir, &group.name));
+        let order = workspace::Order::load(file.as_deref());
+        let root = workspace::virtual_root(&group.name);
+        let board = workspace::build(group, &root, &order);
+        let repos = match board.repos.len() {
+            1 => "1 repo".to_string(),
+            n => format!("{n} repos"),
+        };
+        println!("{}  (group, {repos})", board.name());
+        print_columns(&board);
+        println!();
+    }
+}
+
+/// The user's `[[workspace.group]]` projects, or exits when there is none.
+fn workspace_or_exit() -> workspace::Workspace {
     let file = settings::config_file();
     let mut config = settings::UserConfig::load(file.as_deref());
     let Some(workspace) = workspace::load(&mut config) else {
@@ -173,25 +194,18 @@ fn workspace_board() -> discovery::Board {
         eprintln!("iboard: no [[workspace.group]] in {file}");
         std::process::exit(1);
     };
-    let order = workspace::Order::load(workspace::order::file().as_deref());
-    workspace::build(&workspace, &workspace::virtual_root(), &order)
+    workspace
 }
 
 /// Text-mode dump of the board, useful for scripting and for checking discovery
 /// without opening a window.
 fn print_listing(board: &discovery::Board) {
-    if board.repos.is_empty() {
-        println!("{}  ({})", board.name(), board.root.display());
-    } else {
-        let mut groups: Vec<&str> = board.repos.iter().map(|r| r.group.as_str()).collect();
-        groups.dedup();
-        let count = |n: usize, noun: &str| format!("{n} {noun}{}", if n == 1 { "" } else { "s" });
-        let (repos, groups) = (
-            count(board.repos.len(), "repo"),
-            count(groups.len(), "group"),
-        );
-        println!("{}  ({repos}, {groups})", board.name());
-    }
+    println!("{}  ({})", board.name(), board.root.display());
+    print_columns(board);
+}
+
+/// The columns of `board` and its warnings, under its header line.
+fn print_columns(board: &discovery::Board) {
     for column in &board.columns {
         println!("\n{} ({})", column.name, column.issues.len());
         if column.issues.is_empty() {
@@ -230,7 +244,7 @@ fn print_help() {
          \n\
          COMMANDS:\n    init             Create issues/ with todo, ready, doing and done,\n                     then open the board on it\n\
          \n\
-         OPTIONS:\n    -l, --list       Print the board to stdout and exit (no window)\n    -a, --all        The board of every project in [[workspace.group]]\n    -h, --help       Print this help\n    -V, --version    Print the version",
+         OPTIONS:\n    -l, --list       Print the board to stdout and exit (no window)\n    -a, --all        The board of the first [[workspace.group]] (with --list, of each)\n    -h, --help       Print this help\n    -V, --version    Print the version",
         name = env!("CARGO_BIN_NAME"),
         version = env!("CARGO_PKG_VERSION")
     );

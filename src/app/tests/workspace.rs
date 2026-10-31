@@ -1,10 +1,10 @@
-//! The All projects board's tests: every move, new issue, review and build
-//! stays in the card's own project.
+//! The tests of a group's board: every move, new issue, review and build
+//! stays in the card's own project, and each group is a board of its own.
 
 use super::*;
 
-/// Two projects, `app` (Ready: A) and `site` (Ready: B, Todo: C), listed in
-/// one group, shown on the All projects board.
+/// Two projects, `app` (Ready: A) and `site` (Ready: B, Todo: C), in the
+/// group Clients, whose board is shown; `app` alone is also in Solo.
 fn two_projects(tag: &str) -> (Scratch, PathBuf, PathBuf, IboardApp) {
     let scratch = scratch_dir(tag);
     let parent = std::fs::canonicalize(&*scratch).unwrap();
@@ -25,12 +25,18 @@ fn two_projects(tag: &str) -> (Scratch, PathBuf, PathBuf, IboardApp) {
     );
     let mut app = IboardApp::from_located(discovery::locate(&app_dir).unwrap());
     app.workspace = Some(Workspace {
-        groups: vec![crate::workspace::Group {
-            name: "Clients".into(),
-            repos: vec![app_dir.clone(), site_dir.clone()],
-        }],
+        groups: vec![
+            crate::workspace::Group {
+                name: "Clients".into(),
+                repos: vec![app_dir.clone(), site_dir.clone()],
+            },
+            crate::workspace::Group {
+                name: "Solo".into(),
+                repos: vec![app_dir.clone()],
+            },
+        ],
     });
-    app.open_all();
+    app.open_group("Clients");
     (scratch, app_dir, site_dir, app)
 }
 
@@ -46,9 +52,9 @@ fn column_dir(app: &IboardApp, name: &str) -> PathBuf {
 #[test]
 fn the_board_merges_the_projects_and_moves_stay_in_their_own() {
     let (_scratch, app_dir, site_dir, mut app) = two_projects("all-move");
-    assert!(app.showing_all());
-    assert_eq!(app.board.name(), crate::workspace::TITLE);
-    assert_eq!(app.pending_title.as_deref(), Some(crate::workspace::TITLE));
+    assert!(app.showing_group());
+    assert_eq!(app.board.name(), "Clients");
+    assert_eq!(app.pending_title.as_deref(), Some("Clients"));
     let ready = column_dir(&app, "Ready");
     assert_eq!(app.board.columns[1].issues.len(), 2, "A and B in one Ready");
 
@@ -75,9 +81,9 @@ fn a_new_issue_goes_to_the_filtered_project() {
     assert!(!app_dir.join("issues/todo/fresh-idea.md").exists());
 }
 
-/// Stats measure one history: on the All projects board they say so instead.
+/// Stats measure one history: on a group's board they say so instead.
 #[test]
-fn the_all_projects_board_has_no_stats() {
+fn a_group_board_has_no_stats() {
     let (_scratch, _app_dir, _site_dir, mut app) = two_projects("all-stats");
     app.open_stats();
     assert!(app.session.stats.is_none());
@@ -136,7 +142,7 @@ fn play_builds_each_card_in_its_own_project() {
 }
 
 #[test]
-fn the_header_names_the_groups_instead_of_a_path() {
+fn the_header_names_the_group_instead_of_a_path() {
     use egui_kittest::kittest::Queryable;
     let (_scratch, _app_dir, _site_dir, app) = two_projects("all-header");
     let mut harness = egui_kittest::Harness::builder()
@@ -153,8 +159,8 @@ fn the_header_names_the_groups_instead_of_a_path() {
             (false, app),
         );
     harness.run_steps(2);
-    harness.get_by_label(crate::workspace::TITLE);
     harness.get_by_label("Clients");
+    harness.get_by_label("group · 2 projects");
     assert!(harness.query_by_label("Stats").is_none(), "no Stats button");
 }
 
@@ -169,8 +175,8 @@ fn ready_titles(app: &IboardApp) -> Vec<String> {
 #[test]
 fn reordering_across_projects_renames_nothing() {
     let (scratch, app_dir, site_dir, mut app) = two_projects("all-order");
-    let file = scratch.join("order.toml");
-    app.order_file = Some(file.clone());
+    app.order_dir = Some(scratch.join("orders"));
+    let file = crate::workspace::order::file(&scratch.join("orders"), "Clients");
     std::fs::write(app_dir.join("issues/ready/002-x.md"), "# X\n").unwrap();
     app.refresh();
     assert_eq!(ready_titles(&app), ["A", "B", "X"]);
@@ -211,13 +217,21 @@ fn the_menu_lists_the_workspace_projects_below_the_recent_ones() {
     );
 }
 
-/// `⌃⇥` goes round All projects and each project, `⌃⇧⇥` the other way.
+/// `⌃⇥` goes round each group and each project, `⌃⇧⇥` the other way.
 #[test]
 fn ctrl_tab_switches_to_the_next_project() {
+    use super::super::all::Target;
     let (_scratch, app_dir, site_dir, mut app) = two_projects("all-switch");
+    let clients = Target::Group("Clients".into());
+    let solo = Target::Group("Solo".into());
     assert_eq!(
         app.project_cycle(),
-        [None, Some(app_dir.clone()), Some(site_dir.clone())]
+        [
+            clients.clone(),
+            solo.clone(),
+            Target::Project(app_dir.clone()),
+            Target::Project(site_dir.clone())
+        ]
     );
     let ctx = themed_ctx();
     let ctrl = egui::Modifiers::CTRL;
@@ -228,17 +242,36 @@ fn ctrl_tab_switches_to_the_next_project() {
             key(Key::Tab, modifiers),
         ]
     };
-    let board = |app: &IboardApp| match app.showing_all() {
-        true => None,
-        false => Some(recents::canonical(&app.located.project_dir)),
-    };
     frame(&ctx, &mut app, press(ctrl));
-    assert_eq!(board(&app), Some(app_dir.clone()));
+    assert_eq!(app.current_target(), solo);
     frame(&ctx, &mut app, press(ctrl));
-    assert_eq!(board(&app), Some(site_dir));
+    assert_eq!(app.current_target(), Target::Project(app_dir));
     frame(&ctx, &mut app, press(ctrl));
-    assert_eq!(board(&app), None, "round the end to All projects");
+    assert_eq!(app.current_target(), Target::Project(site_dir));
+    frame(&ctx, &mut app, press(ctrl));
+    assert_eq!(
+        app.current_target(),
+        clients,
+        "round the end to the first group"
+    );
     frame(&ctx, &mut app, press(shift_ctrl));
-    assert!(!app.showing_all(), "⌃⇧⇥ goes back");
-    assert_eq!(app.project_cycle().len(), 3, "the order stays steady");
+    assert!(!app.showing_group(), "⌃⇧⇥ goes back");
+    assert_eq!(app.project_cycle().len(), 4, "the order stays steady");
+}
+
+/// Each group is a board of its own projects only.
+#[test]
+fn each_group_is_its_own_board() {
+    let (_scratch, _app_dir, _site_dir, mut app) = two_projects("all-groups");
+    app.open_group("Solo");
+    assert_eq!(app.board.name(), "Solo");
+    assert_eq!(ready_titles(&app), ["A"], "site is not in Solo");
+    app.open_group("Clients");
+    assert_eq!(ready_titles(&app), ["A", "B"]);
+    app.open_group("Nowhere");
+    assert_eq!(
+        app.board.name(),
+        "Clients",
+        "an unknown group changes nothing"
+    );
 }

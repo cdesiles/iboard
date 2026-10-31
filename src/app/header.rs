@@ -65,10 +65,9 @@ impl IboardApp {
             }
             Screen::Board => {
                 ui.label(RichText::new(&project).font(theme::ui_title()).color(p.ink));
-                let path = if self.showing_all() {
-                    self.workspace_groups()
-                } else {
-                    display_path(&self.board.root)
+                let path = match self.shown_group() {
+                    Some(group) => format!("group · {}", group.count()),
+                    None => display_path(&self.board.root),
                 };
                 let response = ui
                     .horizontal(|ui| {
@@ -156,32 +155,33 @@ impl IboardApp {
         }
     }
 
-    /// The project menu, opened from the path in the board header: All
-    /// projects, the recent projects, the workspace's other projects, and a
-    /// last row that asks the OS for a folder. Every project goes through
-    /// [`Self::open_project`].
+    /// The project menu, opened from the path in the board header: one row
+    /// per group, the recent projects, the workspace's other projects, and a
+    /// last row that asks the OS for a folder.
     pub(super) fn project_menu(&mut self, anchor: &egui::Response) {
-        let showing_all = self.showing_all();
-        let current = match showing_all {
-            true => PathBuf::new(),
-            false => recents::canonical(&self.located.project_dir),
-        };
+        let current = self.current_target();
         let projects = self.recents.clone();
         let others = self.workspace_projects();
-        let groups = self.workspace.is_some().then(|| self.workspace_groups());
+        let groups: Vec<(String, String)> = self
+            .workspace
+            .iter()
+            .flat_map(|workspace| &workspace.groups)
+            .map(|group| (group.name.clone(), group.count()))
+            .collect();
         let picked = egui::Popup::menu(anchor)
             .width(PROJECT_MENU_WIDTH)
             .show(|ui| {
                 ui.set_min_width(PROJECT_MENU_WIDTH);
                 ui.spacing_mut().item_spacing.y = theme::SPACE_1;
                 let mut picked = None;
-                if let Some(groups) = &groups {
-                    let title = workspace::TITLE;
-                    if widgets::menu_row(ui, PROJECT_MENU_WIDTH, title, groups, showing_all)
-                        .clicked()
-                    {
-                        picked = Some(ProjectChoice::All);
+                for (name, count) in &groups {
+                    let target = all::Target::Group(name.clone());
+                    let shown = current == target;
+                    if widgets::menu_row(ui, PROJECT_MENU_WIDTH, name, count, shown).clicked() {
+                        picked = Some(ProjectChoice::Board(target));
                     }
+                }
+                if !groups.is_empty() {
                     ui.separator();
                 }
                 for project in &projects {
@@ -195,11 +195,11 @@ impl IboardApp {
                         PROJECT_MENU_WIDTH,
                         title,
                         &detail,
-                        *project == current,
+                        current == all::Target::Project(project.clone()),
                     )
                     .clicked()
                     {
-                        picked = Some(ProjectChoice::Recent(project.clone()));
+                        picked = Some(ProjectChoice::Board(all::Target::Project(project.clone())));
                     }
                 }
                 if !projects.is_empty() && !others.is_empty() {
@@ -212,7 +212,7 @@ impl IboardApp {
                         .unwrap_or("project");
                     let detail = format!("{group} · {}", display_path(project));
                     if widgets::menu_row(ui, PROJECT_MENU_WIDTH, title, &detail, false).clicked() {
-                        picked = Some(ProjectChoice::Recent(project.clone()));
+                        picked = Some(ProjectChoice::Board(all::Target::Project(project.clone())));
                     }
                 }
                 if !projects.is_empty() || !others.is_empty() {
@@ -233,8 +233,7 @@ impl IboardApp {
             })
             .and_then(|inner| inner.inner);
         match picked {
-            Some(ProjectChoice::All) => self.open_all(),
-            Some(ProjectChoice::Recent(path)) => self.open_project(path),
+            Some(ProjectChoice::Board(target)) => self.open_target(target),
             Some(ProjectChoice::Browse) => {
                 if let Some(dir) = dialog::pick_folder() {
                     self.open_project(dir);
@@ -270,7 +269,7 @@ impl IboardApp {
             self.open_composer();
         }
         self.refresh_button(ui);
-        if !self.showing_all()
+        if !self.showing_group()
             && widgets::button(ui, ButtonKind::Secondary, None, "Stats", Some("⌘I"))
                 .on_hover_text("Project stats: what the commits say, and the Agenda")
                 .clicked()

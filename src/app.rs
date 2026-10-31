@@ -33,7 +33,7 @@ use crate::theme::{self, Icon, Palette};
 use crate::titles::{self, Engine};
 use crate::trash::{self, Trash};
 use crate::widgets::{self, ButtonKind};
-use crate::workspace::{self, Workspace};
+use crate::workspace::{self, Group, Workspace};
 use crate::{design_ui, dialog, recents, sheet};
 use iboard::design::{self, DesignSystem};
 use iboard::prompts;
@@ -144,10 +144,8 @@ enum ReviewMenu {
 
 /// A choice made in the header's project menu.
 enum ProjectChoice {
-    /// Every project of the workspace on one board.
-    All,
-    /// Switch to a remembered project.
-    Recent(PathBuf),
+    /// A group's board, or a remembered project.
+    Board(all::Target),
     /// Ask the OS for a folder.
     Browse,
 }
@@ -560,11 +558,11 @@ pub struct IboardApp {
     located: Located,
     /// The `[[workspace.group]]` projects, when the user lists some.
     workspace: Option<Workspace>,
-    /// The board shows every project of `workspace` rather than `located`.
-    all: bool,
-    /// Where the All projects board keeps its order across projects; `None`
+    /// The group of `workspace` whose board is shown rather than `located`'s.
+    group: Option<String>,
+    /// Where each group's board keeps its order across projects; `None`
     /// keeps none (a board built in tests).
-    order_file: Option<PathBuf>,
+    order_dir: Option<PathBuf>,
     board: Board,
     /// The reader's markdown cache, and where its text was drawn.
     reader: Reader,
@@ -812,7 +810,7 @@ enum EnrichOutcome {
 impl IboardApp {
     /// `window_title` names the window in Mission Control and the Window menu;
     /// see `main.rs` for why it is set here rather than at startup.
-    /// `located` is `None` for the All projects board.
+    /// `located` is `None` for the first group's board.
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         located: Option<Located>,
@@ -833,8 +831,8 @@ impl IboardApp {
         }
         let all = located.is_none();
         let located = located.unwrap_or_else(|| Located {
-            project_dir: workspace::virtual_root(),
-            root: workspace::virtual_root(),
+            project_dir: workspace::virtual_root(""),
+            root: workspace::virtual_root(""),
             config: None,
         });
         let mut app = Self::from_located(located);
@@ -862,15 +860,16 @@ impl IboardApp {
         theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
         app.workspace = workspace::load(&mut config);
-        app.order_file = workspace::order::file();
+        app.order_dir = workspace::order::dir();
         if !config.problems.is_empty() {
             let problem = config.problems.join(" ");
             app.error = Some(format!("Settings: {problem}"));
             app.config_problem = Some(problem);
         }
         app.catalog = Catalog::probing();
-        if all {
-            app.open_all();
+        let first = app.workspace.as_ref().and_then(|w| w.groups.first());
+        if let (true, Some(first)) = (all, first.map(|group| group.name.clone())) {
+            app.open_group(&first);
         } else {
             let project = app.located.project_dir.clone();
             app.remember(&project);
@@ -886,8 +885,8 @@ impl IboardApp {
         Self {
             located,
             workspace: None,
-            all: false,
-            order_file: None,
+            group: None,
+            order_dir: None,
             session: Session::default(),
             board,
             reader: Reader::default(),
@@ -946,7 +945,7 @@ impl IboardApp {
                 self.pending_title = Some(discovery::window_title(&located));
                 let project_dir = located.project_dir.clone();
                 self.located = located;
-                self.all = false;
+                self.group = None;
                 self.leave_project();
                 // Remember the project root discovery settled on, not the
                 // folder the user happened to pick inside it.
@@ -1106,9 +1105,9 @@ type Scanned = (Board, HashMap<PathBuf, PastReview>);
 fn scan(source: &Source) -> Result<Scanned, String> {
     let board = match source {
         Source::Project(located) => discovery::build(located).map_err(|err| format!("{err:#}"))?,
-        Source::All(workspace, file) => {
+        Source::Group(group, file) => {
             let order = workspace::Order::load(file.as_deref());
-            workspace::build(workspace, &workspace::virtual_root(), &order)
+            workspace::build(group, &workspace::virtual_root(&group.name), &order)
         }
     };
     let roots: Vec<PathBuf> = match board.repos.as_slice() {
@@ -1168,7 +1167,7 @@ struct ColumnView<'a> {
     root: &'a Path,
     /// The board, which knows each card's project.
     board: &'a Board,
-    /// On the All projects board, the folder new issues land in, and how the
+    /// On a group's board, the folder new issues land in, and how the
     /// composer names it.
     compose_into: Option<(PathBuf, String)>,
     /// The label colours, for the chip on each card.

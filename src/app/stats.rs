@@ -146,9 +146,9 @@ enum StatsAsk {
 
 impl IboardApp {
     /// Opens the stats panel on the project, measuring its newest commits.
-    /// Stats measure one history: the All projects board has none to show.
+    /// Stats measure one history: a group's board has none to show.
     pub(super) fn open_stats(&mut self) {
-        if self.showing_all() {
+        if self.showing_group() {
             let notice = "Stats measure one project: open it from the project menu";
             self.session.notice = Some((notice.to_string(), Instant::now()));
             return;

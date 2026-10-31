@@ -1,47 +1,87 @@
-//! The All projects board: every project of the user's workspace on one
-//! board, opened from the project menu or at launch outside any project.
+//! A group's board: every project of one `[[workspace.group]]` on one board,
+//! opened from the project menu or, for the first group, at launch outside
+//! any project.
 
 use super::*;
 use crate::discovery::Repo;
 
-/// What the board shows: one project, or every project of the workspace.
+/// What the board shows: one project, or every project of a group.
 #[derive(Clone)]
 pub(super) enum Source {
     Project(Located),
-    /// The workspace, and where its order across projects is kept.
-    All(Workspace, Option<PathBuf>),
+    /// The group, and where its order across projects is kept.
+    Group(Group, Option<PathBuf>),
+}
+
+/// A board `⌃⇥` and the project menu can switch to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum Target {
+    Group(String),
+    Project(PathBuf),
 }
 
 impl IboardApp {
     /// What the next scan reads.
     pub(super) fn source(&self) -> Source {
-        match (&self.workspace, self.all) {
-            (Some(workspace), true) => Source::All(workspace.clone(), self.order_file.clone()),
-            _ => Source::Project(self.located.clone()),
+        match self.shown_group() {
+            Some(group) => Source::Group(group.clone(), self.group_order_file()),
+            None => Source::Project(self.located.clone()),
         }
     }
 
-    /// Whether the board shows every project of the workspace.
-    pub(super) fn showing_all(&self) -> bool {
-        self.all && self.workspace.is_some()
+    /// The group whose board is shown, if any.
+    pub(super) fn shown_group(&self) -> Option<&Group> {
+        let name = self.group.as_deref()?;
+        self.workspace.as_ref()?.group(name)
     }
 
-    /// Switches the board to every project of the workspace, dropping what
-    /// belonged to the project shown before, as a project switch does.
-    pub(super) fn open_all(&mut self) {
-        if self.workspace.is_none() {
+    /// Whether the board shows a group's projects rather than one project.
+    pub(super) fn showing_group(&self) -> bool {
+        self.shown_group().is_some()
+    }
+
+    /// Where the shown group keeps its order across projects.
+    pub(super) fn group_order_file(&self) -> Option<PathBuf> {
+        let dir = self.order_dir.as_deref()?;
+        Some(workspace::order::file(dir, self.group.as_deref()?))
+    }
+
+    /// Switches the board to the group `name`, dropping what belonged to the
+    /// board shown before, as a project switch does.
+    pub(super) fn open_group(&mut self, name: &str) {
+        if self
+            .workspace
+            .as_ref()
+            .and_then(|w| w.group(name))
+            .is_none()
+        {
             return;
         }
-        self.all = true;
-        self.pending_title = Some(workspace::TITLE.to_string());
+        self.group = Some(name.to_string());
+        self.pending_title = Some(name.to_string());
         self.leave_project();
         self.refresh();
+    }
+
+    /// The board on screen, as `⌃⇥` and the project menu name it.
+    pub(super) fn current_target(&self) -> Target {
+        match self.shown_group() {
+            Some(group) => Target::Group(group.name.clone()),
+            None => Target::Project(recents::canonical(&self.located.project_dir)),
+        }
+    }
+
+    pub(super) fn open_target(&mut self, target: Target) {
+        match target {
+            Target::Group(name) => self.open_group(&name),
+            Target::Project(project) => self.open_project(project),
+        }
     }
 
     /// The Design panel and Draft design: on with `[idesign]`, for a single
     /// project, whose design system they read.
     pub(super) fn design_reachable(&self) -> bool {
-        self.idesign && !self.showing_all()
+        self.idesign && !self.showing_group()
     }
 
     /// After a drop in the merged column `dir` that left it in `order`:
@@ -77,7 +117,7 @@ impl IboardApp {
                 None => path.clone(),
             })
             .collect();
-        if let Some(file) = &self.order_file {
+        if let Some(file) = &self.group_order_file() {
             let mut stored = workspace::Order::load(Some(file));
             let keys = workspace::order::keys(&self.board, &renamed);
             stored.columns.insert(file_name(dir), keys);
@@ -106,22 +146,24 @@ impl IboardApp {
         projects
     }
 
-    /// The boards `⌃⇥` goes through, in a steady order: All projects (`None`)
-    /// when there is a workspace, its projects, then the other recent ones.
-    pub(super) fn project_cycle(&self) -> Vec<Option<PathBuf>> {
-        let mut cycle = Vec::new();
-        if self.workspace.is_some() {
-            cycle.push(None);
-        }
-        let groups = self
+    /// The boards `⌃⇥` goes through, in a steady order: each group, the
+    /// groups' projects, then the other recent ones.
+    pub(super) fn project_cycle(&self) -> Vec<Target> {
+        let groups: Vec<&Group> = self
             .workspace
             .iter()
-            .flat_map(|workspace| &workspace.groups);
+            .flat_map(|workspace| &workspace.groups)
+            .collect();
+        let mut cycle: Vec<Target> = groups
+            .iter()
+            .map(|group| Target::Group(group.name.clone()))
+            .collect();
         let listed = groups
+            .iter()
             .flat_map(|group| &group.repos)
             .map(|repo| recents::canonical(repo));
         for project in listed.chain(self.recents.iter().cloned()) {
-            let project = Some(project);
+            let project = Target::Project(project);
             if !cycle.contains(&project) {
                 cycle.push(project);
             }
@@ -137,34 +179,17 @@ impl IboardApp {
         if len < 2 {
             return;
         }
-        let current = match self.showing_all() {
-            true => None,
-            false => Some(recents::canonical(&self.located.project_dir)),
-        };
+        let current = self.current_target();
         let next = match cycle.iter().position(|board| *board == current) {
             Some(at) if forward => (at + 1) % len,
             Some(at) => (at + len - 1) % len,
             None => 0,
         };
-        match cycle[next].clone() {
-            Some(project) => self.open_project(project),
-            None => self.open_all(),
-        }
+        self.open_target(cycle[next].clone());
     }
 
-    /// The groups of the workspace, as the header names the board's place.
-    pub(super) fn workspace_groups(&self) -> String {
-        self.workspace
-            .iter()
-            .flat_map(|workspace| &workspace.groups)
-            .map(|group| group.name.as_str())
-            .collect::<Vec<_>>()
-            .join(" · ")
-    }
-
-    /// The project new issues go to on the All projects board: the
-    /// one the filter names, else the first of the group it names, else the
-    /// selected card's, else the first. `None` on a single project.
+    /// The project new issues go to on a group's board: the one the filter
+    /// names, else the selected card's, else the first. `None` on a single project.
     pub(super) fn target_repo(&self) -> Option<&Repo> {
         let repos = &self.board.repos;
         let tokens = &self.filter_bar.filter.tokens;
@@ -177,7 +202,6 @@ impl IboardApp {
             })
         };
         named("repo:", |repo| &repo.name)
-            .or_else(|| named("group:", |repo| &repo.group))
             .or_else(|| {
                 let selected = self.selected_issue()?;
                 self.board.repo_of(&selected)
@@ -202,7 +226,7 @@ impl IboardApp {
         }
     }
 
-    /// `todo/` for a single project, `app/todo/` on the All projects board:
+    /// `todo/` for a single project, `app/todo/` on a group's board:
     /// the folder a new issue lands in, as the composer shows it.
     pub(super) fn compose_folder(&self, dir: &Path) -> String {
         let (name, root) = match self.board.repo_of(dir) {

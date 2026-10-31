@@ -90,10 +90,11 @@ fn help_and_version_exit_zero_and_unknown_options_two() {
     assert_eq!(iboard(&["--print"]).status.code(), Some(2));
 }
 
-/// `--all --list` merges the projects of the user configuration's groups,
-/// names each issue's project, and skips a folder without `issues/`.
+/// `--all --list` lists each group of the user configuration as a board of
+/// its own projects merged, names each issue's project, and skips a folder
+/// without `issues/`.
 #[test]
-fn all_lists_the_workspace_projects_merged() {
+fn all_lists_each_group_with_its_projects_merged() {
     let config = tempfile::tempdir().unwrap();
     let (app, site, bare) = (project(), project(), tempfile::tempdir().unwrap());
     std::fs::write(site.path().join("issues/ready/001-ship.md"), "# Ship\n").unwrap();
@@ -143,12 +144,12 @@ fn all_lists_the_workspace_projects_merged() {
             .to_string_lossy()
             .into_owned(),
     );
-    assert!(
-        stdout.starts_with("All projects  (2 repos, 2 groups)"),
-        "{stdout}"
-    );
-    assert!(stdout.contains("\nTodo (2)\n"), "{stdout}");
-    assert!(stdout.contains("\nReady (3)\n"), "{stdout}");
+    assert!(stdout.starts_with("Dev  (group, 1 repo)"), "{stdout}");
+    let client = stdout.find("\nClient  (group, 1 repo)").expect(&stdout);
+    let (dev, client) = stdout.split_at(client);
+    assert!(dev.contains("\nReady (1)\n"), "{dev}");
+    assert!(client.contains("\nReady (2)\n"), "{client}");
+    assert!(!dev.contains("Ship"), "site is not in Dev: {dev}");
     assert!(
         stdout.contains(&format!("  • [{site_name}] Ship")),
         "{stdout}"

@@ -147,7 +147,7 @@ impl IboardApp {
             .and_then(|anchor| order.iter().position(|path| path == anchor))
             .unwrap_or(order.len());
         order.splice(at..at, moved.iter().cloned());
-        let renamed = match self.showing_all() {
+        let renamed = match self.showing_group() {
             true => self.reorder_across(dir, &all, &order),
             false => discovery::renumber_each(&order),
         };

@@ -129,8 +129,8 @@ enabled = false     # true: the Design panel and Draft design
 
 ### Workspace
 
-Several projects can be seen as one board. List them by group in the same
-user configuration:
+Several projects can be seen as one board: each group is a board of its own
+projects. List them by group in the same user configuration:
 
 ```toml
 [[workspace.group]]
@@ -138,18 +138,19 @@ name = "Client"
 repos = ["~/code/app", "~/code/site"]
 ```
 
-Their columns merge by kind (every Doing in one Doing), each issue is labelled
-`repo:<folder>` and `group:<name>` so the filter narrows the board to one
-project or one group, and each project keeps its own `issues/`. A folder
+A group's columns merge by kind (every Doing in one Doing), each issue is
+labelled `repo:<folder>` and `group:<name>` so the filter narrows the board to
+one project, and each project keeps its own `issues/`. A project can be in
+several groups. A folder
 without its own `issues/` is skipped with a warning.
 
-The board is the first row of the project menu, *All projects*, and opens by
-itself when iboard starts outside any project (from the Dock, or in a folder
-holding several of them). Cards move within their own project; a new issue
+Each group is a row at the top of the project menu, and the first group's
+board opens by itself when iboard starts outside any project (from the Dock,
+or in a folder holding several of them). Cards move within their own project; a new issue
 goes to the project the filter names (`repo:app`), else the selected card's;
 reviews and builds run in the card's project.
 
 Todo and Ready keep each project's own order in its file names (`001-`). How
-the projects interleave is kept apart, in `all-projects-order.toml` beside the
-user configuration: moving a card among other projects' cards renames nothing,
+the projects interleave is kept apart, one file per group in `group-order/`
+beside the user configuration: moving a card among other projects' cards renames nothing,
 and only a project whose own order changed is renumbered.

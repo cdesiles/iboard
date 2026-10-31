@@ -1,7 +1,7 @@
-//! The order of Todo and Ready across the projects of the All projects
-//! board. Each project keeps its own order in its file names (`001-`); this
-//! file, beside the user configuration, only says how the projects' issues
-//! interleave, so reordering across projects renames nothing.
+//! The order of Todo and Ready across the projects of a group's board. Each
+//! project keeps its own order in its file names (`001-`); this file, one
+//! per group beside the user configuration, only says how the projects'
+//! issues interleave, so reordering across projects renames nothing.
 //!
 //! ```toml
 //! [columns]
@@ -17,7 +17,7 @@ use crate::discovery::{self, Board};
 use crate::files;
 use crate::settings;
 
-const FILE: &str = "all-projects-order.toml";
+const DIR: &str = "group-order";
 
 /// The stored interleaving, by column folder name (`ready`, `todo`), each a
 /// list of [`key`]s.
@@ -27,9 +27,14 @@ pub struct Order {
     pub columns: BTreeMap<String, Vec<String>>,
 }
 
-/// Where the order lives: beside the user configuration.
-pub fn file() -> Option<PathBuf> {
-    settings::config_file().and_then(|config| Some(config.parent()?.join(FILE)))
+/// Where the groups' orders live: beside the user configuration.
+pub fn dir() -> Option<PathBuf> {
+    settings::config_file().and_then(|config| Some(config.parent()?.join(DIR)))
+}
+
+/// The order file of `group` in `dir`.
+pub fn file(dir: &Path, group: &str) -> PathBuf {
+    dir.join(format!("{}.toml", super::file_stem(group)))
 }
 
 impl Order {
@@ -42,6 +47,10 @@ impl Order {
 
     pub fn save(&self, file: &Path) -> Result<(), String> {
         let text = toml::to_string(self).map_err(|err| err.to_string())?;
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| format!("Couldn't create {}: {err}", parent.display()))?;
+        }
         files::atomic_write(file, text)
             .map_err(|err| format!("Couldn't write {}: {err}", file.display()))
     }
@@ -88,7 +97,7 @@ pub fn merge(lanes: &[Vec<(String, PathBuf)>], stored: &[String]) -> Vec<PathBuf
     merged
 }
 
-/// Puts the All projects board's Todo and Ready in `order`'s interleaving;
+/// Puts a group's board's Todo and Ready in `order`'s interleaving;
 /// a column it has nothing for keeps its order by priority, then project.
 pub fn arrange(board: &mut Board, order: &Order) {
     for at in 0..board.columns.len() {

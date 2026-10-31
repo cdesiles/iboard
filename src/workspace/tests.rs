@@ -32,19 +32,11 @@ fn projects_merge_by_column_and_tag_their_issues() {
     );
     let bare = parent.join("bare");
     std::fs::create_dir_all(&bare).unwrap();
-    let workspace = Workspace {
-        groups: vec![
-            Group {
-                name: "Dev".into(),
-                repos: vec![app.clone()],
-            },
-            Group {
-                name: "Client side".into(),
-                repos: vec![site.clone(), bare, app.clone()],
-            },
-        ],
+    let group = Group {
+        name: "Client side".into(),
+        repos: vec![site.clone(), bare, app.clone(), app.clone()],
     };
-    let board = build(&workspace, &parent.join("virtual"), &Order::default());
+    let board = build(&group, &parent.join("virtual"), &Order::default());
 
     let names: Vec<&str> = board.columns.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["Ready", "Doing"], "wip/ joins Doing");
@@ -65,7 +57,7 @@ fn projects_merge_by_column_and_tag_their_issues() {
     assert_eq!(board.project_of(&z.path), site);
     assert_eq!(board.root_of(&z.path), site.join("issues"));
     assert_eq!(board.repos.len(), 2, "a project listed twice counts once");
-    assert_eq!(board.name(), TITLE);
+    assert_eq!(board.name(), "Client side");
     assert_eq!(board.warnings.len(), 1, "{:?}", board.warnings);
     assert!(board.warnings[0].contains("no issues/ folder, skipped"));
 }
