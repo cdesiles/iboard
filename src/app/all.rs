@@ -126,49 +126,16 @@ impl IboardApp {
         Ok(renames)
     }
 
-    /// The workspace's projects the project menu lists below the recent ones,
-    /// each with its group: those not recent already, in the workspace's order.
-    pub(super) fn workspace_projects(&self) -> Vec<(PathBuf, String)> {
-        let mut projects: Vec<(PathBuf, String)> = Vec::new();
-        for group in self
-            .workspace
-            .iter()
-            .flat_map(|workspace| &workspace.groups)
-        {
-            for repo in &group.repos {
-                let repo = recents::canonical(repo);
-                if !self.recents.contains(&repo) && projects.iter().all(|(known, _)| *known != repo)
-                {
-                    projects.push((repo, group.name.clone()));
-                }
-            }
-        }
-        projects
-    }
-
-    /// The boards `⌃⇥` goes through, in a steady order: each group, the
-    /// groups' projects, then the other recent ones.
+    /// The boards `⌃⇥` goes through, in a steady order: each group, then
+    /// the projects in the user's order.
     pub(super) fn project_cycle(&self) -> Vec<Target> {
-        let groups: Vec<&Group> = self
+        let groups = self
             .workspace
             .iter()
             .flat_map(|workspace| &workspace.groups)
-            .collect();
-        let mut cycle: Vec<Target> = groups
-            .iter()
-            .map(|group| Target::Group(group.name.clone()))
-            .collect();
-        let listed = groups
-            .iter()
-            .flat_map(|group| &group.repos)
-            .map(|repo| recents::canonical(repo));
-        for project in listed.chain(self.recents.iter().cloned()) {
-            let project = Target::Project(project);
-            if !cycle.contains(&project) {
-                cycle.push(project);
-            }
-        }
-        cycle
+            .map(|group| Target::Group(group.name.clone()));
+        let projects = self.ordered_projects().into_iter().map(Target::Project);
+        groups.chain(projects).collect()
     }
 
     /// `⌃⇥`: the next board of [`Self::project_cycle`], or with `forward`

@@ -523,6 +523,10 @@ pub enum Icon {
     Warning,
     /// A flame: a hot spot, complex and often changed.
     Flame,
+    /// Two stacked sheets: project groups.
+    Layers,
+    /// Six dots: something that can be dragged into place.
+    Grip,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -540,6 +544,7 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
         Icon::Minus => {
             painter.line_segment([at(5.0, 12.0), at(19.0, 12.0)], stroke);
         }
+        Icon::Layers | Icon::Grip => project_icon(painter, icon, rect, color),
         Icon::Back => {
             painter.line(vec![at(15.0, 18.0), at(9.0, 12.0), at(15.0, 6.0)], stroke);
         }
@@ -697,6 +702,30 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
 
 /// iboard's soft bin: a round knob on the lid, a tapered body with rounded
 /// bottom corners, two short ribs.
+/// The ProjectMenu footer's icons: the groups' sheets and Reorder's grip.
+fn project_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
+    let stroke = Stroke::new(1.6, color);
+    let s = rect.width() / 24.0;
+    let at = |x: f32, y: f32| Pos2::new(rect.min.x + x * s, rect.min.y + y * s);
+    if matches!(icon, Icon::Layers) {
+        let top = vec![at(12.0, 3.0), at(21.0, 8.0), at(12.0, 13.0), at(3.0, 8.0)];
+        painter.add(egui::Shape::closed_line(top, stroke));
+        painter.line(vec![at(3.0, 13.0), at(12.0, 18.0), at(21.0, 13.0)], stroke);
+        return;
+    }
+    let dots = [
+        (9.0, 6.0),
+        (15.0, 6.0),
+        (9.0, 12.0),
+        (15.0, 12.0),
+        (9.0, 18.0),
+        (15.0, 18.0),
+    ];
+    for (x, y) in dots {
+        painter.circle_filled(at(x, y), 1.6 * s, color);
+    }
+}
+
 fn trash_icon(painter: &Painter, rect: Rect, stroke: Stroke) {
     let s = rect.width() / 24.0;
     let at = |x: f32, y: f32| Pos2::new(rect.min.x + x * s, rect.min.y + y * s);

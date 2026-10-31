@@ -59,6 +59,8 @@ impl Group {
 struct RawWorkspace {
     #[serde(default)]
     group: Vec<RawGroup>,
+    #[serde(default)]
+    projects: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -81,6 +83,12 @@ pub fn load(config: &mut UserConfig) -> Option<Workspace> {
         })
         .collect();
     (!groups.is_empty()).then_some(Workspace { groups })
+}
+
+/// `workspace.projects`: the user's own order of their projects, as written.
+pub fn load_projects(config: &mut UserConfig) -> Vec<PathBuf> {
+    let raw: RawWorkspace = config.section("workspace");
+    raw.projects.iter().map(|path| expand(path)).collect()
 }
 
 fn expand(path: &str) -> PathBuf {

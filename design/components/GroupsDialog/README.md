@@ -10,7 +10,7 @@ repos = ["~/code/app", "~/code/site"]
 
 This dialog is a friendlier way to edit those tables. **The file stays the source of truth**: the dialog reads it on open and writes the same tables back on Save. No restart; the board reloads in place.
 
-Opened from the ProjectMenu: **Edit groups…** under the group rows, or **New group…** when no group exists yet.
+Opened from the ProjectMenu's footer: **Edit groups…**. With no group yet it opens on the "No groups yet" state.
 
 ## Layout
 
@@ -26,8 +26,8 @@ Opened from the ProjectMenu: **Edit groups…** under the group rows, or **New g
 
 **Add project** opens a small menu, styled like the ProjectMenu, under the button:
 
-1. **Recent projects** (group head in `ui-label`): the ProjectMenu's recent projects that are not already in this group. One click adds one; the menu stays open so you can add several.
-2. **Choose folders…** with "Choose a project containing an issues/ folder" under it: the same native picker as Open folder…, with multiple selection on (`⌘`-click). Every chosen folder is added.
+1. **Your projects** (group head in `ui-label`), in your ProjectMenu order, minus those already in this group; a filter field on top once there are more than 8. One click adds one; the menu stays open so you can add several.
+2. **Choose folders…** with "Choose a project containing an issues/ folder" under it: the same native picker as the ProjectMenu's Add project…, with multiple selection on (`⌘`-click). Every chosen folder is added.
 
 - A folder without an `issues/` folder is not added. The group's help line says so in `status-doing`: "~/code/legacy has no issues/ folder. Pick the project's root."
 - A folder already in the group is skipped silently; the row flashes `accent` once.
@@ -84,10 +84,10 @@ Spec-first, event-modeling style. The dialog works on a **GroupsDraft** read mod
 
 | Screen | Command (user) | Event | Next screen / read model |
 | --- | --- | --- | --- |
-| Board | Edit groups… / New group… in the ProjectMenu | GroupsEditorOpened | GroupsDialog; GroupsDraft = groups from the config, config hash noted |
+| Board | Edit groups… in the ProjectMenu footer | GroupsEditorOpened | GroupsDialog; GroupsDraft = groups from the config, config hash noted |
 | GroupsDialog | New group (`⌘N`, button) | GroupDrafted | New block, name focused |
 | GroupsDialog | Type in a group name | GroupRenamed | Draft updated, Unsaved pill |
-| GroupsDialog | Add project › pick a recent project | ProjectAddedToGroup | Row appended; menu stays open |
+| GroupsDialog | Add project › pick one of your projects | ProjectAddedToGroup | Row appended; menu stays open |
 | GroupsDialog | Add project › Choose folders… | FolderPickerOpened → ProjectAddedToGroup (each) / ProjectRejected (no issues/) | Rows appended, or the help line names the folder |
 | GroupsDialog | Remove (×, `Del`) | ProjectRemovedFromGroup | Row gone; empty well if it was the last |
 | GroupsDialog | Delete group (trash, `⌘⌫`) | GroupDeleteRequested → GroupDeleteConfirmRequested | ConfirmDialog over the dialog |
@@ -98,4 +98,4 @@ Spec-first, event-modeling style. The dialog works on a **GroupsDraft** read mod
 | GroupsDialog | Cancel, `esc`, close | GroupsEditCancelled (asks first if the draft changed) | Board, nothing written |
 | Any | Config file changed outside iboard | UserConfigChanged → WorkspaceReloaded | Same screen; groups and ProjectMenu refreshed |
 
-The consumer provides the groups from the config, the recent projects, a `pick_folders() -> Vec<PathBuf>` (the Open folder… picker with multiple selection), a `has_issues_dir(path) -> bool`, and `write_groups(groups, expected_hash) -> Result<(), ConfigError>` that replaces only the `[[workspace.group]]` tables.
+The consumer provides the groups from the config, the ordered projects, a `pick_folders() -> Vec<PathBuf>` (the Add project… picker with multiple selection), a `has_issues_dir(path) -> bool`, and `write_groups(groups, expected_hash) -> Result<(), ConfigError>` that replaces only the `[[workspace.group]]` tables.

@@ -586,20 +586,43 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-hot.is-hot{color:var(--status-doing);font-weight:600}
 .ib-hot .ib-ico{width:12px;height:12px}
 
-/* Project menu: the header's project name opens it. Groups, recent projects, Open folder… */
+/* Project menu: the header's project name opens it. Groups, then the user's ordered projects (scrolling), then an action footer on bg */
 .ib-ptrigger{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px;border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;cursor:pointer;color:var(--ink)}
 .ib-ptrigger:hover,.ib-ptrigger.is-open{background:var(--surface-hover);border-color:var(--line-strong)}
 .ib-ptrigger .ib-project{font:600 15px/20px var(--font-sans);color:var(--ink)}
 .ib-ptrigger .ib-path{margin-left:0}
 .ib-ptrigger .ib-ico{color:var(--ink-muted)}
-.ib-pmenu{width:340px;max-width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-popover);padding:4px;display:flex;flex-direction:column}
-.ib-pmenu .ib-menu__sep{margin:4px 4px}
-.ib-prow{display:flex;flex-direction:column;justify-content:center;gap:2px;min-height:24px;padding:4px 8px;border-radius:var(--radius-sm);cursor:pointer;min-width:0}
+.ib-pmenu{width:360px;max-width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-popover);display:flex;flex-direction:column;overflow:hidden}
+.ib-pmenu__sec{display:flex;flex-direction:column;padding:4px}
+.ib-pmenu__sec+.ib-pmenu__sec{border-top:1px solid var(--line)}
+.ib-pmenu__head{display:flex;align-items:center;gap:8px;padding:6px 8px 4px}
+.ib-pmenu__head .ib-menu__group{padding:0;flex:1}
+.ib-pmenu__head .ib-cap{font-variant-numeric:tabular-nums}
+.ib-pmenu__filter{padding:2px 4px 4px}
+.ib-pmenu__filter .ib-input{width:100%}
+.ib-pmenu__note{padding:0 8px 6px;font:12px/17px var(--font-sans);color:var(--ink-muted)}
+.ib-pmenu__list{max-height:var(--pmenu-list-max,336px)}
+.ib-pmenu__list .ib-scroll__view{max-height:var(--pmenu-list-max,336px)}
+.ib-pmenu__groups .ib-scroll__view{max-height:168px}
+.ib-pmenu__empty{padding:8px;font:12px/17px var(--font-sans);color:var(--ink-faint)}
+.ib-pmenu__foot{display:flex;align-items:center;gap:6px;padding:8px;background:var(--bg);border-top:1px solid var(--line)}
+.ib-pmenu__foot .ib-spacer{flex:1}
+.ib-prow{position:relative;display:flex;flex-direction:column;justify-content:center;gap:2px;min-height:24px;padding:4px 8px;border-radius:var(--radius-sm);cursor:pointer;min-width:0}
 .ib-prow:hover,.ib-prow.is-hover{background:var(--surface-hover)}
 .ib-prow__name{font:500 13px/18px var(--font-sans);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ib-prow__name mark{background:var(--accent-soft);color:inherit;border-radius:2px}
 .ib-prow__path{font:11px/14px var(--font-mono);color:var(--ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ib-prow.is-current .ib-prow__name{color:var(--accent)}
-/* The quiet row: one 24pt line, muted until hovered, indented like the names above it */
+.ib-prow.is-active{background:var(--accent-soft)}
+/* Reorder mode: a grip on every row, rows move instead of opening */
+.ib-prow--grip{flex-direction:row;align-items:center;justify-content:flex-start;gap:8px;cursor:grab}
+.ib-prow--grip>span:last-child{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ib-prow__grip{flex:none;width:14px;height:14px;color:var(--ink-faint)}
+.ib-prow--grip:hover .ib-prow__grip,.ib-prow--grip.is-hover .ib-prow__grip{color:var(--ink-muted)}
+.ib-prow.is-lifted{background:var(--surface);border:1px solid var(--line-strong);box-shadow:var(--shadow-popover);transform:rotate(-.6deg);cursor:grabbing;z-index:2}
+.ib-prow.is-placeholder{opacity:.35}
+.ib-prow.is-drop-before::before{content:"";position:absolute;left:4px;right:4px;top:-2px;height:2px;border-radius:1px;background:var(--accent)}
+/* Kept for older call sites: a one-line quiet menu row */
 .ib-prow--quiet{flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;height:24px;padding:0 8px}
 .ib-prow--quiet .ib-prow__name{font:12px/16px var(--font-sans);color:var(--ink-muted)}
 .ib-prow--quiet .ib-prow__hint{margin-left:auto;font:11px/14px var(--font-mono);color:var(--ink-muted)}

@@ -18,8 +18,8 @@
   },
   "lastChange": {
     "by": "Clément",
-    "at": "2026-10-31T16:58:15Z",
+    "at": "2026-10-31T19:36:00Z",
     "via": "Claude Code",
-    "note": "Each project group is its own board (ProjectMenu, GroupsDialog, brief); GroupsDialog is a Modal M and ConfirmDialog a Modal S, both on shadow-modal."
+    "note": "Type to filter: typing in any open list starts filtering on the first key (new principle; ProjectMenu filter auto-activates)."
   }
 }

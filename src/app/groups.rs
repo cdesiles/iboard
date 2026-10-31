@@ -20,6 +20,7 @@ impl IboardApp {
     }
 
     pub(super) fn groups_window(&mut self, ui: &egui::Ui) {
+        let projects = self.ordered_projects();
         let Some(dialog) = self.groups_dialog.as_mut() else {
             return;
         };
@@ -27,7 +28,7 @@ impl IboardApp {
             .config_file
             .as_deref()
             .map_or_else(|| "No configuration file".to_string(), display_path);
-        match dialog.show(ui, &self.recents, &note) {
+        match dialog.show(ui, &projects, &note) {
             groups_ui::Action::Keep => {}
             groups_ui::Action::Close => self.groups_dialog = None,
             groups_ui::Action::Reload => {
@@ -74,6 +75,7 @@ impl IboardApp {
     /// screen when it is still there.
     fn reload_groups(&mut self) {
         let mut user = UserConfig::load(self.config_file.as_deref());
+        self.reload_project_order(&mut user);
         let groups = workspace::load(&mut user)
             .map(|w| w.groups)
             .unwrap_or_default();
@@ -159,7 +161,7 @@ impl IboardApp {
     }
 }
 
-fn modified(file: &Path) -> Option<std::time::SystemTime> {
+pub(super) fn modified(file: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(file)
         .and_then(|meta| meta.modified())
         .ok()

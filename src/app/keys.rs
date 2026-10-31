@@ -234,6 +234,11 @@ impl IboardApp {
             self.background(ctx);
             return;
         }
+        if self.project_menu.is_some() {
+            self.project_menu_keys(ctx);
+            self.background(ctx);
+            return;
+        }
         if self.session.stats.is_some() {
             self.stats_keys(ctx);
             self.background(ctx);

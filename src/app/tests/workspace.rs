@@ -199,21 +199,19 @@ fn reordering_across_projects_renames_nothing() {
     assert!(b.exists(), "the other project keeps its names");
 }
 
-/// The project menu lists the workspace's projects that are not recent yet.
+/// The menu lists the stored order first, then the recent projects, then
+/// the groups' projects it does not name yet.
 #[test]
-fn the_menu_lists_the_workspace_projects_below_the_recent_ones() {
+fn the_menu_lists_the_projects_in_the_users_order() {
     let (_scratch, app_dir, site_dir, mut app) = two_projects("all-menu");
+    assert_eq!(app.ordered_projects(), [app_dir.clone(), site_dir.clone()]);
+    app.recents = vec![site_dir.clone()];
+    assert_eq!(app.ordered_projects(), [site_dir.clone(), app_dir.clone()]);
+    app.projects = vec![app_dir.clone(), app_dir.parent().unwrap().join("gone")];
     assert_eq!(
-        app.workspace_projects(),
-        [
-            (app_dir.clone(), "Clients".to_string()),
-            (site_dir.clone(), "Clients".to_string())
-        ]
-    );
-    app.recents = vec![app_dir];
-    assert_eq!(
-        app.workspace_projects(),
-        [(site_dir, "Clients".to_string())]
+        app.ordered_projects(),
+        [app_dir, site_dir],
+        "a folder that is gone drops out"
     );
 }
 

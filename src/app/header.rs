@@ -90,7 +90,12 @@ impl IboardApp {
                     .inner
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .on_hover_text("Switch project  Ctrl⇥");
-                self.project_menu(&response);
+                if response.clicked() {
+                    self.toggle_project_menu(ui.ctx());
+                }
+                if self.project_menu.is_some() {
+                    self.show_project_menu(ui.ctx(), response.rect);
+                }
             }
             Screen::Detail(path) => self.detail_breadcrumb(ui, &path, &project),
             Screen::Diff => {
@@ -152,101 +157,6 @@ impl IboardApp {
         );
         if back {
             self.back_to_board();
-        }
-    }
-
-    /// The project menu, opened from the path in the board header: one row
-    /// per group, the recent projects, the workspace's other projects, and a
-    /// last row that asks the OS for a folder.
-    pub(super) fn project_menu(&mut self, anchor: &egui::Response) {
-        let current = self.current_target();
-        let projects = self.recents.clone();
-        let others = self.workspace_projects();
-        let groups: Vec<(String, String)> = self
-            .workspace
-            .iter()
-            .flat_map(|workspace| &workspace.groups)
-            .map(|group| (group.name.clone(), group.count()))
-            .collect();
-        let picked = egui::Popup::menu(anchor)
-            .width(PROJECT_MENU_WIDTH)
-            .show(|ui| {
-                ui.set_min_width(PROJECT_MENU_WIDTH);
-                ui.spacing_mut().item_spacing.y = theme::SPACE_1;
-                let mut picked = None;
-                for (name, count) in &groups {
-                    let target = all::Target::Group(name.clone());
-                    let shown = current == target;
-                    if widgets::menu_row(ui, PROJECT_MENU_WIDTH, name, count, shown).clicked() {
-                        picked = Some(ProjectChoice::Board(target));
-                    }
-                }
-                let (label, hint) = match groups.len() {
-                    0 => ("New group…", "several projects, one board".to_string()),
-                    1 => ("Edit groups…", "1 group".to_string()),
-                    n => ("Edit groups…", format!("{n} groups")),
-                };
-                if widgets::menu_quiet(ui, PROJECT_MENU_WIDTH, label, &hint).clicked() {
-                    picked = Some(ProjectChoice::Groups(groups.is_empty()));
-                }
-                ui.separator();
-                for project in &projects {
-                    let title = project
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or("project");
-                    let detail = display_path(project);
-                    if widgets::menu_row(
-                        ui,
-                        PROJECT_MENU_WIDTH,
-                        title,
-                        &detail,
-                        current == all::Target::Project(project.clone()),
-                    )
-                    .clicked()
-                    {
-                        picked = Some(ProjectChoice::Board(all::Target::Project(project.clone())));
-                    }
-                }
-                if !projects.is_empty() && !others.is_empty() {
-                    ui.separator();
-                }
-                for (project, group) in &others {
-                    let title = project
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or("project");
-                    let detail = format!("{group} · {}", display_path(project));
-                    if widgets::menu_row(ui, PROJECT_MENU_WIDTH, title, &detail, false).clicked() {
-                        picked = Some(ProjectChoice::Board(all::Target::Project(project.clone())));
-                    }
-                }
-                if !projects.is_empty() || !others.is_empty() {
-                    ui.separator();
-                }
-                if widgets::menu_row(
-                    ui,
-                    PROJECT_MENU_WIDTH,
-                    "Open folder…",
-                    "Choose a project containing an issues/ folder",
-                    false,
-                )
-                .clicked()
-                {
-                    picked = Some(ProjectChoice::Browse);
-                }
-                picked
-            })
-            .and_then(|inner| inner.inner);
-        match picked {
-            Some(ProjectChoice::Board(target)) => self.open_target(target),
-            Some(ProjectChoice::Groups(new_group)) => self.open_groups(new_group),
-            Some(ProjectChoice::Browse) => {
-                if let Some(dir) = dialog::pick_folder() {
-                    self.open_project(dir);
-                }
-            }
-            None => {}
         }
     }
 

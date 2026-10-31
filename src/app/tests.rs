@@ -14,6 +14,7 @@ mod focus;
 mod groups;
 mod handover;
 mod images;
+mod project_menu;
 mod refine;
 mod review;
 mod select;

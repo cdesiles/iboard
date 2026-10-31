@@ -152,8 +152,11 @@ without its own `issues/` is skipped with a warning.
 Each group is a row at the top of the project menu, and the first group's
 board opens by itself when iboard starts outside any project (in a folder
 holding several of them, or from the Dock before any project was opened).
-**Edit groups…** in the same menu
-(**New group…** while there is none) opens a dialog to create, rename, fill
+Below the groups, the menu lists your projects in your own order: type to
+filter them, `↩` opens the first match. Its footer holds **Add project…**,
+**Edit groups…** and **Reorder** (drag a row, or `⌥↑ ⌥↓`; Done saves the
+order as `[workspace] projects`). A project opened for the first time goes to
+the top. **Edit groups…** opens a dialog to create, rename, fill
 and delete groups; it writes the `[[workspace.group]]` tables back and leaves
 the rest of the file as it was. An edit made to the file outside iboard is
 picked up within a second. Cards move within their own project; a new issue

@@ -36,7 +36,7 @@ use crate::titles::{self, Engine};
 use crate::trash::{self, Trash};
 use crate::widgets::{self, ButtonKind};
 use crate::workspace::{self, Group, Workspace};
-use crate::{design_ui, dialog, recents, sheet};
+use crate::{design_ui, recents, sheet};
 use iboard::design::{self, DesignSystem};
 use iboard::prompts;
 
@@ -66,6 +66,7 @@ mod keys;
 mod labelling;
 mod moves;
 mod nav;
+mod projects;
 mod quitting;
 mod reader;
 mod refine;
@@ -126,8 +127,6 @@ const FILTER_TEXT_MIN: f32 = 48.0;
 /// with a dot, so discovery never reads it back.
 const ARCHIVE_DIR: &str = ".archive";
 
-/// Width of the recent-projects popup, in points.
-const PROJECT_MENU_WIDTH: f32 = 300.0;
 /// The Move to… menu: column names only.
 const MOVE_MENU_WIDTH: f32 = 180.0;
 
@@ -144,16 +143,6 @@ enum ReviewMenu {
     OtherScope,
     Refine,
     Settings,
-}
-
-/// A choice made in the header's project menu.
-enum ProjectChoice {
-    /// A group's board, or a remembered project.
-    Board(all::Target),
-    /// The groups dialog; `true` straight into a new group.
-    Groups(bool),
-    /// Ask the OS for a folder.
-    Browse,
 }
 
 /// An issue action available from a card or the detail header.
@@ -645,6 +634,10 @@ pub struct IboardApp {
     settings: Option<settings_ui::Dialog>,
     /// The groups dialog, while it is up.
     groups_dialog: Option<crate::groups_ui::Dialog>,
+    /// The user's own order of their projects, `workspace.projects`.
+    projects: Vec<PathBuf>,
+    /// The ProjectMenu, while it is open.
+    project_menu: Option<crate::project_menu::Menu>,
     /// What the groups dialog's Choose folders… asks; tests answer
     /// without the OS.
     folder_picker: fn() -> Vec<PathBuf>,
@@ -890,6 +883,7 @@ impl IboardApp {
         theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
         app.workspace = workspace::load(&mut config);
+        app.reload_project_order(&mut config);
         app.order_dir = workspace::order::dir();
         if !config.problems.is_empty() {
             let problem = config.problems.join(" ");
@@ -950,6 +944,8 @@ impl IboardApp {
             config_problem: None,
             settings: None,
             groups_dialog: None,
+            projects: Vec::new(),
+            project_menu: None,
             folder_picker: crate::dialog::pick_folders,
             config_stamp: None,
             config_checked: Instant::now(),
@@ -966,6 +962,7 @@ impl IboardApp {
         if let Some(file) = &self.recents_file {
             recents::write(file, &self.recents);
         }
+        self.add_to_order(project);
     }
 
     /// Switches the board to another project, resolving its board and

@@ -3,7 +3,7 @@
 //! stays as written.
 
 use std::hash::{Hash, Hasher};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, value};
 
@@ -34,6 +34,36 @@ pub fn save(
     home: Option<&Path>,
     expected: Option<u64>,
 ) -> Result<(), SaveError> {
+    edit(file, expected, |document| {
+        write_groups(document, groups, home)
+    })
+}
+
+/// Replaces `workspace.projects`, the user's own order of their projects.
+pub fn save_projects(
+    file: &Path,
+    projects: &[PathBuf],
+    home: Option<&Path>,
+) -> Result<(), SaveError> {
+    edit(file, None, |document| {
+        let Some(workspace) = workspace_table(document) else {
+            return;
+        };
+        let mut list = Array::new();
+        for project in projects {
+            list.push(contract(project, home));
+        }
+        workspace.insert("projects", value(list));
+    })
+}
+
+/// Reads `file`, applies `change` to it and writes it back, keeping every
+/// key, table and comment it does not touch.
+fn edit(
+    file: &Path,
+    expected: Option<u64>,
+    change: impl FnOnce(&mut DocumentMut),
+) -> Result<(), SaveError> {
     if expected.is_some_and(|expected| expected != fingerprint(file)) {
         return Err(SaveError::Changed);
     }
@@ -47,20 +77,31 @@ pub fn save(
     let mut document: DocumentMut = text
         .parse()
         .map_err(|err: toml_edit::TomlError| failed(err.message().to_string()))?;
-    write_groups(&mut document, groups, home);
+    change(&mut document);
+    if document
+        .get("workspace")
+        .and_then(Item::as_table)
+        .is_some_and(Table::is_empty)
+    {
+        document.remove("workspace");
+    }
     if let Some(parent) = file.parent() {
         std::fs::create_dir_all(parent).map_err(|err| failed(err.to_string()))?;
     }
     files::atomic_write(file, document.to_string()).map_err(|err| failed(err.to_string()))
 }
 
-fn write_groups(document: &mut DocumentMut, groups: &[Group], home: Option<&Path>) {
+fn workspace_table(document: &mut DocumentMut) -> Option<&mut Table> {
     if !document.get("workspace").is_some_and(Item::is_table) {
         let mut table = Table::new();
         table.set_implicit(true);
         document.insert("workspace", Item::Table(table));
     }
-    let Some(workspace) = document.get_mut("workspace").and_then(Item::as_table_mut) else {
+    document.get_mut("workspace").and_then(Item::as_table_mut)
+}
+
+fn write_groups(document: &mut DocumentMut, groups: &[Group], home: Option<&Path>) {
+    let Some(workspace) = workspace_table(document) else {
         return;
     };
     // A comment above the first group belongs to its table: keep it there.
@@ -88,9 +129,6 @@ fn write_groups(document: &mut DocumentMut, groups: &[Group], home: Option<&Path
         }
         workspace.insert("group", Item::ArrayOfTables(tables));
     }
-    if workspace.is_empty() {
-        document.remove("workspace");
-    }
 }
 
 /// `path` as the user would write it: under `home`, it starts with `~/`.
@@ -111,7 +149,6 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
-    use std::path::PathBuf;
 
     fn group(name: &str, repos: &[&str]) -> Group {
         Group {
@@ -196,6 +233,38 @@ mod tests {
         );
         save(&file, &[], None, None).unwrap();
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    }
+
+    #[test]
+    fn the_project_order_is_written_beside_the_groups() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("iboard.toml");
+        let before = "# mine\n[ai]\ntool = \"claude\"\n\n\
+                      [[workspace.group]]\nname = \"A\"\nrepos = [\"/a\"]\n";
+        std::fs::write(&file, before).unwrap();
+        let home = Path::new("/Users/me");
+        let order = [PathBuf::from("/Users/me/b"), PathBuf::from("/a")];
+        save_projects(&file, &order, Some(home)).unwrap();
+        let after = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            after.starts_with("# mine\n[ai]\ntool = \"claude\"\n"),
+            "{after}"
+        );
+        assert!(
+            after.contains("[workspace]\nprojects = [\"~/b\", \"/a\"]"),
+            "{after}"
+        );
+        assert!(
+            after.contains("[[workspace.group]]\nname = \"A\""),
+            "{after}"
+        );
+
+        save(&file, &[group("B", &[])], None, Some(fingerprint(&file))).unwrap();
+        let mut config =
+            crate::settings::UserConfig::parse(&std::fs::read_to_string(&file).unwrap(), &file);
+        let expanded = super::super::load_projects(&mut config);
+        assert_eq!(expanded.len(), 2, "saving the groups keeps the order");
+        assert_eq!(expanded[1], PathBuf::from("/a"));
     }
 
     #[test]

@@ -1,0 +1,219 @@
+//! The ProjectMenu, driven through egui_kittest by label: typing filters,
+//! `esc` clears then closes, Reorder saves the user's order, and Add
+//! project puts a project at the top.
+
+use super::*;
+use egui::{Event, Key, Modifiers};
+use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
+
+type Menu = Harness<'static, (bool, IboardApp)>;
+
+/// Projects `alpha`, `beta` and `gamma`, each with its issues; the board
+/// shows `alpha`, and a user configuration lives in the scratch folder.
+fn three_projects(tag: &str) -> (Scratch, PathBuf, Vec<PathBuf>, IboardApp) {
+    let scratch = scratch_dir(tag);
+    let parent = std::fs::canonicalize(&*scratch).unwrap();
+    let projects: Vec<PathBuf> = ["alpha", "beta", "gamma"]
+        .iter()
+        .map(|name| {
+            let dir = parent.join(name);
+            std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+            dir
+        })
+        .collect();
+    let config = parent.join("iboard.toml");
+    std::fs::write(&config, "# mine\n[ai]\ntool = \"claude\"\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&projects[0]).unwrap());
+    app.config_file = Some(config.clone());
+    app.projects = projects.clone();
+    (scratch, config, projects, app)
+}
+
+fn harness(app: IboardApp) -> Menu {
+    let mut harness = Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    harness
+}
+
+fn open(harness: &mut Menu) {
+    let ctx = harness.ctx.clone();
+    harness.state_mut().1.toggle_project_menu(&ctx);
+    harness.run_steps(2);
+}
+
+fn press(harness: &mut Menu, label: &str) {
+    harness.get_by_label(label).hover();
+    harness.run_steps(1);
+    harness.get_by_label(label).click();
+    harness.run_steps(2);
+}
+
+fn key(harness: &mut Menu, modifiers: Modifiers, key: Key) {
+    harness.key_press_modifiers(modifiers, key);
+    harness.run_steps(2);
+}
+
+fn shown(harness: &Menu, label: &str) -> bool {
+    harness.query_all_by_label(label).next().is_some()
+}
+
+#[test]
+fn the_menu_lists_the_projects_and_its_three_actions() {
+    let (_scratch, _config, _projects, app) = three_projects("menu-list");
+    let mut harness = harness(app);
+    open(&mut harness);
+    for label in [
+        "alpha",
+        "beta",
+        "gamma",
+        "Add project…",
+        "Edit groups…",
+        "Reorder",
+    ] {
+        assert!(shown(&harness, label), "{label}");
+    }
+    press(&mut harness, "gamma");
+    let app = &harness.state().1;
+    assert!(app.project_menu.is_none(), "picking closes the menu");
+    assert!(app.located.project_dir.ends_with("gamma"));
+}
+
+#[test]
+fn typing_filters_and_return_opens_the_first_match() {
+    let (_scratch, _config, _projects, app) = three_projects("menu-type");
+    let mut harness = harness(app);
+    open(&mut harness);
+    harness.event(Event::Text("ga".into()));
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().1.project_menu.as_ref().unwrap().filter,
+        "ga"
+    );
+    assert!(shown(&harness, "gamma"));
+    assert!(!shown(&harness, "beta"), "filtered out");
+    assert!(shown(&harness, "↩ opens gamma · esc clears the filter"));
+
+    key(&mut harness, Modifiers::NONE, Key::Escape);
+    assert!(shown(&harness, "beta"), "esc clears the filter first");
+    assert!(
+        harness.state().1.project_menu.is_some(),
+        "and keeps the menu"
+    );
+
+    harness.event(Event::Text("bet".into()));
+    harness.run_steps(2);
+    key(&mut harness, Modifiers::NONE, Key::Enter);
+    let app = &harness.state().1;
+    assert!(app.project_menu.is_none());
+    assert!(app.located.project_dir.ends_with("beta"));
+}
+
+#[test]
+fn esc_without_a_filter_closes_and_no_match_says_so() {
+    let (_scratch, _config, _projects, app) = three_projects("menu-esc");
+    let mut harness = harness(app);
+    open(&mut harness);
+    harness.event(Event::Text("zz".into()));
+    harness.run_steps(2);
+    assert!(shown(
+        &harness,
+        "No project matches zz. Add project… to add one."
+    ));
+    key(&mut harness, Modifiers::NONE, Key::Escape);
+    key(&mut harness, Modifiers::NONE, Key::Escape);
+    assert!(harness.state().1.project_menu.is_none());
+}
+
+#[test]
+fn reorder_moves_with_the_keys_and_done_saves_the_order() {
+    let (_scratch, config, projects, app) = three_projects("menu-reorder");
+    let mut harness = harness(app);
+    open(&mut harness);
+    press(&mut harness, "Reorder");
+    assert!(shown(&harness, "Done"));
+    // alpha, the project on screen, is selected: to the bottom, then up one.
+    key(
+        &mut harness,
+        Modifiers::ALT | Modifiers::SHIFT,
+        Key::ArrowDown,
+    );
+    key(&mut harness, Modifiers::ALT, Key::ArrowUp);
+    key(&mut harness, Modifiers::NONE, Key::Enter);
+
+    let app = &harness.state().1;
+    let want = vec![
+        projects[1].clone(),
+        projects[0].clone(),
+        projects[2].clone(),
+    ];
+    assert_eq!(app.projects, want);
+    assert!(
+        !app.located.project_dir.ends_with("beta"),
+        "the board does not change"
+    );
+    let written = std::fs::read_to_string(&config).unwrap();
+    assert!(written.starts_with("# mine\n[ai]\n"), "{written}");
+    let order: Vec<String> = want
+        .iter()
+        .map(|path| format!("{:?}", path.display().to_string()))
+        .collect();
+    assert!(
+        written.contains(&format!("projects = [{}]", order.join(", "))),
+        "{written}"
+    );
+}
+
+#[test]
+fn cancel_puts_the_order_back() {
+    let (_scratch, config, projects, app) = three_projects("menu-cancel");
+    let mut harness = harness(app);
+    open(&mut harness);
+    press(&mut harness, "Reorder");
+    key(&mut harness, Modifiers::ALT, Key::ArrowDown);
+    key(&mut harness, Modifiers::NONE, Key::Escape);
+    assert!(shown(&harness, "Add project…"), "back to the normal menu");
+    assert_eq!(harness.state().1.projects, projects);
+    assert!(
+        !std::fs::read_to_string(&config)
+            .unwrap()
+            .contains("projects")
+    );
+}
+
+fn picked() -> Vec<PathBuf> {
+    PICKED.with(|picked| picked.borrow().clone())
+}
+
+thread_local! {
+    static PICKED: std::cell::RefCell<Vec<PathBuf>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[test]
+fn an_added_project_opens_at_the_top_of_the_list() {
+    let (scratch, _config, projects, mut app) = three_projects("menu-add");
+    let delta = std::fs::canonicalize(&*scratch).unwrap().join("delta");
+    std::fs::create_dir_all(delta.join("issues/todo")).unwrap();
+    PICKED.with(|picked| *picked.borrow_mut() = vec![delta.clone()]);
+    app.folder_picker = picked;
+    let mut harness = harness(app);
+    open(&mut harness);
+    press(&mut harness, "Add project…");
+    let app = &harness.state().1;
+    assert_eq!(app.located.project_dir, delta);
+    assert_eq!(app.ordered_projects()[0], delta);
+    assert_eq!(app.ordered_projects()[1..], projects[..]);
+}

@@ -6,6 +6,7 @@ mod dialog;
 mod groups_ui;
 mod instance;
 mod label_picker;
+mod project_menu;
 mod recents;
 mod settings_ui;
 
