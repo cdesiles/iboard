@@ -46,8 +46,8 @@ From this repository:
 
 ```sh
 make build        # the binaries, in target/debug
-make install      # the `iboard` terminal command, in ~/.cargo/bin
-make install-app  # iboard.app into ~/Applications, to launch it like an app
+make install      # the CLI commands (iboard, idesign) and iboard.app
+make install-app  # just iboard.app, into ~/Applications
 ```
 
 Get help with `make help`.

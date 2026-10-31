@@ -73,7 +73,7 @@ build: ## Build the binaries (debug)
 release: ## Build the binaries (optimized)
 	cargo build --release
 
-install: ## Install the binaries into the Cargo bin directory
+install: install-app ## Install the CLI commands and the iboard.app bundle
 	cargo install --path .
 
 clean: ## Remove build artifacts
