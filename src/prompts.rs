@@ -6,7 +6,7 @@
 //! token block is a binding contract. The design system is read-only here; only
 //! the agent's answer changes files.
 
-use crate::agent::ReviewMode;
+use crate::agent::{Leash, ReviewMode};
 use crate::design::{DesignSystem, css};
 
 /// The design context: the brief, the token contract and the component
@@ -101,6 +101,69 @@ pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]
     );
     push_notes(&mut prompt, notes);
     prompt
+}
+
+/// The instruction for Update with AI: the agent checks, in the issue's
+/// project, where the issue stands on `today`, changes nothing, and answers in
+/// the review's format so the review panel shows it.
+pub fn update_prompt(content: &str, today: &str) -> String {
+    format!(
+        "You keep a project's issue up to date. Today is {today}. Check in this repository \
+         (its files, its git history, read-only commands) where the issue below stands: done, \
+         under way, blocked, or no longer worth doing. Change nothing. Answer with nothing but \
+         this exact format:\n\
+         \n\
+         RELEVANCE: Pass|Challenge|Block\n\
+         <Pass: still to do as written; Challenge: still to do, but out of date; Block: done, or \
+         no longer worth doing. Say what you found, naming the commits or files that show it>\n\
+         SIZE: Pass|Challenge|Block\n\
+         <what is left to do, and whether one person or agent can finish it in one sitting>\n\
+         CLARITY: Pass|Challenge|Block\n\
+         <what the issue says that is no longer true, or lacks to be picked up today>\n\
+         PROPOSAL:\n\
+         <the whole issue rewritten as things stand, keeping its front matter and its structure, \
+         its next step brought up to date; or the single word NONE when it is still accurate>\n\
+         \n\
+         ---\n\
+         {content}"
+    )
+}
+
+/// The instruction for Ask AI: what the author asked about the issue at
+/// `issue` (relative to the project), whose text is `content`, within `leash`.
+pub fn ask_prompt(issue: &str, content: &str, request: &str, leash: Leash) -> String {
+    let mut rules = vec![match leash.edits {
+        true => "You may edit files in this repository.",
+        false => "Change nothing, the issue included: read, run read-only commands, and answer.",
+    }];
+    if !leash.commits {
+        rules.push("Do not commit or push.");
+    }
+    if !leash.deploys {
+        rules.push(
+            "Do not deploy: no deploy script, no push, no connection to a server, nothing that \
+             changes a running service.",
+        );
+    }
+    if leash.edits {
+        rules.push(
+            "When you are done, bring the issue's file up to date: tick what you finished and \
+             rewrite its next step; leave it in its column unless all of it is done.",
+        );
+    }
+    format!(
+        "You work on one issue of this repository, `{issue}`, as its author asks below. Read the \
+         project's own instructions first (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, whichever \
+         exist) and follow them. Do only what is asked. {rules} End with a two or three line \
+         summary of what you did or found.\n\
+         \n\
+         The author asks:\n\
+         {request}\n\
+         \n\
+         ---\n\
+         {content}",
+        rules = rules.join(" ")
+    )
 }
 
 /// One turn of a refinement for the agent to read again: who spoke
@@ -309,6 +372,36 @@ mod tests {
     #[test]
     fn the_review_prompt() {
         insta::assert_snapshot!(review_prompt(ISSUE, ReviewMode::Quick, &[]));
+    }
+
+    #[test]
+    fn the_ask_prompt() {
+        let leash = Leash {
+            edits: true,
+            commits: true,
+            deploys: false,
+        };
+        insta::assert_snapshot!(ask_prompt(
+            "doing/x.md",
+            ISSUE,
+            "Take care of point 1",
+            leash
+        ));
+    }
+
+    #[test]
+    fn the_read_only_ask_prompt() {
+        let leash = Leash {
+            edits: false,
+            commits: false,
+            deploys: false,
+        };
+        insta::assert_snapshot!(ask_prompt("doing/x.md", ISSUE, "Where is point 3?", leash));
+    }
+
+    #[test]
+    fn the_update_prompt() {
+        insta::assert_snapshot!(update_prompt(ISSUE, "2026-10-28"));
     }
 
     #[test]

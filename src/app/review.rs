@@ -24,7 +24,9 @@ impl IboardApp {
             self.open_config();
             return;
         }
-        let (answer, _) = agent::start_plan_review(&self.agent, &prompt, &target.path, target.mode);
+        let project = Some(self.board.project_of(&target.path));
+        let (answer, _) =
+            agent::start_plan_review(&self.agent, &prompt, &target.path, project, target.mode);
         self.mark_notes_sent(&target.path);
         self.close_review();
         let runs = &mut self.session.review_runs;
@@ -112,10 +114,17 @@ impl IboardApp {
     /// is no longer news. While one runs, the reader shows it running.
     pub(super) fn show_past_review(&mut self, path: PathBuf) {
         self.open_issue(path.clone());
-        self.session.review_runs.ready.remove(&path);
-        if self.review_is_running(&path) {
+        self.reveal_review(&path);
+    }
+
+    /// Opens the review panel on the last review of the open issue `path`,
+    /// which is no longer news.
+    pub(super) fn reveal_review(&mut self, path: &Path) {
+        self.session.review_runs.ready.remove(path);
+        if self.review_is_running(path) {
             return;
         }
+        let path = path.to_path_buf();
         if let Some(past) = self.past_reviews.get(&path).cloned() {
             self.session.review = Some(ReviewState {
                 path,
@@ -163,15 +172,34 @@ impl IboardApp {
                 at: chrono::Local::now().to_rfc3339(),
                 raw: reviewed.answer,
             };
-            if let Err(err) = reviews::save_review(&self.board.root, &path, stored.clone()) {
+            if let Err(err) = reviews::save_review(self.board.root_of(&path), &path, stored.clone())
+            {
                 self.error = Some(err);
             }
             if let Some(issue) = self.board.find(&path) {
                 let past = PastReview::new(&stored, &issue.markdown);
                 self.past_reviews.insert(path.clone(), past);
             }
-            self.session.review_runs.ready.insert(path);
+            self.session.review_runs.ready.insert(path.clone());
+            // The issue being read shows its answer at once.
+            let reading = matches!(&self.session.screen, Screen::Detail(open) if *open == path)
+                && self.session.detail_mode == DetailMode::Preview
+                && self.session.review.is_none()
+                && !self.refinement_shown();
+            if reading {
+                self.reveal_review(&path);
+            }
         }
+    }
+
+    /// Whether the review panel shows a proposal `⌘↩` would apply.
+    pub(super) fn proposal_shown(&self) -> bool {
+        self.session.review.as_ref().is_some_and(|review| {
+            matches!(
+                &review.status,
+                ReviewStatus::Done { report: Some(report), .. } if report.proposal.is_some()
+            )
+        })
     }
 
     /// Whether a review of `path` is running in the background.
@@ -202,7 +230,7 @@ impl IboardApp {
             .as_ref()
             .is_some_and(|editor| editor.path == path)
         {
-            self.start_editing(&path);
+            self.open_editor(&path);
         }
         if let Some(editor) = self.session.editor.as_mut()
             && editor.path == path
@@ -490,6 +518,11 @@ impl ReviewRuns {
         !self.running.is_empty()
     }
 
+    /// How many reviews run in the background.
+    pub(super) fn running_count(&self) -> usize {
+        self.running.len()
+    }
+
     /// Stops the run on `path`, if any, and drops its ready mark.
     pub(super) fn forget(&mut self, path: &Path) {
         self.running.remove(path);
@@ -527,6 +560,10 @@ impl CardReviews<'_> {
     }
 }
 
+/// How much of the review head the agent, mode and source may take; they
+/// truncate past it, so the panel never widens under the issue.
+const DETAIL_SHARE: f32 = 0.6;
+
 /// The panel's `review-soft` head: "Review of x.md", and the agent, mode and
 /// source on the right.
 pub(super) fn review_head(ui: &mut egui::Ui, title: &str, detail: &str) {
@@ -558,7 +595,12 @@ pub(super) fn review_head(ui: &mut egui::Ui, title: &str, detail: &str) {
                 Vec2::new(ui.available_width(), theme::CONTROL_H),
                 Layout::right_to_left(Align::Center),
                 |ui| {
-                    ui.label(RichText::new(detail).font(theme::meta()).color(p.review));
+                    let room = ui.available_width();
+                    ui.scope(|ui| {
+                        ui.set_max_width(room * DETAIL_SHARE);
+                        let detail = RichText::new(detail).font(theme::meta()).color(p.review);
+                        ui.add(egui::Label::new(detail).truncate());
+                    });
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         ui.add(
                             egui::Label::new(
@@ -701,7 +743,7 @@ fn review_footer(
                             ui,
                             ButtonKind::Primary,
                             "Apply to draft",
-                            None,
+                            Some("⌘↩"),
                             PanelAction::Apply,
                         );
                     });
@@ -717,7 +759,13 @@ fn review_footer(
                             PanelAction::Again,
                         );
                     }
-                    button(ui, ButtonKind::Ghost, "Dismiss", None, PanelAction::Dismiss);
+                    button(
+                        ui,
+                        ButtonKind::Ghost,
+                        "Dismiss",
+                        Some("esc"),
+                        PanelAction::Dismiss,
+                    );
                 }
             }
         },

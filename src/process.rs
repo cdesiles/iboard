@@ -45,13 +45,33 @@ impl Output {
         if self.status.success() {
             return Ok(self.stdout);
         }
-        let stderr = self.stderr.trim();
+        let stderr = without_escapes(&self.stderr);
+        let stderr = stderr.trim();
         Err(if stderr.is_empty() {
             format!("{what} exited with {}", self.status)
         } else {
             stderr.to_string()
         })
     }
+}
+
+/// `text` without its terminal escape sequences (`\x1b[31m` colours and the
+/// like), which tools such as direnv put in their errors.
+pub fn without_escapes(text: &str) -> String {
+    let mut clean = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            clean.push(c);
+        } else if chars.next() == Some('[') {
+            for c in chars.by_ref() {
+                if ('@'..='~').contains(&c) {
+                    break;
+                }
+            }
+        }
+    }
+    clean
 }
 
 /// Runs `command` to its end, with no input and its output captured. `what`
@@ -117,6 +137,34 @@ pub fn run_with(
         stdout: stdout.map(Drain::finish).unwrap_or_default(),
         stderr: stderr.map(Drain::finish).unwrap_or_default(),
     })
+}
+
+/// Calls `on_signal`, on a thread of its own, each time SIGTERM, SIGINT or
+/// SIGHUP asks the process to end; they reach no other thread. Call it before
+/// any other thread starts, so they all inherit the blocked signals.
+#[cfg(unix)]
+pub fn on_termination(on_signal: impl Fn() + Send + 'static) {
+    // SAFETY: the set is initialised by `sigemptyset` before use, and
+    // `pthread_sigmask` only changes this thread's mask, inherited by those it
+    // starts.
+    let set = unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
+            libc::sigaddset(&mut set, signal);
+        }
+        libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
+        set
+    };
+    std::thread::spawn(move || {
+        loop {
+            let mut signal = 0;
+            // SAFETY: `sigwait` waits on the blocked set, then writes the signal.
+            if unsafe { libc::sigwait(&set, &mut signal) } == 0 {
+                on_signal();
+            }
+        }
+    });
 }
 
 /// Stops every process still running, with what it started. For quitting,
@@ -252,6 +300,14 @@ impl Drain {
         let bytes = std::mem::take(&mut *self.bytes.lock().unwrap_or_else(PoisonError::into_inner));
         String::from_utf8_lossy(&bytes).into_owned()
     }
+}
+
+#[cfg(test)]
+#[test]
+fn errors_drop_terminal_escapes() {
+    let direnv = "\x1b[31mdirenv: error .envrc is blocked\x1b[0m";
+    assert_eq!(without_escapes(direnv), "direnv: error .envrc is blocked");
+    assert_eq!(without_escapes("plain [31m"), "plain [31m");
 }
 
 #[cfg(all(test, unix))]

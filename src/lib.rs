@@ -46,3 +46,4 @@ pub mod titles;
 pub mod trash;
 #[cfg(feature = "gui")]
 pub mod widgets;
+pub mod workspace;

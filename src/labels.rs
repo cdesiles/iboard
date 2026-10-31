@@ -158,15 +158,27 @@ pub fn parse_hex(value: &str) -> Option<Rgb> {
 /// The longest label kept, in characters.
 pub const MAX_LABEL_CHARS: usize = 25;
 
+/// Whether `label` says which project an issue comes from (`repo:app`,
+/// `group:client`): set by the workspace, never written in the issue.
+pub fn is_origin(label: &str) -> bool {
+    label.starts_with("repo:") || label.starts_with("group:")
+}
+
 /// A label as iboard shows it: trimmed, lowercased, spaces as hyphens, at most
-/// 25 characters (`[Tech debt]` gives `tech-debt`). `None` when empty.
+/// 25 characters (`[Tech debt]` gives `tech-debt`), a project's whole name
+/// for an origin label. `None` when empty.
 pub fn normalize(name: &str) -> Option<String> {
     let name = name
         .split_whitespace()
         .collect::<Vec<_>>()
         .join("-")
         .to_lowercase();
-    let name: String = name.chars().take(MAX_LABEL_CHARS).collect();
+    let limit = if is_origin(&name) {
+        usize::MAX
+    } else {
+        MAX_LABEL_CHARS
+    };
+    let name: String = name.chars().take(limit).collect();
     (!name.is_empty()).then_some(name)
 }
 

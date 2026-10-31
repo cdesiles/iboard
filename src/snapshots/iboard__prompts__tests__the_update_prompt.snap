@@ -1,0 +1,19 @@
+---
+source: src/prompts.rs
+expression: "update_prompt(ISSUE, \"2026-10-28\")"
+---
+You keep a project's issue up to date. Today is 2026-10-28. Check in this repository (its files, its git history, read-only commands) where the issue below stands: done, under way, blocked, or no longer worth doing. Change nothing. Answer with nothing but this exact format:
+
+RELEVANCE: Pass|Challenge|Block
+<Pass: still to do as written; Challenge: still to do, but out of date; Block: done, or no longer worth doing. Say what you found, naming the commits or files that show it>
+SIZE: Pass|Challenge|Block
+<what is left to do, and whether one person or agent can finish it in one sitting>
+CLARITY: Pass|Challenge|Block
+<what the issue says that is no longer true, or lacks to be picked up today>
+PROPOSAL:
+<the whole issue rewritten as things stand, keeping its front matter and its structure, its next step brought up to date; or the single word NONE when it is still accurate>
+
+---
+# Taller header
+
+The header should be 48pt.

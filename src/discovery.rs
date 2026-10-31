@@ -46,6 +46,20 @@ impl Column {
     }
 }
 
+/// One project of a workspace board.
+#[derive(Clone, Debug)]
+pub struct Repo {
+    /// Its folder's name, the `repo:` label of its issues.
+    pub name: String,
+    /// The workspace group it is listed in, the `group:` label.
+    pub group: String,
+    pub project_dir: PathBuf,
+    pub root: PathBuf,
+    /// Its own column folders, the issues root included, each with the
+    /// merged column it joins (the folder name of that column).
+    pub dirs: Vec<(String, PathBuf)>,
+}
+
 pub struct Board {
     pub project_dir: PathBuf,
     pub root: PathBuf,
@@ -55,6 +69,9 @@ pub struct Board {
     pub columns: Vec<Column>,
     /// Non-fatal problems encountered while scanning (unreadable files, ...).
     pub warnings: Vec<String>,
+    /// The projects of a workspace board, whose columns merge theirs; empty
+    /// for a single project.
+    pub repos: Vec<Repo>,
 }
 
 impl Board {
@@ -87,6 +104,7 @@ impl Board {
             reader_sections: reader_sections(located.config.as_ref()),
             columns: Vec::new(),
             warnings: Vec::new(),
+            repos: Vec::new(),
         }
     }
 
@@ -100,6 +118,88 @@ impl Board {
     pub fn issue_count(&self) -> usize {
         self.columns.iter().map(|c| c.issues.len()).sum()
     }
+
+    /// The workspace project holding `path`; `None` on a single project.
+    pub fn repo_of(&self, path: &Path) -> Option<&Repo> {
+        self.repos
+            .iter()
+            .filter(|repo| path.starts_with(&repo.root))
+            .max_by_key(|repo| repo.root.components().count())
+    }
+
+    /// The project the issue at `path` belongs to: where its agents run.
+    pub fn project_of(&self, path: &Path) -> &Path {
+        self.repo_of(path)
+            .map_or(&self.project_dir, |repo| &repo.project_dir)
+    }
+
+    /// The issues folder the issue at `path` belongs to: where its sidecars
+    /// (reviews, comments, build logs, images) live.
+    pub fn root_of(&self, path: &Path) -> &Path {
+        self.repo_of(path).map_or(&self.root, |repo| &repo.root)
+    }
+
+    /// Where the issue at `path` goes when dropped on the column `dir`: `dir`
+    /// itself on a single project, else that column's folder in the issue's
+    /// own project (see [`Self::dir_in`]).
+    pub fn dir_for(&self, path: &Path, dir: &Path) -> Result<PathBuf, String> {
+        match self.repo_of(path) {
+            Some(repo) => dir_in(repo, dir),
+            None => Ok(dir.to_path_buf()),
+        }
+    }
+
+    /// Whether the issue at `path` already sits in the column `dir`.
+    pub fn in_column(&self, path: &Path, dir: &Path) -> bool {
+        match self.repo_of(path) {
+            Some(repo) => {
+                let kind = files::file_name(dir);
+                repo.dirs
+                    .iter()
+                    .any(|(of, folder)| *of == kind && path.parent() == Some(folder.as_path()))
+            }
+            None => path.parent() == Some(dir),
+        }
+    }
+}
+
+/// The folder of `repo` behind the merged column `dir`. A missing Todo,
+/// Ready, Doing or Done is created; another column the project lacks is an
+/// error.
+pub fn dir_in(repo: &Repo, dir: &Path) -> Result<PathBuf, String> {
+    let kind = files::file_name(dir);
+    if let Some((_, folder)) = repo.dirs.iter().find(|(of, _)| *of == kind) {
+        return Ok(folder.clone());
+    }
+    if !INIT_COLUMNS.contains(&kind.as_str()) {
+        let column = display_name(dir);
+        return Err(format!("{} has no {column} column", repo.name));
+    }
+    let folder = repo.root.join(&kind);
+    fs::create_dir_all(&folder)
+        .map_err(|err| format!("Couldn't create {}: {err}", folder.display()))?;
+    Ok(folder)
+}
+
+/// [`renumber`] for an order that may span several folders: each folder
+/// keeps the relative order of its own issues.
+pub fn renumber_each(order: &[PathBuf]) -> Result<Vec<(PathBuf, PathBuf)>, String> {
+    let mut folders: Vec<&Path> = Vec::new();
+    for parent in order.iter().filter_map(|path| path.parent()) {
+        if !folders.contains(&parent) {
+            folders.push(parent);
+        }
+    }
+    let mut renames = Vec::new();
+    for folder in folders {
+        let own: Vec<PathBuf> = order
+            .iter()
+            .filter(|path| path.parent() == Some(folder))
+            .cloned()
+            .collect();
+        renames.extend(renumber(folder, &own)?);
+    }
+    Ok(renames)
 }
 
 /// Walks up from `start` looking for a configured project or an `issues/`
@@ -363,11 +463,12 @@ pub fn build(located: &Located) -> Result<Board> {
         reader_sections: reader_sections(config),
         columns,
         warnings,
+        repos: Vec::new(),
     })
 }
 
 /// The configured reader sections, or the standard four.
-fn reader_sections(config: Option<&Config>) -> Vec<String> {
+pub(crate) fn reader_sections(config: Option<&Config>) -> Vec<String> {
     config
         .and_then(|c| c.reader.as_ref())
         .and_then(|r| r.sections.clone())
@@ -465,7 +566,7 @@ pub fn moved_name(name: &str, from_dir: &Path, to_dir: &Path) -> String {
 }
 
 /// The priority number of a Ready file name: `001-x.md` → 1.
-fn priority(name: &str) -> Option<u32> {
+pub(crate) fn priority(name: &str) -> Option<u32> {
     let rest = strip_priority(name);
     if rest.len() == name.len() {
         return None;
@@ -599,7 +700,7 @@ fn is_known_column(dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn column_rank(dir: &Path) -> u8 {
+pub(crate) fn column_rank(dir: &Path) -> u8 {
     dir.file_name()
         .and_then(|n| n.to_str())
         .and_then(canonical)
@@ -607,7 +708,7 @@ fn column_rank(dir: &Path) -> u8 {
         .unwrap_or(u8::MAX)
 }
 
-fn canonical_name(dir: &Path) -> Option<&'static str> {
+pub(crate) fn canonical_name(dir: &Path) -> Option<&'static str> {
     dir.file_name()
         .and_then(|n| n.to_str())
         .and_then(canonical)

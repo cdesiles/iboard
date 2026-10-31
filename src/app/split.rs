@@ -48,7 +48,8 @@ impl IboardApp {
         };
         let notes = self.reviewer_notes(&path);
         let prompt = prompts::split_prompt(&content, &reason, &notes);
-        let (answer, progress) = agent::start_review(&self.agent, &prompt, &path, mode);
+        let project = Some(self.board.project_of(&path));
+        let (answer, progress) = agent::start_review(&self.agent, &prompt, &path, project, mode);
         if let Some(review) = self.session.review.as_mut() {
             review.status = ReviewStatus::Splitting {
                 answer,
@@ -172,9 +173,7 @@ impl IboardApp {
         self.refresh();
         let order: Vec<PathBuf> = self
             .board
-            .columns
-            .iter()
-            .find(|column| column.dir == dir)
+            .column_of(original)
             .map(|column| {
                 column
                     .issues
@@ -191,7 +190,7 @@ impl IboardApp {
             return;
         };
         if discovery::is_orderable_column(&dir) {
-            match discovery::renumber(&dir, &order) {
+            match discovery::renumber_each(&order) {
                 Ok(renames) => {
                     for child in &mut children {
                         if let Some((_, new)) = renames.iter().find(|(old, _)| old == child) {

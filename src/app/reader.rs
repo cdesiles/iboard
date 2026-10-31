@@ -393,8 +393,9 @@ fn label_row(ui: &mut egui::Ui, names: &[String], labels: &Labels) -> Option<Str
     let mut clicked = None;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
-        for name in names {
-            if widgets::label_pill(ui, name, labels.color(name))
+        for name in names.iter().filter(|name| !name.starts_with("group:")) {
+            let shown = name.strip_prefix("repo:").unwrap_or(name);
+            if widgets::label_pill(ui, shown, labels.color(name))
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(format!("Filter by {name}"))
                 .clicked()
@@ -468,15 +469,23 @@ fn issue_blocks(
         }
         let mut block = text[range.clone()].to_string();
         let broken = images::missing_images(path, &block);
+        let table = markdown::is_table(&block);
         let shown = ui
             .push_id(("block", index), |ui| {
-                let viewer =
-                    CommonMarkViewer::new().default_implicit_uri_scheme(image_base_uri(path));
-                if broken.is_empty() {
-                    viewer.show_mut(ui, cache, &mut block).response
-                } else {
-                    let placeheld = images::with_placeholders(&block, &broken);
-                    viewer.show(ui, cache, &placeheld).response
+                let mut draw = |ui: &mut egui::Ui| {
+                    let viewer =
+                        CommonMarkViewer::new().default_implicit_uri_scheme(image_base_uri(path));
+                    if broken.is_empty() {
+                        viewer.show_mut(ui, cache, &mut block).response
+                    } else {
+                        let placeheld = images::with_placeholders(&block, &broken);
+                        viewer.show(ui, cache, &placeheld).response
+                    }
+                };
+                // Table cells do not wrap: a wide table scrolls within the page.
+                match table {
+                    true => egui::ScrollArea::horizontal().show(ui, draw).inner,
+                    false => draw(ui),
                 }
             })
             .inner;

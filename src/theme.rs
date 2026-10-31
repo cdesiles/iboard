@@ -206,6 +206,9 @@ pub const SCROLL_THUMB_MIN: f32 = 24.0;
 const SANS_MEDIUM: &str = "plex-sans-medium";
 const SANS_SEMIBOLD: &str = "plex-sans-semibold";
 const MONO_MEDIUM: &str = "plex-mono-medium";
+/// The egui font that draws the key symbols Plex lacks (⇧, ⇥), monospace's
+/// fallback already.
+const KEY_SYMBOLS: &str = "Hack";
 
 fn family(name: &str) -> FontFamily {
     FontFamily::Name(name.into())
@@ -286,8 +289,12 @@ fn install_fonts(ctx: &egui::Context) {
             .insert(name.to_string(), Arc::new(FontData::from_static(bytes)));
     }
 
-    let proportional = fonts.families[&FontFamily::Proportional].clone();
+    let mut proportional = fonts.families[&FontFamily::Proportional].clone();
     let monospace = fonts.families[&FontFamily::Monospace].clone();
+    // Plex has no key symbols; monospace falls back to Hack, which draws ⇧ and ⇥.
+    if fonts.font_data.contains_key(KEY_SYMBOLS) && !proportional.iter().any(|f| f == KEY_SYMBOLS) {
+        proportional.push(KEY_SYMBOLS.to_string());
+    }
     let with = |primary: &str, fallbacks: &[String]| {
         let mut list = vec![primary.to_string()];
         list.extend(fallbacks.iter().cloned());
@@ -739,6 +746,23 @@ mod tests {
 
     use crate::design::{DesignSystem, Token, Tokens};
     use std::path::Path;
+
+    /// Tooltips such as "Review  ⌘⇧R" are in the proportional face. (egui's
+    /// `has_glyph` cannot vouch for monospace, whose fallback face is also its
+    /// replacement face.)
+    #[test]
+    fn key_symbols_have_a_glyph_in_tooltips() {
+        let ctx = egui::Context::default();
+        install(&ctx);
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let font = FontId::proportional(12.0);
+        for key in ['⌘', '⇧', '⇥', '↩'] {
+            let shown = ctx.fonts_mut(|fonts| fonts.has_glyph(&font, key));
+            assert!(shown, "{key} in {font:?}");
+        }
+    }
 
     #[test]
     fn agenda_days_take_four_steps_of_accent() {

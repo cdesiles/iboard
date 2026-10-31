@@ -33,12 +33,15 @@ use crate::theme::{self, Icon, Palette};
 use crate::titles::{self, Engine};
 use crate::trash::{self, Trash};
 use crate::widgets::{self, ButtonKind};
+use crate::workspace::{self, Workspace};
 use crate::{design_ui, dialog, recents, sheet};
 use iboard::design::{self, DesignSystem};
 use iboard::prompts;
 
 mod agenda;
 mod agent_log;
+mod all;
+mod ask;
 mod board;
 mod build;
 mod card;
@@ -59,14 +62,17 @@ mod keys;
 mod labelling;
 mod moves;
 mod nav;
+mod quitting;
 mod reader;
 mod refine;
 mod review;
 mod split;
 mod stats;
 mod status;
+mod update;
 mod windows;
 
+use all::Source;
 use board::*;
 use build::{Builds, card_build};
 use card::*;
@@ -75,6 +81,7 @@ use filter_bar::*;
 use focus::ColumnFocus;
 use intent::Intent;
 use labelling::*;
+pub use quitting::on_signals;
 use reader::*;
 
 #[cfg(target_os = "macos")]
@@ -117,6 +124,8 @@ const ARCHIVE_DIR: &str = ".archive";
 
 /// Width of the recent-projects popup, in points.
 const PROJECT_MENU_WIDTH: f32 = 300.0;
+/// The Move to… menu: column names only.
+const MOVE_MENU_WIDTH: f32 = 180.0;
 
 /// Width of the AI review panel beside the reader or editor page.
 const REVIEW_PANEL_WIDTH: f32 = 360.0;
@@ -135,6 +144,8 @@ enum ReviewMenu {
 
 /// A choice made in the header's project menu.
 enum ProjectChoice {
+    /// Every project of the workspace on one board.
+    All,
     /// Switch to a remembered project.
     Recent(PathBuf),
     /// Ask the OS for a folder.
@@ -255,11 +266,36 @@ impl PastReview {
     /// The card's pill: the verdict, faint once the issue changed since.
     fn card_pill(&self, p: &Palette) -> ReviewPill {
         let (word, color) = self.pill(p);
-        if self.stale {
-            (word, p.ink_faint, "Reviewed before the last edit: show it")
-        } else {
-            (word, color, "Show the last review")
+        let color = if self.stale { p.ink_faint } else { color };
+        (word, color, verdict_hint(word, self.stale))
+    }
+}
+
+/// What a card's verdict pill means: the worst of the review's three axes.
+fn verdict_hint(word: &str, stale: bool) -> &'static str {
+    match (word, stale) {
+        ("Pass", false) => {
+            "Last AI review: Pass. Relevance, size and clarity are all fine. Click to show it"
         }
+        ("Challenge", false) => {
+            "Last AI review: Challenge. Relevance, size or clarity is worth another look, \
+             nothing blocks. Click to show it"
+        }
+        ("Block", false) => {
+            "Last AI review: Block. Relevance, size or clarity is a real problem \
+             (for an update: done, or no longer worth doing). Click to show it"
+        }
+        (_, false) => "Last AI review. Click to show it",
+        ("Pass", true) => "Last AI review: Pass, before the issue's last edit. Click to show it",
+        ("Challenge", true) => {
+            "Last AI review: Challenge (relevance, size or clarity worth another look), \
+             before the issue's last edit. Click to show it"
+        }
+        ("Block", true) => {
+            "Last AI review: Block (relevance, size or clarity a real problem), \
+             before the issue's last edit. Click to show it"
+        }
+        (_, true) => "Last AI review, before the issue's last edit. Click to show it",
     }
 }
 
@@ -267,6 +303,8 @@ impl PastReview {
 #[derive(Clone)]
 enum Confirm {
     Delete(Vec<PathBuf>),
+    /// Quitting while this many AI runs are at work.
+    Quit(usize),
 }
 
 /// Which half of the detail view is showing.
@@ -520,6 +558,13 @@ enum ReviewStatus {
 
 pub struct IboardApp {
     located: Located,
+    /// The `[[workspace.group]]` projects, when the user lists some.
+    workspace: Option<Workspace>,
+    /// The board shows every project of `workspace` rather than `located`.
+    all: bool,
+    /// Where the All projects board keeps its order across projects; `None`
+    /// keeps none (a board built in tests).
+    order_file: Option<PathBuf>,
     board: Board,
     /// The reader's markdown cache, and where its text was drawn.
     reader: Reader,
@@ -610,6 +655,10 @@ struct Session {
     new_card: Option<(PathBuf, Instant)>,
     /// A destructive action waiting for the user to confirm it.
     confirm: Option<Confirm>,
+    /// The Ask AI dialog, while it is open.
+    ask_draft: Option<ask::AskDraft>,
+    /// The asks the agent works on, by issue.
+    asks: HashMap<PathBuf, ask::AskRun>,
     /// The LabelPicker, open on one issue.
     label_picker: Option<LabelPicker>,
     /// The commits popup, open on one issue.
@@ -683,6 +732,8 @@ impl Default for Session {
             editor: None,
             composer: None,
             confirm: None,
+            ask_draft: None,
+            asks: HashMap::new(),
             new_card: None,
             leave_prompt: None,
             notes: None,
@@ -758,7 +809,12 @@ enum EnrichOutcome {
 impl IboardApp {
     /// `window_title` names the window in Mission Control and the Window menu;
     /// see `main.rs` for why it is set here rather than at startup.
-    pub fn new(cc: &eframe::CreationContext<'_>, located: Located, window_title: String) -> Self {
+    /// `located` is `None` for the All projects board.
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        located: Option<Located>,
+        window_title: String,
+    ) -> Self {
         theme::install(&cc.egui_ctx);
         // Images in a ticket's markdown (`![shot](assets/<stem>/ui.png)`) load
         // from disk through egui's file loader.
@@ -772,7 +828,14 @@ impl IboardApp {
             iboard::menu::install("iboard", ABOUT, true);
             iboard::pasteboard::watch(cc.egui_ctx.clone());
         }
+        let all = located.is_none();
+        let located = located.unwrap_or_else(|| Located {
+            project_dir: workspace::virtual_root(),
+            root: workspace::virtual_root(),
+            config: None,
+        });
         let mut app = Self::from_located(located);
+        quitting::watch(&cc.egui_ctx);
         app.clipboard = images::Clipboard::System;
         // The user's real cache: only the running app records here, never a
         // test constructing the board directly.
@@ -792,27 +855,36 @@ impl IboardApp {
         app.appearance = general::load_appearance(&mut config);
         app.auto = general::load_auto(&mut config);
         app.idesign = general::load_idesign(&mut config);
+        agent::set_direnv(general::load_direnv(&mut config));
         theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
+        app.workspace = workspace::load(&mut config);
+        app.order_file = workspace::order::file();
         if !config.problems.is_empty() {
             let problem = config.problems.join(" ");
             app.error = Some(format!("Settings: {problem}"));
             app.config_problem = Some(problem);
         }
         app.catalog = Catalog::probing();
-        let project = app.located.project_dir.clone();
-        app.remember(&project);
+        if all {
+            app.open_all();
+        } else {
+            let project = app.located.project_dir.clone();
+            app.remember(&project);
+        }
         app
     }
 
     fn from_located(located: Located) -> Self {
-        let ((board, sidecars), scan_error) = match scan(&located) {
+        let ((board, past_reviews), scan_error) = match scan(&Source::Project(located.clone())) {
             Ok(scanned) => (scanned, None),
             Err(err) => ((Board::empty(&located), HashMap::new()), Some(err)),
         };
-        let past_reviews = past_reviews(&board, &sidecars);
         Self {
             located,
+            workspace: None,
+            all: false,
+            order_file: None,
             session: Session::default(),
             board,
             reader: Reader::default(),
@@ -870,13 +942,8 @@ impl IboardApp {
                 self.pending_title = Some(discovery::window_title(&located));
                 let project_dir = located.project_dir.clone();
                 self.located = located;
-                self.close_review();
-                self.session = Session::default();
-                self.past_reviews.clear();
-                self.column_focus.column = None;
-                self.filter_bar.filter.clear();
-                self.error = None;
-                self.scan_error = None;
+                self.all = false;
+                self.leave_project();
                 // Remember the project root discovery settled on, not the
                 // folder the user happened to pick inside it.
                 self.remember(&project_dir);
@@ -886,18 +953,29 @@ impl IboardApp {
         }
     }
 
+    /// Drops everything that belongs to the board shown until now.
+    fn leave_project(&mut self) {
+        self.close_review();
+        self.session = Session::default();
+        self.past_reviews.clear();
+        self.column_focus.column = None;
+        self.filter_bar.filter.clear();
+        self.error = None;
+        self.scan_error = None;
+    }
+
     /// Reads the board again, now: what an action that changed files needs
     /// before it goes on.
     fn refresh(&mut self) {
-        self.adopt(scan(&self.located));
+        self.adopt(scan(&self.source()));
     }
 
     /// Takes a fresh scan of the board, or why it could not be read.
     fn adopt(&mut self, scanned: Result<Scanned, String>) {
         self.board_generation += 1;
         match scanned {
-            Ok((board, sidecars)) => {
-                self.past_reviews = past_reviews(&board, &sidecars);
+            Ok((board, reviews)) => {
+                self.past_reviews = reviews;
                 self.board = board;
                 self.scan_error = None;
             }
@@ -920,7 +998,7 @@ impl IboardApp {
 
     /// A path relative to the issues folder, as the file system names it.
     fn relative(&self, path: &Path) -> String {
-        match path.strip_prefix(&self.board.root) {
+        match path.strip_prefix(self.board.root_of(path)) {
             Ok(relative) if relative.as_os_str().is_empty() => "./".to_string(),
             Ok(relative) if path.is_dir() => format!("{}/", relative.display()),
             Ok(relative) => relative.display().to_string(),
@@ -984,8 +1062,11 @@ impl IboardApp {
                 }
             });
         self.label_picker_ui(ui);
-        if let Some(Confirm::Delete(paths)) = self.session.confirm.clone() {
-            self.confirm_dialog(ui, &paths);
+        self.ask_dialog(ui);
+        match self.session.confirm.clone() {
+            Some(Confirm::Delete(paths)) => self.confirm_dialog(ui, &paths),
+            Some(Confirm::Quit(runs)) => self.quit_dialog(ui, runs),
+            None => {}
         }
         self.config_window(ui);
         self.design_window(ui);
@@ -997,25 +1078,42 @@ impl IboardApp {
     }
 }
 
-/// A board and the review sidecars beside it, by slug.
-type Scanned = (Board, HashMap<String, reviews::Sidecar>);
+/// A board and the last review of each of its issues that has one.
+type Scanned = (Board, HashMap<PathBuf, PastReview>);
 
-/// Reads the board of `located` and its reviews, or says why it could not.
-fn scan(located: &Located) -> Result<Scanned, String> {
-    let board = discovery::build(located).map_err(|err| format!("{err:#}"))?;
-    let sidecars = reviews::load_all(&board.root);
-    Ok((board, sidecars))
+/// Reads the board of `source` and its reviews, or says why it could not.
+/// Each project's reviews are read from its own issues folder: names are only
+/// unique within one.
+fn scan(source: &Source) -> Result<Scanned, String> {
+    let board = match source {
+        Source::Project(located) => discovery::build(located).map_err(|err| format!("{err:#}"))?,
+        Source::All(workspace, file) => {
+            let order = workspace::Order::load(file.as_deref());
+            workspace::build(workspace, &workspace::virtual_root(), &order)
+        }
+    };
+    let roots: Vec<PathBuf> = match board.repos.as_slice() {
+        [] => vec![board.root.clone()],
+        repos => repos.iter().map(|repo| repo.root.clone()).collect(),
+    };
+    let mut reviews = HashMap::new();
+    for root in roots {
+        reviews.extend(past_reviews(&board, &root, &reviews::load_all(&root)));
+    }
+    Ok((board, reviews))
 }
 
-/// The last review of every issue on `board` that has one.
+/// The last review of every issue of `board` under `root` that has one.
 fn past_reviews(
     board: &Board,
+    root: &Path,
     sidecars: &HashMap<String, reviews::Sidecar>,
 ) -> HashMap<PathBuf, PastReview> {
     board
         .columns
         .iter()
         .flat_map(|column| &column.issues)
+        .filter(|issue| board.root_of(&issue.path) == root)
         .filter_map(|issue| {
             let stored = sidecars.get(&reviews::slug(&issue.path))?.review.as_ref()?;
             Some((issue.path.clone(), PastReview::new(stored, &issue.markdown)))
@@ -1049,6 +1147,11 @@ struct ColumnView<'a> {
     /// The multi-selection.
     picked: &'a [PathBuf],
     root: &'a Path,
+    /// The board, which knows each card's project.
+    board: &'a Board,
+    /// On the All projects board, the folder new issues land in, and how the
+    /// composer names it.
+    compose_into: Option<(PathBuf, String)>,
     /// The label colours, for the chip on each card.
     labels: &'a Labels,
     /// The cards' review pills.

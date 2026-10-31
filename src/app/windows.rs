@@ -103,6 +103,60 @@ impl IboardApp {
         }
     }
 
+    /// The quit confirmation, while AI runs are at work: Quit stops them and
+    /// loses their answers; `esc`, Cancel or the scrim keeps iboard open.
+    pub(super) fn quit_dialog(&mut self, ui: &egui::Ui, runs: usize) {
+        let p = theme::palette(ui);
+        let (width, pad) = (360.0, 20.0);
+        let mut confirmed = false;
+        let mut cancelled = false;
+        let frame = widgets::popover_frame(ui).inner_margin(Margin {
+            left: pad as i8,
+            right: pad as i8,
+            top: pad as i8,
+            bottom: theme::SPACE_5 as i8,
+        });
+        let modal = egui::Modal::new(egui::Id::new("confirm-quit"))
+            .frame(frame)
+            .backdrop_color(p.scrim)
+            .show(ui.ctx(), |ui| {
+                ui.set_width(width - 2.0 * pad);
+                ui.style_mut().interaction.selectable_labels = false;
+                ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+                let title = RichText::new("Quit iboard?")
+                    .font(theme::ui_title())
+                    .color(p.ink);
+                ui.label(title);
+                let what = match runs {
+                    1 => "An AI run is at work: quitting stops it, and its answer is lost."
+                        .to_string(),
+                    n => format!(
+                        "{n} AI runs are at work: quitting stops them, and their answers are lost."
+                    ),
+                };
+                ui.label(
+                    RichText::new(what)
+                        .font(theme::ui_small())
+                        .color(p.ink_muted),
+                );
+                ui.add_space(theme::SPACE_3);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                    let quit = widgets::button(ui, ButtonKind::Danger, None, "Quit", Some("↩"));
+                    widgets::paint_focus_ring(ui, quit.rect, theme::RADIUS_SM);
+                    confirmed = quit.clicked();
+                    cancelled =
+                        widgets::button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc"))
+                            .clicked();
+                });
+            });
+        if confirmed {
+            self.quit_anyway();
+        } else if cancelled || modal.should_close() {
+            self.session.confirm = None;
+        }
+    }
+
     /// The commits popup: the hashes whose message names the ticket's file,
     /// read from git when its node button was pressed. `esc` or the scrim
     /// closes it.
@@ -301,6 +355,7 @@ impl IboardApp {
             .iter()
             .flat_map(|column| column.issues.iter())
             .flat_map(|issue| issue.labels.iter().cloned())
+            .filter(|label| !labels::is_origin(label))
             .collect();
         let mut dialog =
             settings_ui::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
@@ -327,7 +382,7 @@ impl IboardApp {
                 .take()
                 .filter(|known| known.path == path)
                 .and_then(|known| known.hash);
-            let dir = path.parent().unwrap_or(&self.board.root).to_path_buf();
+            let dir = self.board.project_of(path).to_path_buf();
             let file = file_name(path);
             let lookup = Job::spawn(move |_| {
                 commits::for_file(&dir, &file)
@@ -355,11 +410,12 @@ impl IboardApp {
         known.hash.clone()
     }
 
-    /// Opens the commits popup for `path`: the git log entries whose message
-    /// names its file (the `closes <file>.md` line a commit carries).
+    /// Opens the commits popup for `path`: the git log entries of its project
+    /// whose message names its file (the `closes <file>.md` line a commit
+    /// carries).
     pub(super) fn open_commits(&mut self, path: &Path) {
         let file = file_name(path);
-        let dir = path.parent().unwrap_or(&self.board.root).to_path_buf();
+        let dir = self.board.project_of(path).to_path_buf();
         let list = commits::for_file(&dir, &file);
         let title = self
             .board
@@ -376,7 +432,7 @@ impl IboardApp {
     /// Opens the Diff screen on every commit that closed `path`, newest
     /// first; or says there is none.
     pub(super) fn show_issue_diff(&mut self, path: &Path) {
-        let dir = path.parent().unwrap_or(&self.board.root).to_path_buf();
+        let dir = self.board.project_of(path).to_path_buf();
         let hashes: Vec<String> = commits::for_file(&dir, &file_name(path))
             .into_iter()
             .map(|commit| commit.hash)

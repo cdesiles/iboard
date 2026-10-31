@@ -1,0 +1,13 @@
+---
+source: src/prompts.rs
+expression: "ask_prompt(\"doing/x.md\", ISSUE, \"Where is point 3?\", leash)"
+---
+You work on one issue of this repository, `doing/x.md`, as its author asks below. Read the project's own instructions first (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, whichever exist) and follow them. Do only what is asked. Change nothing, the issue included: read, run read-only commands, and answer. Do not commit or push. Do not deploy: no deploy script, no push, no connection to a server, nothing that changes a running service. End with a two or three line summary of what you did or found.
+
+The author asks:
+Where is point 3?
+
+---
+# Taller header
+
+The header should be 48pt.

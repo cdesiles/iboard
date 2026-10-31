@@ -4,7 +4,7 @@
 
 use std::ops::Range;
 
-use pulldown_cmark::{Event, Options, Parser};
+use pulldown_cmark::{Event, Options, Parser, Tag};
 
 /// The lines between the `---` that opens a file and the `---` that closes
 /// that block, as indices into `lines`. `None` when there is none, or when it
@@ -63,6 +63,7 @@ pub fn is_title(line: &str) -> bool {
 /// whole lists, fences and tables, in order. The reader draws them one by one,
 /// so each has a place a comment can hang on.
 pub fn blocks(text: &str) -> Vec<Range<usize>> {
+    let matter = front_matter_len(text);
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_STRIKETHROUGH
@@ -82,7 +83,24 @@ pub fn blocks(text: &str) -> Vec<Range<usize>> {
             _ => {}
         }
     }
+    blocks.retain(|block| block.start >= matter);
     blocks
+}
+
+/// Whether the markdown `block` (one of [`blocks`]) is a table.
+pub fn is_table(block: &str) -> bool {
+    let mut events = Parser::new_ext(block, Options::ENABLE_TABLES);
+    matches!(events.next(), Some(Event::Start(Tag::Table(_))))
+}
+
+/// How many bytes of `text` its front matter takes, both `---` lines
+/// included; 0 when there is none (see [`front_matter`]).
+fn front_matter_len(text: &str) -> usize {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    match front_matter(&lines) {
+        Some(matter) => lines[..=matter.end].iter().map(|line| line.len()).sum(),
+        None => 0,
+    }
 }
 
 #[cfg(test)]
@@ -104,6 +122,24 @@ mod tests {
             None
         );
         assert_eq!(front_matter(&lines("# T\n---\nx\n---\n")), None);
+    }
+
+    #[test]
+    fn a_table_block_is_told_apart() {
+        let text = "# T\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\npipe | in prose\n";
+        let tables: Vec<bool> = blocks(text)
+            .into_iter()
+            .map(|b| is_table(&text[b]))
+            .collect();
+        assert_eq!(tables, [false, true, false]);
+    }
+
+    #[test]
+    fn the_front_matter_is_no_block() {
+        let text = "---\ntitre: T\nstatut: En cours\n---\n\n# T\n\nBody\n";
+        let shown: Vec<&str> = blocks(text).into_iter().map(|b| text[b].trim()).collect();
+        assert_eq!(shown, ["# T", "Body"]);
+        assert_eq!(blocks("# T\n---\nx\n").len(), 3, "a later rule stays");
     }
 
     #[test]

@@ -37,6 +37,7 @@ iboard                     # start the app on the current working directory
 iboard ~/code/my-project   # start the app on the given directory
 iboard init ~/new-app      # create issues/ (todo, ready, doing, done) and configuration
 iboard --list              # print the board to stdout, no window
+iboard --all --list        # print every workspace project's board, merged
 ```
 
 ## Building from sources
@@ -108,7 +109,13 @@ engine = "apple"    # "apple" (on-device), "agent" or "manual"
 
 [delete]
 confirm = true      # false: delete without asking, with ⌘Z undo
+
+[direnv]
+enabled = false     # true: agents run through `direnv exec` in projects with an .envrc
 ```
+
+Issues labelled `manual` (a quote, an email: work that is not code) stay in
+Ready when Play hands the column to the build agent.
 
 idesign is in beta and off by default: the board shows no Design button and
 no Draft design, and a project's `design/` folder stays as it is on disk. It
@@ -118,3 +125,30 @@ has no Settings toggle; turn it on in the same file, then restart:
 [idesign]
 enabled = false     # true: the Design panel and Draft design
 ```
+
+### Workspace
+
+Several projects can be seen as one board. List them by group in the same
+user configuration:
+
+```toml
+[[workspace.group]]
+name = "Client"
+repos = ["~/code/app", "~/code/site"]
+```
+
+Their columns merge by kind (every Doing in one Doing), each issue is labelled
+`repo:<folder>` and `group:<name>` so the filter narrows the board to one
+project or one group, and each project keeps its own `issues/`. A folder
+without its own `issues/` is skipped with a warning.
+
+The board is the first row of the project menu, *All projects*, and opens by
+itself when iboard starts outside any project (from the Dock, or in a folder
+holding several of them). Cards move within their own project; a new issue
+goes to the project the filter names (`repo:app`), else the selected card's;
+reviews and builds run in the card's project.
+
+Todo and Ready keep each project's own order in its file names (`001-`). How
+the projects interleave is kept apart, in `all-projects-order.toml` beside the
+user configuration: moving a card among other projects' cards renames nothing,
+and only a project whose own order changed is renumbered.

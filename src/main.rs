@@ -12,6 +12,7 @@ mod settings_ui;
 use iboard::{
     agent, assets, build_log, commits, design_ui, discovery, files, filter, format, general, issue,
     job, labels, order, process, reviews, settings, sheet, theme, titles, trash, widgets,
+    workspace,
 };
 
 use std::path::PathBuf;
@@ -22,6 +23,7 @@ fn main() -> eframe::Result {
     let mut path: Option<PathBuf> = None;
     let mut list = false;
     let mut init = false;
+    let mut all = false;
 
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
@@ -35,6 +37,7 @@ fn main() -> eframe::Result {
             }
             "init" => init = true,
             "-l" | "--list" => list = true,
+            "-a" | "--all" => all = true,
             other if other.starts_with('-') => {
                 eprintln!("iboard: unknown option `{other}`\n");
                 print_help();
@@ -42,6 +45,11 @@ fn main() -> eframe::Result {
             }
             other => path = Some(PathBuf::from(other)),
         }
+    }
+
+    if all && list {
+        print_listing(&workspace_board());
+        return Ok(());
     }
 
     let start = match path {
@@ -66,12 +74,22 @@ fn main() -> eframe::Result {
         }
     }
 
+    // Outside any project, a workspace opens instead of failing.
     let located = match discovery::locate(&start) {
-        Ok(located) => located,
+        _ if all => None,
+        Ok(located) => Some(located),
+        Err(_) if !init && has_workspace() => None,
         Err(err) => {
             eprintln!("iboard: {err:#}");
             std::process::exit(1);
         }
+    };
+    let Some(located) = located else {
+        if list {
+            print_listing(&workspace_board());
+            return Ok(());
+        }
+        return run_app(None, workspace::TITLE.to_string());
     };
 
     if list {
@@ -88,7 +106,12 @@ fn main() -> eframe::Result {
     }
 
     let app_title = discovery::window_title(&located);
+    run_app(Some(located), app_title)
+}
 
+/// Opens the window on `located`, or on the All projects board.
+fn run_app(located: Option<discovery::Located>, app_title: String) -> eframe::Result {
+    app::on_signals();
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])
         .with_min_inner_size([880.0, 480.0]);
@@ -132,10 +155,43 @@ fn app_icon() -> Option<egui::IconData> {
     })
 }
 
+/// Whether the user configuration lists `[[workspace.group]]` projects.
+fn has_workspace() -> bool {
+    let file = settings::config_file();
+    workspace::load(&mut settings::UserConfig::load(file.as_deref())).is_some()
+}
+
+/// The merged board of the user's `[[workspace.group]]` projects, or exits
+/// when there is none.
+fn workspace_board() -> discovery::Board {
+    let file = settings::config_file();
+    let mut config = settings::UserConfig::load(file.as_deref());
+    let Some(workspace) = workspace::load(&mut config) else {
+        let file = file.map_or("the user configuration".to_string(), |file| {
+            file.display().to_string()
+        });
+        eprintln!("iboard: no [[workspace.group]] in {file}");
+        std::process::exit(1);
+    };
+    let order = workspace::Order::load(workspace::order::file().as_deref());
+    workspace::build(&workspace, &workspace::virtual_root(), &order)
+}
+
 /// Text-mode dump of the board, useful for scripting and for checking discovery
 /// without opening a window.
 fn print_listing(board: &discovery::Board) {
-    println!("{}  ({})", board.name(), board.root.display());
+    if board.repos.is_empty() {
+        println!("{}  ({})", board.name(), board.root.display());
+    } else {
+        let mut groups: Vec<&str> = board.repos.iter().map(|r| r.group.as_str()).collect();
+        groups.dedup();
+        let count = |n: usize, noun: &str| format!("{n} {noun}{}", if n == 1 { "" } else { "s" });
+        let (repos, groups) = (
+            count(board.repos.len(), "repo"),
+            count(groups.len(), "group"),
+        );
+        println!("{}  ({repos}, {groups})", board.name());
+    }
     for column in &board.columns {
         println!("\n{} ({})", column.name, column.issues.len());
         if column.issues.is_empty() {
@@ -143,9 +199,13 @@ fn print_listing(board: &discovery::Board) {
             continue;
         }
         for issue in &column.issues {
+            let title = match board.repo_of(&issue.path) {
+                Some(repo) => format!("[{}] {}", repo.name, issue.title),
+                None => issue.title.clone(),
+            };
             match issue.done_at {
-                Some(date) => println!("  • {}  {}", issue.title, date.format("%Y-%m-%d")),
-                None => println!("  • {}", issue.title),
+                Some(date) => println!("  • {title}  {}", date.format("%Y-%m-%d")),
+                None => println!("  • {title}"),
             }
             if !issue.summary.is_empty() {
                 println!("    {}", issue.summary);
@@ -170,7 +230,7 @@ fn print_help() {
          \n\
          COMMANDS:\n    init             Create issues/ with todo, ready, doing and done,\n                     then open the board on it\n\
          \n\
-         OPTIONS:\n    -l, --list       Print the board to stdout and exit (no window)\n    -h, --help       Print this help\n    -V, --version    Print the version",
+         OPTIONS:\n    -l, --list       Print the board to stdout and exit (no window)\n    -a, --all        The board of every project in [[workspace.group]]\n    -h, --help       Print this help\n    -V, --version    Print the version",
         name = env!("CARGO_BIN_NAME"),
         version = env!("CARGO_PKG_VERSION")
     );

@@ -1,0 +1,13 @@
+---
+source: src/prompts.rs
+expression: "ask_prompt(\"doing/x.md\", ISSUE, \"Take care of point 1\", leash)"
+---
+You work on one issue of this repository, `doing/x.md`, as its author asks below. Read the project's own instructions first (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, whichever exist) and follow them. Do only what is asked. You may edit files in this repository. Do not deploy: no deploy script, no push, no connection to a server, nothing that changes a running service. When you are done, bring the issue's file up to date: tick what you finished and rewrite its next step; leave it in its column unless all of it is done. End with a two or three line summary of what you did or found.
+
+The author asks:
+Take care of point 1
+
+---
+# Taller header
+
+The header should be 48pt.

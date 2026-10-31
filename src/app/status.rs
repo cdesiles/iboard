@@ -56,7 +56,13 @@ impl IboardApp {
             .as_ref()
             .filter(|(_, at)| at.elapsed() < NOTICE_FOR)
             .map(|(text, at)| (text.clone(), *at));
-        let idle = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
+        let mut idle = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
+        if !self.showing_all() {
+            idle.push(("⌘I", "stats"));
+        }
+        if self.project_cycle().len() > 1 {
+            idle.push(("Ctrl⇥", "project"));
+        }
         if let Some(drag) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx()) {
             ui.label(status_meta(ui, self.relative(&drag.path)));
             return vec![("esc", "cancel drag")];
@@ -119,6 +125,8 @@ impl IboardApp {
             ]
         } else if done {
             vec![("↩", "open"), ("A", "archive")]
+        } else if self.updatable(&selected) {
+            vec![("↩", "open"), ("⌘U", "update"), ("Del", "delete")]
         } else {
             vec![("↩", "open"), ("Del", "delete")]
         }
@@ -155,11 +163,17 @@ impl IboardApp {
                 format!("modified {}", relative_time(modified)),
             ));
         }
-        if self.can_edit(path) {
-            vec![("E", "edit"), ("Del", "delete"), ("esc", "back")]
-        } else {
-            vec![("Del", "delete"), ("esc", "back")]
+        let mut hints = match self.can_edit(path) {
+            true => vec![("E", "edit"), ("Del", "delete"), ("esc", "back")],
+            false => vec![("Del", "delete"), ("esc", "back")],
+        };
+        if self.updatable(path) {
+            hints.insert(0, ("⌘U", "update"));
         }
+        if self.askable(path) {
+            hints.insert(0, ("⌘K", "ask"));
+        }
+        hints
     }
 
     /// A dismissible `danger` line naming what failed.
@@ -171,13 +185,17 @@ impl IboardApp {
                 theme::SPACE_3 as i8,
             ))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(error).color(p.danger));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if widgets::button(ui, ButtonKind::Ghost, None, "Dismiss", None).clicked() {
-                            self.error = None;
-                            self.scan_error = None;
-                        }
+                // Dismiss first, so a long error truncates before it rather
+                // than pushing it out of the window.
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if widgets::button(ui, ButtonKind::Ghost, None, "Dismiss", None).clicked() {
+                        self.error = None;
+                        self.scan_error = None;
+                    }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        let text = RichText::new(error).color(p.danger);
+                        ui.add(egui::Label::new(text).truncate())
+                            .on_hover_text(error);
                     });
                 });
             });

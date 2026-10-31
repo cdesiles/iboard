@@ -17,6 +17,7 @@ mod review;
 mod select;
 mod settings;
 mod stats;
+mod workspace;
 use review::open_issue_with_review;
 
 /// A context with the design system installed, past the first frame so
@@ -375,6 +376,53 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
     app.open_project(empty.to_path_buf());
     assert!(app.error.is_some());
     assert_eq!(app.board.root, before);
+}
+
+/// Move to… sends the open issue to another column; the Reader stays on it.
+#[test]
+fn move_to_sends_the_open_issue_and_keeps_it_open() {
+    let dir = scratch_dir("move-to");
+    for column in ["ready", "doing", "done"] {
+        std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
+    }
+    let file = dir.join("issues/doing/task.md");
+    std::fs::write(&file, "# Task\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_issue(file.clone());
+    let done = dir.join("issues/done");
+    app.send_to(&file, &done);
+    let moved = done.join("task.md");
+    assert!(moved.exists() && !file.exists());
+    assert!(matches!(&app.session.screen, Screen::Detail(open) if *open == moved));
+}
+
+/// A long error keeps its Dismiss button in the window.
+#[test]
+fn a_long_error_can_still_be_dismissed() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("long-error");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.error = Some("direnv: error /a/very/long/path/.envrc is blocked. ".repeat(12));
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    let dismiss = harness.get_by_label("Dismiss").rect();
+    assert!(dismiss.max.x <= window().width(), "{dismiss:?}");
+    harness.get_by_label("Dismiss").click();
+    harness.run_steps(2);
+    assert!(harness.state().1.error.is_none());
 }
 
 #[test]

@@ -24,6 +24,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
@@ -126,6 +127,15 @@ static TOOLS: OnceLock<PathBuf> = OnceLock::new();
 /// tests never start a real agent. The first call wins.
 pub fn run_tools_from(dir: &Path) {
     let _ = TOOLS.set(dir.to_path_buf());
+}
+
+/// `[direnv] enabled`, read once at launch.
+static DIRENV: AtomicBool = AtomicBool::new(false);
+
+/// Runs agents through `direnv exec` in projects that have an `.envrc`, for
+/// the rest of the process.
+pub fn set_direnv(enabled: bool) {
+    DIRENV.store(enabled, Ordering::Relaxed);
 }
 
 /// The `[ai]` section of the user's configuration.
@@ -539,13 +549,57 @@ impl ReviewMode {
     }
 }
 
+/// What Ask AI lets the agent do beyond reading the project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Leash {
+    pub edits: bool,
+    pub commits: bool,
+    pub deploys: bool,
+}
+
+/// Commands that deploy, or reach a server: denied while deploying is not
+/// allowed. A push can start a deploy, so it is one.
+const DEPLOYING: [&str; 10] = [
+    "Bash(git push:*)",
+    "Bash(ssh:*)",
+    "Bash(scp:*)",
+    "Bash(rsync:*)",
+    "Bash(ansible-playbook:*)",
+    "Bash(kubectl:*)",
+    "Bash(gcloud:*)",
+    "Bash(docker push:*)",
+    "Bash(vercel:*)",
+    "Bash(fly:*)",
+];
+
+impl Leash {
+    /// The Claude Code tools the leash denies, as `--disallowedTools` takes
+    /// them.
+    fn denied(self) -> Vec<&'static str> {
+        let mut tools = Vec::new();
+        if !self.commits {
+            tools.extend(["Bash(git commit:*)", "Bash(git push:*)"]);
+        }
+        if !self.deploys {
+            for tool in DEPLOYING {
+                if !tools.contains(&tool) {
+                    tools.push(tool);
+                }
+            }
+        }
+        tools
+    }
+}
+
 /// What a run of the agent is for: a plain answer, a review (in plan mode
-/// when `plan`), or implementing an issue, which edits the repository.
+/// when `plan`), implementing an issue, which edits the repository, or what
+/// its author asked on a leash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Purpose {
     Answer,
     Review { mode: ReviewMode, plan: bool },
     Build,
+    Ask(Leash),
 }
 
 impl Purpose {
@@ -555,7 +609,13 @@ impl Purpose {
             Purpose::Answer => "",
             Purpose::Review { mode, .. } => mode.key(),
             Purpose::Build => "build",
+            Purpose::Ask(_) => "ask",
         }
+    }
+
+    /// Whether the run works on the repository, with a build's time to do it.
+    fn works(self) -> bool {
+        matches!(self, Purpose::Build | Purpose::Ask(_))
     }
 }
 
@@ -616,15 +676,23 @@ fn command(
                         } => {
                             command.args(["--tools", ""]);
                         }
-                        Purpose::Build => {
+                        Purpose::Build | Purpose::Ask(Leash { edits: true, .. }) => {
                             command.args(["--permission-mode", "acceptEdits"]);
                         }
                         _ => {}
                     }
                 }
             }
-            if let Purpose::Review { plan: true, .. } = purpose {
+            if let Purpose::Review { plan: true, .. } | Purpose::Ask(Leash { edits: false, .. }) =
+                purpose
+            {
                 command.args(tool.plan_args());
+            }
+            if let (Tool::Claude, Purpose::Ask(leash)) = (tool, purpose) {
+                let denied = leash.denied();
+                if !denied.is_empty() {
+                    command.arg("--disallowedTools").arg(denied.join(","));
+                }
             }
             if !model.is_empty() {
                 command.arg("--model").arg(model);
@@ -655,20 +723,39 @@ fn shell_script(command: &str) -> String {
 /// Runs the agent on `prompt` and waits for its answer, on this thread. The
 /// tool runs without a terminal, which is what one-shot modes need; it is
 /// stopped when `cancel` says so, or after [`ANSWER_TIMEOUT`]. `issue` is the
-/// file the prompt is about, a custom command's `{issue}`.
+/// file the prompt is about, a custom command's `{issue}`; the agent runs
+/// from `project` when set.
 pub fn run(
     config: &AgentConfig,
     prompt: &str,
     issue: &Path,
+    project: Option<&Path>,
     cancel: &Cancel,
 ) -> Result<String, String> {
-    run_with(config, prompt, issue, cancel, Purpose::Answer, None, None)
+    let workspace = project.map(Workspace::of);
+    let purpose = Purpose::Answer;
+    run_with(
+        config,
+        prompt,
+        issue,
+        cancel,
+        purpose,
+        None,
+        workspace.as_ref(),
+    )
 }
 
-/// Where a build runs: the project it edits, and the log its output goes to.
+/// Where an agent runs: the project it reads or edits, and for a build the
+/// log its output goes to.
 struct Workspace<'a> {
     dir: &'a Path,
-    log: &'a Path,
+    log: Option<&'a Path>,
+}
+
+impl<'a> Workspace<'a> {
+    fn of(dir: &'a Path) -> Self {
+        Workspace { dir, log: None }
+    }
 }
 
 /// [`run`] for `purpose`, in `workspace` when set; the agent's steps land in
@@ -701,9 +788,16 @@ fn run_with(
     let mut command = command(config, &model, prompt, &prompt_file, issue, purpose);
     if let Some(workspace) = workspace {
         command.current_dir(workspace.dir);
+        if direnv::applies(DIRENV.load(Ordering::Relaxed), workspace.dir)
+            && let Some(binary) = find_binary("direnv")
+        {
+            command = direnv::wrap(&command, &binary, workspace.dir);
+        }
     }
-    let mut log = workspace.and_then(|workspace| build_log::open(workspace.log).ok());
-    let timeout = if purpose == Purpose::Build {
+    let mut log = workspace
+        .and_then(|workspace| workspace.log)
+        .and_then(|log| build_log::open(log).ok());
+    let timeout = if purpose.works() {
         BUILD_TIMEOUT
     } else {
         ANSWER_TIMEOUT
@@ -734,7 +828,7 @@ fn run_with(
         None => answer,
     };
     match answer.trim() {
-        "" if purpose != Purpose::Build => {
+        "" if !purpose.works() => {
             Err(failure.unwrap_or_else(|| "the agent returned no answer".to_string()))
         }
         answer => Ok(answer.to_string()),
@@ -742,9 +836,15 @@ fn run_with(
 }
 
 /// [`run`] on a background thread. Dropping the job stops the agent.
-pub fn start(config: &AgentConfig, prompt: &str, issue: &Path) -> Job<Result<String, String>> {
+pub fn start(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    project: Option<&Path>,
+) -> Job<Result<String, String>> {
     let (config, prompt, issue) = (config.clone(), prompt.to_string(), issue.to_path_buf());
-    Job::spawn(move |cancel| run(&config, &prompt, &issue, cancel))
+    let project = project.map(Path::to_path_buf);
+    Job::spawn(move |cancel| run(&config, &prompt, &issue, project.as_deref(), cancel))
 }
 
 /// A review's answer, and whether the agent gave it in plan mode.
@@ -754,20 +854,45 @@ pub struct Reviewed {
     pub plan: bool,
 }
 
+/// What a review is about: the issue, and the project the agent reads.
+struct Subject {
+    issue: PathBuf,
+    project: Option<PathBuf>,
+}
+
+impl Subject {
+    fn new(issue: &Path, project: Option<&Path>) -> Self {
+        Subject {
+            issue: issue.to_path_buf(),
+            project: project.map(Path::to_path_buf),
+        }
+    }
+}
+
 /// Runs a review in plan mode when the tool has one, and again without it
 /// when the tool rejects the flag.
 fn review(
     config: &AgentConfig,
     prompt: &str,
-    issue: &Path,
+    subject: &Subject,
     cancel: &Cancel,
     mode: ReviewMode,
     progress: &Progress,
 ) -> Result<Reviewed, String> {
+    let workspace = subject.project.as_deref().map(Workspace::of);
     let run = |plan| {
         let purpose = Purpose::Review { mode, plan };
-        run_with(config, prompt, issue, cancel, purpose, Some(progress), None)
-            .map(|answer| Reviewed { answer, plan })
+        let (issue, steps) = (&subject.issue, Some(progress));
+        run_with(
+            config,
+            prompt,
+            issue,
+            cancel,
+            purpose,
+            steps,
+            workspace.as_ref(),
+        )
+        .map(|answer| Reviewed { answer, plan })
     };
     if config.tool.plan_args().is_empty() {
         return run(false);
@@ -799,12 +924,14 @@ pub fn start_plan_review(
     config: &AgentConfig,
     prompt: &str,
     issue: &Path,
+    project: Option<&Path>,
     mode: ReviewMode,
 ) -> (Job<Result<Reviewed, String>>, Progress) {
-    let (config, prompt, issue) = (config.clone(), prompt.to_string(), issue.to_path_buf());
+    let (config, prompt) = (config.clone(), prompt.to_string());
+    let subject = Subject::new(issue, project);
     let progress = Progress::default();
     let steps = Arc::clone(&progress);
-    let job = Job::spawn(move |cancel| review(&config, &prompt, &issue, cancel, mode, &steps));
+    let job = Job::spawn(move |cancel| review(&config, &prompt, &subject, cancel, mode, &steps));
     (job, progress)
 }
 
@@ -813,13 +940,15 @@ pub fn start_review(
     config: &AgentConfig,
     prompt: &str,
     issue: &Path,
+    project: Option<&Path>,
     mode: ReviewMode,
 ) -> (Job<Result<String, String>>, Progress) {
-    let (config, prompt, issue) = (config.clone(), prompt.to_string(), issue.to_path_buf());
+    let (config, prompt) = (config.clone(), prompt.to_string());
+    let subject = Subject::new(issue, project);
     let progress = Progress::default();
     let steps = Arc::clone(&progress);
     let job = Job::spawn(move |cancel| {
-        review(&config, &prompt, &issue, cancel, mode, &steps).map(|reviewed| reviewed.answer)
+        review(&config, &prompt, &subject, cancel, mode, &steps).map(|reviewed| reviewed.answer)
     });
     (job, progress)
 }
@@ -833,6 +962,27 @@ pub fn start_build(
     issue: &Path,
     project: &Path,
     log: &Path,
+) -> (Job<Result<String, String>>, Progress) {
+    start_logged(config, prompt, issue, (project, log), Purpose::Build)
+}
+
+/// [`start_build`] for what the author of `issue` asked, within `leash`.
+pub fn start_ask(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    (project, log): (&Path, &Path),
+    leash: Leash,
+) -> (Job<Result<String, String>>, Progress) {
+    start_logged(config, prompt, issue, (project, log), Purpose::Ask(leash))
+}
+
+fn start_logged(
+    config: &AgentConfig,
+    prompt: &str,
+    issue: &Path,
+    (project, log): (&Path, &Path),
+    purpose: Purpose,
 ) -> (Job<Result<String, String>>, Progress) {
     let (config, prompt) = (config.clone(), prompt.to_string());
     let (issue, project, log) = (
@@ -848,9 +998,9 @@ pub fn start_build(
         let _ = build_log::append(&log, &build_log::heading(&at, &config.label()));
         let workspace = Workspace {
             dir: &project,
-            log: &log,
+            log: Some(&log),
         };
-        let (purpose, steps) = (Purpose::Build, Some(&steps));
+        let steps = Some(&steps);
         let result = run_with(
             &config,
             &prompt,
@@ -1091,8 +1241,22 @@ pub fn parse(text: &str) -> Option<Report> {
 
 /// A proposed rewrite, unless it is empty or the word `NONE`.
 fn proposal_of(text: &str) -> Option<String> {
-    let text = text.trim();
+    let text = unfenced(text.trim());
     (!text.is_empty() && !text.eq_ignore_ascii_case("none")).then(|| text.to_string())
+}
+
+/// `text` without the one fence around all of it (```` ``` ````,
+/// ```` ```markdown ```` or ```` ```md ````): agents sometimes wrap the whole
+/// rewritten issue in one.
+fn unfenced(text: &str) -> &str {
+    let Some((first, rest)) = text.split_once('\n') else {
+        return text;
+    };
+    let opening = first.trim().strip_prefix("```").map(str::trim);
+    match (opening, rest.trim_end().strip_suffix("```")) {
+        (Some("" | "markdown" | "md"), Some(inside)) => inside.trim(),
+        _ => text,
+    }
 }
 
 /// One turn of a refinement, as the challenger answered it.
@@ -1210,6 +1374,8 @@ fn verdict_and_note(rest: &str) -> Option<(Verdict, &str)> {
         .trim_end();
     Some((verdict, note))
 }
+
+mod direnv;
 
 #[cfg(test)]
 mod tests;

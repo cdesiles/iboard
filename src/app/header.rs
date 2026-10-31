@@ -65,7 +65,11 @@ impl IboardApp {
             }
             Screen::Board => {
                 ui.label(RichText::new(&project).font(theme::ui_title()).color(p.ink));
-                let path = display_path(&self.board.root);
+                let path = if self.showing_all() {
+                    self.workspace_groups()
+                } else {
+                    display_path(&self.board.root)
+                };
                 let response = ui
                     .horizontal(|ui| {
                         let label = ui.add(
@@ -86,7 +90,7 @@ impl IboardApp {
                     })
                     .inner
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text("Switch project");
+                    .on_hover_text("Switch project  Ctrl⇥");
                 self.project_menu(&response);
             }
             Screen::Detail(path) => self.detail_breadcrumb(ui, &path, &project),
@@ -152,18 +156,34 @@ impl IboardApp {
         }
     }
 
-    /// The recent-projects menu, opened from the path in the board header. Its
-    /// last row asks the OS for a folder; both a remembered and a browsed
-    /// folder go through [`Self::open_project`].
+    /// The project menu, opened from the path in the board header: All
+    /// projects, the recent projects, the workspace's other projects, and a
+    /// last row that asks the OS for a folder. Every project goes through
+    /// [`Self::open_project`].
     pub(super) fn project_menu(&mut self, anchor: &egui::Response) {
-        let current = recents::canonical(&self.located.project_dir);
+        let showing_all = self.showing_all();
+        let current = match showing_all {
+            true => PathBuf::new(),
+            false => recents::canonical(&self.located.project_dir),
+        };
         let projects = self.recents.clone();
+        let others = self.workspace_projects();
+        let groups = self.workspace.is_some().then(|| self.workspace_groups());
         let picked = egui::Popup::menu(anchor)
             .width(PROJECT_MENU_WIDTH)
             .show(|ui| {
                 ui.set_min_width(PROJECT_MENU_WIDTH);
                 ui.spacing_mut().item_spacing.y = theme::SPACE_1;
                 let mut picked = None;
+                if let Some(groups) = &groups {
+                    let title = workspace::TITLE;
+                    if widgets::menu_row(ui, PROJECT_MENU_WIDTH, title, groups, showing_all)
+                        .clicked()
+                    {
+                        picked = Some(ProjectChoice::All);
+                    }
+                    ui.separator();
+                }
                 for project in &projects {
                     let title = project
                         .file_name()
@@ -182,7 +202,20 @@ impl IboardApp {
                         picked = Some(ProjectChoice::Recent(project.clone()));
                     }
                 }
-                if !projects.is_empty() {
+                if !projects.is_empty() && !others.is_empty() {
+                    ui.separator();
+                }
+                for (project, group) in &others {
+                    let title = project
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("project");
+                    let detail = format!("{group} · {}", display_path(project));
+                    if widgets::menu_row(ui, PROJECT_MENU_WIDTH, title, &detail, false).clicked() {
+                        picked = Some(ProjectChoice::Recent(project.clone()));
+                    }
+                }
+                if !projects.is_empty() || !others.is_empty() {
                     ui.separator();
                 }
                 if widgets::menu_row(
@@ -200,6 +233,7 @@ impl IboardApp {
             })
             .and_then(|inner| inner.inner);
         match picked {
+            Some(ProjectChoice::All) => self.open_all(),
             Some(ProjectChoice::Recent(path)) => self.open_project(path),
             Some(ProjectChoice::Browse) => {
                 if let Some(dir) = dialog::pick_folder() {
@@ -219,7 +253,7 @@ impl IboardApp {
         }
     }
 
-    /// The board's toolbar: New issue, Refresh, Design and the filter.
+    /// The board's toolbar: New issue, Refresh, Stats, Design and the filter.
     fn board_controls(&mut self, ui: &mut egui::Ui) {
         let has_todo = self.board.todo_column().is_some();
         let new_issue = ui.add_enabled_ui(has_todo, |ui| {
@@ -236,7 +270,14 @@ impl IboardApp {
             self.open_composer();
         }
         self.refresh_button(ui);
-        if self.idesign
+        if !self.showing_all()
+            && widgets::button(ui, ButtonKind::Secondary, None, "Stats", Some("⌘I"))
+                .on_hover_text("Project stats: what the commits say, and the Agenda")
+                .clicked()
+        {
+            self.open_stats();
+        }
+        if self.design_reachable()
             && widgets::button(ui, ButtonKind::Secondary, None, "Design", None)
                 .on_hover_text("Browse the project's design system")
                 .clicked()
@@ -258,9 +299,15 @@ impl IboardApp {
             .map(Column::is_done)
             .unwrap_or(false);
         let reading = self.session.detail_mode == DetailMode::Preview && exists;
-        // Reviewing refines an issue, so only Todo issues offer it.
+        // Reviewing refines an issue, so only Todo issues offer it; the
+        // later ones can be brought up to date.
         if self.is_todo_issue(&path) {
             self.review_button(ui, &path);
+        } else if self.updatable(&path) {
+            self.update_button(ui, &path);
+        }
+        if reading && self.askable(&path) {
+            self.ask_button(ui, &path);
         }
         // In the Editor, Save and Discard take Edit's place.
         if self.session.detail_mode == DetailMode::Edit && exists {
@@ -287,6 +334,9 @@ impl IboardApp {
         {
             self.start_editing(&path);
         }
+        if reading {
+            self.move_button(ui, &path);
+        }
         if reading && done {
             self.commits_button(ui, &path);
         }
@@ -295,7 +345,7 @@ impl IboardApp {
         }
         if reading
             && !done
-            && self.idesign
+            && self.design_reachable()
             && widgets::button(ui, ButtonKind::Secondary, None, "Draft design", None)
                 .on_hover_text("Ask the agent for a static mockup of this change")
                 .clicked()
@@ -303,6 +353,37 @@ impl IboardApp {
             self.start_enrichment(&path);
         }
         self.detail_right_group(ui, &path, exists, done);
+    }
+
+    /// Move to…, in the Reader: the other columns, to send the issue to
+    /// without going back to the board.
+    fn move_button(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let here = self.board.column_of(path).map(|column| column.dir.clone());
+        let columns: Vec<(String, PathBuf)> = self
+            .board
+            .columns
+            .iter()
+            .filter(|column| Some(&column.dir) != here.as_ref())
+            .map(|column| (column.name.clone(), column.dir.clone()))
+            .collect();
+        let button = widgets::button(ui, ButtonKind::Secondary, None, "Move to…", None)
+            .on_hover_text("Send this issue to another column");
+        let picked = egui::Popup::menu(&button)
+            .width(MOVE_MENU_WIDTH)
+            .show(|ui| {
+                ui.set_min_width(MOVE_MENU_WIDTH);
+                let mut picked = None;
+                for (name, dir) in &columns {
+                    if widgets::menu_row(ui, MOVE_MENU_WIDTH, name, "", false).clicked() {
+                        picked = Some(dir.clone());
+                    }
+                }
+                picked
+            })
+            .and_then(|inner| inner.inner);
+        if let Some(dir) = picked {
+            self.send_to(path, &dir);
+        }
     }
 
     /// Commits, `Open` while its popup shows, and the newest commit's hash.

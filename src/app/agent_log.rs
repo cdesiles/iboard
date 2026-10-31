@@ -27,7 +27,8 @@ impl LogView {
 impl IboardApp {
     /// Whether the build agent works on `path` now or ever did.
     pub(super) fn has_agent_log(&self, path: &Path) -> bool {
-        self.building_since(path).is_some() || build_log::path(&self.board.root, path).is_file()
+        self.building_since(path).is_some()
+            || build_log::path(self.board.root_of(path), path).is_file()
     }
 
     pub(super) fn agent_log_open(&self, path: &Path) -> bool {
@@ -72,7 +73,7 @@ impl IboardApp {
     pub(super) fn toggle_agent_log(&mut self, path: &Path) {
         self.session.agent_log = (!self.agent_log_open(path)).then(|| LogView {
             path: path.to_path_buf(),
-            file: build_log::path(&self.board.root, path),
+            file: build_log::path(self.board.root_of(path), path),
             len: None,
             text: String::new(),
             cache: CommonMarkCache::default(),

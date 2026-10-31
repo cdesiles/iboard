@@ -139,7 +139,8 @@ impl IboardApp {
         let root = self.board.root.clone();
         let written = match target {
             Target::Editor => self.session.editor.as_mut().map(|editor| {
-                let link = assets::add(&root, &reviews::slug(&editor.path), &png)?;
+                let root = self.board.root_of(&editor.path);
+                let link = assets::add(root, &reviews::slug(&editor.path), &png)?;
                 insert_at_caret(ctx, EDITOR_ID, &mut editor.text, &link);
                 editor.last_edit = Some(Instant::now());
                 ctx.request_repaint_after(AUTOSAVE_AFTER);
@@ -196,7 +197,7 @@ impl IboardApp {
     /// the issue's links with them.
     pub(super) fn rename_images(&mut self, old: &Path, new: &Path) {
         let (from, to) = (reviews::slug(old), reviews::slug(new));
-        let root = self.board.root.clone();
+        let root = self.board.root_of(new).to_path_buf();
         let Some(editor) = self.session.editor.as_mut().filter(|e| e.path == new) else {
             return;
         };
@@ -225,7 +226,7 @@ impl IboardApp {
     /// of the images it links.
     pub(super) fn copy_images(&mut self, original: &Path, child: &Path, text: &str) -> String {
         let (from, to) = (reviews::slug(original), reviews::slug(child));
-        match assets::relink(&self.board.root, text, &from, &to, Carry::Copy) {
+        match assets::relink(self.board.root_of(original), text, &from, &to, Carry::Copy) {
             Ok(text) => text,
             Err(err) => {
                 self.error = Some(format!("Couldn't copy the images: {err}"));
@@ -244,7 +245,7 @@ impl IboardApp {
             .iter()
             .flat_map(|column| &column.issues)
             .any(|issue| issue.path != path && reviews::slug(&issue.path) == slug);
-        let folder = assets::folder(&self.board.root, &slug);
+        let folder = assets::folder(self.board.root_of(path), &slug);
         if shared || !folder.is_dir() {
             return None;
         }

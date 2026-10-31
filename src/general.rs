@@ -48,7 +48,8 @@ pub fn section(confirm: bool) -> Result<Section, String> {
     )
 }
 
-/// A section that holds one `enabled` switch: `[auto]`, `[idesign]`.
+/// A section that holds one `enabled` switch: `[auto]`, `[idesign]`,
+/// `[direnv]`.
 #[derive(Default, Deserialize, Serialize)]
 struct RawEnabled {
     enabled: Option<bool>,
@@ -75,6 +76,15 @@ pub fn auto_section(enabled: bool) -> Result<Section, String> {
 pub fn load_idesign(config: &mut UserConfig) -> bool {
     config
         .section::<RawEnabled>("idesign")
+        .enabled
+        .unwrap_or(false)
+}
+
+/// Whether agents run through `direnv exec` in projects that have an
+/// `.envrc`. Off unless `[direnv] enabled = true`.
+pub fn load_direnv(config: &mut UserConfig) -> bool {
+    config
+        .section::<RawEnabled>("direnv")
         .enabled
         .unwrap_or(false)
 }

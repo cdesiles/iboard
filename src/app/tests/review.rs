@@ -22,6 +22,32 @@ fn only_todo_issues_are_reviewed() {
     );
 }
 
+/// The agent reads the issue's project, wherever iboard was started from.
+#[test]
+fn a_review_runs_from_the_issue_project() {
+    let dir = std::fs::canonicalize(scratch_dir("review-cwd")).unwrap();
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("demo.md");
+    std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf 'RELEVANCE: Pass\\n%s\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' \"$(pwd -P)\" # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.start_review(&file, false);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&file)
+    }));
+    let kept = std::fs::read_to_string(dir.join("issues/.reviews/demo.toml")).unwrap();
+    assert!(kept.contains(&dir.display().to_string()), "{kept}");
+}
+
 /// A finished review is kept beside the issue: it stays behind the card's
 /// verdict pill, survives a restart, and turns stale once the issue changes.
 #[test]
@@ -49,6 +75,8 @@ fn a_review_is_kept_beside_the_issue() {
     app.close_review();
     let p = &theme::LIGHT;
     assert_eq!(app.past_reviews[&file].pill(p).0, "Block");
+    let hint = app.past_reviews[&file].card_pill(p).2;
+    assert!(hint.contains("Block") && hint.contains("clarity"), "{hint}");
     assert!(dir.join("issues/.reviews/demo.toml").exists());
 
     let mut restarted = IboardApp::from_located(discovery::locate(&dir).unwrap());
@@ -467,9 +495,9 @@ fn a_ready_review_opens_from_its_card() {
     assert!(harness.query_by_label("Review ready").is_none());
 }
 
-/// A review asked for from the reader lands there as a ready button.
+/// A review asked for from the reader opens its panel there as it lands.
 #[test]
-fn a_ready_review_opens_from_the_reader() {
+fn a_ready_review_opens_in_the_reader() {
     use egui_kittest::kittest::Queryable;
     let (_dir, file, mut harness) = reviewing("review-ready-reader", PASSING);
     harness.state_mut().1.open_issue(file.clone());
@@ -479,11 +507,11 @@ fn a_ready_review_opens_from_the_reader() {
     assert!(harness.state().1.session.review.is_none());
     land(&mut harness, &file);
 
-    harness.get_by_label("Review ready").click();
     harness.run_steps(2);
     let app = &harness.state().1;
     assert!(app.session.review.is_some(), "the panel opens");
     assert!(!app.session.review_runs.is_ready(&file));
+    assert!(harness.query_by_label("Review ready").is_none());
 }
 
 /// A failed review says so in the status strip, and the issue keeps its
@@ -562,7 +590,6 @@ fn a_reader_review_runs_opencode_in_plan_mode() {
     let stored = reviews::load(&dir.join("issues"), &file).review.unwrap();
     assert!(stored.plan);
     assert!(stored.raw.contains("--agent\nplan\n"), "{}", stored.raw);
-    harness.get_by_label("Review ready").click();
     harness.run_steps(2);
     harness.get_by_label(PLAN_NOTE);
 }
@@ -604,4 +631,256 @@ fn the_review_runs_in_the_scope_settings_chose() {
         let detail = format!("custom · default · {} · file", scope.scope_name());
         harness.get_by_label(&detail);
     }
+}
+
+/// Update with AI: an issue past Todo is checked in its project, and Apply
+/// opens the editor with the update even where the board keeps it read-only.
+#[test]
+fn an_update_rewrites_a_doing_issue_through_the_editor() {
+    let dir = std::fs::canonicalize(scratch_dir("update")).unwrap();
+    for column in ["todo", "doing", "done"] {
+        std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
+    }
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n\nNext: check the dumps.\n").unwrap();
+    std::fs::write(dir.join("issues/done/old.md"), "# Old\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf 'RELEVANCE: Block\\ndone in %s\\nSIZE: Pass\\nnothing left\\nCLARITY: Challenge\\nstale\\nPROPOSAL:\\n# Migrate\\n\\nDone.' \"$(pwd -P)\" # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    assert!(app.updatable(&file));
+    assert!(!app.updatable(&dir.join("issues/done/old.md")));
+    app.start_update(&file);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&file)
+    }));
+    app.show_past_review(file.clone());
+    app.apply_review_proposal();
+    let editor = app
+        .session
+        .editor
+        .as_ref()
+        .expect("the editor opens on a Doing issue");
+    assert_eq!(editor.text.trim(), "# Migrate\n\nDone.");
+    let kept = std::fs::read_to_string(dir.join("issues/.reviews/migrate.toml")).unwrap();
+    assert!(
+        kept.contains(&dir.display().to_string()),
+        "run from the project: {kept}"
+    );
+}
+
+/// `⌘U` starts Update with AI on the open issue, and a second one cancels it.
+#[test]
+fn cmd_u_starts_and_cancels_an_update() {
+    let dir = scratch_dir("update-key");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "sleep 30 # {prompt}".to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.open_issue(file.clone());
+    let ctx = themed_ctx();
+    let command = egui::Modifiers::COMMAND;
+    let press = || vec![egui::Event::ModifiersChanged(command), key(Key::U, command)];
+    frame(&ctx, &mut app, press());
+    assert!(app.review_is_running(&file));
+    frame(&ctx, &mut app, press());
+    assert!(!app.review_is_running(&file));
+}
+
+/// A long agent name truncates in the review head instead of widening the
+/// panel under the issue.
+#[test]
+fn a_long_agent_name_keeps_the_review_panel_in_its_place() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("review-head");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: "a-model-whose-name-goes-on-and-on-well-past-the-panel".to_string(),
+        command: "printf 'RELEVANCE: Pass\\nok\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.start_update(&file);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&file)
+    }));
+    app.show_past_review(file);
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(3);
+    let title = harness.get_by_label("Review of migrate.md").rect();
+    let panel_left = window().width() - REVIEW_PANEL_WIDTH;
+    assert!(
+        title.min.x >= panel_left,
+        "{title:?} starts left of {panel_left}"
+    );
+}
+
+/// A finished update opens its panel on the issue being read, and when the
+/// issue is opened later; `⌘↩` applies it.
+#[test]
+fn a_finished_update_shows_by_itself_and_applies_with_cmd_enter() {
+    let dir = scratch_dir("update-shows");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let (one, two) = (
+        dir.join("issues/doing/one.md"),
+        dir.join("issues/doing/two.md"),
+    );
+    std::fs::write(&one, "# One\n").unwrap();
+    std::fs::write(&two, "# Two\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf 'RELEVANCE: Challenge\\nstale\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL:\\n# Updated' # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.start_update(&two);
+    app.open_issue(one.clone());
+    app.start_update(&one);
+    assert!(until(|| {
+        app.poll_review();
+        app.past_reviews.contains_key(&one) && app.past_reviews.contains_key(&two)
+    }));
+    assert!(
+        app.session.review.as_ref().is_some_and(|r| r.path == one),
+        "shown at once"
+    );
+    app.open_issue(two.clone());
+    assert!(
+        app.session.review.as_ref().is_some_and(|r| r.path == two),
+        "shown on opening"
+    );
+
+    let ctx = themed_ctx();
+    let command = egui::Modifiers::COMMAND;
+    let press = vec![
+        egui::Event::ModifiersChanged(command),
+        key(Key::Enter, command),
+    ];
+    frame(&ctx, &mut app, press);
+    let editor = app
+        .session
+        .editor
+        .as_ref()
+        .expect("⌘↩ applies the proposal");
+    assert_eq!(editor.text.trim(), "# Updated");
+}
+
+/// Quitting while an AI run is at work asks first; `esc` keeps iboard open,
+/// `↩` quits. With nothing at work it quits at once.
+#[test]
+fn quitting_with_a_run_at_work_asks_first() {
+    let dir = scratch_dir("quit-runs");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "sleep 30 # {prompt}".to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.start_update(&file);
+    app.request_quit();
+    assert!(matches!(app.session.confirm, Some(Confirm::Quit(1))));
+    assert!(!app.closing);
+    let ctx = themed_ctx();
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(Key::Escape, egui::Modifiers::NONE)],
+    );
+    assert!(
+        app.session.confirm.is_none() && !app.closing,
+        "esc keeps iboard open"
+    );
+    app.request_quit();
+    app.quit_anyway();
+    assert!(app.closing);
+
+    let mut idle = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    idle.request_quit();
+    assert!(idle.session.confirm.is_none() && idle.closing);
+}
+
+/// `⌘K` opens Ask AI with its boxes at their defaults; Send hands the request
+/// to the build agent in the issue's project, whose answer lands in the status
+/// bar and the agent log.
+#[test]
+fn cmd_k_asks_the_agent_about_the_open_issue() {
+    let dir = std::fs::canonicalize(scratch_dir("ask")).unwrap();
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n\n- [ ] point 1\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.build_agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf 'Did point 1 in %s, as %s' \"$(pwd -P)\" \"$IBOARD_MODE\" # {prompt}"
+            .to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.open_issue(file.clone());
+    let ctx = themed_ctx();
+    let command = egui::Modifiers::COMMAND;
+    let press = |k: Key| vec![egui::Event::ModifiersChanged(command), key(k, command)];
+    frame(&ctx, &mut app, press(Key::K));
+    let draft = app.session.ask_draft.as_mut().expect("⌘K opens the dialog");
+    assert_eq!(
+        draft.leash(),
+        agent::Leash {
+            edits: true,
+            commits: true,
+            deploys: false
+        }
+    );
+    draft.request = "Take care of point 1".to_string();
+    frame(&ctx, &mut app, press(Key::Enter));
+    assert!(app.session.ask_draft.is_none() && app.asking(&file));
+    assert!(until(|| {
+        app.poll_asks(&ctx);
+        !app.asking(&file)
+    }));
+    let (notice, _) = app.session.notice.clone().expect("the answer shows");
+    assert!(
+        notice.contains(&format!("Did point 1 in {}, as ask", dir.display())),
+        "{notice}"
+    );
+    assert!(app.has_agent_log(&file));
 }

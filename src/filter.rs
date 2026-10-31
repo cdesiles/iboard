@@ -76,11 +76,15 @@ impl Filter {
 }
 
 /// The `count` labels used most across `issues`, most used first, ties by
-/// name.
+/// name. Origin labels (`repo:`, `group:`) are left out: every card has one.
 pub fn top_labels<'a>(issues: impl IntoIterator<Item = &'a Issue>, count: usize) -> Vec<String> {
     let mut counts: Vec<(String, usize)> = Vec::new();
     for issue in issues {
-        for label in &issue.labels {
+        for label in issue
+            .labels
+            .iter()
+            .filter(|label| !labels::is_origin(label))
+        {
             match counts.iter_mut().find(|(name, _)| name == label) {
                 Some((_, n)) => *n += 1,
                 None => counts.push((label.clone(), 1)),

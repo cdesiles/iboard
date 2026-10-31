@@ -26,6 +26,8 @@ struct KeyContext {
     editable: bool,
     /// The open issue is in Todo, so it can be refined and reviewed.
     refinable: bool,
+    /// The review panel shows a proposal to apply.
+    proposal: bool,
 }
 
 /// One thing a key asked for.
@@ -52,6 +54,16 @@ enum Command {
     Archive(PathBuf),
     Labels(PathBuf),
     Delete(PathBuf),
+    /// `⌃⇥` / `⌃⇧⇥` on the board: the next or the previous project.
+    SwitchProject(bool),
+    /// `⌘I` on the board: Project stats.
+    Stats,
+    /// `⌘U`: Update with AI on the open issue or the selected card, or cancel it.
+    Update(PathBuf),
+    /// `⌘↩` with a review's proposal shown: apply it.
+    ApplyReview,
+    /// `⌘K`: Ask AI on the open issue or the selected card, or stop the ask.
+    Ask(PathBuf),
 }
 
 /// The shortcuts that fire for `input` where the keyboard is.
@@ -65,6 +77,22 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     }
     if cx.board && command(Key::F) {
         out.push(Command::FocusFilter);
+    }
+    if cx.board && !cx.typing && command(Key::I) {
+        out.push(Command::Stats);
+    }
+    if cx.proposal && !cx.typing && command(Key::Enter) {
+        out.push(Command::ApplyReview);
+    }
+    let target = match cx.board {
+        true => cx.selected.as_ref().map(|(path, _)| path),
+        false => cx.open.as_ref().filter(|_| !cx.editing),
+    };
+    if !cx.typing && command(Key::U) {
+        out.extend(target.map(|path| Command::Update(path.clone())));
+    }
+    if !cx.typing && command(Key::K) {
+        out.extend(target.map(|path| Command::Ask(path.clone())));
     }
     if cx.board && !cx.typing {
         for (at, key) in [Key::Num1, Key::Num2, Key::Num3, Key::Num4]
@@ -103,6 +131,10 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     }
     if cx.board && !cx.typing && !cx.confirming {
         out.extend(board_keys(input, cx));
+    }
+    let ctrl = input.modifiers.ctrl && !input.modifiers.mac_cmd && !input.modifiers.alt;
+    if cx.board && !cx.composer && !cx.confirming && ctrl && pressed(Key::Tab) {
+        out.push(Command::SwitchProject(!input.modifiers.shift));
     }
     let reading = cx.open.as_ref().filter(|_| !cx.editing);
     if let Some(path) = reading
@@ -182,6 +214,7 @@ impl IboardApp {
         self.poll_design_draft(ctx);
         self.poll_enrichment(ctx);
         self.poll_build(ctx);
+        self.poll_asks(ctx);
         self.poll_stats(ctx);
         self.window_requests(ctx);
 
@@ -197,6 +230,11 @@ impl IboardApp {
         }
         if self.session.stats.is_some() {
             self.stats_keys(ctx);
+            self.background(ctx);
+            return;
+        }
+        if self.session.ask_draft.is_some() {
+            self.ask_keys(ctx);
             self.background(ctx);
             return;
         }
@@ -298,7 +336,11 @@ impl IboardApp {
         // so it can run the save prompt before we exit.
         #[cfg(target_os = "macos")]
         if iboard::menu::take_quit_request() {
-            self.leave(Leave::Quit);
+            self.request_quit();
+        }
+        if quitting::requested() {
+            self.save_pending();
+            self.quit(ctx);
         }
         #[cfg(target_os = "macos")]
         if iboard::menu::take_settings_request() && self.settings.is_none() {
@@ -310,7 +352,7 @@ impl IboardApp {
         }
         let close_requested = ctx.input(|i| i.viewport().close_requested());
         if close_requested && !self.closing {
-            self.leave(Leave::Quit);
+            self.request_quit();
             if !self.closing {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
@@ -323,13 +365,16 @@ impl IboardApp {
     /// The delete confirmation owns Escape and Enter while it is up. True
     /// while it is.
     fn confirm_keys(&mut self, ctx: &egui::Context) -> bool {
-        let Some(Confirm::Delete(paths)) = self.session.confirm.clone() else {
+        let Some(confirm) = self.session.confirm.clone() else {
             return false;
         };
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             self.session.confirm = None;
         } else if ctx.input(|i| i.key_pressed(Key::Enter)) {
-            self.delete_issues(&paths);
+            match confirm {
+                Confirm::Delete(paths) => self.delete_issues(&paths),
+                Confirm::Quit(_) => self.quit_anyway(),
+            }
         }
         true
     }
@@ -399,6 +444,7 @@ impl IboardApp {
             focused: self.column_focus.column.is_some(),
             editable: open.as_deref().is_some_and(|path| self.can_edit(path)),
             refinable: open.as_deref().is_some_and(|path| self.is_todo_issue(path)),
+            proposal: self.proposal_shown() && !self.refinement_shown(),
             open,
             editing: self.session.detail_mode == DetailMode::Edit,
             composer: self.session.composer.is_some(),
@@ -463,6 +509,11 @@ impl IboardApp {
             Command::Archive(path) => self.archive_issue(&path),
             Command::Labels(path) => self.toggle_label_picker(path),
             Command::Delete(path) => self.request_delete(path),
+            Command::SwitchProject(forward) => self.switch_project(forward),
+            Command::Stats => self.open_stats(),
+            Command::Update(path) => self.toggle_update(&path),
+            Command::ApplyReview => self.apply_review_proposal(),
+            Command::Ask(path) => self.toggle_ask(&path),
         }
     }
 
@@ -492,8 +543,8 @@ impl IboardApp {
         if self.auto || self.watching_ready() {
             if self.session.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
                 self.last_refresh = Instant::now();
-                let located = self.located.clone();
-                let rescan = Job::spawn(move |_| scan(&located));
+                let source = self.source();
+                let rescan = Job::spawn(move |_| scan(&source));
                 self.session.scan = Some((rescan, self.board_generation));
             }
             ctx.request_repaint_after(RESCAN_EVERY);

@@ -131,9 +131,14 @@ impl IboardApp {
     }
 
     pub(super) fn start_editing(&mut self, path: &Path) {
-        if !self.can_edit(path) {
-            return;
+        if self.can_edit(path) {
+            self.open_editor(path);
         }
+    }
+
+    /// The editor on `path`, whatever its column: what applying an agent's
+    /// proposal needs, the save being the accept.
+    pub(super) fn open_editor(&mut self, path: &Path) {
         if self
             .session
             .editor

@@ -38,7 +38,7 @@ impl IboardApp {
             .filter(|notes| notes.path == path)
             .unwrap_or_else(|| Notes {
                 path: path.to_path_buf(),
-                comments: reviews::load(&self.board.root, path).comments,
+                comments: reviews::load(self.board.root_of(path), path).comments,
                 draft: None,
             });
         self.session.notes.insert(notes)
@@ -49,9 +49,10 @@ impl IboardApp {
         let Some(notes) = self.session.notes.as_ref() else {
             return;
         };
-        let mut sidecar = reviews::load(&self.board.root, &notes.path);
+        let root = self.board.root_of(&notes.path);
+        let mut sidecar = reviews::load(root, &notes.path);
         sidecar.comments = notes.comments.clone();
-        if let Err(err) = reviews::save(&self.board.root, &notes.path, &sidecar) {
+        if let Err(err) = reviews::save(root, &notes.path, &sidecar) {
             self.error = Some(err);
         }
     }

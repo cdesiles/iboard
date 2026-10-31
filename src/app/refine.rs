@@ -239,10 +239,12 @@ impl IboardApp {
             said.iter().map(|(by, text)| (*by, text.as_str())).collect();
         let prompt = prompts::refine_prompt(&content, &conversation, &notes);
         refine.error = None;
+        let project = Some(self.board.project_of(&path));
         refine.running = Some(agent::start_review(
             &self.agent,
             &prompt,
             &path,
+            project,
             ReviewMode::Quick,
         ));
     }

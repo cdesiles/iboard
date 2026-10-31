@@ -19,8 +19,12 @@ impl IboardApp {
         self.close_review();
         self.session.picked.clear();
         self.session.selected = Some(path.clone());
-        self.session.screen = Screen::Detail(path);
+        self.session.screen = Screen::Detail(path.clone());
         self.session.detail_mode = DetailMode::Preview;
+        // A review that finished while the issue was closed shows now.
+        if self.session.review_runs.is_ready(&path) {
+            self.reveal_review(&path);
+        }
     }
 
     /// Leaves the current screen for `to`. From the editor, unsaved edits are

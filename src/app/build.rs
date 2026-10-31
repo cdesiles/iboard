@@ -76,23 +76,34 @@ impl Builds<'_> {
 }
 
 /// Where `issue`, in `column`, stands with the AI build: at work, or a Doing
-/// issue to retry while an agent is free.
+/// issue to retry while an agent is free, unless it is manual.
 pub(super) fn card_build(column: &Column, issue: &Issue, builds: Builds) -> Option<CardBuild> {
     if let Some((_, since)) = builds.running.iter().find(|(path, _)| *path == issue.path) {
         return Some(CardBuild::Running(*since));
     }
-    (builds.has_room() && discovery::is_doing_column(&column.dir)).then_some(CardBuild::Retry)
+    let retry = builds.has_room() && discovery::is_doing_column(&column.dir) && buildable(issue);
+    retry.then_some(CardBuild::Retry)
+}
+
+/// The label that keeps an issue away from the build agent: work that is not
+/// code, such as a quote or an email.
+pub(super) const MANUAL: &str = "manual";
+
+/// Whether Play hands `issue` to the build agent.
+pub(super) fn buildable(issue: &Issue) -> bool {
+    !issue.labels.iter().any(|label| label == MANUAL)
 }
 
 impl IboardApp {
     /// Play, on Ready's header: builds `paths` in order, as many at once as
-    /// there are agents (one when none were left). Without a build agent set
-    /// up, Settings › AI build opens instead.
-    pub(super) fn start_build(&mut self, paths: Vec<PathBuf>) {
+    /// there are agents (one when none were left), leaving out the manual
+    /// ones. Without a build agent set up, Settings › AI build opens instead.
+    pub(super) fn start_build(&mut self, mut paths: Vec<PathBuf>) {
         if !self.build_agent.configured() {
             self.open_settings(settings_ui::Tab::Build);
             return;
         }
+        paths.retain(|path| self.board.find(path).is_some_and(buildable));
         self.session.agents = self.session.agents.max(1);
         self.session.watch = Some(Watch {
             ready: self.ready_issues().into_iter().collect(),
@@ -126,6 +137,7 @@ impl IboardApp {
         let arrived: Vec<PathBuf> = ready
             .iter()
             .filter(|path| !watch.ready.contains(*path))
+            .filter(|path| self.board.find(path).is_some_and(buildable))
             .cloned()
             .collect();
         watch.ready = ready.into_iter().collect();
@@ -153,6 +165,9 @@ impl IboardApp {
     /// Retry, on a Doing card: an agent starts `path` over where it is. The
     /// issue at work keeps its place in the run.
     pub(super) fn retry_build(&mut self, path: PathBuf) {
+        if !self.board.find(&path).is_some_and(buildable) {
+            return;
+        }
         if !self.build_agent.configured() {
             self.open_settings(settings_ui::Tab::Build);
             return;
@@ -271,8 +286,8 @@ impl IboardApp {
     fn start_agent(&mut self, issue: PathBuf, at: usize) -> Option<Run> {
         let content = self.board.find(&issue)?.markdown.clone();
         let prompt = prompts::build_prompt(&self.relative(&issue), &content);
-        let project = self.located.project_dir.clone();
-        let log = build_log::path(&self.board.root, &issue);
+        let project = self.board.project_of(&issue).to_path_buf();
+        let log = build_log::path(self.board.root_of(&issue), &issue);
         let (answer, _) = agent::start_build(&self.build_agent, &prompt, &issue, &project, &log);
         Some(Run {
             issue,
