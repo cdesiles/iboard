@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use egui::text::{CCursor, CCursorRange, LayoutJob};
@@ -20,6 +21,7 @@ use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_na
 use crate::filter::{self, Filter};
 use crate::format::{card_date, display_path, relative_time, stopwatch};
 use crate::general::{self, Appearance};
+use crate::instance::{self, Request};
 use crate::issue::Issue;
 use crate::job::{self, Job};
 use crate::label_picker::{self, LabelPicker};
@@ -56,6 +58,7 @@ mod enrich;
 mod filter_bar;
 mod focus;
 mod groups;
+mod handover;
 mod header;
 mod images;
 mod intent;
@@ -324,12 +327,14 @@ enum Screen {
 }
 
 /// Where the user asked to go when leaving the editor.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 enum Leave {
     Reader,
     Board,
     /// The board with the quick-add composer open (`⌘N`).
     Composer,
+    /// The board a later `iboard` asked for.
+    Open(all::Target),
     /// Closing the window.
     Quit,
 }
@@ -623,6 +628,9 @@ pub struct IboardApp {
     recents_file: Option<PathBuf>,
     /// A window title to apply on the next frame, after a project switch.
     pending_title: Option<String>,
+    /// What the iboards started later ask this window to show; `None` when no
+    /// socket hands them over (a board built in tests).
+    handovers: Option<Receiver<Request>>,
     /// The user-configured AI tool and model.
     agent: AgentConfig,
     /// The agent that implements Ready issues: `[build]`, or `agent`.
@@ -822,11 +830,13 @@ enum EnrichOutcome {
 impl IboardApp {
     /// `window_title` names the window in Mission Control and the Window menu;
     /// see `main.rs` for why it is set here rather than at startup.
-    /// `located` is `None` for the first group's board.
+    /// `located` is `None` for the first group's board. `listener` is where the
+    /// iboards started later hand this window their board.
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         located: Option<Located>,
         window_title: String,
+        listener: Option<instance::Listener>,
     ) -> Self {
         theme::install(&cc.egui_ctx);
         // Images in a ticket's markdown (`![shot](assets/<stem>/ui.png)`) load
@@ -849,6 +859,9 @@ impl IboardApp {
         });
         let mut app = Self::from_located(located);
         quitting::watch(&cc.egui_ctx);
+        let ctx = cc.egui_ctx.clone();
+        app.handovers =
+            listener.map(|listener| instance::serve(listener, move || ctx.request_repaint()));
         app.clipboard = images::Clipboard::System;
         // The user's real cache: only the running app records here, never a
         // test constructing the board directly.
@@ -930,6 +943,7 @@ impl IboardApp {
             recents: Vec::new(),
             recents_file: None,
             pending_title: None,
+            handovers: None,
             agent: AgentConfig::default(),
             build_agent: AgentConfig::default(),
             config_file: None,

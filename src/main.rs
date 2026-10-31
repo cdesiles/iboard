@@ -4,6 +4,7 @@
 mod app;
 mod dialog;
 mod groups_ui;
+mod instance;
 mod label_picker;
 mod recents;
 mod settings_ui;
@@ -19,6 +20,7 @@ use iboard::{
 use std::path::PathBuf;
 
 use eframe::egui;
+use instance::Request;
 
 fn main() -> eframe::Result {
     let mut path: Option<PathBuf> = None;
@@ -53,6 +55,13 @@ fn main() -> eframe::Result {
         return Ok(());
     }
 
+    // A bare `iboard` brings the running one forward, or opens the latest project.
+    if path.is_none() && !(init || list || all) {
+        if handed_over(&Request::Focus) {
+            return Ok(());
+        }
+        path = recents::cache_file().and_then(|file| recents::latest(&file));
+    }
     let start = match path {
         Some(path) => path,
         None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
@@ -112,9 +121,18 @@ fn main() -> eframe::Result {
     run_app(Some(located), app_title)
 }
 
-/// Opens the window on `located`, or on the first group's board.
+/// Opens the window on `located`, or on the board of the group `app_title`
+/// names, unless an iboard already running takes it.
 fn run_app(located: Option<discovery::Located>, app_title: String) -> eframe::Result {
+    let request = match &located {
+        Some(located) => Request::Project(located.project_dir.clone()),
+        None => Request::Group(app_title.clone()),
+    };
+    if handed_over(&request) {
+        return Ok(());
+    }
     app::on_signals();
+    let listener = instance::socket().and_then(|socket| instance::listen(&socket));
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])
         .with_min_inner_size([880.0, 480.0]);
@@ -142,8 +160,18 @@ fn run_app(located: Option<discovery::Located>, app_title: String) -> eframe::Re
     eframe::run_native(
         "iboard",
         options,
-        Box::new(move |cc| Ok(Box::new(app::IboardApp::new(cc, located, app_title)))),
+        Box::new(move |cc| {
+            Ok(Box::new(app::IboardApp::new(
+                cc, located, app_title, listener,
+            )))
+        }),
     )
+}
+
+/// Whether an iboard already running took `request`: this one has nothing left
+/// to do.
+fn handed_over(request: &Request) -> bool {
+    instance::socket().is_some_and(|socket| instance::hand_over(&socket, request))
 }
 
 /// The Logo's app icon, for the Dock: the "i" whose dot is a card, on its
@@ -241,7 +269,11 @@ fn print_help() {
          USAGE:\n    {name} [OPTIONS] [PATH]\n    {name} init [OPTIONS] [PATH]\n\
          \n\
          PATH may be a project root, a `issues/` directory, or any folder inside\n\
-         one. Defaults to the current directory; parent folders are searched too.\n\
+         one; parent folders are searched too. It defaults to the latest project,\n\
+         or to the current directory for init and --list.\n\
+         \n\
+         One iboard runs at a time: when one is open, {name} brings it forward,\n\
+         on PATH when given, instead of opening a second window.\n\
          \n\
          COMMANDS:\n    init             Create issues/ with todo, ready, doing and done,\n                     then open the board on it\n\
          \n\

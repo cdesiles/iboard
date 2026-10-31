@@ -1,4 +1,5 @@
-//! The projects opened recently, listed when the path in the header is clicked.
+//! The projects opened recently, listed when the path in the header is
+//! clicked; a bare `iboard` starts on the latest.
 //!
 //! The list is a small cache file, one absolute path per line, most recent
 //! first: `$XDG_CACHE_HOME/iboard/recent-projects`, or
@@ -8,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{files, settings};
+use crate::{discovery, files, settings};
 
 /// How many projects are kept; older ones fall off the end.
 const MAX_RECENT: usize = 10;
@@ -32,6 +33,14 @@ pub fn read(file: &Path) -> Vec<PathBuf> {
         .map(PathBuf::from)
         .filter(|path| path.is_dir())
         .collect()
+}
+
+/// The most recent project that still has its issues: where a bare `iboard`
+/// starts.
+pub fn latest(file: &Path) -> Option<PathBuf> {
+    read(file)
+        .into_iter()
+        .find(|project| discovery::locate(project).is_ok())
 }
 
 /// Writes the list atomically (hidden temp file + rename). Failures are
@@ -128,5 +137,25 @@ mod tests {
         std::fs::write(&file, format!("{}\n{}\n\n", gone.display(), dir.display())).unwrap();
 
         assert_eq!(read(&file), vec![canonical(&dir)]);
+    }
+
+    #[test]
+    fn the_latest_project_is_the_newest_that_still_has_its_issues() {
+        let root = tempfile::tempdir().unwrap();
+        let (gone, bare) = (folder(&root, "gone"), folder(&root, "bare"));
+        let (new, old) = (folder(&root, "new"), folder(&root, "old"));
+        for project in [&new, &old] {
+            std::fs::create_dir_all(project.join("issues")).unwrap();
+        }
+        let file = root.path().join(CACHE_FILE);
+        write(&file, &[gone.clone(), bare, new.clone(), old]);
+        std::fs::remove_dir(&gone).unwrap();
+
+        assert_eq!(latest(&file), Some(new));
+        assert_eq!(
+            latest(&root.path().join("none")),
+            None,
+            "nothing opened yet"
+        );
     }
 }

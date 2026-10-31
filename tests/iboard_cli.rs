@@ -1,5 +1,6 @@
 //! End-to-end checks on the `iboard` binary, in the modes that never open a
-//! window: `--list`, `init … --list`, help and usage errors.
+//! window: `--list`, `init … --list`, help and usage errors, and handing the
+//! board to an iboard already running.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -79,6 +80,92 @@ fn a_folder_without_issues_is_an_error() {
     let output = iboard(&["--list", dir.path().to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(1));
     assert!(text(&output.stderr).starts_with("iboard: "));
+}
+
+/// An iboard already running, as a later one finds it through `cache`: it
+/// answers `count` requests, and hands back what they asked.
+#[cfg(unix)]
+fn running_iboard(cache: &Path, count: usize) -> std::thread::JoinHandle<Vec<serde_json::Value>> {
+    use std::io::{BufRead, Write};
+    std::fs::create_dir_all(cache.join("iboard")).unwrap();
+    let socket = cache.join("iboard/iboard.sock");
+    let listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
+    std::thread::spawn(move || {
+        (0..count)
+            .map(|_| {
+                let (stream, _) = listener.accept().unwrap();
+                let mut line = String::new();
+                std::io::BufReader::new(&stream)
+                    .read_line(&mut line)
+                    .unwrap();
+                (&stream).write_all(b"ok\n").unwrap();
+                serde_json::from_str(&line).unwrap()
+            })
+            .collect()
+    })
+}
+
+/// iboard on `args`, stopped if it opens a window rather than leaving.
+#[cfg(unix)]
+fn later_iboard(args: &[&str], cache: &Path, config: &Path) -> Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_iboard"))
+        .args(args)
+        .env("XDG_CACHE_HOME", cache)
+        .env("XDG_CONFIG_HOME", config)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = std::time::Instant::now();
+    while child.try_wait().unwrap().is_none()
+        && start.elapsed() < std::time::Duration::from_secs(20)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let _ = child.kill();
+    child.wait_with_output().unwrap()
+}
+
+/// With an iboard running, a later one hands it the project (its root, from
+/// inside it), the first group with `--all`, or with no path only asks it to
+/// come forward, and opens no window of its own.
+#[cfg(unix)]
+#[test]
+fn a_later_iboard_hands_its_board_to_the_running_one() {
+    let (dir, cache, config) = (
+        project(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    std::fs::create_dir_all(config.path().join("iboard")).unwrap();
+    std::fs::write(
+        config.path().join("iboard/iboard.toml"),
+        format!(
+            "[[workspace.group]]\nname = \"Dev\"\nrepos = [{:?}]\n",
+            dir.path().display().to_string()
+        ),
+    )
+    .unwrap();
+    let running = running_iboard(cache.path(), 3);
+    let inside = dir.path().join("issues/todo");
+    for args in [&[inside.to_str().unwrap()][..], &["--all"], &[]] {
+        let output = later_iboard(args, cache.path(), config.path());
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{args:?}: {}",
+            text(&output.stderr)
+        );
+    }
+    let project = std::fs::canonicalize(dir.path()).unwrap();
+    assert_eq!(
+        running.join().unwrap(),
+        [
+            serde_json::json!({ "project": project }),
+            serde_json::json!({ "group": "Dev" }),
+            serde_json::json!("focus"),
+        ]
+    );
 }
 
 #[test]

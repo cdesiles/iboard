@@ -260,7 +260,7 @@ impl IboardApp {
             self.run(command);
         }
         // Saved some other way while the prompt was up: carry on leaving.
-        if let Some(to) = self.session.leave_prompt
+        if let Some(to) = self.session.leave_prompt.clone()
             && !self.has_unsaved_edits()
         {
             self.go(to);
@@ -335,9 +335,10 @@ impl IboardApp {
     }
 
     /// The window's own requests: a quit, Settings or Project Stats picked
-    /// from the macOS menu, and closing the window, one more way of leaving
-    /// the editor.
+    /// from the macOS menu, a later `iboard`'s board, and closing the window,
+    /// one more way of leaving the editor.
     fn window_requests(&mut self, ctx: &egui::Context) {
+        self.answer_handovers(ctx);
         // A quit from the menu arrives as a flag rather than a window close,
         // so it can run the save prompt before we exit.
         #[cfg(target_os = "macos")]

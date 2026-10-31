@@ -58,6 +58,11 @@ impl IboardApp {
                 self.session.screen = Screen::Board;
                 self.show_composer();
             }
+            Leave::Open(target) => {
+                self.session.detail_mode = DetailMode::Preview;
+                self.session.screen = Screen::Board;
+                self.open_target(target);
+            }
             Leave::Quit => {
                 self.closing = true;
                 self.send_close = true;

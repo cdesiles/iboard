@@ -33,12 +33,16 @@ Because everything is file-based, iboard integrates flawlessly with your IDE, yo
 ## Use-it!
 
 ```sh
-iboard                     # start the app on the current working directory
-iboard ~/code/my-project   # start the app on the given directory
+iboard                     # open the app on the latest project
+iboard .                   # open the app on the current working directory
+iboard ~/code/my-project   # open the app on the given directory
 iboard init ~/new-app      # create issues/ (todo, ready, doing, done) and configuration
-iboard --list              # print the board to stdout, no window
+iboard --list              # print the current directory's board to stdout, no window
 iboard --all --list        # print every workspace project's board, merged
 ```
+
+One iboard runs at a time: when it is already open, `iboard` brings its window
+forward, and `iboard ~/code/my-project` shows that project in it.
 
 ## Building from sources
 
@@ -56,9 +60,10 @@ Get help with `make help`.
 
 The format is intentionally free.
 
-1. Starting from the given path (or the current directory), it looks for a
-   `issues/` directory, walking up through parent folders. A config file below
-   can override the location.
+1. Starting from the given path (else the latest project, or the current
+   directory for `init` and `--list`), it looks for a `issues/` directory,
+   walking up through parent folders. A config file below can override the
+   location.
 2. Inside the issues root, it builds columns from:
    - **Known sub-directories**, always shown even when empty, in kanban order:
      `backlog`, `todo`, `ready`, `doing`/`in-progress`/`wip`, `review`, `later`,
@@ -145,8 +150,9 @@ several groups. A folder
 without its own `issues/` is skipped with a warning.
 
 Each group is a row at the top of the project menu, and the first group's
-board opens by itself when iboard starts outside any project (from the Dock,
-or in a folder holding several of them). **Edit groups…** in the same menu
+board opens by itself when iboard starts outside any project (in a folder
+holding several of them, or from the Dock before any project was opened).
+**Edit groups…** in the same menu
 (**New group…** while there is none) opens a dialog to create, rename, fill
 and delete groups; it writes the `[[workspace.group]]` tables back and leaves
 the rest of the file as it was. An edit made to the file outside iboard is
