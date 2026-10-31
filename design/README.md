@@ -104,6 +104,7 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 | `⌘,` | Open Settings (last tab used) | Open Settings | Open Settings |
 | `⇧↩` | New line in the composer's description | | |
 | `A` | Archive selected (Done only) | | |
+| `L` | Add a label to the selected issue (Todo, Ready) | Add a label to this issue (Todo, Ready) | |
 | `Del` | Delete selected (asks first unless turned off in Settings › General) | Delete this issue (same) | Delete key deletes text; use the header button |
 
 ## Interaction model
@@ -140,6 +141,10 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | ColumnFocus | Click the active tab, Board button, `esc` | ColumnUnfocused | Board, same card selected |
 | Reader, Editor, ColumnFocus | Two-finger swipe right on the trackpad, or `⌘[` | NavigatedBack | One level up the breadcrumb: Editor to Reader, Reader to the board (or its focused column), ColumnFocus to the board |
 | Any | Move to column (drag, or menu) | IssueMoved | Same screen; file moved between folders |
+| Board, Reader | Add label (card action, Reader header button, `L`) | LabelPickerOpened | LabelPicker under the trigger, field focused |
+| LabelPicker | Type, `↩` (or click a board label, or `↓` then `↩`) | LabelAdded / LabelAddFailed | Same popup, field cleared; the label shows on the card and the Reader, and the file is rewritten |
+| LabelPicker | Click a label the issue has | LabelRemoved | Same popup; the label turns off and the file is rewritten |
+| LabelPicker | `esc`, click outside, trigger again | LabelPickerClosed | Board or Reader; text left in the field is dropped |
 | Board | Start dragging a card | IssueDragStarted → DropZonesShown | Board, Archive and Delete zones slide up from the bottom |
 | Board | Drop on Archive (Done only), or card Archive button, `A` | IssueArchived | Board; file moved to `.archive/` |
 | Board | Drop on Delete, card trash, `Del` | DeleteRequested → DeleteConfirmRequested (asking on) | ConfirmDialog centred over the board |
@@ -160,6 +165,10 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | RefinePanel, waiting | `esc`, Cancel | RefineRequestCancelled | Previous round back, choice and note kept |
 | Two panes | Drag the gutter, `← →` on the focused divider | PaneSplitChanged | Panes resized; split remembered for that pair |
 | Two panes | Double-click the gutter, `↩` on the focused divider | PaneSplitReset | Default split |
+| Agenda | Click a day | AgendaDaySelected | Day panel lists that day's commits by project |
+| Agenda | Pick a range, click a project row | AgendaRangeChanged / AgendaProjectFiltered | Grid, scale and legend rebuilt for what is shown |
+| Stats | Refresh, or the repo changes | MetricsScanned | Tiles, trends, watch and files update in place |
+| Stats | Draft a refactor issue | RefactorIssueDrafted → ComposerOpened | Board, composer prefilled in Todo with the signals and hotspot files |
 
 ## Motion
 
@@ -184,7 +193,7 @@ issue. The tool and model are chosen in the ReviewSettings dialog: a Tool select
 - **From an idea to an issue**: when the issue is only a title, the review drafts the missing sections (Context, Acceptance criteria, Out of scope, Open questions) as a proposal. *Apply to draft* opens it in the Editor, unsaved; the agent never writes the file itself.
 - **States**: idle, running (button shows "Reviewing…", `esc` cancels), result (panel open), failed (inline `danger` text with retry). Only the issue text is sent; interactive agents are run in one-shot mode, so no terminal is attached yet.
 - **Refining (RefinePanel)**: an agent in a role (the Challenger) pushes back on the issue and offers numbered resolutions. The panel has two panes: the TL;DR (`ui-title` with a 3px `review` rule) and the reasoning (`read-body`, 68ch) on the left, the choices on the right so they never scroll away. Each choice is a bordered card with a short title, a muted detail, its number key and a radio; the selected one takes the `accent` edge and `accent-soft` fill. The note under the choices follows the selection ("Add a note to choice 1", or "Or answer in your own words"). Send is the one filled `review` button and names what goes out ("Send choice 1", "Send answer"). Under 820pt it stacks and folds the reasoning under the TL;DR. See `components/RefinePanel`.
-- **Waiting (Thinking)**: while the agent works (often about 10s), the iboard "i" stands in for a spinner: its stem holds still and its card-dot rocks gently from −8° to +5° every 1.6s. The panel opens at its final size with placeholder bars and cards, the status line says what it waits for with an elapsed clock ("Challenger is reading the issue · 4s"), and after 20s it says it is slow and that `esc` cancels. No fake progress. See `components/Thinking`.
+- **Waiting (Thinking)**: while the agent works (often about 10s), the iboard "i" stands in for a spinner: its blue dot stretches across the stem, the stem tucks into the freed corner, and the two hand over until the i stands again a quarter turn on (1.6s per quarter, a full square in 6.4s). The panel opens at its final size with placeholder bars and cards, the status line says what it waits for with an elapsed clock ("Challenger is reading the issue · 4s"), and after 20s it says it is slow and that `esc` cancels. No fake progress. See `components/Thinking`.
 
 ## Using the tokens from Rust
 

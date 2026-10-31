@@ -160,7 +160,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 /* Card actions: hidden at rest, shown on hover, selection or keyboard focus. The slot is always reserved. */
 .ib-card__file{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ib-card__date{flex:none;font-variant-numeric:tabular-nums}
-.ib-card__actions{flex:none;display:flex;gap:2px;width:46px;justify-content:flex-end;visibility:hidden}
+.ib-card__actions{flex:none;display:flex;gap:2px;width:70px;justify-content:flex-end;visibility:hidden}
 .ib-card:hover .ib-card__actions,.ib-card.is-hover .ib-card__actions,.ib-card.is-selected .ib-card__actions,.ib-card:focus-within .ib-card__actions{visibility:visible}
 .ib-act{display:grid;place-items:center;width:22px;height:22px;padding:0;border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--ink-muted);cursor:pointer}
 .ib-act .ib-ico{stroke-width:1.5}
