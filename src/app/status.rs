@@ -176,9 +176,15 @@ impl IboardApp {
         hints
     }
 
-    /// A dismissible `danger` line naming what failed.
+    /// A dismissible `danger` line naming what failed, across the top. A
+    /// project with no issues directory is offered one.
     pub(super) fn error_strip(&mut self, ui: &mut egui::Ui, error: &str) {
         let p = theme::palette(ui);
+        let uninitialised = self
+            .uninitialised
+            .as_ref()
+            .filter(|(_, raised)| raised == error)
+            .map(|(project, _)| project.clone());
         Frame::new()
             .inner_margin(Margin::symmetric(
                 theme::SPACE_5 as i8,
@@ -187,15 +193,30 @@ impl IboardApp {
             .show(ui, |ui| {
                 // Dismiss first, so a long error truncates before it rather
                 // than pushing it out of the window.
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if widgets::button(ui, ButtonKind::Ghost, None, "Dismiss", None).clicked() {
-                        self.error = None;
-                        self.scan_error = None;
-                    }
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        let text = RichText::new(error).color(p.danger);
-                        ui.add(egui::Label::new(text).truncate())
-                            .on_hover_text(error);
+                ui.horizontal(|ui| {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if widgets::button(ui, ButtonKind::Ghost, None, "Dismiss", None).clicked() {
+                            self.error = None;
+                            self.uninitialised = None;
+                            self.scan_error = None;
+                        }
+                        if let Some(project) = uninitialised
+                            && widgets::button(
+                                ui,
+                                ButtonKind::Primary,
+                                None,
+                                "Create issues/",
+                                None,
+                            )
+                            .clicked()
+                        {
+                            self.initialise(project);
+                        }
+                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                            let text = RichText::new(error).color(p.danger);
+                            ui.add(egui::Label::new(text).truncate())
+                                .on_hover_text(error);
+                        });
                     });
                 });
             });

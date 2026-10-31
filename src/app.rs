@@ -576,6 +576,9 @@ pub struct IboardApp {
     settings_tab: settings_ui::Tab,
     /// The last action that failed, until it is dismissed.
     error: Option<String>,
+    /// A project that could not be opened for lack of an issues directory,
+    /// and the error it raised: the strip offers to create the directory.
+    uninitialised: Option<(PathBuf, String)>,
     /// Why the board could not be read; the next good scan clears it.
     scan_error: Option<String>,
     /// Settings › General: deleting an issue asks first.
@@ -892,6 +895,7 @@ impl IboardApp {
             title_engine: Engine::Manual,
             settings_tab: settings_ui::Tab::General,
             error: None,
+            uninitialised: None,
             scan_error,
             confirm_delete: true,
             appearance: Appearance::default(),
@@ -949,6 +953,20 @@ impl IboardApp {
                 self.remember(&project_dir);
                 self.refresh();
             }
+            Err(err) => {
+                let error = format!("{err:#}");
+                self.uninitialised = Some((project, error.clone()));
+                self.error = Some(error);
+            }
+        }
+    }
+
+    /// Creates the standard issues directory for the project that had none,
+    /// then opens it.
+    fn initialise(&mut self, project: PathBuf) {
+        self.uninitialised = None;
+        match discovery::init(&project) {
+            Ok(_) => self.open_project(project),
             Err(err) => self.error = Some(format!("{err:#}")),
         }
     }
@@ -961,6 +979,7 @@ impl IboardApp {
         self.column_focus.column = None;
         self.filter_bar.filter.clear();
         self.error = None;
+        self.uninitialised = None;
         self.scan_error = None;
     }
 

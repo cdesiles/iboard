@@ -425,6 +425,43 @@ fn a_long_error_can_still_be_dismissed() {
     assert!(harness.state().1.error.is_none());
 }
 
+/// Opening a folder with no issues directory shows a one-line banner at the
+/// top, and its button creates the directory and opens the board.
+#[test]
+fn a_missing_issues_directory_is_a_banner_that_creates_it() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("banner");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let empty = scratch_dir("banner-empty");
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_project(empty.to_path_buf());
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    let create = harness.get_by_label("Create issues/").rect();
+    assert!(create.max.y < theme::BAR_H + 60.0, "{create:?}");
+    harness.get_by_label("Create issues/").click();
+    harness.run_steps(2);
+    let app = &harness.state().1;
+    assert!(app.error.is_none(), "{:?}", app.error);
+    assert!(empty.join("issues/todo/.gitkeep").is_file());
+    assert_eq!(
+        recents::canonical(&app.board.root),
+        recents::canonical(&empty.join("issues"))
+    );
+}
+
 #[test]
 fn moving_never_overwrites_an_existing_file() {
     let dir = scratch_dir("clobber");
