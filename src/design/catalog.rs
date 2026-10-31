@@ -1197,15 +1197,12 @@ mod tests {
     #[test]
     fn typography_embeds_the_shipped_fonts_as_a_specimen() {
         let html = html(&repo(), "light").expect("compose");
-        assert!(html.contains("@font-face{font-family:\"IBM Plex Sans\";font-weight:600"));
+        assert!(html.contains("@font-face{font-family:\"Inter\";font-weight:600"));
         assert!(
             html.contains("class=\"ds-ttable\""),
             "a Name | Preview table"
         );
-        assert!(
-            html.contains(">IBM Plex Sans · 15</span>"),
-            "a family · size chip"
-        );
+        assert!(html.contains(">Inter · 15</span>"), "a family · size chip");
         assert!(
             html.contains(">embedded</span>"),
             "the sans stack is shipped"

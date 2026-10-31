@@ -52,7 +52,7 @@ fn settings_save_by_clicking_its_labelled_button() {
         .with_size(window().size())
         .build_ui_state(
             |ui, (themed, app): &mut (bool, IboardApp)| {
-                // Plex is registered on the first frame and usable from the next.
+                // The fonts are registered on the first frame and usable from the next.
                 if !*themed {
                     theme::install(ui.ctx());
                     *themed = true;

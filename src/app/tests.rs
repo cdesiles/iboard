@@ -21,7 +21,7 @@ mod workspace;
 use review::open_issue_with_review;
 
 /// A context with the design system installed, past the first frame so
-/// the Plex font families are loaded.
+/// the bundled font families are loaded.
 fn themed_ctx() -> egui::Context {
     let ctx = egui::Context::default();
     theme::install(&ctx);

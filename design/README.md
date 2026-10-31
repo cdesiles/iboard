@@ -40,7 +40,8 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 
 ## Type
 
-- Interface in IBM Plex Sans, code and file names in IBM Plex Mono. Bundle both TTFs in the binary; fall back to the macOS system faces (`-apple-system`, `SF Mono`).
+- Interface in Inter, code, file names and key hints in JetBrains Mono. Both are under the SIL Open Font License; bundle the TTFs in the binary with their license text.
+- Both faces carry the macOS key symbols themselves: ⌘ ⌥ ⇧ ⌃ ↩ ⌫ ⌦ ⇥ ⇪ and the arrows. That is why they replaced IBM Plex, which has none of them. egui never falls back to system fonts, so a symbol the bundled face lacks shows as an empty box: check a new glyph against the face before using it (JetBrains Mono has no ⏏).
 - Interface sizes: `ui-title` 15, `ui-body` and `ui-strong` 13, `ui-small` 12, `ui-label` and `meta` 11. Nothing below 11pt.
 - Reading sizes are one step larger than the UI: `read-h1` 20, `read-body` 14/22, at most 68 characters per line (`reader-max`).
 - The editor uses `edit-body` (mono 13/20) so markdown syntax lines up and is obviously "raw".
@@ -166,7 +167,7 @@ Motion is short and only ever says where something went: the filter field wideni
 
 ## Iconography
 
-Line icons at 14pt, 1.6pt stroke, `currentColor`, drawn on the 24pt control grid: refresh, back chevron, edit pencil, plus, review, trash, archive, tag-plus, git node, play and square (stop). The repo has no icon set yet; use Lucide (MIT) glyphs of the same names, and keep any icon paired with a word (the back chevron comes with "Board") except the per-card actions (trash, archive), which carry a tooltip and only appear when the card is hovered, selected or focused.
+Line icons at 14pt, 1.6pt stroke, `currentColor`, drawn on the 24pt control grid: refresh, back chevron, edit pencil, plus, review, trash, archive, tag-plus, git node, play and square (stop). The repo has no icon set yet; use Lucide (MIT) glyphs of the same names, except trash, which is iboard's own soft bin (see the Icons card): a 15-wide lid, a round 2.5 knob instead of a square tab, a body that tapers 1pt each side into 3pt rounded bottom corners, and two short ribs. Use that one path everywhere a delete appears (card action, header Delete button, ConfirmDialog, Delete drop zone); never Lucide's straight-sided `trash-2`. Keep any icon paired with a word (the back chevron comes with "Board") except the per-card actions (trash, archive), which carry a tooltip and only appear when the card is hovered, selected or focused.
 
 ## AI review
 
@@ -189,4 +190,4 @@ issue. The tool and model are chosen in the ReviewSettings dialog: a Tool select
 
 Tokens are points, which map 1:1 to egui points and to CSS px on a Retina display. The header font (Ubuntu) and widget shapes in the screenshot look like egui's defaults, so the companion `theme.rs` in the project files maps these tokens onto `egui::Visuals` and `egui::Style`. If the app uses iced, Slint or Tauri instead, the same `tokens.json` drives it; only the mapping file changes.
 
-egui has no font weights: register `IBMPlexSans-Medium` and `IBMPlexSans-SemiBold` as their own named families and use them where a style says 500 or 600 (card titles, column labels, the project name).
+egui has no font weights: register `Inter-Medium`, `Inter-SemiBold` and `JetBrainsMono-Medium` as their own named families and use them where a style says 500 or 600 (card titles, column labels, the project name, `meta`). `theme.rs` does this in `install_fonts`.

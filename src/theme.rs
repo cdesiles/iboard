@@ -203,12 +203,9 @@ pub const SCROLL_HIT: f32 = 12.0;
 pub const SCROLL_THUMB_MIN: f32 = 24.0;
 
 // Font families beyond egui's two built-in ones.
-const SANS_MEDIUM: &str = "plex-sans-medium";
-const SANS_SEMIBOLD: &str = "plex-sans-semibold";
-const MONO_MEDIUM: &str = "plex-mono-medium";
-/// The egui font that draws the key symbols Plex lacks (⇧, ⇥), monospace's
-/// fallback already.
-const KEY_SYMBOLS: &str = "Hack";
+const SANS_MEDIUM: &str = "inter-medium";
+const SANS_SEMIBOLD: &str = "inter-semibold";
+const MONO_MEDIUM: &str = "jetbrains-mono-medium";
 
 fn family(name: &str) -> FontFamily {
     FontFamily::Name(name.into())
@@ -257,30 +254,29 @@ pub fn edit_body() -> FontId {
     FontId::monospace(13.0)
 }
 
-/// Registers IBM Plex Sans and Mono, keeping egui's own fonts as fallbacks for
-/// glyphs Plex lacks.
-fn install_fonts(ctx: &egui::Context) {
+/// Inter and JetBrains Mono, with egui's own fonts as fallbacks.
+fn font_definitions() -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
     let faces: [(&str, &'static [u8]); 5] = [
         (
-            "IBMPlexSans-Regular",
-            include_bytes!("../assets/fonts/IBMPlexSans-Regular.ttf"),
+            "Inter-Regular",
+            include_bytes!("../assets/fonts/Inter-Regular.ttf"),
         ),
         (
-            "IBMPlexSans-Medium",
-            include_bytes!("../assets/fonts/IBMPlexSans-Medium.ttf"),
+            "Inter-Medium",
+            include_bytes!("../assets/fonts/Inter-Medium.ttf"),
         ),
         (
-            "IBMPlexSans-SemiBold",
-            include_bytes!("../assets/fonts/IBMPlexSans-SemiBold.ttf"),
+            "Inter-SemiBold",
+            include_bytes!("../assets/fonts/Inter-SemiBold.ttf"),
         ),
         (
-            "IBMPlexMono-Regular",
-            include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf"),
+            "JetBrainsMono-Regular",
+            include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
         ),
         (
-            "IBMPlexMono-Medium",
-            include_bytes!("../assets/fonts/IBMPlexMono-Medium.ttf"),
+            "JetBrainsMono-Medium",
+            include_bytes!("../assets/fonts/JetBrainsMono-Medium.ttf"),
         ),
     ];
     for (name, bytes) in faces {
@@ -289,12 +285,8 @@ fn install_fonts(ctx: &egui::Context) {
             .insert(name.to_string(), Arc::new(FontData::from_static(bytes)));
     }
 
-    let mut proportional = fonts.families[&FontFamily::Proportional].clone();
+    let proportional = fonts.families[&FontFamily::Proportional].clone();
     let monospace = fonts.families[&FontFamily::Monospace].clone();
-    // Plex has no key symbols; monospace falls back to Hack, which draws ⇧ and ⇥.
-    if fonts.font_data.contains_key(KEY_SYMBOLS) && !proportional.iter().any(|f| f == KEY_SYMBOLS) {
-        proportional.push(KEY_SYMBOLS.to_string());
-    }
     let with = |primary: &str, fallbacks: &[String]| {
         let mut list = vec![primary.to_string()];
         list.extend(fallbacks.iter().cloned());
@@ -302,30 +294,29 @@ fn install_fonts(ctx: &egui::Context) {
     };
     fonts.families.insert(
         FontFamily::Proportional,
-        with("IBMPlexSans-Regular", &proportional),
+        with("Inter-Regular", &proportional),
     );
     fonts.families.insert(
         FontFamily::Monospace,
-        with("IBMPlexMono-Regular", &monospace),
-    );
-    fonts.families.insert(
-        family(SANS_MEDIUM),
-        with("IBMPlexSans-Medium", &proportional),
-    );
-    fonts.families.insert(
-        family(SANS_SEMIBOLD),
-        with("IBMPlexSans-SemiBold", &proportional),
+        with("JetBrainsMono-Regular", &monospace),
     );
     fonts
         .families
-        .insert(family(MONO_MEDIUM), with("IBMPlexMono-Medium", &monospace));
-    ctx.set_fonts(fonts);
+        .insert(family(SANS_MEDIUM), with("Inter-Medium", &proportional));
+    fonts
+        .families
+        .insert(family(SANS_SEMIBOLD), with("Inter-SemiBold", &proportional));
+    fonts.families.insert(
+        family(MONO_MEDIUM),
+        with("JetBrainsMono-Medium", &monospace),
+    );
+    fonts
 }
 
 /// Applies the tokens to both of egui's themes, and draws in the light one
 /// until [`apply`] says otherwise.
 pub fn install(ctx: &egui::Context) {
-    install_fonts(ctx);
+    ctx.set_fonts(font_definitions());
     for (theme, palette) in [(Theme::Light, &LIGHT), (Theme::Dark, &DARK)] {
         ctx.set_style_of(theme, style(theme, palette));
     }
@@ -573,20 +564,7 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             };
             painter.line(vec![barb(40.0), end, barb(-40.0)], stroke);
         }
-        Icon::Trash => {
-            // Lid, handle, can and the two inner strokes.
-            painter.line_segment([at(3.0, 6.0), at(21.0, 6.0)], stroke);
-            painter.line(
-                vec![at(8.0, 6.0), at(8.0, 4.5), at(16.0, 4.5), at(16.0, 6.0)],
-                stroke,
-            );
-            painter.line(
-                vec![at(5.0, 6.0), at(5.0, 20.0), at(19.0, 20.0), at(19.0, 6.0)],
-                stroke,
-            );
-            painter.line_segment([at(10.0, 11.0), at(10.0, 16.5)], stroke);
-            painter.line_segment([at(14.0, 11.0), at(14.0, 16.5)], stroke);
-        }
+        Icon::Trash => trash_icon(painter, rect, stroke),
         Icon::Archive => {
             // A lidded box; the handle becomes a short line.
             painter.line(
@@ -705,6 +683,36 @@ pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
     }
 }
 
+/// iboard's soft bin: a round knob on the lid, a tapered body with rounded
+/// bottom corners, two short ribs.
+fn trash_icon(painter: &Painter, rect: Rect, stroke: Stroke) {
+    let s = rect.width() / 24.0;
+    let at = |x: f32, y: f32| Pos2::new(rect.min.x + x * s, rect.min.y + y * s);
+    painter.line_segment([at(4.5, 7.0), at(19.5, 7.0)], stroke);
+    let knob = (0..=8)
+        .map(|i| {
+            let t = std::f32::consts::PI * (1.0 + i as f32 / 8.0);
+            at(12.0 + 2.5 * t.cos(), 7.0 + 2.5 * t.sin())
+        })
+        .collect();
+    painter.line(knob, stroke);
+    let body = [
+        (6.5, 7.0),
+        (7.4, 18.1),
+        (7.83, 19.56),
+        (8.93, 20.62),
+        (10.4, 21.0),
+        (13.6, 21.0),
+        (15.07, 20.62),
+        (16.17, 19.56),
+        (16.6, 18.1),
+        (17.5, 7.0),
+    ];
+    painter.line(body.iter().map(|&(x, y)| at(x, y)).collect(), stroke);
+    painter.line_segment([at(10.0, 11.0), at(10.0, 16.5)], stroke);
+    painter.line_segment([at(14.0, 11.0), at(14.0, 16.5)], stroke);
+}
+
 /// The marks of a state: an agent at work, a warning, a hot spot's flame.
 fn state_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
     let stroke = Stroke::new(1.6, color);
@@ -747,21 +755,32 @@ mod tests {
     use crate::design::{DesignSystem, Token, Tokens};
     use std::path::Path;
 
-    /// Tooltips such as "Review  ⌘⇧R" are in the proportional face. (egui's
-    /// `has_glyph` cannot vouch for monospace, whose fallback face is also its
-    /// replacement face.)
     #[test]
-    fn key_symbols_have_a_glyph_in_tooltips() {
+    fn the_bundled_faces_draw_the_key_symbols_themselves() {
         let ctx = egui::Context::default();
-        install(&ctx);
+        let mut fonts = font_definitions();
+        // `has_glyph` only sees a miss when another face owns the replacement
+        // glyph ◻: Noto Emoji does, and has none of these keys but ↩.
+        for (family, face) in [
+            (FontFamily::Proportional, "Inter-Regular"),
+            (FontFamily::Monospace, "JetBrainsMono-Regular"),
+        ] {
+            let faces = vec![face.to_string(), "NotoEmoji-Regular".to_string()];
+            fonts.families.insert(family, faces);
+        }
+        ctx.set_fonts(fonts);
         ctx.run_ui(egui::RawInput::default(), |_| {})
             .textures_delta
             .clear();
-        let font = FontId::proportional(12.0);
-        for key in ['⌘', '⇧', '⇥', '↩'] {
-            let shown = ctx.fonts_mut(|fonts| fonts.has_glyph(&font, key));
-            assert!(shown, "{key} in {font:?}");
+        for font in [FontId::proportional(12.0), FontId::monospace(11.0)] {
+            for key in ['⌘', '⌥', '⇧', '⌃', '↩', '⌫', '⇥', '←', '↑', '→', '↓']
+            {
+                let shown = ctx.fonts_mut(|fonts| fonts.has_glyph(&font, key));
+                assert!(shown, "{key} in {font:?}");
+            }
         }
+        let eject = ctx.fonts_mut(|fonts| fonts.has_glyph(&FontId::monospace(11.0), '⏏'));
+        assert!(!eject, "JetBrains Mono has no ⏏, so the check can fail");
     }
 
     #[test]

@@ -116,7 +116,7 @@ mod tests {
             system
                 .assets()
                 .iter()
-                .any(|asset| asset.name.starts_with("IBMPlexSans"))
+                .any(|asset| asset.name.starts_with("Inter-"))
         );
     }
 

@@ -67,7 +67,7 @@ pub fn font_face_css(faces: &[FontFace]) -> String {
     out
 }
 
-/// The first face of a CSS family stack, unquoted: `IBM Plex Sans`.
+/// The first face of a CSS family stack, unquoted: `JetBrains Mono`.
 pub fn primary(stack: &str) -> String {
     stack
         .split(',')
@@ -206,10 +206,10 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_plex_files_name_their_family_and_weight() {
-        let bytes = include_bytes!("../../assets/fonts/IBMPlexSans-SemiBold.ttf");
+    fn the_shipped_inter_files_name_their_family_and_weight() {
+        let bytes = include_bytes!("../../assets/fonts/Inter-SemiBold.ttf");
         let (family, style, weight, italic) = sfnt_names(bytes).expect("name table");
-        assert_eq!(family, "IBM Plex Sans");
+        assert_eq!(family, "Inter");
         assert_eq!(style, "SemiBold");
         assert_eq!(weight, 600);
         assert!(!italic);
@@ -221,6 +221,6 @@ mod tests {
             from_file_name("Inter-SemiBoldItalic.woff2"),
             ("Inter".into(), "SemiBoldItalic".into(), 600, true)
         );
-        assert_eq!(primary("\"IBM Plex Sans\", system-ui"), "IBM Plex Sans");
+        assert_eq!(primary("\"Inter\", system-ui"), "Inter");
     }
 }
