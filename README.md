@@ -45,8 +45,9 @@ iboard --all --list        # print every workspace project's board, merged
 From this repository:
 
 ```sh
-make build
-make install
+make build        # the binaries, in target/debug
+make install      # the `iboard` terminal command, in ~/.cargo/bin
+make install-app  # iboard.app into ~/Applications, to launch it like an app
 ```
 
 Get help with `make help`.

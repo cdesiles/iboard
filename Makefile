@@ -1,11 +1,13 @@
 .DEFAULT_GOAL := help
-.PHONY: help hooks run iboard idesign list check test lint fmt toolchain build release install clean
+.PHONY: help hooks run iboard idesign list check test lint fmt toolchain build release install app install-app clean
 
 # `make run` launches iboard; `make run idesign` switches to the design tool.
 BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
 
 SWIFT_FORMAT := $(shell xcrun --find swift-format 2>/dev/null)
 PINNED_RUST := $(shell sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
+APP_DIR ?= $(HOME)/Applications
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "; print "\nUsage:\n  make \033[36m<target>\033[0m"} \
@@ -76,3 +78,15 @@ install: ## Install the binaries into the Cargo bin directory
 
 clean: ## Remove build artifacts
 	cargo clean
+
+##@ App
+
+app: ## Build iboard.app into target/iboard.app
+	cargo build --release --bin iboard
+	sh macos/bundle.sh target/release/iboard design/components/Logo/files/iboard-1024.png $(VERSION) target/iboard.app
+
+install-app: app ## Install target/iboard.app into ~/Applications (or $(APP_DIR))
+	mkdir -p "$(APP_DIR)"
+	rm -rf "$(APP_DIR)/iboard.app"
+	cp -R target/iboard.app "$(APP_DIR)/iboard.app"
+	@echo "Installed $(APP_DIR)/iboard.app"
