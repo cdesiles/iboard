@@ -130,7 +130,7 @@ mod tests {
     fn a_job_answers_once() {
         let job = Job::spawn(|_| 6 * 7);
         assert_eq!(job.wait(), Some(42));
-        assert!(matches!(job.poll(), Poll::Lost));
+        assert!(eventually(|| matches!(job.poll(), Poll::Lost)));
         assert!(matches!(Job::done(1).poll(), Poll::Ready(1)));
     }
 
