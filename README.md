@@ -146,7 +146,11 @@ without its own `issues/` is skipped with a warning.
 
 Each group is a row at the top of the project menu, and the first group's
 board opens by itself when iboard starts outside any project (from the Dock,
-or in a folder holding several of them). Cards move within their own project; a new issue
+or in a folder holding several of them). **Edit groups…** in the same menu
+(**New group…** while there is none) opens a dialog to create, rename, fill
+and delete groups; it writes the `[[workspace.group]]` tables back and leaves
+the rest of the file as it was. An edit made to the file outside iboard is
+picked up within a second. Cards move within their own project; a new issue
 goes to the project the filter names (`repo:app`), else the selected card's;
 reviews and builds run in the card's project.
 

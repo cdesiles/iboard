@@ -603,20 +603,4 @@ pub(super) fn empty_well(ui: &mut egui::Ui, message: &str, width: f32) {
     dashed_rect(ui.painter(), response.rect, p.line_strong);
 }
 
-/// A 1pt dashed edge just inside `rect`, as on wells and drop zones.
-pub(super) fn dashed_rect(painter: &egui::Painter, rect: Rect, color: Color32) {
-    let r = rect.shrink(0.5);
-    let corners = [
-        r.left_top(),
-        r.right_top(),
-        r.right_bottom(),
-        r.left_bottom(),
-        r.left_top(),
-    ];
-    painter.extend(Shape::dashed_line(
-        &corners,
-        Stroke::new(1.0, color),
-        4.0,
-        3.0,
-    ));
-}
+pub(super) use crate::widgets::dashed_rect;

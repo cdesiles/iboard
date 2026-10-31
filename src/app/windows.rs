@@ -6,7 +6,6 @@ impl IboardApp {
     /// ConfirmDialog for a delete, centred over a scrim: `↩` (or the focused
     /// Delete button) confirms; `esc`, Cancel or a click on the scrim cancels.
     pub(super) fn confirm_dialog(&mut self, ui: &egui::Ui, paths: &[PathBuf]) {
-        let p = theme::palette(ui);
         let (question, title, relative) = match paths {
             [path] => (
                 "Delete this issue?".to_string(),
@@ -29,77 +28,19 @@ impl IboardApp {
                     .join(", "),
             ),
         };
-        let width = 360.0;
-        let pad = 20.0;
-        let mut confirmed = false;
-        let mut cancelled = false;
-        let frame = widgets::popover_frame(ui).inner_margin(Margin {
-            left: pad as i8,
-            right: pad as i8,
-            top: pad as i8,
-            bottom: theme::SPACE_5 as i8,
-        });
-        let modal = egui::Modal::new(egui::Id::new("confirm-delete"))
-            .frame(frame)
-            .backdrop_color(p.scrim)
-            .show(ui.ctx(), |ui| {
-                let inner = width - 2.0 * pad;
-                ui.set_width(inner);
-                ui.style_mut().interaction.selectable_labels = false;
-                ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                ui.label(RichText::new(question).font(theme::ui_title()).color(p.ink));
-                // The subject: what goes, by title and by file.
-                ui.add_space(theme::SPACE_2);
-                Frame::new()
-                    .fill(p.surface_sunken)
-                    .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-                    .inner_margin(Margin::symmetric(10, theme::SPACE_3 as i8))
-                    .show(ui, |ui| {
-                        ui.set_width(inner - 20.0);
-                        ui.spacing_mut().item_spacing.y = theme::SPACE_1;
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&title).font(theme::ui_strong()).color(p.ink),
-                            )
-                            .truncate(),
-                        );
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&relative)
-                                    .font(theme::meta())
-                                    .color(p.ink_muted),
-                            )
-                            .truncate(),
-                        );
-                    });
-                ui.label(
-                    RichText::new(trash::CONSEQUENCE)
-                        .font(theme::ui_small())
-                        .color(p.ink_muted),
-                );
-                ui.add_space(theme::SPACE_3);
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    // Delete starts focused: `Del` then `↩` is the fast path,
-                    // and the dialog itself is the safety step.
-                    let delete = widgets::button(
-                        ui,
-                        ButtonKind::Danger,
-                        Some(Icon::Trash),
-                        "Delete",
-                        Some("↩"),
-                    );
-                    widgets::paint_focus_ring(ui, delete.rect, theme::RADIUS_SM);
-                    confirmed = delete.clicked();
-                    cancelled =
-                        widgets::button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc"))
-                            .clicked();
-                });
-            });
-        if confirmed {
-            self.delete_issues(paths);
-        } else if cancelled || modal.should_close() {
-            self.session.confirm = None;
+        let ask = widgets::Ask {
+            id: "confirm-delete",
+            question: &question,
+            title: &title,
+            detail: &relative,
+            consequence: trash::CONSEQUENCE,
+            confirm: "Delete",
+        };
+        let answer = widgets::confirm(ui, &ask);
+        match answer {
+            widgets::Answer::Confirmed => self.delete_issues(paths),
+            widgets::Answer::Cancelled => self.session.confirm = None,
+            widgets::Answer::Pending => {}
         }
     }
 
@@ -110,7 +51,7 @@ impl IboardApp {
         let (width, pad) = (360.0, 20.0);
         let mut confirmed = false;
         let mut cancelled = false;
-        let frame = widgets::popover_frame(ui).inner_margin(Margin {
+        let frame = widgets::modal_frame(ui).inner_margin(Margin {
             left: pad as i8,
             right: pad as i8,
             top: pad as i8,
@@ -169,7 +110,7 @@ impl IboardApp {
         let pad = 20.0;
         let mut close = false;
         let mut picked = None;
-        let frame = widgets::popover_frame(ui).inner_margin(Margin {
+        let frame = widgets::modal_frame(ui).inner_margin(Margin {
             left: pad as i8,
             right: pad as i8,
             top: pad as i8,

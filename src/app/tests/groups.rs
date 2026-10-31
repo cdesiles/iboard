@@ -1,0 +1,224 @@
+//! The groups dialog, driven through egui_kittest by label: what it saves to
+//! the user configuration, and how the board on screen follows.
+
+use super::*;
+use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
+
+/// Projects `app` and `site`, a folder `bare` without `issues/`, and a user
+/// configuration with the groups Clients (app, site) and Solo (app), whose
+/// Clients board is shown.
+fn configured(tag: &str) -> (Scratch, PathBuf, IboardApp) {
+    let scratch = scratch_dir(tag);
+    let parent = std::fs::canonicalize(&*scratch).unwrap();
+    for name in ["app", "site"] {
+        std::fs::create_dir_all(parent.join(name).join("issues/todo")).unwrap();
+    }
+    std::fs::create_dir_all(parent.join("bare")).unwrap();
+    let config = parent.join("iboard.toml");
+    let (app_dir, site_dir) = (parent.join("app"), parent.join("site"));
+    std::fs::write(
+        &config,
+        format!(
+            "# mine\n[[workspace.group]]\nname = \"Clients\"\nrepos = [{:?}, {:?}]\n\n\
+             [[workspace.group]]\nname = \"Solo\"\nrepos = [{:?}]\n",
+            app_dir.display().to_string(),
+            site_dir.display().to_string(),
+            app_dir.display().to_string(),
+        ),
+    )
+    .unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&app_dir).unwrap());
+    app.config_file = Some(config.clone());
+    app.workspace = crate::workspace::load(&mut UserConfig::load(Some(&config)));
+    app.open_group("Clients");
+    (scratch, config, app)
+}
+
+fn harness(app: IboardApp) -> Harness<'static, (bool, IboardApp)> {
+    let mut harness = Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(2);
+    harness
+}
+
+/// Clicks the `nth` widget labelled `label` the way a pointer does: over
+/// it for a frame first, as egui settles hover on the frame before.
+fn press_nth(harness: &mut Harness<'static, (bool, IboardApp)>, label: &str, nth: usize) {
+    harness.get_all_by_label(label).nth(nth).unwrap().hover();
+    harness.run_steps(1);
+    harness.get_all_by_label(label).nth(nth).unwrap().click();
+    harness.run_steps(2);
+}
+
+fn press(harness: &mut Harness<'static, (bool, IboardApp)>, label: &str) {
+    press_nth(harness, label, 0);
+}
+
+fn dialog<'a>(
+    harness: &'a mut Harness<'static, (bool, IboardApp)>,
+) -> &'a mut crate::groups_ui::Dialog {
+    harness.state_mut().1.groups_dialog.as_mut().unwrap()
+}
+
+#[test]
+fn renaming_the_shown_group_saves_and_keeps_it_on_screen() {
+    let (_scratch, config, mut app) = configured("groups-rename");
+    app.open_groups(false);
+    let mut harness = harness(app);
+    dialog(&mut harness).draft.groups[0].name = "Customers".into();
+    harness.run_steps(1);
+    press(&mut harness, "Save");
+
+    let app = &harness.state().1;
+    assert!(app.groups_dialog.is_none(), "saved and closed");
+    assert_eq!(app.group.as_deref(), Some("Customers"));
+    assert_eq!(app.board.name(), "Customers");
+    let written = std::fs::read_to_string(&config).unwrap();
+    assert!(written.starts_with("# mine\n"), "{written}");
+    assert!(written.contains("name = \"Customers\""), "{written}");
+    let notice = &app.session.notice.as_ref().unwrap().0;
+    assert!(notice.starts_with("Saved 2 groups to "), "{notice}");
+}
+
+#[test]
+fn deleting_the_shown_group_asks_then_the_first_left_opens() {
+    let (_scratch, config, mut app) = configured("groups-delete");
+    app.open_groups(false);
+    let mut harness = harness(app);
+    press_nth(&mut harness, "Delete group (asks first)", 0);
+    harness.get_by_label("Delete this group?");
+    press(&mut harness, "Delete group");
+    assert_eq!(
+        dialog(&mut harness).draft.groups.len(),
+        1,
+        "gone from the draft"
+    );
+    assert!(
+        std::fs::read_to_string(&config)
+            .unwrap()
+            .contains("Clients"),
+        "nothing written before Save"
+    );
+    press(&mut harness, "Save");
+
+    let app = &harness.state().1;
+    assert_eq!(app.group.as_deref(), Some("Solo"), "the first group left");
+    assert!(
+        !std::fs::read_to_string(&config)
+            .unwrap()
+            .contains("Clients")
+    );
+}
+
+#[test]
+fn projects_come_from_the_recent_ones_or_the_picker_with_an_issues_folder() {
+    let (scratch, _config, mut app) = configured("groups-add");
+    let parent = std::fs::canonicalize(&*scratch).unwrap();
+    app.recents = vec![parent.join("site")];
+    app.folder_picker = || {
+        let parent = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+        vec![parent.join("iboard-no-such-project")]
+    };
+    app.open_groups(false);
+    let mut harness = harness(app);
+    press_nth(&mut harness, "Add project", 1);
+    // The second "site": the first is Clients' project row.
+    press_nth(&mut harness, "site", 1);
+    assert_eq!(
+        dialog(&mut harness).draft.groups[1].repos.len(),
+        2,
+        "site added to Solo"
+    );
+
+    press(&mut harness, "Choose folders…");
+    let notice = dialog(&mut harness).draft.groups[1].notice.clone().unwrap();
+    assert!(
+        notice.ends_with("has no issues/ folder. Pick the project's root."),
+        "{notice}"
+    );
+    assert_eq!(dialog(&mut harness).draft.groups[1].repos.len(), 2);
+}
+
+#[test]
+fn cancelling_with_changes_asks_first_and_writes_nothing() {
+    let (_scratch, config, mut app) = configured("groups-cancel");
+    let before = std::fs::read_to_string(&config).unwrap();
+    app.open_groups(false);
+    let mut harness = harness(app);
+    dialog(&mut harness).draft.groups[1].name = "Alone".into();
+    harness.key_press(Key::Escape);
+    harness.run_steps(2);
+    assert!(harness.state().1.groups_dialog.is_some(), "asks first");
+    harness.get_by_label("Discard changes to groups?");
+    press(&mut harness, "Discard");
+    assert!(harness.state().1.groups_dialog.is_none());
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), before);
+}
+
+#[test]
+fn a_file_changed_meanwhile_is_kept_until_asked() {
+    let (_scratch, config, mut app) = configured("groups-conflict");
+    app.open_groups(false);
+    let mut harness = harness(app);
+    let outside = "[ai]\ntool = \"claude\"\n";
+    std::fs::write(&config, outside).unwrap();
+    dialog(&mut harness).draft.groups[1].name = "Alone".into();
+    press(&mut harness, "Save");
+    assert!(dialog(&mut harness).conflict);
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), outside);
+
+    harness.get_by_label("Keep your version").hover();
+    harness.run_steps(1);
+    press(&mut harness, "Keep your version");
+    if let Some(d) = harness.state().1.groups_dialog.as_ref() {
+        panic!(
+            "conflict {} error {:?} groups {:?}",
+            d.conflict, d.save_error, d.draft.groups
+        );
+    }
+    let written = std::fs::read_to_string(&config).unwrap();
+    assert!(written.starts_with(outside), "other keys kept: {written}");
+    assert!(written.contains("name = \"Alone\""), "{written}");
+}
+
+#[test]
+fn invalid_names_keep_the_dialog_open() {
+    let (_scratch, config, mut app) = configured("groups-invalid");
+    let before = std::fs::read_to_string(&config).unwrap();
+    app.open_groups(true);
+    let mut harness = harness(app);
+    assert_eq!(dialog(&mut harness).draft.groups.len(), 3, "a new group");
+    dialog(&mut harness).draft.groups[2].name = "solo".into();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, Key::Enter);
+    harness.run_steps(2);
+    harness.get_by_label("Another group is already called solo. Rename one of them.");
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), before);
+}
+
+#[test]
+fn an_outside_edit_reloads_the_groups() {
+    let (_scratch, config, mut app) = configured("groups-watch");
+    app.config_stamp = None;
+    std::fs::write(
+        &config,
+        "[[workspace.group]]\nname = \"Solo\"\nrepos = []\n",
+    )
+    .unwrap();
+    app.config_checked = Instant::now() - Duration::from_secs(5);
+    app.watch_config();
+    assert_eq!(app.workspace.as_ref().unwrap().groups.len(), 1);
+    assert_eq!(app.group.as_deref(), Some("Solo"), "Clients is gone");
+}

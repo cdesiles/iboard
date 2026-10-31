@@ -20,10 +20,13 @@ mod tabs;
 
 pub use button::{ButtonKind, CARD_ACTION, Tone, button, icon_button, split_button};
 pub use dialog::{
-    FooterClick, field_label, focus_halo, focus_ring, help, modal_footer, modal_header,
-    paint_focus_halo, paint_focus_ring, popover_frame, rule, segmented, text_entry, text_field,
+    Answer, Ask, FooterClick, confirm, dashed_rect, field_label, focus_halo, focus_ring, help,
+    modal_footer, modal_frame, modal_header, paint_focus_halo, paint_focus_ring, popover_frame,
+    rule, segmented, text_entry, text_field,
 };
-pub use menu::{MenuOption, menu_group, menu_note, menu_option, menu_row, menu_separator};
+pub use menu::{
+    MenuOption, menu_group, menu_note, menu_option, menu_quiet, menu_row, menu_separator,
+};
 pub use pill::{chip, filter_token, label_pill, pill, tag};
 pub use select::{select, select_sized};
 pub use tabs::{ColumnTab, ColumnTabs, column_tabs};

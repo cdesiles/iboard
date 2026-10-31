@@ -62,6 +62,110 @@ pub fn popover_frame(ui: &Ui) -> Frame {
         .shadow(ui.visuals().popup_shadow)
 }
 
+/// A modal's frame: as [`popover_frame`], under `shadow-modal`.
+pub fn modal_frame(ui: &Ui) -> Frame {
+    let p = theme::palette(ui);
+    popover_frame(ui).shadow(egui::Shadow {
+        offset: [0, 12],
+        blur: 40,
+        spread: 0,
+        color: p.modal_shadow,
+    })
+}
+
+/// What a [`confirm`] asks: its question, the subject (a title and a path),
+/// what follows, and the verb on its danger button.
+pub struct Ask<'a> {
+    pub id: &'a str,
+    pub question: &'a str,
+    pub title: &'a str,
+    pub detail: &'a str,
+    pub consequence: &'a str,
+    pub confirm: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Answer {
+    Pending,
+    Confirmed,
+    Cancelled,
+}
+
+/// ConfirmDialog: a Modal S over the scrim that asks before what cannot be
+/// undone. Its danger button starts focused; Cancel or the scrim cancels.
+/// The caller owns `↩` and `esc`.
+pub fn confirm(ui: &Ui, ask: &Ask) -> Answer {
+    let p = theme::palette(ui);
+    let pad = 20.0;
+    let mut answer = Answer::Pending;
+    let frame = modal_frame(ui).inner_margin(Margin {
+        left: pad as i8,
+        right: pad as i8,
+        top: pad as i8,
+        bottom: theme::SPACE_5 as i8,
+    });
+    let modal = egui::Modal::new(egui::Id::new(ask.id))
+        .frame(frame)
+        .backdrop_color(p.scrim)
+        .show(ui.ctx(), |ui| {
+            let inner = theme::MODAL_S - 2.0 * pad;
+            ui.set_width(inner);
+            ui.style_mut().interaction.selectable_labels = false;
+            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+            ui.label(
+                RichText::new(ask.question)
+                    .font(theme::ui_title())
+                    .color(p.ink),
+            );
+            ui.add_space(theme::SPACE_2);
+            Frame::new()
+                .fill(p.surface_sunken)
+                .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+                .inner_margin(Margin::symmetric(10, theme::SPACE_3 as i8))
+                .show(ui, |ui| {
+                    ui.set_width(inner - 20.0);
+                    ui.spacing_mut().item_spacing.y = theme::SPACE_1;
+                    let title = RichText::new(ask.title)
+                        .font(theme::ui_strong())
+                        .color(p.ink);
+                    ui.add(egui::Label::new(title).truncate());
+                    let detail = RichText::new(ask.detail)
+                        .font(theme::meta())
+                        .color(p.ink_muted);
+                    ui.add(egui::Label::new(detail).truncate());
+                });
+            ui.label(
+                RichText::new(ask.consequence)
+                    .font(theme::ui_small())
+                    .color(p.ink_muted),
+            );
+            ui.add_space(theme::SPACE_3);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                // The danger button starts focused: `Del` then `↩` is the fast
+                // path, and the dialog itself is the safety step.
+                let confirm = button(
+                    ui,
+                    ButtonKind::Danger,
+                    Some(Icon::Trash),
+                    ask.confirm,
+                    Some("↩"),
+                );
+                paint_focus_ring(ui, confirm.rect, theme::RADIUS_SM);
+                if confirm.clicked() {
+                    answer = Answer::Confirmed;
+                }
+                if button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc")).clicked() {
+                    answer = Answer::Cancelled;
+                }
+            });
+        });
+    if answer == Answer::Pending && modal.should_close() {
+        answer = Answer::Cancelled;
+    }
+    answer
+}
+
 /// A modal's `bar-h` header: its title, `extra` (Settings puts its tabs
 /// there), and a close button on the right. True when close was clicked.
 pub fn modal_header(ui: &mut Ui, title: &str, extra: impl FnOnce(&mut Ui)) -> bool {
@@ -207,4 +311,22 @@ pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &s
             });
         });
     picked
+}
+
+/// A 1pt dashed edge just inside `rect`, as on wells and drop zones.
+pub fn dashed_rect(painter: &egui::Painter, rect: Rect, color: Color32) {
+    let r = rect.shrink(0.5);
+    let corners = [
+        r.left_top(),
+        r.right_top(),
+        r.right_bottom(),
+        r.left_bottom(),
+        r.left_top(),
+    ];
+    painter.extend(egui::Shape::dashed_line(
+        &corners,
+        Stroke::new(1.0, color),
+        4.0,
+        3.0,
+    ));
 }

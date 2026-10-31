@@ -22,6 +22,8 @@ use crate::issue::Issue;
 use crate::labels;
 use crate::settings::{self, UserConfig};
 
+pub mod config;
+pub mod draft;
 pub mod order;
 
 pub use order::Order;

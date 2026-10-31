@@ -3,6 +3,7 @@
 
 mod app;
 mod dialog;
+mod groups_ui;
 mod label_picker;
 mod recents;
 mod settings_ui;

@@ -11,6 +11,7 @@ mod drag;
 mod editor;
 mod enrich;
 mod focus;
+mod groups;
 mod images;
 mod refine;
 mod review;

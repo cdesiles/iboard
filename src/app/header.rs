@@ -181,9 +181,15 @@ impl IboardApp {
                         picked = Some(ProjectChoice::Board(target));
                     }
                 }
-                if !groups.is_empty() {
-                    ui.separator();
+                let (label, hint) = match groups.len() {
+                    0 => ("New group…", "several projects, one board".to_string()),
+                    1 => ("Edit groups…", "1 group".to_string()),
+                    n => ("Edit groups…", format!("{n} groups")),
+                };
+                if widgets::menu_quiet(ui, PROJECT_MENU_WIDTH, label, &hint).clicked() {
+                    picked = Some(ProjectChoice::Groups(groups.is_empty()));
                 }
+                ui.separator();
                 for project in &projects {
                     let title = project
                         .file_name()
@@ -234,6 +240,7 @@ impl IboardApp {
             .and_then(|inner| inner.inner);
         match picked {
             Some(ProjectChoice::Board(target)) => self.open_target(target),
+            Some(ProjectChoice::Groups(new_group)) => self.open_groups(new_group),
             Some(ProjectChoice::Browse) => {
                 if let Some(dir) = dialog::pick_folder() {
                     self.open_project(dir);

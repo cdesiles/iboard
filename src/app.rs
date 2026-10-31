@@ -55,6 +55,7 @@ mod editor;
 mod enrich;
 mod filter_bar;
 mod focus;
+mod groups;
 mod header;
 mod images;
 mod intent;
@@ -146,6 +147,8 @@ enum ReviewMenu {
 enum ProjectChoice {
     /// A group's board, or a remembered project.
     Board(all::Target),
+    /// The groups dialog; `true` straight into a new group.
+    Groups(bool),
     /// Ask the OS for a folder.
     Browse,
 }
@@ -632,6 +635,15 @@ pub struct IboardApp {
     config_problem: Option<String>,
     /// The ReviewSettings dialog, while it is open.
     settings: Option<settings_ui::Dialog>,
+    /// The groups dialog, while it is up.
+    groups_dialog: Option<crate::groups_ui::Dialog>,
+    /// What the groups dialog's Choose folders… asks; tests answer
+    /// without the OS.
+    folder_picker: fn() -> Vec<PathBuf>,
+    /// When the user configuration was last written, to notice an edit made
+    /// outside iboard.
+    config_stamp: Option<std::time::SystemTime>,
+    config_checked: Instant,
     /// The installed agents and their models, for the settings dialog.
     catalog: Catalog,
     /// The label colours: the built-in preset, overridden by `[labels]` in the
@@ -847,6 +859,11 @@ impl IboardApp {
         app.trash = Trash::System;
         // Likewise for the user configuration.
         app.config_file = settings::config_file();
+        app.config_stamp = app.config_file.as_deref().and_then(|file| {
+            std::fs::metadata(file)
+                .and_then(|meta| meta.modified())
+                .ok()
+        });
         let mut config = UserConfig::load(app.config_file.as_deref());
         app.agent = agent::load(&mut config);
         app.build_agent = agent::load_build(&mut config, &app.agent);
@@ -918,6 +935,10 @@ impl IboardApp {
             config_file: None,
             config_problem: None,
             settings: None,
+            groups_dialog: None,
+            folder_picker: crate::dialog::pick_folders,
+            config_stamp: None,
+            config_checked: Instant::now(),
             catalog: Catalog::default(),
             labels: Labels::presets(),
             clipboard: images::Clipboard::Held(None),
@@ -1087,6 +1108,7 @@ impl IboardApp {
             None => {}
         }
         self.config_window(ui);
+        self.groups_window(ui);
         self.design_window(ui);
         self.enrichment_window(ui);
         self.commits_window(ui);

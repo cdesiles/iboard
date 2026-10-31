@@ -228,6 +228,12 @@ impl IboardApp {
             self.background(ctx);
             return;
         }
+        self.watch_config();
+        // The groups dialog owns the keyboard while it is up.
+        if self.groups_dialog.is_some() {
+            self.background(ctx);
+            return;
+        }
         if self.session.stats.is_some() {
             self.stats_keys(ctx);
             self.background(ctx);
