@@ -9,19 +9,6 @@ use crate::theme::{self, Icon};
 /// chevron. `open` draws the focus ring while its menu is showing.
 pub fn select(ui: &mut Ui, id: egui::Id, value: &str, hint: Option<&str>, open: bool) -> Response {
     let width = ui.available_width();
-    select_sized(ui, id, value, hint, open, width)
-}
-
-/// A select of a fixed `width`, for the ColumnFocus focus bar where the full
-/// available width is not wanted.
-pub fn select_sized(
-    ui: &mut Ui,
-    id: egui::Id,
-    value: &str,
-    hint: Option<&str>,
-    open: bool,
-    width: f32,
-) -> Response {
     let p = theme::palette(ui);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, theme::CONTROL_H), Sense::hover());
     let response = ui

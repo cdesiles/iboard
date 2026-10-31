@@ -10,7 +10,6 @@ mod diff;
 mod drag;
 mod editor;
 mod enrich;
-mod focus;
 mod groups;
 mod handover;
 mod images;
@@ -348,7 +347,6 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
     app.session.notice = Some(("Archived a.md".to_string(), Instant::now()));
     app.session.pending_front = Some((alpha.join("issues/todo"), a.clone()));
     app.session.design_error = Some("alpha has no design".to_string());
-    app.column_focus.column = Some(alpha.join("issues/todo"));
 
     app.open_project(beta.to_path_buf());
 
@@ -358,7 +356,6 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
     );
     assert!(app.session.notice.is_none() && app.session.pending_front.is_none());
     assert!(app.session.design_error.is_none() && app.session.design_system.is_none());
-    assert!(app.column_focus.column.is_none());
     assert!(app.error.is_none());
     assert_eq!(
         recents::canonical(&app.board.root),
@@ -1010,20 +1007,15 @@ fn hovering_the_done_header_offers_archive_all() {
         .expect("shown on hover")
         .rect
         .center();
-    let expand = ctx
-        .read_response(egui::Id::new(("expand_column", index)))
-        .expect("expand shown on hover")
-        .rect;
-    assert!(expand.min.x >= at.x, "expand sits right of archive");
     draw(&ctx, &mut app, vec![moved(at)]);
     draw(&ctx, &mut app, vec![button(at, true)]);
     draw(&ctx, &mut app, vec![button(at, false)]);
     assert!(!a.exists() && dir.join("issues/.archive/a.md").exists());
 }
 
-/// Todo's `+` is a column action: shown on hover, left of expand.
+/// Todo's `+` is a column action, shown on hover.
 #[test]
-fn todo_offers_new_issue_on_hover_left_of_expand() {
+fn todo_offers_new_issue_on_hover() {
     let dir = scratch_dir("plus-head");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
@@ -1045,49 +1037,11 @@ fn todo_offers_new_issue_on_hover_left_of_expand() {
     let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
     draw(&ctx, &mut app, vec![moved(head)]);
     let at = ctx.read_response(plus).expect("shown on hover").rect;
-    let expand = ctx
-        .read_response(egui::Id::new(("expand_column", index)))
-        .unwrap()
-        .rect;
-    assert!(expand.min.x >= at.max.x, "+ sits left of expand");
     let at = at.center();
     draw(&ctx, &mut app, vec![moved(at)]);
     draw(&ctx, &mut app, vec![button(at, true)]);
     draw(&ctx, &mut app, vec![button(at, false)]);
     assert!(app.session.composer.is_some(), "+ opens the composer");
-}
-
-/// A hovered header offers expand at its right, which opens ColumnFocus.
-#[test]
-fn hovering_a_header_offers_expand() {
-    let dir = scratch_dir("expand-head");
-    let doing = dir.join("issues/doing");
-    std::fs::create_dir_all(&doing).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    let index = app
-        .board
-        .columns
-        .iter()
-        .position(|c| c.name.eq_ignore_ascii_case("doing"))
-        .unwrap();
-    let expand = egui::Id::new(("expand_column", index));
-
-    let ctx = themed_ctx();
-    draw(&ctx, &mut app, vec![]);
-    assert!(ctx.read_response(expand).is_none(), "hidden at rest");
-    let column = ctx
-        .read_response(egui::Id::new(("column_drop", index)))
-        .unwrap()
-        .rect;
-    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
-    draw(&ctx, &mut app, vec![moved(head)]);
-    let at = ctx.read_response(expand).expect("shown on hover").rect;
-    assert!(at.max.x > column.center().x, "on the right of the header");
-    let at = at.center();
-    draw(&ctx, &mut app, vec![moved(at)]);
-    draw(&ctx, &mut app, vec![button(at, true)]);
-    draw(&ctx, &mut app, vec![button(at, false)]);
-    assert_eq!(app.column_focus.column.as_deref(), Some(doing.as_path()));
 }
 
 #[test]
@@ -1290,8 +1244,7 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
 }
 
 /// Two fingers swiping right go back one level, as in a browser: the reader
-/// to the board, then ColumnFocus to the whole board. Its momentum never
-/// goes back twice, and scrolling down never goes back.
+/// to the board. Scrolling down never goes back.
 #[test]
 fn a_two_finger_swipe_right_goes_back() {
     let dir = scratch_dir("swipe");
@@ -1308,7 +1261,6 @@ fn a_two_finger_swipe_right_goes_back() {
         modifiers: egui::Modifiers::NONE,
     };
 
-    app.focus_column(todo.clone());
     app.open_issue(file.clone());
     for _ in 0..4 {
         frame(&ctx, &mut app, vec![wheel(0.0, -60.0)]);
@@ -1324,22 +1276,5 @@ fn a_two_finger_swipe_right_goes_back() {
     assert!(
         matches!(app.session.screen, Screen::Board),
         "back to the board"
-    );
-    assert!(app.column_focus.column.is_some(), "in its focused column");
-    for _ in 0..5 {
-        frame(&ctx, &mut app, vec![wheel(50.0, 0.0)]);
-    }
-    assert!(
-        app.column_focus.column.is_some(),
-        "the momentum goes back once"
-    );
-
-    frame(&ctx, &mut app, vec![]);
-    for _ in 0..3 {
-        frame(&ctx, &mut app, vec![wheel(50.0, 0.0)]);
-    }
-    assert!(
-        app.column_focus.column.is_none(),
-        "a new swipe leaves ColumnFocus"
     );
 }

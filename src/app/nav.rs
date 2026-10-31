@@ -127,10 +127,6 @@ impl IboardApp {
 
     /// Moves the board selection one step with an arrow key.
     pub(super) fn move_selection(&mut self, key: Key) {
-        if self.column_focus.column.is_some() {
-            self.move_focus_selection(key);
-            return;
-        }
         let grid = self.visible_grid();
         let at = self.session.selected.as_ref().and_then(|selected| {
             grid.iter().enumerate().find_map(|(column, paths)| {
@@ -144,70 +140,6 @@ impl IboardApp {
             self.session.selected = Some(grid[column][row].clone());
             self.session.scroll_to_selected = true;
         }
-    }
-
-    /// Moves the selection inside a focused column: `↑ ↓` step through its
-    /// sorted cards, `← →` switch to the neighbouring column.
-    pub(super) fn move_focus_selection(&mut self, key: Key) {
-        match key {
-            Key::ArrowLeft => self.focus_neighbor(-1),
-            Key::ArrowRight => self.focus_neighbor(1),
-            _ => {
-                let Some(dir) = self.column_focus.column.clone() else {
-                    return;
-                };
-                let Some(column) = self.board.columns.iter().find(|column| column.dir == dir)
-                else {
-                    return;
-                };
-                let paths: Vec<PathBuf> =
-                    focus_issues(column, &self.filter_bar.filter, self.column_sort(&dir))
-                        .into_iter()
-                        .map(|issue| issue.path.clone())
-                        .collect();
-                if paths.is_empty() {
-                    return;
-                }
-                let at = self
-                    .session
-                    .selected
-                    .as_ref()
-                    .and_then(|selected| paths.iter().position(|path| path == selected));
-                let next = match key {
-                    Key::ArrowUp => at.map(|at| at.saturating_sub(1)).or(Some(0)),
-                    _ => match at {
-                        Some(at) if at + 1 < paths.len() => Some(at + 1),
-                        Some(at) => Some(at),
-                        None => Some(0),
-                    },
-                };
-                if let Some(next) = next {
-                    self.session.selected = Some(paths[next].clone());
-                    self.session.scroll_to_selected = true;
-                }
-            }
-        }
-    }
-
-    /// Shows the column `delta` tabs away from the focused one, wrapping.
-    pub(super) fn focus_neighbor(&mut self, delta: isize) {
-        let Some(dir) = self.column_focus.column.clone() else {
-            return;
-        };
-        let count = self.board.columns.len();
-        if count == 0 {
-            return;
-        }
-        let Some(index) = self
-            .board
-            .columns
-            .iter()
-            .position(|column| column.dir == dir)
-        else {
-            return;
-        };
-        let next = (index as isize + delta).rem_euclid(count as isize) as usize;
-        self.column_focus.column = Some(self.board.columns[next].dir.clone());
     }
 
     /// The selected issue, if it is still on the board.

@@ -5,7 +5,7 @@ use super::*;
 impl IboardApp {
     /// The DropZones dock: while a card is dragged, Delete (or, for Done
     /// cards, Archive) slides up over the bottom of the card's column, above
-    /// the status bar. In ColumnFocus the column is the whole window.
+    /// the status bar.
     pub(super) fn drop_dock(&mut self, ui: &egui::Ui) {
         let ctx = ui.ctx().clone();
         let drag = egui::DragAndDrop::payload::<IssueDrag>(&ctx);

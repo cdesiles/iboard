@@ -19,14 +19,13 @@ use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
 use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_name};
 use crate::filter::{self, Filter};
-use crate::format::{card_date, display_path, relative_time, stopwatch};
+use crate::format::{display_path, relative_time, stopwatch};
 use crate::general::{self, Appearance};
 use crate::instance::{self, Request};
 use crate::issue::Issue;
 use crate::job::{self, Job};
 use crate::label_picker::{self, LabelPicker};
 use crate::labels::{self, Labels};
-use crate::order::{Sort, default_sort, focus_issues, group_issues};
 use crate::process;
 use crate::reviews;
 use crate::settings::{self, UserConfig};
@@ -56,7 +55,6 @@ mod dock;
 mod editor;
 mod enrich;
 mod filter_bar;
-mod focus;
 mod groups;
 mod handover;
 mod header;
@@ -83,7 +81,6 @@ use board::*;
 use build::{Builds, card_build};
 use card::*;
 use filter_bar::*;
-use focus::ColumnFocus;
 use intent::Intent;
 use labelling::*;
 use new_issue_ui::*;
@@ -192,17 +189,13 @@ enum CardBuild {
 /// What a card shows beyond its file: the last review's verdict pill, and
 /// whether the selected card offers Review.
 #[derive(Clone, Copy, Default)]
-struct CardExtras<'a> {
+struct CardExtras {
     /// The review running or ready, else the last verdict.
     review_pill: Option<ReviewPill>,
     review_button: bool,
     /// The hovered card offers Expand: every card but the picked ones that
     /// do not have focus.
     expand: bool,
-    /// In ColumnFocus: show more of the description.
-    wide: bool,
-    /// The reader's standard sections, for the wide card's facts row.
-    sections: &'a [String],
     build: Option<CardBuild>,
     /// Offers Add label: Doing and Done keep the labels they have.
     labelling: bool,
@@ -624,13 +617,11 @@ pub struct IboardApp {
     /// The last finished review of each issue this session, behind the
     /// card's verdict pill.
     past_reviews: HashMap<PathBuf, PastReview>,
-    /// ColumnFocus: the column shown full screen, its sorts and grouping.
-    column_focus: ColumnFocus,
     /// The last drag's Archive eligibility, so the dock keeps its look while
     /// it slides away after the drop.
     dock_archivable: bool,
     /// The dragged card's column on the board, which the dock spans; `None`
-    /// (ColumnFocus) spans the whole window. Kept while the dock slides away.
+    /// spans the whole window. Kept while the dock slides away.
     dock_span: Option<egui::Rangef>,
     /// The board's report, this frame, of the column a card is dragged from.
     dragged_column: Option<egui::Rangef>,
@@ -964,7 +955,6 @@ impl IboardApp {
             idesign: false,
             trash: Trash::Folder(std::env::temp_dir().join("iboard-trash")),
             past_reviews,
-            column_focus: ColumnFocus::default(),
             dock_archivable: false,
             dock_span: None,
             dragged_column: None,
@@ -1046,7 +1036,6 @@ impl IboardApp {
         self.close_review();
         self.session = Session::default();
         self.past_reviews.clear();
-        self.column_focus.column = None;
         self.filter_bar.filter.clear();
         self.error = None;
         self.uninitialised = None;
@@ -1131,19 +1120,7 @@ impl IboardApp {
                 }
                 match self.session.screen.clone() {
                     Screen::Board => {
-                        // A focused column (ColumnFocus) is a board mode: the
-                        // header and status bar stay, the board is replaced.
-                        let columns = &self.board.columns;
-                        self.column_focus.column = self
-                            .column_focus
-                            .column
-                            .take()
-                            .filter(|dir| columns.iter().any(|c| &c.dir == dir));
-                        if self.column_focus.column.is_some() {
-                            self.column_focus_ui(ui);
-                        } else {
-                            self.board_ui(ui);
-                        }
+                        self.board_ui(ui);
                         self.drop_dock(ui);
                     }
                     Screen::Detail(path) => self.detail_ui(ui, &path),
@@ -1248,34 +1225,6 @@ struct ColumnView<'a> {
     /// An agent is set up, so the selected Todo card offers Review.
     can_review: bool,
     /// The issues the build agents work on, and how many may.
-    builds: Builds<'a>,
-}
-
-/// One column tab of ColumnFocus: its name, count and status colour, and
-/// whether it is the column being shown.
-struct FocusTab {
-    name: String,
-    dir: PathBuf,
-    count: usize,
-    color: Color32,
-    active: bool,
-}
-
-/// Everything `focus_grid` needs to know about the focused column.
-struct FocusGrid<'a> {
-    column: &'a Column,
-    root: &'a Path,
-    filter: &'a Filter,
-    sort: Sort,
-    group: bool,
-    labels: &'a Labels,
-    sections: &'a [String],
-    reviews: review::CardReviews<'a>,
-    can_review: bool,
-    selected: Option<&'a Path>,
-    scroll_to_selected: bool,
-    picked: &'a [PathBuf],
-    new_card: Option<&'a Path>,
     builds: Builds<'a>,
 }
 

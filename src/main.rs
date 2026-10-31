@@ -14,8 +14,7 @@ mod settings_ui;
 // root so the view modules keep addressing them as `crate::…`.
 use iboard::{
     agent, assets, build_log, commits, design_ui, discovery, files, filter, format, general, issue,
-    job, labels, order, process, reviews, settings, sheet, theme, titles, trash, widgets,
-    workspace,
+    job, labels, process, reviews, settings, sheet, theme, titles, trash, widgets, workspace,
 };
 
 use std::path::PathBuf;

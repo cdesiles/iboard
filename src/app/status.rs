@@ -28,11 +28,9 @@ impl IboardApp {
     fn board_status(&mut self, ui: &mut egui::Ui) -> Vec<Hint> {
         let p = theme::palette(ui);
         let hints = self.board_message(ui);
-        if self.column_focus.column.is_none() {
-            let count = self.board.issue_count();
-            let noun = if count == 1 { "issue" } else { "issues" };
-            ui.label(status_meta(ui, format!("{count} {noun}")));
-        }
+        let count = self.board.issue_count();
+        let noun = if count == 1 { "issue" } else { "issues" };
+        ui.label(status_meta(ui, format!("{count} {noun}")));
         if !self.board.warnings.is_empty() {
             let n = self.board.warnings.len();
             let noun = if n == 1 { "warning" } else { "warnings" };
@@ -47,7 +45,7 @@ impl IboardApp {
     }
 
     /// The board's first status line, by priority: a drag, an undo, a
-    /// notice, ColumnFocus, the composer, the selection.
+    /// notice, the composer, the selection.
     fn board_message(&mut self, ui: &mut egui::Ui) -> Vec<Hint> {
         let p = theme::palette(ui);
         let notice = self
@@ -101,21 +99,6 @@ impl IboardApp {
             ui.ctx()
                 .request_repaint_after(NOTICE_FOR.saturating_sub(at.elapsed()));
             return idle;
-        }
-        if let Some(dir) = self.column_focus.column.clone() {
-            // ColumnFocus: what is shown, and how it is sorted.
-            let n = self
-                .board
-                .columns
-                .iter()
-                .find(|column| column.dir == dir)
-                .map(|column| column.issues.len())
-                .unwrap_or(0);
-            let noun = if n == 1 { "issue" } else { "issues" };
-            let sort = self.column_sort(&dir).label().to_lowercase();
-            let text = format!("{} · {n} {noun} · sorted by {sort}", self.relative(&dir));
-            ui.label(status_meta(ui, text));
-            return vec![("↩", "open"), ("⌘1–4", "column"), ("esc", "board")];
         }
         if self.composer_open()
             && let Some(todo) = self.board.todo_column()

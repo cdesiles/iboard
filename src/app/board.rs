@@ -120,58 +120,15 @@ pub(super) fn status_color(p: &Palette, column: &Column) -> Color32 {
     }
 }
 
-/// The column header's title as a button (see the Column component): at rest
-/// it is just the uppercase `ui-label`, on hover it takes a `surface-hover`
-/// fill. Clicking it expands the column to the whole window (ColumnFocus).
-pub(super) fn column_title_button(
-    ui: &mut egui::Ui,
-    name: &str,
-    shortcut: Option<&str>,
-) -> egui::Response {
+/// The column header's title: the uppercase `ui-label`.
+fn column_title(ui: &mut egui::Ui, name: &str) {
     let p = theme::palette(ui);
-    let label = name.to_uppercase();
-    let text = widgets::text_width(ui, &label, theme::ui_label())
-        + label.chars().count() as f32 * theme::LABEL_TRACKING;
-    let pad = theme::SPACE_2;
-    let width = pad * 2.0 + text;
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 20.0), Sense::click());
-    let response = response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(expand_tooltip(name, shortcut));
-    if ui.is_rect_visible(rect) {
-        let painter = ui.painter();
-        if response.hovered() {
-            painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_hover);
-        }
-        let mut job = LayoutJob::default();
-        job.append(
-            &label,
-            0.0,
-            egui::TextFormat {
-                font_id: theme::ui_label(),
-                color: p.ink,
-                extra_letter_spacing: theme::LABEL_TRACKING,
-                ..Default::default()
-            },
-        );
-        let label_galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
-        painter.galley(
-            Pos2::new(
-                rect.min.x + pad,
-                rect.center().y - label_galley.size().y / 2.0,
-            ),
-            label_galley,
-            p.ink,
-        );
-    }
-    response
-}
-
-fn expand_tooltip(name: &str, shortcut: Option<&str>) -> String {
-    match shortcut {
-        Some(key) => format!("Show {name} full screen  {key}"),
-        None => format!("Show {name} full screen"),
-    }
+    ui.label(
+        RichText::new(name.to_uppercase())
+            .font(theme::ui_label())
+            .extra_letter_spacing(theme::LABEL_TRACKING)
+            .color(p.ink),
+    );
 }
 
 pub(super) fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
@@ -192,16 +149,11 @@ pub(super) fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
     // empty space below the cards accepts a drop too.
     let origin = ui.cursor().min;
     let drop_rect = Rect::from_min_size(origin, Vec2::new(view.width, view.height));
-    // A double-click on the column (its header or empty space; cards take
-    // their own clicks) expands it to the whole window, like its title.
     let drop_response = ui.interact(
         drop_rect,
         egui::Id::new(("column_drop", view.index)),
-        Sense::click(),
+        Sense::hover(),
     );
-    if drop_response.double_clicked() {
-        intents.push(Intent::FocusColumn(column.dir.clone()));
-    }
 
     let mut anchor = None;
     ui.allocate_ui_with_layout(
@@ -279,11 +231,7 @@ fn column_head(
     head.spacing_mut().item_spacing.x = theme::SPACE_3;
     let (dot, _) = head.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
     head.painter().circle_filled(dot.center(), 4.0, status);
-    // The title is a button: it expands the column to the whole window.
-    let shortcut = (view.index < 4).then(|| ["⌘1", "⌘2", "⌘3", "⌘4"][view.index]);
-    if column_title_button(&mut head, &column.name, shortcut).clicked() {
-        intents.push(Intent::FocusColumn(column.dir.clone()));
-    }
+    column_title(&mut head, &column.name);
     if visible
         .iter()
         .any(|issue| view.picked.contains(&issue.path))
@@ -297,7 +245,7 @@ fn column_head(
     head.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_2;
         if ui.rect_contains_pointer(head_rect) {
-            column_actions(ui, view, visible, shortcut, intents);
+            column_actions(ui, view, visible, intents);
             return;
         }
         // Parked notes keep Todo's `+` and its dot in view.
@@ -329,21 +277,15 @@ fn column_head(
     );
 }
 
-/// The hovered header's actions, right to left: expand, then Todo's `+`,
-/// Ready's play, Doing's agents and Done's archive.
+/// The hovered header's actions, right to left: Todo's `+`, Ready's play,
+/// Doing's agents and Done's archive.
 fn column_actions(
     ui: &mut egui::Ui,
     view: &ColumnView,
     visible: &[&Issue],
-    shortcut: Option<&str>,
     intents: &mut Vec<Intent>,
 ) {
     let column = view.column;
-    let id = egui::Id::new(("expand_column", view.index));
-    let hover = expand_tooltip(&column.name, shortcut);
-    if widgets::icon_button(ui, Icon::Expand, id, &hover, widgets::Tone::Plain).clicked() {
-        intents.push(Intent::FocusColumn(column.dir.clone()));
-    }
     if column.accepts_new_issues() {
         new_issue_button(ui, view, intents);
     }
@@ -507,7 +449,6 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
         expand: view.picked.is_empty() || view.selected == Some(issue.path.as_path()),
         build: card_build(view.column, issue, view.builds),
         labelling: discovery::is_editable_column(&view.column.dir),
-        ..CardExtras::default()
     };
     issue_card(ui, issue, view.width, look, view.labels, extras)
 }

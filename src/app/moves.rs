@@ -83,16 +83,6 @@ impl IboardApp {
         self.place_issue(path, dir, None);
     }
 
-    /// A drop on a column tab: the issue, or the multi-selection it is in,
-    /// moves to the end of `to`.
-    pub(super) fn move_issues(&mut self, path: &Path, to: &Path) {
-        for path in self.selection_of(path) {
-            if !self.board.in_column(&path, to) {
-                self.move_issue(&path, to);
-            }
-        }
-    }
-
     /// `⌘↩` on the board: moves the selected ticket to the next column, left
     /// to right. A ticket in the last column stays put.
     pub(super) fn move_selection_to_next(&mut self) {

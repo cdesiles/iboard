@@ -43,26 +43,6 @@ impl IboardApp {
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
         let project = self.board.name();
         match self.session.screen.clone() {
-            Screen::Board if self.column_focus.column.is_some() => {
-                // ColumnFocus: `project / Column`, the project linking back.
-                let dir = self.column_focus.column.clone().unwrap_or_default();
-                let column = self
-                    .board
-                    .columns
-                    .iter()
-                    .find(|column| column.dir == dir)
-                    .map(|column| column.name.clone())
-                    .unwrap_or_default();
-                let back = widgets::crumb(ui, &project, theme::ui_body()).clicked();
-                ui.label(RichText::new("/").color(p.ink_faint));
-                ui.add(
-                    egui::Label::new(RichText::new(column).font(theme::ui_strong()).color(p.ink))
-                        .truncate(),
-                );
-                if back {
-                    self.unfocus_column();
-                }
-            }
             Screen::Board => {
                 ui.label(RichText::new(&project).font(theme::ui_title()).color(p.ink));
                 let path = match self.shown_group() {

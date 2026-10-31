@@ -14,8 +14,6 @@ struct KeyContext {
     /// The delete confirmation is up.
     confirming: bool,
     board: bool,
-    /// The board shows one column full screen (ColumnFocus).
-    focused: bool,
     /// The issue open in the reader or the editor.
     open: Option<PathBuf>,
     editing: bool,
@@ -35,8 +33,6 @@ struct KeyContext {
 enum Command {
     Compose,
     FocusFilter,
-    /// `⌘1`–`⌘4`: show that column full screen, or leave it.
-    ToggleColumn(usize),
     Refresh,
     Undo,
     Settings,
@@ -94,16 +90,6 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     if !cx.typing && command(Key::K) {
         out.extend(target.map(|path| Command::Ask(path.clone())));
     }
-    if cx.board && !cx.typing {
-        for (at, key) in [Key::Num1, Key::Num2, Key::Num3, Key::Num4]
-            .into_iter()
-            .enumerate()
-        {
-            if command(key) {
-                out.push(Command::ToggleColumn(at));
-            }
-        }
-    }
     if command(Key::R) && !input.modifiers.shift {
         out.push(match cx.open.as_ref().filter(|_| cx.refinable) {
             Some(path) => Command::Refine(path.clone()),
@@ -123,7 +109,7 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     {
         out.push(Command::ToggleReview(path.clone()));
     }
-    if command(Key::OpenBracket) && (!cx.board || cx.focused) {
+    if command(Key::OpenBracket) && !cx.board {
         out.push(Command::Back);
     }
     if command(Key::S) {
@@ -266,7 +252,7 @@ impl IboardApp {
         }
         let cx = self.key_context(ctx, confirming || self.refinement_shown());
         let mut commands = ctx.input(|i| keymap(i, &cx));
-        if !cx.confirming && (!cx.board || cx.focused) && self.swiped_back(ctx) {
+        if !cx.confirming && !cx.board && self.swiped_back(ctx) {
             commands.push(Command::Back);
         }
         for command in commands {
@@ -438,7 +424,6 @@ impl IboardApp {
                 Screen::Board if !self.filter_bar.filter.is_empty() => {
                     self.filter_bar.filter.clear()
                 }
-                Screen::Board if self.column_focus.column.is_some() => self.unfocus_column(),
                 Screen::Board => {
                     self.session.selected = None;
                     self.session.picked.clear();
@@ -460,7 +445,6 @@ impl IboardApp {
             typing: ctx.memory(|m| m.focused().is_some()),
             confirming,
             board: matches!(self.session.screen, Screen::Board),
-            focused: self.column_focus.column.is_some(),
             editable: open.as_deref().is_some_and(|path| self.can_edit(path)),
             refinable: open.as_deref().is_some_and(|path| self.is_todo_issue(path)),
             proposal: self.proposal_shown() && !self.refinement_shown(),
@@ -481,15 +465,6 @@ impl IboardApp {
         match command {
             Command::Compose => self.open_composer(),
             Command::FocusFilter => self.filter_bar.focus = true,
-            Command::ToggleColumn(at) => {
-                if let Some(dir) = self.board.columns.get(at).map(|c| c.dir.clone()) {
-                    if self.column_focus.column.as_ref() == Some(&dir) {
-                        self.unfocus_column();
-                    } else {
-                        self.focus_column(dir);
-                    }
-                }
-            }
             Command::Refresh => self.refresh(),
             Command::Undo => {
                 if !self.restore_discarded() {
@@ -507,7 +482,6 @@ impl IboardApp {
                 }
             }
             Command::Back if self.session.detail_mode == DetailMode::Edit => self.show_preview(),
-            Command::Back if matches!(self.session.screen, Screen::Board) => self.unfocus_column(),
             Command::Back if matches!(self.session.screen, Screen::Diff) => self.close_diff(),
             Command::Back => self.back_to_board(),
             // `⌘S` is the header's Save: it forces a save (overwriting a

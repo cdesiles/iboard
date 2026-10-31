@@ -258,15 +258,7 @@ fn doing_header_adds_and_removes_agents() {
         .rect;
     let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
     draw(&ctx, &mut app, vec![moved(head)]);
-    let expand = ctx
-        .read_response(egui::Id::new(("expand_column", 2)))
-        .unwrap()
-        .rect;
-    let stepper = ctx.read_response(more).expect("shown on hover").rect;
-    assert!(
-        expand.min.x >= stepper.max.x,
-        "expand stays at the far right"
-    );
+    ctx.read_response(more).expect("shown on hover");
     click(&ctx, &mut app, more);
     assert_eq!(app.session.agents, 2);
     click(&ctx, &mut app, egui::Id::new(("fewer_agents", 2)));
@@ -299,10 +291,7 @@ fn while_play_is_pressed_an_issue_dropped_in_ready_is_built() {
     );
 
     let todo = dir.join("issues/todo/003-c.md");
-    app.apply(vec![Intent::Move {
-        path: todo,
-        to: dir.join("issues/ready"),
-    }]);
+    app.move_issue(&todo, &dir.join("issues/ready")).unwrap();
     app.poll_build(&ctx);
     assert_eq!(in_column(&dir, "doing"), ["a.md", "b.md", "c.md"]);
     assert!(in_column(&dir, "ready").is_empty());

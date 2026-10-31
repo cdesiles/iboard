@@ -32,20 +32,6 @@ pub fn relative_time(time: SystemTime) -> String {
     }
 }
 
-/// A date the way a card shows it: "today 18:02", "yesterday", "2 Oct".
-pub fn card_date(time: SystemTime) -> String {
-    let at = chrono::DateTime::<chrono::Local>::from(time);
-    let date = at.date_naive();
-    let today = chrono::Local::now().date_naive();
-    if date == today {
-        format!("today {}", at.format("%H:%M"))
-    } else if Some(date) == today.pred_opt() {
-        "yesterday".to_string()
-    } else {
-        at.format("%-d %b").to_string()
-    }
-}
-
 /// How long something has run, as `mm:ss`; minutes keep counting past the
 /// hour.
 pub fn stopwatch(duration: Duration) -> String {
@@ -73,13 +59,6 @@ mod tests {
         assert_eq!(ago(3 * 86_400), "3d ago");
         let later = SystemTime::now() + Duration::from_secs(60);
         assert_eq!(relative_time(later), "unknown");
-    }
-
-    #[test]
-    fn card_dates_name_today_and_yesterday() {
-        assert!(card_date(SystemTime::now()).starts_with("today "));
-        let day = SystemTime::now() - Duration::from_secs(86_400);
-        assert_eq!(card_date(day), "yesterday");
     }
 
     #[test]

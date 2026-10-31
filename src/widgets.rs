@@ -16,7 +16,6 @@ mod dialog;
 mod menu;
 mod pill;
 mod select;
-mod tabs;
 
 pub use button::{ButtonKind, CARD_ACTION, Tone, button, icon_button, split_button};
 pub use dialog::{
@@ -28,8 +27,7 @@ pub use menu::{
     MenuOption, menu_group, menu_note, menu_option, menu_quiet, menu_row, menu_separator,
 };
 pub use pill::{chip, filter_token, label_pill, pill, tag};
-pub use select::{select, select_sized};
-pub use tabs::{ColumnTab, ColumnTabs, column_tabs};
+pub use select::select;
 
 fn galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<Galley> {
     WidgetText::from(egui::RichText::new(text).font(font).color(color)).into_galley(

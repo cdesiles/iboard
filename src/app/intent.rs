@@ -53,18 +53,6 @@ pub(super) enum Intent {
         column: PathBuf,
         anchor: Option<PathBuf>,
     },
-    /// A dragged card was dropped on a column tab.
-    Move {
-        path: PathBuf,
-        to: PathBuf,
-    },
-    /// Show this column full screen (ColumnFocus).
-    FocusColumn(PathBuf),
-    UnfocusColumn,
-    Sort {
-        column: PathBuf,
-        sort: Sort,
-    },
     Compose,
 }
 
@@ -130,12 +118,6 @@ impl IboardApp {
                     column,
                     anchor,
                 } => self.place_issue(&path, &column, anchor),
-                Intent::Move { path, to } => self.move_issues(&path, &to),
-                Intent::FocusColumn(dir) => self.focus_column(dir),
-                Intent::UnfocusColumn => self.unfocus_column(),
-                Intent::Sort { column, sort } => {
-                    self.column_focus.sorts.insert(column, sort);
-                }
                 Intent::Compose => self.open_composer(),
             }
         }

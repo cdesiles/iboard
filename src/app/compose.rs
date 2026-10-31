@@ -18,8 +18,6 @@ impl IboardApp {
     }
 
     pub(super) fn show_composer(&mut self) {
-        // New issues belong to the board's Todo column, so leave ColumnFocus.
-        self.column_focus.column = None;
         // Checked on every open: Apple Intelligence or an agent may have been
         // set up meanwhile.
         let engine = Some(self.title_engine).filter(|engine| {

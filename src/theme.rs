@@ -560,9 +560,9 @@ pub enum Icon {
     Check,
     /// A magnifier: the board filter.
     Search,
-    /// Two arrows pointing outwards: expand a column to ColumnFocus.
+    /// Two arrows pointing outwards: expand.
     Expand,
-    /// Two arrows pointing inwards: leave ColumnFocus for the board.
+    /// Two arrows pointing inwards: collapse.
     Collapse,
     /// A tag with a small plus at the lower right: add a label.
     TagPlus,

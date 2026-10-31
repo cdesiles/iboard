@@ -1,4 +1,4 @@
-//! An issue's card, on the board and in ColumnFocus.
+//! An issue's card on the board.
 
 use super::*;
 
@@ -260,43 +260,6 @@ fn tilt_layer(ctx: &egui::Context, layer: egui::LayerId, origin: Pos2) {
     });
 }
 
-/// One entry of a wide card's facts row: a small `meta` label, with a check
-/// icon when the section is written.
-pub(super) fn fact(ui: &mut egui::Ui, text: &str, color: Color32, checked: bool) {
-    let icon = 12.0;
-    let gap = 4.0;
-    let text_width = widgets::text_width(ui, text, theme::meta());
-    let width = if checked { icon + gap } else { 0.0 } + text_width;
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 16.0), Sense::hover());
-    let cy = rect.center().y;
-    let mut x = rect.min.x;
-    if checked {
-        let icon_rect = Rect::from_center_size(Pos2::new(x + icon / 2.0, cy), Vec2::splat(icon));
-        theme::paint_icon(ui.painter(), Icon::Check, icon_rect, color);
-        x += icon + gap;
-    }
-    ui.painter().text(
-        Pos2::new(x, cy),
-        egui::Align2::LEFT_CENTER,
-        text,
-        theme::meta(),
-        color,
-    );
-}
-
-/// A wide card's facts row: the written sections checked in `status-done`, the
-/// missing ones as `Out of scope —` in `ink-muted`.
-pub(super) fn fact_row(ui: &mut egui::Ui, issue: &Issue, sections: &[String]) {
-    let p = theme::palette(ui);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::new(10.0, 4.0);
-        for (text, checked) in sheet::facts(issue, sections) {
-            let color = if checked { p.status_done } else { p.ink_muted };
-            fact(ui, &text, color, checked);
-        }
-    });
-}
-
 /// The visual body of a card, shared by the card in the board and the ghost
 /// that follows the pointer while dragging: title, summary clamped to three
 /// lines, file name. A `highlighted` card (new or selected) is `accent-soft`.
@@ -314,12 +277,7 @@ pub(super) fn card_body(
     extras: CardExtras,
 ) -> CardBody {
     let p = theme::palette(ui);
-    // Wide cards (ColumnFocus) get more room: 12×14 padding and 6pt gaps.
-    let padding = if extras.wide {
-        Margin::symmetric(14, 12)
-    } else {
-        Margin::symmetric(theme::SPACE_4 as i8, 10)
-    };
+    let padding = Margin::symmetric(theme::SPACE_4 as i8, 10);
     let border = 1.0;
     // The frame's border is drawn outside the padding, so take it off too.
     let inner = width - f32::from(padding.left) - f32::from(padding.right) - 2.0 * border;
@@ -334,9 +292,9 @@ pub(super) fn card_body(
         .inner_margin(padding)
         .show(ui, |ui| {
             ui.set_width(inner);
-            ui.spacing_mut().item_spacing.y = if extras.wide { 6.0 } else { theme::SPACE_2 };
+            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
             let (review, label_clicks) = card_labels(ui, issue, labels, &extras);
-            card_text(ui, issue, inner, &extras);
+            card_text(ui, issue, inner);
             let (mut action, mut action_rects) = ui
                 .horizontal(|ui| {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -409,9 +367,8 @@ fn review_pill(ui: &mut egui::Ui, word: &str, color: Color32, hint: &str) -> egu
         .on_hover_text(hint)
 }
 
-/// The title, the summary (six lines on a wide card, three otherwise) and,
-/// on a wide card, its facts row.
-fn card_text(ui: &mut egui::Ui, issue: &Issue, inner: f32, extras: &CardExtras) {
+/// The title and the summary, clamped to three lines.
+fn card_text(ui: &mut egui::Ui, issue: &Issue, inner: f32) {
     let p = theme::palette(ui);
     ui.add(
         egui::Label::new(
@@ -424,11 +381,8 @@ fn card_text(ui: &mut egui::Ui, issue: &Issue, inner: f32, extras: &CardExtras) 
     if !issue.summary.is_empty() {
         let mut job =
             LayoutJob::simple(issue.summary.clone(), theme::ui_small(), p.ink_muted, inner);
-        job.wrap.max_rows = if extras.wide { 6 } else { 3 };
+        job.wrap.max_rows = 3;
         ui.add(egui::Label::new(job).show_tooltip_when_elided(false));
-    }
-    if extras.wide {
-        fact_row(ui, issue, extras.sections);
     }
 }
 
@@ -469,7 +423,7 @@ fn card_meta(
     if let Some(CardBuild::Running(since)) = extras.build {
         build_timer(ui, issue, since);
     }
-    card_date_label(ui, issue, extras.wide);
+    card_date_label(ui, issue);
     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
         ui.add(
             egui::Label::new(
@@ -617,25 +571,16 @@ fn built_in(ui: &mut egui::Ui, took: Duration) {
     );
 }
 
-/// Wide cards always show the modified date, as on the board's Done cards:
-/// "today 18:02", "yesterday", "2 Oct". Done issues on the board show the
-/// day they were done, the exact time on hover.
-fn card_date_label(ui: &mut egui::Ui, issue: &Issue, wide: bool) {
+/// Done issues show the day they were done, the exact time on hover.
+fn card_date_label(ui: &mut egui::Ui, issue: &Issue) {
     let p = theme::palette(ui);
-    let (text, hover) = if wide {
-        let Some(modified) = issue.modified else {
-            return;
-        };
-        (card_date(modified), relative_time(modified))
-    } else {
-        let Some(done_at) = issue.done_at else {
-            return;
-        };
-        (
-            done_at.format("%Y-%m-%d").to_string(),
-            done_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
-        )
+    let Some(done_at) = issue.done_at else {
+        return;
     };
+    let (text, hover) = (
+        done_at.format("%Y-%m-%d").to_string(),
+        done_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
+    );
     ui.add(egui::Label::new(
         RichText::new(text).font(theme::meta()).color(p.ink_muted),
     ))
