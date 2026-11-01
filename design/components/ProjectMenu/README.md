@@ -27,7 +27,7 @@ Every row is at least 24pt tall and its full width is the hit area.
 - **Filtering starts on its own when you type.** The menu opens with the focus on the list, not in the field; the first printable key moves focus into the filter with that character already in it, so opening the menu and typing "moon" is the whole gesture. No click, no `⌘F`. `⌫` back to empty, or `esc`, returns to the full list. It matches the folder name and the path, case-insensitive; the matched part of the name is marked in `accent-soft`.
 - While a filter is set, the Groups section hides, the count reads "2/48", the first match is active (`accent-soft`), and a note says "↩ opens moon-cull · esc clears the filter". `esc` clears first, closes second.
 - No match: "No project matches moon. Add project… to add one." in `ink-faint`.
-- `↑ ↓` move through groups and projects as one list; `↩` opens; `⌘1`–`⌘9` are not used here (they belong to ColumnFocus).
+- `↑ ↓` move through groups and projects as one list; `↩` opens.
 
 ## Reorder mode
 

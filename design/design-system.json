@@ -18,8 +18,8 @@
   },
   "lastChange": {
     "by": "Clément",
-    "at": "2026-10-31T19:36:00Z",
+    "at": "2026-11-01T12:00:00Z",
     "via": "Claude Code",
-    "note": "Type to filter: typing in any open list starts filtering on the first key (new principle; ProjectMenu filter auto-activates)."
+    "note": "Removed ColumnFocus: column titles are plain labels, no expand action, no ⌘1–⌘4, no wide cards."
   }
 }

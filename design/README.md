@@ -68,7 +68,7 @@ Navigation is three discreet pieces:
 2. **Breadcrumb in the header**, in `ink-muted`: `iboard / Todo / AI assist to refine an issue`. Every segment but the last is a link back, with a hover fill and underline. On the board it shows only the project name and path. There the project name opens the ProjectMenu: the groups (each its own board), then your projects in your own order, scrolling inside the menu and filtered by typing, then a footer strip on `bg` with three actions: **Add project…**, **Edit groups…** (GroupsDialog, written back to `[[workspace.group]]` in `~/.config/iboard/iboard.toml`; the board reloads in place) and **Reorder** (drag or `⌥↑ ⌥↓`, saved as a user preference).
 3. **Status bar at the bottom**: the current file path on the left, save state and the two or three shortcuts that apply to the current screen on the right.
 
-There is no sidebar and no tab bar. Three screens are enough: Board, Reader, Editor. The Board has one extra mode, **ColumnFocus**: clicking a column title (or `⌘1` to `⌘4`) gives that column the whole window, with wide cards and its own sort, and `esc` goes back.
+There is no sidebar and no tab bar. Three screens are enough: Board, Reader, Editor.
 
 ## Adding an issue
 
@@ -103,7 +103,6 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 | `⌘[` | | Back | Back (asks if unsaved) |
 | `⌘⇧R` | | Review this issue | Review draft |
 | `⌘Z` | Undo the last delete, when asking is off | | Undo typing |
-| `⌘1`–`⌘4` | Show Todo, Ready, Doing or Done full screen (again: back to the board) | | |
 | `⌘,` | Open Settings (last tab used) | Open Settings | Open Settings |
 | `⇧↩` | New line in the new issue's notes | | |
 | `A` | Archive selected (Done only) | | |
@@ -140,11 +139,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Board, Reader | Click a label | LabelClicked → FilterSuggestionPicked | Board filtered by that label |
 | Board | Click a suggestion, or type | FilterSuggestionPicked / FilterChanged | Board shows matches only; counts read "2/6" |
 | Board | `esc` in the filter | FilterCleared | Full board; field back to 220pt on blur |
-| Board | Click a column title, `⌘1`–`⌘4` | ColumnFocused | ColumnFocus: that column full screen, wide cards, its default sort |
-| ColumnFocus | Pick a sort, toggle Group by label | ColumnSortChanged / ColumnGroupingToggled | Same view, reordered; files untouched |
-| ColumnFocus | Click another column tab | ColumnFocused | That column full screen |
-| ColumnFocus | Click the active tab, Board button, `esc` | ColumnUnfocused | Board, same card selected |
-| Reader, Editor, ColumnFocus | Two-finger swipe right on the trackpad, or `⌘[` | NavigatedBack | One level up the breadcrumb: Editor to Reader, Reader to the board (or its focused column), ColumnFocus to the board |
+| Reader, Editor | Two-finger swipe right on the trackpad, or `⌘[` | NavigatedBack | One level up the breadcrumb: Editor to Reader, Reader to the board |
 | Any | Move to column (drag, or menu) | IssueMoved | Same screen; file moved between folders |
 | Board, Reader | Add label (card action, Reader header button, `L`) | LabelPickerOpened | LabelPicker under the trigger, field focused |
 | LabelPicker | Type, `↩` (or click a board label, or `↓` then `↩`) | LabelAdded / LabelAddFailed | Same popup, field cleared; the label shows on the card and the Reader, and the file is rewritten |

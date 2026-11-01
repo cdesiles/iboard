@@ -7,7 +7,6 @@
     "components/Button/README.md",
     "components/Checkbox/README.md",
     "components/Column/README.md",
-    "components/ColumnFocus/README.md",
     "components/ConfirmDialog/README.md",
     "components/DropZones/README.md",
     "components/Editor/README.md",
@@ -69,12 +68,6 @@
       "name": "Column",
       "group": "Board",
       "summary": "One column per folder: todo/, ready/, doing/, done/."
-    },
-    {
-      "name": "ColumnFocus",
-      "group": "Screens",
-      "summary": "One column expanded to the whole window, to read more of each issue and sort them differently.",
-      "page": true
     },
     {
       "name": "ConfirmDialog",
@@ -170,7 +163,7 @@
     {
       "name": "Scrollbar",
       "group": "Foundations",
-      "summary": "One overlay scrollbar for every scrolling pane (Reader sheet, Editor, a column, ColumnFocus, the RefinePanel reasoning, popup lists)."
+      "summary": "One overlay scrollbar for every scrolling pane (Reader sheet, Editor, a column, the RefinePanel reasoning, popup lists)."
     },
     {
       "name": "Skeleton",

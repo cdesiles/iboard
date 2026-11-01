@@ -1,6 +1,6 @@
 # Scrollbar
 
-One overlay scrollbar for every scrolling pane (Reader sheet, Editor, a column, ColumnFocus, the RefinePanel reasoning, popup lists). The thumb floats over the content, 2pt inside the pane's right edge, and never takes layout width, so text never reflows when it appears or widens. There is no track and no arrow buttons.
+One overlay scrollbar for every scrolling pane (Reader sheet, Editor, a column, the RefinePanel reasoning, popup lists). The thumb floats over the content, 2pt inside the pane's right edge, and never takes layout width, so text never reflows when it appears or widens. There is no track and no arrow buttons.
 
 ## States
 
