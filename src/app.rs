@@ -1118,6 +1118,10 @@ impl IboardApp {
                 if let Some(error) = self.scan_error.clone().or_else(|| self.error.clone()) {
                     self.error_strip(ui, &error);
                 }
+                if self.session.stats.is_some() {
+                    self.stats_screen(ui);
+                    return;
+                }
                 match self.session.screen.clone() {
                     Screen::Board => {
                         self.board_ui(ui);
@@ -1139,7 +1143,6 @@ impl IboardApp {
         self.design_window(ui);
         self.enrichment_window(ui);
         self.commits_window(ui);
-        self.stats_window(ui);
         self.new_issue_modal(ui);
         self.flush_pending_front(ui.ctx());
     }

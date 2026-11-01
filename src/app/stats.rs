@@ -186,51 +186,55 @@ impl IboardApp {
 
     /// The panel owns the keyboard while up; the Agenda takes its keys.
     pub(super) fn stats_keys(&mut self, ctx: &egui::Context) {
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
+            self.session.stats = None;
+            return;
+        }
         if self.session.stats.as_ref().is_some_and(|p| !p.is_loading()) {
             self.agenda_keys(ctx);
         }
     }
 
-    pub(super) fn stats_window(&mut self, ui: &egui::Ui) {
+    /// Project stats in place of the board, under the header bar: its title
+    /// row, the page of commits it reads, and where it is kept.
+    pub(super) fn stats_screen(&mut self, ui: &mut egui::Ui) {
         let Some(panel) = self.session.stats.as_mut() else {
             return;
         };
         let p = theme::palette(ui);
-        let screen = ui.ctx().content_rect();
-        let width = (screen.width() - 80.0).clamp(480.0, 1280.0);
-        let height = (screen.height() - 120.0).max(320.0);
         let mut ask = None;
-        let modal = egui::Modal::new(egui::Id::new("stats"))
-            .frame(widgets::popover_frame(ui))
-            .backdrop_color(p.scrim)
-            .show(ui.ctx(), |ui| {
-                ui.set_width(width);
-                ui.style_mut().interaction.selectable_labels = false;
-                let mut page = None;
-                if widgets::modal_header(ui, "Project stats", |ui| page = header(ui, panel)) {
-                    ask = Some(StatsAsk::Close);
-                }
-                if let Some(page) = page {
-                    ask = Some(StatsAsk::Page(page));
-                }
-                widgets::rule(ui);
-                Frame::new().fill(p.bg).show(ui, |ui| {
-                    theme::scroll_area(
-                        ui,
-                        egui::ScrollArea::vertical()
-                            .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
-                            .max_height(height + 2.0 * theme::SPACE_5)
-                            .auto_shrink([false, true]),
-                        true,
-                        |ui| {
-                            if let Some(draft) = stats_body(ui, panel) {
-                                ask = Some(draft);
-                            }
-                        },
-                    );
-                });
+        ui.style_mut().interaction.selectable_labels = false;
+        let mut page = None;
+        if widgets::modal_header(ui, "Project stats", |ui| page = header(ui, panel)) {
+            ask = Some(StatsAsk::Close);
+        }
+        if let Some(page) = page {
+            ask = Some(StatsAsk::Page(page));
+        }
+        widgets::rule(ui);
+        egui::Panel::bottom("stats-footer")
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(Frame::new().fill(p.bg))
+            .show(ui, |ui| {
                 widgets::rule(ui);
                 stats_footer(ui, panel.stats.as_ref());
+            });
+        egui::CentralPanel::default()
+            .frame(Frame::new().fill(p.bg))
+            .show(ui, |ui| {
+                theme::scroll_area(
+                    ui,
+                    egui::ScrollArea::vertical()
+                        .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
+                        .auto_shrink([false, false]),
+                    true,
+                    |ui| {
+                        if let Some(draft) = stats_body(ui, panel) {
+                            ask = Some(draft);
+                        }
+                    },
+                );
             });
         self.session.agenda_range = panel.agenda.range;
         let range = panel.agenda.range;
@@ -244,7 +248,6 @@ impl IboardApp {
                 self.session.stats = None;
                 self.draft_refactor(title, description);
             }
-            None if modal.should_close() => self.session.stats = None,
             None => {}
         }
     }
