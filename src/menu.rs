@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// `terminate:`, which tears the window down and can abort on Touch Bar Macs.
 static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
-/// Set by Window › Settings… and read once per frame by the app.
+/// Set by File › Settings… and read once per frame by the app.
 static SETTINGS_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// Set by Tools › Project Stats… and read once per frame by the app.
@@ -75,7 +75,7 @@ pub fn take_quit_request() -> bool {
     QUIT_REQUESTED.swap(false, Ordering::SeqCst)
 }
 
-/// Whether Window › Settings… was picked since the last call.
+/// Whether File › Settings… was picked since the last call.
 pub fn take_settings_request() -> bool {
     SETTINGS_REQUESTED.swap(false, Ordering::SeqCst)
 }
@@ -162,7 +162,7 @@ fn set_target(item: &NSMenuItem, target: &'static AnyObject) {
 /// Replaces winit's default menu bar. Does nothing off the main thread.
 ///
 /// `app_name` titles the application menu and the About panel; `credits` is the
-/// text under the version there, `**bold**` spans and `https://` links styled. `board` adds Window › Settings… and Tools ›
+/// text under the version there, `**bold**` spans and `https://` links styled. `board` adds File › Settings… and Tools ›
 /// Project Stats…, which the caller watches with [`take_settings_request`] and
 /// [`take_stats_request`].
 pub fn install(app_name: &str, credits: &str, board: bool) {
@@ -224,6 +224,13 @@ pub fn install(app_name: &str, credits: &str, board: bool) {
 
     // File menu.
     let file_menu = submenu(mtm, &menubar, "File");
+    if board {
+        // No key equivalent: `⌘,` stays the app's own toggle, handled in egui.
+        let settings_item = item(mtm, "Settings…", Some(sel!(openSettings:)), "");
+        set_target(&settings_item, target);
+        file_menu.addItem(&settings_item);
+        file_menu.addItem(&NSMenuItem::separatorItem(mtm));
+    }
     file_menu.addItem(&item(mtm, "Close Window", Some(sel!(performClose:)), "w"));
 
     if board {
@@ -246,13 +253,6 @@ pub fn install(app_name: &str, credits: &str, board: bool) {
         let zoom = item(mtm, title, Some(action), key);
         set_target(&zoom, target);
         window_menu.addItem(&zoom);
-    }
-    if board {
-        window_menu.addItem(&NSMenuItem::separatorItem(mtm));
-        // No key equivalent: `⌘,` stays the app's own toggle, handled in egui.
-        let settings_item = item(mtm, "Settings…", Some(sel!(openSettings:)), "");
-        set_target(&settings_item, target);
-        window_menu.addItem(&settings_item);
     }
     window_menu.addItem(&NSMenuItem::separatorItem(mtm));
     window_menu.addItem(&item(
