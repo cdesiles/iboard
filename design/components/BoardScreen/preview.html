@@ -1,13 +1,13 @@
-<!-- @dsCard group="Screens" height=560 page subtitle="The board with the quick-add composer open" -->
+<!-- @dsCard group="Screens" height=800 page subtitle="The board with the new issue modal open (⌘N): Review drafting the ticket in place" -->
 <!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Board screen</title></head>
 <body>
-<div style="display:flex;flex-direction:column;min-height:460px;background:var(--bg)">
+<div style="position:relative;display:flex;flex-direction:column;height:760px;background:var(--bg);overflow:hidden">
 <div class="ib-bar"><nav class="ib-crumbs" aria-label="Breadcrumb"><span class="ib-project">iboard</span><span class="ib-path">~/workspace/perso/iboard/issues</span></nav><span class="ib-spacer"></span><span class="ib-field"><input class="ib-input" placeholder="Filter issues" aria-label="Filter issues"><span class="ib-kbd">⌘F</span></span><button class="ib-btn"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Refresh</button><button class="ib-btn ib-btn--primary"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New issue <span class="ib-cap" style="color:inherit">⌘N</span></button></div>
 <div class="ib-board" style="flex:1;grid-template-columns:repeat(4,minmax(0,1fr))">
-<section class="ib-col is-todo"><header class="ib-col__head"><span class="ib-dot"></span><span class="ib-col__title">Todo</span><span class="ib-col__count">2</span><button class="ib-btn ib-btn--ghost ib-btn--icon ib-col__add" aria-label="New issue in Todo (⌘N)"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></header><div class="ib-composer"><input aria-label="New issue title" placeholder="Issue title" value="[Feature] Export board as markdown"><div class="ib-composer__meta"><span>todo/export-board-as-markdown.md</span><span class="ib-hints"><span><span class="ib-kbd">↩</span> add</span><span><span class="ib-kbd">⌘↩</span> edit</span></span></div></div>
-<article class="ib-card is-new"><div class="ib-labels"><button class="ib-lbl" title="Filter by bug">bug</button></div><div class="ib-card__title">Fix login redirect</div><div class="ib-card__meta">fix-login-redirect.md</div></article>
+<section class="ib-col is-todo"><header class="ib-col__head"><span class="ib-dot"></span><span class="ib-col__title">Todo</span><span class="ib-col__count">2</span><button class="ib-btn ib-btn--ghost ib-btn--icon ib-col__add" aria-label="New issue in Todo (⌘N)"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></header>
+<article class="ib-card"><div class="ib-labels"><button class="ib-lbl" title="Filter by bug">bug</button></div><div class="ib-card__title">Fix login redirect</div><div class="ib-card__meta">fix-login-redirect.md</div></article>
 <article class="ib-card"><div class="ib-labels"><button class="ib-lbl" title="Filter by discovery">discovery</button><button class="ib-lbl" title="Filter by ai">ai</button></div><div class="ib-card__title">AI assist to refine an issue</div><div class="ib-card__summary">Challenge an issue before anyone picks it up, so a human or an AI can implement it without guessing.</div><div class="ib-card__meta">ai-assist.md</div></article></section>
 <section class="ib-col is-ready"><header class="ib-col__head"><span class="ib-dot"></span><span class="ib-col__title">Ready</span><span class="ib-col__count">2</span></header>
 <article class="ib-card"><div class="ib-labels"><button class="ib-lbl" title="Filter by feature">feature</button></div><div class="ib-card__title">Ready column for agents</div><div class="ib-card__summary">A queue of refined issues that agents take in name order.</div><div class="ib-card__meta">001-ready-column.md</div></article>
@@ -18,7 +18,28 @@
 <article class="ib-card"><div class="ib-labels"><button class="ib-lbl" title="Filter by feature">feature</button></div><div class="ib-card__title">Inline issue editing</div><div class="ib-card__summary">Delivered editing in place: open an issue, modify the markdown, and it is written back to the file.</div><div class="ib-card__meta">inline-editing.md</div></article>
 <article class="ib-card"><div class="ib-labels"><button class="ib-lbl" title="Filter by ux">ux</button></div><div class="ib-card__title">Card interactions and a focused editor</div><div class="ib-card__summary">Tightened the board's pointer model and replaced the split editor with a single focused surface.</div><div class="ib-card__meta">focused-editor.md</div></article></section>
 </div>
-<div class="ib-statusbar"><span>todo/</span><span>7 issues</span><span class="ib-hints"><span><span class="ib-kbd">↩</span> add</span><span><span class="ib-kbd">⌘↩</span> add &amp; edit</span><span><span class="ib-kbd">esc</span> close</span></span></div>
+<div class="ib-statusbar"><span>todo/</span><span>7 issues</span><span class="ib-hints"><span><span class="ib-kbd">⌘N</span> new issue</span><span><span class="ib-kbd">⌘F</span> filter</span><span><span class="ib-kbd">↩</span> open</span></span></div>
+<div class="ib-modal-scrim">
+<section class="ib-modal ib-modal--xl ib-newissue" role="dialog" aria-modal="true" aria-label="New issue">
+<header class="ib-modal__head"><h2 class="ib-modal__title">New issue</h2><span class="ib-modal__ctx">in todo/</span><span class="ib-tag" title="Title inference: review agent (⌘, › Titles)">review agent</span><span class="ib-spacer"></span><button class="ib-btn ib-btn--ghost ib-btn--icon ib-modal__close" aria-label="Close and keep the notes (esc)"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+<div class="ib-modal__body"><div class="ib-ni-notes is-locked"><span class="ib-ni-label">Your notes · read-only while Review drafts<span class="ib-n">96 words</span></span><div class="ib-ni-area" role="textbox" aria-multiline="true" aria-label="Your notes" aria-readonly="true">ok so the export thing. when I paste the board into a PR description I end up retyping every title by hand, which is silly.
+
+I'd like one markdown file per column, every issue as a checklist item with its title, done ones checked. keep the board order, and ready keeps its 001- prefix so the priority shows.
+
+not sure about archived issues, probably behind a flag. also links between issues should still work once exported, at least relative ones.
+
+no need for a fancy UI, a menu item is enough. maybe ⌘E? check it's free.</div></div><div class="ib-ni-grip" aria-hidden="true"></div><div class="ib-ni-issue" aria-busy="true"><article class="ib-ni-sheet ib-md"><div class="ib-sheet__head"><span class="ib-colmark is-todo">Todo</span><span class="ib-sep">·</span><span class="ib-path">todo/export-the-board-as-markdown-checklists.md</span><span class="ib-right"><span class="ib-ni-status" role="status"><span class="ib-think ib-think--sm" role="img" aria-label="Working"><svg viewBox="0 0 44 44" aria-hidden="true"><g class="ib-think__turn"><rect class="ib-think__stem" x="0" y="17" width="12" height="27" rx="3"/><rect class="ib-think__card" x="0" y="0" width="12" height="12" rx="3"/></g></svg></span>Review is drafting · 9s</span></span></div>
+<div class="ib-labels" style="margin:0 0 8px"><span class="ib-lbl">feature</span></div>
+<div class="ib-ni-title"><h1>Export the board as markdown checklists</h1><span class="ib-tag ib-tag--inferred" style="background:var(--review-soft);color:var(--review)">Drafted</span></div>
+<p>Pasting the board into a PR description means retyping every title. Export one markdown file per column instead, each issue as a checklist item.</p>
+<div class="ib-ni-sec"><h2>Context</h2><p>The board is the source of truth, but sharing it today is manual. A plain export keeps iboard file-first and needs no new UI beyond one menu item.</p></div>
+<div class="ib-ni-sec is-writing"><h2>Acceptance criteria <span class="ib-n">writing</span></h2><ul style="list-style:none;padding-left:0"><li>☐ One file per column, named after the column</li><li>☐ Each issue is <code>- [ ] Title</code>; Done issues are checked</li><li>☐ Board order is kept; Ready keeps its <code>001-</code> prefix<span class="ib-ni-caret"></span></li></ul></div>
+<div class="ib-ni-sec is-waiting"><h2>Out of scope</h2><span class="ib-skel" style="width:78%"></span><span class="ib-skel" style="width:52%"></span></div>
+<div class="ib-ni-sec is-waiting"><h2>Open questions</h2><span class="ib-skel" style="width:88%"></span><span class="ib-skel" style="width:64%"></span><span class="ib-skel" style="width:40%"></span></div>
+<div class="ib-ni-rest"></div></article></div></div>
+<footer class="ib-modal__foot"><span class="ib-modal__hints"><span><span class="ib-kbd">esc</span>stop, keep what arrived</span></span><button class="ib-btn ib-btn--ghost">Discard</button><button class="ib-btn">Close <span class="ib-btn__key">esc</span></button><button class="ib-btn" disabled><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>Drafting… <span class="ib-btn__key">⌘⇧R</span></button><button class="ib-btn ib-btn--primary">Add to Todo <span class="ib-btn__key">↩</span></button></footer>
+</section>
+</div>
 </div>
 </body>
 </html>
