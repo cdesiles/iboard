@@ -11,5 +11,5 @@ One column per folder: `todo/`, `ready/`, `doing/`, `done/`. Equal widths betwee
 - Done's controls end with an `archive` icon button that moves every issue it lists (after the filter) to `.archive/`.
 - Cards stack with `space-3` gaps. Todo and Ready follow the file names (Ready's `001-` prefix is its priority); Doing and Done put the most recently edited first.
 - Dragging a card to a position in Todo or Ready renumbers that column's files (`001-`, `002-`, ...) so the file order matches the board. A 2pt `accent` line shows where the card will land.
-- Empty column: a dashed `line-strong` well on `surface-sunken` saying "No issues in doing/". It doubles as the drop target when dragging.
+- Empty column: a dashed 1pt `line-strong` well on `surface-sunken`, `radius-md` corners like a card, 12pt padding, saying "No issues in doing/" centered in 12pt `ink-faint`. It doubles as the drop target when dragging. In egui, paint the dashes along a rounded path (`theme::radius::MD`); dashing a plain rect gives square corners.
 - Done cards keep full contrast. Do not grey out finished work; the column already says it is done.

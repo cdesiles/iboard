@@ -238,21 +238,7 @@ pub fn ghost_section(ui: &mut Ui, heading: &str, hint: Option<&str>) -> Response
                 StrokeKind::Inside,
             );
         } else {
-            let r = rect.shrink(0.5);
-            let corners = [
-                r.left_top(),
-                r.right_top(),
-                r.right_bottom(),
-                r.left_bottom(),
-            ];
-            for i in 0..4 {
-                painter.extend(egui::Shape::dashed_line(
-                    &[corners[i], corners[(i + 1) % 4]],
-                    Stroke::new(1.0, p.line_strong),
-                    4.0,
-                    3.0,
-                ));
-            }
+            dashed_rect(painter, rect, theme::RADIUS_SM, p.line_strong);
         }
         let head_center = rect.min.y + pad.y + head_h / 2.0;
         let icon = Rect::from_center_size(

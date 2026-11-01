@@ -323,20 +323,60 @@ pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &s
     picked
 }
 
-/// A 1pt dashed edge just inside `rect`, as on wells and drop zones.
-pub fn dashed_rect(painter: &egui::Painter, rect: Rect, color: Color32) {
-    let r = rect.shrink(0.5);
-    let corners = [
-        r.left_top(),
-        r.right_top(),
-        r.right_bottom(),
-        r.left_bottom(),
-        r.left_top(),
-    ];
+/// A 1pt dashed edge just inside `rect`, following its `radius` corners, as on
+/// wells and drop zones.
+pub fn dashed_rect(painter: &egui::Painter, rect: Rect, radius: u8, color: Color32) {
     painter.extend(egui::Shape::dashed_line(
-        &corners,
+        &rounded_outline(rect.shrink(0.5), radius),
         Stroke::new(1.0, color),
         4.0,
         3.0,
     ));
+}
+
+/// The closed outline of `r` with `radius` corners, as a polyline.
+fn rounded_outline(r: Rect, radius: u8) -> Vec<egui::Pos2> {
+    let radius = f32::from(radius).min(r.width() / 2.0).min(r.height() / 2.0);
+    let centres = [
+        (r.right_top() + egui::vec2(-radius, radius), -90.0_f32),
+        (r.right_bottom() + egui::vec2(-radius, -radius), 0.0),
+        (r.left_bottom() + egui::vec2(radius, -radius), 90.0),
+        (r.left_top() + egui::vec2(radius, radius), 180.0),
+    ];
+    let mut path = vec![r.left_top() + egui::vec2(radius, 0.0)];
+    for (centre, from) in centres {
+        path.extend((0..=8u8).map(|step| {
+            let angle = (from + f32::from(step) * 90.0 / 8.0).to_radians();
+            centre + radius * egui::vec2(angle.cos(), angle.sin())
+        }));
+    }
+    path.push(path[0]);
+    path
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_dashed_edge_rounds_its_corners() {
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(100.0, 40.0));
+        let path = rounded_outline(rect, 6);
+        assert_eq!(path.first(), path.last(), "closed");
+        for corner in [
+            rect.left_top(),
+            rect.right_top(),
+            rect.right_bottom(),
+            rect.left_bottom(),
+        ] {
+            let nearest = path
+                .iter()
+                .map(|at| at.distance(corner))
+                .fold(f32::MAX, f32::min);
+            assert!(nearest > 1.7, "{corner:?} is cut by {nearest}");
+        }
+        assert!(path.iter().all(|at| rect.expand(0.01).contains(*at)));
+        let square = rounded_outline(rect, 0);
+        assert!(square.contains(&rect.left_top()));
+    }
 }

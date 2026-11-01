@@ -289,7 +289,7 @@ impl Dialog {
                 });
             })
             .response;
-        widgets::dashed_rect(ui.painter(), response.rect, p.line_strong);
+        widgets::dashed_rect(ui.painter(), response.rect, theme::RADIUS_MD, p.line_strong);
     }
 
     fn group_block(&mut self, ui: &mut egui::Ui, at: usize, projects: &[PathBuf]) {
@@ -409,7 +409,7 @@ impl Dialog {
                 });
             })
             .response;
-        widgets::dashed_rect(ui.painter(), response.rect, p.line_strong);
+        widgets::dashed_rect(ui.painter(), response.rect, theme::RADIUS_SM, p.line_strong);
     }
 
     fn project_rows(&mut self, ui: &mut egui::Ui, at: usize) {

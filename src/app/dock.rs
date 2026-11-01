@@ -111,7 +111,7 @@ pub(super) fn drop_zone(
         }
         DropZone::Archive => {
             painter.rect_filled(rect, radius, p.surface_sunken);
-            dashed_rect(painter, rect, p.line_strong);
+            dashed_rect(painter, rect, theme::RADIUS_MD, p.line_strong);
             p.ink_muted
         }
         DropZone::Delete if over => {
@@ -126,7 +126,7 @@ pub(super) fn drop_zone(
         }
         DropZone::Delete => {
             painter.rect_filled(rect, radius, p.surface_sunken);
-            dashed_rect(painter, rect, p.danger);
+            dashed_rect(painter, rect, theme::RADIUS_MD, p.danger);
             p.danger
         }
     };
