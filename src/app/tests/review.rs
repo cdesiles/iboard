@@ -499,12 +499,18 @@ fn a_ready_review_opens_from_its_card() {
 #[test]
 fn a_ready_review_opens_in_the_reader() {
     use egui_kittest::kittest::Queryable;
-    let (_dir, file, mut harness) = reviewing("review-ready-reader", PASSING);
+    let (dir, file, mut harness) = reviewing("review-ready-reader", PASSING);
+    let gate = dir.join("gate");
+    harness.state_mut().1.agent.command = format!(
+        "while [ ! -e '{}' ]; do sleep 0.01; done; {PASSING}",
+        gate.display()
+    );
     harness.state_mut().1.open_issue(file.clone());
     harness.run_steps(1);
     harness.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::R);
     harness.run_steps(1);
     assert!(harness.state().1.session.review.is_none());
+    std::fs::write(&gate, "").unwrap();
     land(&mut harness, &file);
 
     harness.run_steps(2);
