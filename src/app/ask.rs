@@ -77,6 +77,9 @@ impl AskPanel {
 
 /// An ask the agent is working on.
 pub(super) struct AskRun {
+    /// The issues root of the issue's project, where the conversation is
+    /// kept, whichever board shows when the answer lands.
+    root: PathBuf,
     answer: Job<Result<Asked, String>>,
     progress: Progress,
     since: Instant,
@@ -198,13 +201,15 @@ impl IboardApp {
         let (answer, progress) =
             agent::start_ask(&config, &prompt, &path, ends, leash, resume.as_deref());
         let since = Instant::now();
+        let root = self.board.root_of(&path).to_path_buf();
         let run = AskRun {
+            root: root.clone(),
             answer,
             progress,
             since,
         };
         self.session.asks.insert(path.clone(), run);
-        self.add_turn(&path, "you", request, None);
+        self.add_turn(&path, &root, "you", request, None);
         if let Some(panel) = self.session.ask_panel.as_mut() {
             panel.request.clear();
         }
@@ -212,9 +217,15 @@ impl IboardApp {
 
     /// Adds a turn to the conversation on `path`, on disk and in the panel
     /// open on it, with the session the agent ran in.
-    fn add_turn(&mut self, path: &Path, who: &str, text: String, session: Option<String>) {
-        let root = self.board.root_of(path).to_path_buf();
-        let mut sidecar = reviews::load(&root, path);
+    fn add_turn(
+        &mut self,
+        path: &Path,
+        root: &Path,
+        who: &str,
+        text: String,
+        session: Option<String>,
+    ) {
+        let mut sidecar = reviews::load(root, path);
         let chat = sidecar.chat.get_or_insert_default();
         chat.turns.push(Turn {
             who: who.to_string(),
@@ -225,7 +236,7 @@ impl IboardApp {
             chat.session = session;
         }
         let chat = chat.clone();
-        if let Err(err) = reviews::save(&root, path, &sidecar) {
+        if let Err(err) = reviews::save(root, path, &sidecar) {
             self.error = Some(err);
         }
         if let Some(panel) = self.session.ask_panel.as_mut().filter(|p| p.path == path) {
@@ -237,16 +248,16 @@ impl IboardApp {
     /// answer joins the conversation, and the issue being read shows it in
     /// the panel; another waits on its card. Called every frame.
     pub(super) fn poll_asks(&mut self, ctx: &egui::Context) {
-        let done: Vec<(PathBuf, Result<Asked, String>)> = self
+        let done: Vec<(PathBuf, PathBuf, Result<Asked, String>)> = self
             .session
             .asks
             .iter()
-            .filter_map(|(path, run)| Some((path.clone(), run.answer.answer()?)))
+            .filter_map(|(path, run)| Some((path.clone(), run.root.clone(), run.answer.answer()?)))
             .collect();
         if !self.session.asks.is_empty() {
             ctx.request_repaint_after(job::POLL_EVERY);
         }
-        for (path, result) in done {
+        for (path, root, result) in done {
             self.session.asks.remove(&path);
             self.rescan();
             match result {
@@ -258,10 +269,11 @@ impl IboardApp {
                         .unwrap_or("done");
                     let notice = format!("{}: {}", file_name(&path), line.trim());
                     self.session.notice = Some((notice, Instant::now()));
-                    self.add_turn(&path, "agent", asked.answer, asked.session);
+                    self.add_turn(&path, &root, "agent", asked.answer, asked.session);
                 }
                 Err(err) => {
-                    self.add_turn(&path, "agent", format!("**Failed:** {err}"), None);
+                    let failed = format!("**Failed:** {err}");
+                    self.add_turn(&path, &root, "agent", failed, None);
                     self.error = Some(format!("Ask on {} failed: {err}", file_name(&path)));
                 }
             }

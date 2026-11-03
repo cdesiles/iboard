@@ -1071,3 +1071,50 @@ fn a_long_message_keeps_the_ask_buttons_in_view() {
         );
     }
 }
+
+/// An update started on one board goes on while another board shows: back
+/// on its board, its card says the answer is in, kept beside the issue.
+#[test]
+fn an_update_survives_switching_to_another_board_and_back() {
+    let dir = std::fs::canonicalize(scratch_dir("switch-away")).unwrap();
+    let other = std::fs::canonicalize(scratch_dir("switch-other")).unwrap();
+    for root in [&dir, &other] {
+        std::fs::create_dir_all(root.join("issues/doing")).unwrap();
+    }
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    std::fs::write(other.join("issues/doing/else.md"), "# Else\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "sleep 1; printf 'RELEVANCE: Pass' # {prompt}".to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.start_update(&file);
+    assert!(app.review_is_running(&file));
+
+    app.open_project(other.clone());
+    assert!(app.review_is_running(&file), "the switch doesn't stop it");
+    assert!(until(|| {
+        app.poll_review();
+        !app.review_is_running(&file)
+    }));
+    let kept = crate::reviews::load(&dir.join("issues"), &file).review;
+    assert!(
+        kept.is_some_and(|review| review.raw.contains("Pass")),
+        "kept beside its issue"
+    );
+    assert!(
+        crate::reviews::load(&other.join("issues"), &file)
+            .review
+            .is_none()
+    );
+
+    app.open_project(dir.clone());
+    assert!(
+        app.session.review_runs.is_ready(&file),
+        "its card says it is in"
+    );
+}

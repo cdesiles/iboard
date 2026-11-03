@@ -1006,9 +1006,10 @@ impl IboardApp {
 
     /// Switches the board to another project, resolving its board and
     /// remembering it. A folder with no issues directory reports an error and
-    /// leaves the current project in place. Everything that belongs to the old
-    /// project is dropped: the editor, the composer, reviews, undo, the Design
-    /// panel, and the agents still drafting for it.
+    /// leaves the current project in place. What belongs to the old project
+    /// is dropped: the editor, the composer, undo, the Design panel, the
+    /// agents still drafting for it. Reviews, updates and asks go on (see
+    /// [`Self::leave_project`]).
     fn open_project(&mut self, project: PathBuf) {
         let project = recents::canonical(&project);
         match discovery::locate(&project) {
@@ -1041,10 +1042,18 @@ impl IboardApp {
         }
     }
 
-    /// Drops everything that belongs to the board shown until now.
+    /// Drops everything that belongs to the board shown until now, but the
+    /// reviews, updates and asks agents work on: their cards show them again
+    /// on the way back, and each answer is kept beside its own issue.
     fn leave_project(&mut self) {
         self.close_review();
+        let review_runs = std::mem::take(&mut self.session.review_runs);
+        let asks = std::mem::take(&mut self.session.asks);
+        let answered = std::mem::take(&mut self.session.answered);
         self.session = Session::default();
+        self.session.review_runs = review_runs;
+        self.session.asks = asks;
+        self.session.answered = answered;
         self.past_reviews.clear();
         self.filter_bar.filter.clear();
         self.error = None;

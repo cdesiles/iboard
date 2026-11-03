@@ -25,6 +25,7 @@ impl IboardApp {
             return;
         }
         let project = Some(self.board.project_of(&target.path));
+        let root = self.board.root_of(&target.path).to_path_buf();
         let (answer, _) =
             agent::start_plan_review(&self.agent, &prompt, &target.path, project, target.mode);
         self.mark_notes_sent(&target.path);
@@ -34,6 +35,7 @@ impl IboardApp {
         runs.running.insert(
             target.path,
             ReviewRun {
+                root,
                 draft: target.draft,
                 mode: target.mode,
                 agent: self.agent.label(),
@@ -172,8 +174,7 @@ impl IboardApp {
                 at: chrono::Local::now().to_rfc3339(),
                 raw: reviewed.answer,
             };
-            if let Err(err) = reviews::save_review(self.board.root_of(&path), &path, stored.clone())
-            {
+            if let Err(err) = reviews::save_review(&run.root, &path, stored.clone()) {
                 self.error = Some(err);
             }
             if let Some(issue) = self.board.find(&path) {
@@ -497,6 +498,9 @@ pub(super) struct ReviewRuns {
 
 /// A review the agent is working on, and what to keep with its answer.
 struct ReviewRun {
+    /// The issues root of the issue's project, where its answer is kept,
+    /// whichever board shows when it lands.
+    root: PathBuf,
     draft: bool,
     mode: ReviewMode,
     agent: String,
