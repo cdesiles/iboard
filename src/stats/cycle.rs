@@ -45,18 +45,12 @@ impl Cycles {
 
 /// The cycle of each issue closed by the page's commits, up to `newest`,
 /// with the issues kept under `root`.
-pub(super) fn collect(
-    dir: &Path,
-    root: &Path,
-    page: usize,
-    newest: &str,
-) -> Result<Cycles, String> {
+pub(super) fn collect(dir: &Path, root: &Path, newest: &str) -> Result<Cycles, String> {
     let log = git(
         dir,
         &[
             "log",
             "--first-parent",
-            &format!("--skip={}", page * PAGE),
             &format!("--max-count={PAGE}"),
             "--format=%x1e%h%x1f%cI%x1f%B",
             newest,

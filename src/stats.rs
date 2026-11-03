@@ -231,12 +231,12 @@ pub fn collect(
         .filter_map(|c| cache.snapshots.get(&c.hash).cloned())
         .collect();
     let files = match commits.first() {
-        Some(newest) => files_at(dir, page, &newest.hash)?,
+        Some(newest) => files_at(dir, &newest.hash)?,
         None => Vec::new(),
     };
     let agenda = agenda(dir)?;
     let cycles = match commits.first() {
-        Some(newest) => cycle::collect(dir, root, page, &newest.hash)?,
+        Some(newest) => cycle::collect(dir, root, &newest.hash)?,
         None => Cycles::default(),
     };
     Ok(Stats {
@@ -396,13 +396,12 @@ fn top(items: impl Iterator<Item = (String, usize)>, count: usize) -> Vec<(Strin
 
 /// The source files at `newest`, with how many of the page's commits
 /// changed each.
-fn files_at(dir: &Path, page: usize, newest: &str) -> Result<Vec<FileStat>, String> {
+fn files_at(dir: &Path, newest: &str) -> Result<Vec<FileStat>, String> {
     let out = git(
         dir,
         &[
             "log",
             "--first-parent",
-            &format!("--skip={}", page * PAGE),
             &format!("--max-count={PAGE}"),
             "--format=",
             "--name-only",
@@ -610,6 +609,35 @@ mod tests {
         run(dir, &["commit", "-q", "-m", message]);
     }
 
+    fn import(dir: &Path, commits: &[(&str, Option<(&str, &str)>)]) {
+        let mut stream = String::new();
+        for (hour, (message, file)) in commits.iter().enumerate() {
+            let time = 1_790_000_000 + hour * 3600;
+            stream += &format!("commit refs/heads/main\ncommitter t <t@t> {time} +0000\n");
+            stream += &format!("data {}\n{message}\n", message.len());
+            if let Some((path, text)) = file {
+                stream += &format!("M 644 inline {path}\ndata {}\n{text}\n", text.len());
+            }
+        }
+        let mut child = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["fast-import", "--quiet"])
+            .stdin(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stream.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        run(dir, &["reset", "-q", "--hard", "main"]);
+    }
+
     #[test]
     fn each_commit_is_measured_oldest_first_and_cached() {
         let dir = repo();
@@ -691,6 +719,37 @@ mod tests {
             .collect();
         assert_eq!(cycles, [("a.md", 2 * 86_400 + 2 * 3600 + 30 * 60)]);
         assert_eq!(stats.cycles.unknown, 1, "b.md was never seen before");
+    }
+
+    #[test]
+    fn an_older_page_measures_its_own_commits() {
+        let dir = repo();
+        let mut commits = vec![
+            ("plan", Some(("issues/todo/a.md", "# A\n"))),
+            ("Do it\n\ncloses a.md", Some(("src/lib.rs", "fn a() {}\n"))),
+        ];
+        commits.extend([("more", None); PAGE]);
+        import(dir.path(), &commits);
+        let issues = dir.path().join("issues");
+        let stats = collect(
+            dir.path(),
+            &issues,
+            1,
+            &Progress::default(),
+            &Cancel::default(),
+        )
+        .unwrap();
+        let subjects: Vec<&str> = stats.snapshots.iter().map(|s| s.subject.as_str()).collect();
+        assert_eq!(subjects, ["plan", "Do it"]);
+        let lib = stats.files.iter().find(|f| f.path == "src/lib.rs").unwrap();
+        assert_eq!(lib.changes, 1);
+        let cycles: Vec<(&str, i64)> = stats
+            .cycles
+            .cycles
+            .iter()
+            .map(|c| (c.issue.as_str(), c.seconds))
+            .collect();
+        assert_eq!(cycles, [("a.md", 3600)]);
     }
 
     #[test]
