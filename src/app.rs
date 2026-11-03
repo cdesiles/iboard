@@ -698,7 +698,7 @@ struct Session {
     /// A destructive action waiting for the user to confirm it.
     confirm: Option<Confirm>,
     /// The Ask AI dialog, while it is open.
-    ask_draft: Option<ask::AskDraft>,
+    ask_panel: Option<ask::AskPanel>,
     /// The asks the agent works on, by issue.
     asks: HashMap<PathBuf, ask::AskRun>,
     /// The issues whose ask was answered while they were not open.
@@ -777,7 +777,7 @@ impl Default for Session {
             composer: None,
             discarded: None,
             confirm: None,
-            ask_draft: None,
+            ask_panel: None,
             asks: HashMap::new(),
             answered: HashSet::new(),
             new_card: None,
@@ -1135,7 +1135,6 @@ impl IboardApp {
                 }
             });
         self.label_picker_ui(ui);
-        self.ask_dialog(ui);
         match self.session.confirm.clone() {
             Some(Confirm::Delete(paths)) => self.confirm_dialog(ui, &paths),
             Some(Confirm::Quit(runs)) => self.quit_dialog(ui, runs),

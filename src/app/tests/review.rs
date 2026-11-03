@@ -867,7 +867,7 @@ fn cmd_k_asks_the_agent_about_the_open_issue() {
     let command = egui::Modifiers::COMMAND;
     let press = |k: Key| vec![egui::Event::ModifiersChanged(command), key(k, command)];
     frame(&ctx, &mut app, press(Key::K));
-    let draft = app.session.ask_draft.as_mut().expect("⌘K opens the dialog");
+    let draft = app.session.ask_panel.as_mut().expect("⌘K opens the panel");
     assert_eq!(
         draft.leash(),
         agent::Leash {
@@ -878,7 +878,10 @@ fn cmd_k_asks_the_agent_about_the_open_issue() {
     );
     draft.request = "Take care of point 1".to_string();
     frame(&ctx, &mut app, press(Key::Enter));
-    assert!(app.session.ask_draft.is_none() && app.asking(&file));
+    assert!(
+        app.asking(&file) && app.ask_open(&file),
+        "the panel stays open"
+    );
     assert!(until(|| {
         app.poll_asks(&ctx);
         !app.asking(&file)
@@ -889,6 +892,26 @@ fn cmd_k_asks_the_agent_about_the_open_issue() {
         "{notice}"
     );
     assert!(app.has_agent_log(&file));
+    let chat = &app.session.ask_panel.as_ref().unwrap().chat;
+    let said: Vec<&str> = chat.turns.iter().map(|turn| turn.who.as_str()).collect();
+    assert_eq!(
+        said,
+        ["you", "agent"],
+        "the conversation shows in the panel"
+    );
+    let kept = crate::reviews::load(app.board.root_of(&file), &file).chat;
+    assert_eq!(kept.as_ref(), Some(chat), "and is kept in the sidecar");
+
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(Key::Escape, egui::Modifiers::NONE)],
+    );
+    assert!(!app.ask_open(&file), "esc closes the panel");
+    assert!(
+        matches!(app.session.screen, Screen::Detail(_)),
+        "and only the panel"
+    );
 }
 
 /// `Space` picks cards on the board and `⌘U` updates every picked one, each
@@ -959,7 +982,7 @@ fn an_ask_shows_on_its_card_and_its_answer_waits_for_the_issue() {
         reviews.pill(&file, &theme::LIGHT).map(|(word, _, _)| word)
     };
     app.toggle_ask(&file);
-    app.session.ask_draft.as_mut().unwrap().request = "Take care of point 1".to_string();
+    app.session.ask_panel.as_mut().unwrap().request = "Take care of point 1".to_string();
     app.send_ask();
     assert_eq!(pill(&app), Some("Asking…"));
 
@@ -973,10 +996,8 @@ fn an_ask_shows_on_its_card_and_its_answer_waits_for_the_issue() {
         Some("Answer ready"),
         "the answer waits on the card"
     );
+    app.session.ask_panel = None;
     app.open_issue(file.clone());
-    assert!(
-        app.agent_log_open(&file),
-        "opening the issue shows the answer"
-    );
+    assert!(app.ask_open(&file), "opening the issue shows the answer");
     assert_eq!(pill(&app), None);
 }

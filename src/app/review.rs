@@ -559,7 +559,7 @@ impl CardReviews<'_> {
             return Some((
                 "Asking…",
                 p.review,
-                "The agent works on your ask: ⌘K stops it",
+                "The agent works on your ask: open the issue to follow it",
             ));
         }
         if self.answered.contains(path) {

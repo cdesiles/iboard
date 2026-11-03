@@ -20,6 +20,28 @@ pub struct Sidecar {
     pub review: Option<StoredReview>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<Comment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat: Option<Chat>,
+}
+
+/// The Ask AI conversation on the issue, and the Claude Code session it goes
+/// on in.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Chat {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    #[serde(default, rename = "turn", skip_serializing_if = "Vec::is_empty")]
+    pub turns: Vec<Turn>,
+}
+
+/// One message of the conversation.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Turn {
+    /// `you` or `agent`.
+    pub who: String,
+    pub text: String,
+    /// RFC 3339.
+    pub at: String,
 }
 
 /// The agent's last answer, and the text it answered.
@@ -161,6 +183,14 @@ mod tests {
                 at: "2026-10-12T10:00:00+02:00".into(),
                 sent: false,
             }],
+            chat: Some(Chat {
+                session: Some("s-42".into()),
+                turns: vec![Turn {
+                    who: "agent".into(),
+                    text: "Done.\n\nPoint 1 \"took\" a while.".into(),
+                    at: "2026-11-03T10:00:00+01:00".into(),
+                }],
+            }),
         };
         save(root, &issue, &sidecar).unwrap();
         save_review(root, &issue, review("# Split\n")).unwrap();

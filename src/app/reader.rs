@@ -54,12 +54,18 @@ impl IboardApp {
             .as_ref()
             .is_some_and(|refine| refine.path == path);
         let logged = self.agent_log_open(path);
-        if reviewed || logged {
+        let asked = self.ask_open(path);
+        if reviewed || logged || asked {
             let p = theme::palette(ui);
             let panes = ui.max_rect();
             let widest = (panes.width() - PANE_MIN).max(REVIEW_PANEL_WIDTH);
             let range = REVIEW_PANEL_WIDTH..=widest;
-            let split = egui::Id::new(("pane-split", if reviewed { "review" } else { "log" }));
+            let side = match (reviewed, asked) {
+                (true, _) => "review",
+                (false, true) => "ask",
+                (false, false) => "log",
+            };
+            let split = egui::Id::new(("pane-split", side));
             let width = theme::pane_split(ui.ctx(), split, REVIEW_PANEL_WIDTH)
                 .clamp(*range.start(), *range.end());
             let gutter = theme::SPACE_5;
@@ -75,6 +81,8 @@ impl IboardApp {
                 .show(ui, |ui| {
                     if reviewed {
                         self.review_panel(ui);
+                    } else if asked {
+                        self.ask_panel(ui);
                     } else {
                         self.agent_log_panel(ui);
                     }

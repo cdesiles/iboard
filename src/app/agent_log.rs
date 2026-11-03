@@ -71,6 +71,7 @@ impl IboardApp {
     }
 
     pub(super) fn toggle_agent_log(&mut self, path: &Path) {
+        self.session.ask_panel = None;
         self.session.agent_log = (!self.agent_log_open(path)).then(|| LogView {
             path: path.to_path_buf(),
             file: build_log::path(self.board.root_of(path), path),

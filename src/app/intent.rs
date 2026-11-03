@@ -91,7 +91,7 @@ impl IboardApp {
                     self.session.selected = None;
                 }
                 Intent::Review(path) => self.start_review(&path, false),
-                // An answered ask's pill opens the issue on its agent log.
+                // An answered ask's pill opens the issue on its conversation.
                 Intent::ShowReview(path) if self.session.answered.contains(&path) => {
                     self.open_issue(path)
                 }

@@ -58,7 +58,7 @@ enum Command {
     Update(PathBuf),
     /// `⌘↩` with a review's proposal shown: apply it.
     ApplyReview,
-    /// `⌘K`: Ask AI on the open issue or the selected card, or stop the ask.
+    /// `⌘K`: the Ask AI panel on the open issue or the selected card.
     Ask(PathBuf),
     /// `Space` on the board: the selected card joins the multi-selection, or
     /// leaves it.
@@ -236,11 +236,6 @@ impl IboardApp {
             self.background(ctx);
             return;
         }
-        if self.session.ask_draft.is_some() {
-            self.ask_keys(ctx);
-            self.background(ctx);
-            return;
-        }
         // NewIssueModal owns the keyboard while it is up.
         if self.composer_open() && !confirming {
             self.new_issue_keys(ctx);
@@ -413,6 +408,10 @@ impl IboardApp {
             notes.draft = None;
         } else if self.session.review.is_some() {
             self.close_review();
+        } else if self.session.ask_panel.is_some()
+            && matches!(self.session.screen, Screen::Detail(_))
+        {
+            self.session.ask_panel = None;
         } else if self.refinement_shown() {
             self.escape_refinement(ctx);
         } else {
