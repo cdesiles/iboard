@@ -125,7 +125,9 @@ impl IboardApp {
                 Err(err) => self.error = Some(format!("Ask on {} failed: {err}", file_name(&path))),
             }
             let reading = matches!(&self.session.screen, Screen::Detail(open) if *open == path);
-            if reading && !self.agent_log_open(&path) {
+            if !reading {
+                self.session.answered.insert(path);
+            } else if !self.agent_log_open(&path) {
                 self.toggle_agent_log(&path);
             }
         }

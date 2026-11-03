@@ -91,6 +91,10 @@ impl IboardApp {
                     self.session.selected = None;
                 }
                 Intent::Review(path) => self.start_review(&path, false),
+                // An answered ask's pill opens the issue on its agent log.
+                Intent::ShowReview(path) if self.session.answered.contains(&path) => {
+                    self.open_issue(path)
+                }
                 Intent::ShowReview(path) => self.show_past_review(path),
                 Intent::Delete(path) => self.request_delete(path),
                 Intent::Archive(path) => self.archive_issue(&path),

@@ -77,6 +77,8 @@ impl IboardApp {
                             reviews: review::CardReviews {
                                 past: &self.past_reviews,
                                 runs: &self.session.review_runs,
+                                asks: &self.session.asks,
+                                answered: &self.session.answered,
                             },
                             can_review: self.agent.configured(),
                             builds: Builds {

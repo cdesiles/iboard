@@ -15,9 +15,12 @@ impl IboardApp {
         self.session.selected = Some(path.clone());
         self.session.screen = Screen::Detail(path.clone());
         self.session.detail_mode = DetailMode::Preview;
-        // A review that finished while the issue was closed shows now.
+        // A review that finished while the issue was closed shows now, and so
+        // does the agent log of an ask answered meanwhile.
         if self.session.review_runs.is_ready(&path) {
             self.reveal_review(&path);
+        } else if self.session.answered.remove(&path) && !self.agent_log_open(&path) {
+            self.toggle_agent_log(&path);
         }
     }
 

@@ -701,6 +701,8 @@ struct Session {
     ask_draft: Option<ask::AskDraft>,
     /// The asks the agent works on, by issue.
     asks: HashMap<PathBuf, ask::AskRun>,
+    /// The issues whose ask was answered while they were not open.
+    answered: HashSet<PathBuf>,
     /// The LabelPicker, open on one issue.
     label_picker: Option<LabelPicker>,
     /// The commits popup, open on one issue.
@@ -777,6 +779,7 @@ impl Default for Session {
             confirm: None,
             ask_draft: None,
             asks: HashMap::new(),
+            answered: HashSet::new(),
             new_card: None,
             leave_prompt: None,
             notes: None,

@@ -546,12 +546,28 @@ impl ReviewRuns {
 pub(super) struct CardReviews<'a> {
     pub(super) past: &'a HashMap<PathBuf, PastReview>,
     pub(super) runs: &'a ReviewRuns,
+    pub(super) asks: &'a HashMap<PathBuf, ask::AskRun>,
+    pub(super) answered: &'a HashSet<PathBuf>,
 }
 
 impl CardReviews<'_> {
     pub(super) fn pill(&self, path: &Path, p: &Palette) -> Option<ReviewPill> {
         if self.runs.is_running(path) {
             return Some(("Reviewing…", p.review, "The review is running"));
+        }
+        if self.asks.contains_key(path) {
+            return Some((
+                "Asking…",
+                p.review,
+                "The agent works on your ask: ⌘K stops it",
+            ));
+        }
+        if self.answered.contains(path) {
+            return Some((
+                "Answer ready",
+                p.review,
+                "The agent answered your ask: open the issue",
+            ));
         }
         if self.runs.is_ready(path) {
             return Some(("Review ready", p.review, "The review is in: show it"));

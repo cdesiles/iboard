@@ -932,3 +932,51 @@ fn space_picks_cards_and_cmd_u_updates_them_all() {
     frame(&ctx, &mut app, space());
     assert_eq!(app.session.picked, [one], "Space again takes the card out");
 }
+
+/// An ask shows on its card while it runs, then as an answer ready until the
+/// issue is opened, which opens the agent log on the answer.
+#[test]
+fn an_ask_shows_on_its_card_and_its_answer_waits_for_the_issue() {
+    let dir = scratch_dir("ask-card");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.build_agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf 'Point 1 is done' # {prompt}".to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    let pill = |app: &IboardApp| {
+        let reviews = super::super::review::CardReviews {
+            past: &app.past_reviews,
+            runs: &app.session.review_runs,
+            asks: &app.session.asks,
+            answered: &app.session.answered,
+        };
+        reviews.pill(&file, &theme::LIGHT).map(|(word, _, _)| word)
+    };
+    app.toggle_ask(&file);
+    app.session.ask_draft.as_mut().unwrap().request = "Take care of point 1".to_string();
+    app.send_ask();
+    assert_eq!(pill(&app), Some("Asking…"));
+
+    let ctx = themed_ctx();
+    assert!(until(|| {
+        app.poll_asks(&ctx);
+        !app.asking(&file)
+    }));
+    assert_eq!(
+        pill(&app),
+        Some("Answer ready"),
+        "the answer waits on the card"
+    );
+    app.open_issue(file.clone());
+    assert!(
+        app.agent_log_open(&file),
+        "opening the issue shows the answer"
+    );
+    assert_eq!(pill(&app), None);
+}
