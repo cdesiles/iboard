@@ -1,3 +1,4 @@
+use super::answer::proposal_of;
 use super::*;
 
 #[test]
