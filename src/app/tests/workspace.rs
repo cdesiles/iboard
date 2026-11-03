@@ -6,8 +6,7 @@ use super::*;
 /// Two projects, `app` (Ready: A) and `site` (Ready: B, Todo: C), in the
 /// group Clients, whose board is shown; `app` alone is also in Solo.
 fn two_projects(tag: &str) -> (Scratch, PathBuf, PathBuf, IboardApp) {
-    let scratch = scratch_dir(tag);
-    let parent = std::fs::canonicalize(&*scratch).unwrap();
+    let parent = scratch_dir(tag);
     let project = |name: &str, files: &[(&str, &str)]| {
         let dir = parent.join(name);
         for column in ["todo", "ready", "doing", "done"] {
@@ -37,7 +36,7 @@ fn two_projects(tag: &str) -> (Scratch, PathBuf, PathBuf, IboardApp) {
         ],
     });
     app.open_group("Clients");
-    (scratch, app_dir, site_dir, app)
+    (parent, app_dir, site_dir, app)
 }
 
 fn column_dir(app: &IboardApp, name: &str) -> PathBuf {
@@ -138,9 +137,12 @@ fn play_builds_each_card_in_its_own_project() {
     app.start_build(ready);
     assert!(app_dir.join("issues/doing/a.md").exists());
     assert!(site_dir.join("issues/doing/b.md").exists());
-    assert!(until(
-        || app_dir.join("built").exists() && site_dir.join("built").exists()
-    ));
+    let ctx = egui::Context::default();
+    assert!(until(|| {
+        app.poll_build(&ctx);
+        app.session.build.is_none()
+    }));
+    assert!(app_dir.join("built").exists() && site_dir.join("built").exists());
 }
 
 #[test]

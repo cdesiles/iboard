@@ -12,8 +12,7 @@ type Menu = Harness<'static, (bool, IboardApp)>;
 /// Projects `alpha`, `beta` and `gamma`, each with its issues; the board
 /// shows `alpha`, and a user configuration lives in the scratch folder.
 fn three_projects(tag: &str) -> (Scratch, PathBuf, Vec<PathBuf>, IboardApp) {
-    let scratch = scratch_dir(tag);
-    let parent = std::fs::canonicalize(&*scratch).unwrap();
+    let parent = scratch_dir(tag);
     let projects: Vec<PathBuf> = ["alpha", "beta", "gamma"]
         .iter()
         .map(|name| {
@@ -27,7 +26,7 @@ fn three_projects(tag: &str) -> (Scratch, PathBuf, Vec<PathBuf>, IboardApp) {
     let mut app = IboardApp::from_located(discovery::locate(&projects[0]).unwrap());
     app.config_file = Some(config.clone());
     app.projects = projects.clone();
-    (scratch, config, projects, app)
+    (parent, config, projects, app)
 }
 
 fn harness(app: IboardApp) -> Menu {
@@ -205,7 +204,7 @@ thread_local! {
 #[test]
 fn an_added_project_opens_at_the_top_of_the_list() {
     let (scratch, _config, projects, mut app) = three_projects("menu-add");
-    let delta = std::fs::canonicalize(&*scratch).unwrap().join("delta");
+    let delta = scratch.join("delta");
     std::fs::create_dir_all(delta.join("issues/todo")).unwrap();
     PICKED.with(|picked| *picked.borrow_mut() = vec![delta.clone()]);
     app.folder_picker = picked;

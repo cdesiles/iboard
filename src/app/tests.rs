@@ -47,7 +47,7 @@ fn until(mut done: impl FnMut() -> bool) -> bool {
 }
 
 /// A folder for one test, removed when it drops, even when the test
-/// fails. It reads as the folder's `Path`.
+/// fails. It reads as the folder's canonical `Path`.
 struct Scratch(tempfile::TempDir);
 
 impl std::ops::Deref for Scratch {
@@ -69,9 +69,10 @@ fn scratch_dir(tag: &str) -> Scratch {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fakes"
     )));
+    let temp = std::fs::canonicalize(std::env::temp_dir()).unwrap();
     let dir = tempfile::Builder::new()
         .prefix(&format!("iboard-{tag}-"))
-        .tempdir()
+        .tempdir_in(temp)
         .unwrap();
     Scratch(dir)
 }
@@ -939,6 +940,10 @@ fn with_asking_off_delete_is_immediate_and_command_z_restores() {
     app.request_delete(file.clone());
     assert!(app.session.confirm.is_none(), "off: no dialog");
     assert!(!file.exists(), "off: deleted at once");
+    assert!(
+        dir.join("Trash/files/sidebar.md").is_file(),
+        "the test's own Trash"
+    );
     assert!(app.can_undo());
 
     app.undo_last();

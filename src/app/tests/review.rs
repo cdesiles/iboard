@@ -25,7 +25,7 @@ fn only_todo_issues_are_reviewed() {
 /// The agent reads the issue's project, wherever iboard was started from.
 #[test]
 fn a_review_runs_from_the_issue_project() {
-    let dir = std::fs::canonicalize(scratch_dir("review-cwd")).unwrap();
+    let dir = scratch_dir("review-cwd");
     let todo = dir.join("issues/todo");
     std::fs::create_dir_all(&todo).unwrap();
     let file = todo.join("demo.md");
@@ -643,7 +643,7 @@ fn the_review_runs_in_the_scope_settings_chose() {
 /// opens the editor with the update even where the board keeps it read-only.
 #[test]
 fn an_update_rewrites_a_doing_issue_through_the_editor() {
-    let dir = std::fs::canonicalize(scratch_dir("update")).unwrap();
+    let dir = scratch_dir("update");
     for column in ["todo", "doing", "done"] {
         std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
     }
@@ -849,7 +849,7 @@ fn quitting_with_a_run_at_work_asks_first() {
 /// bar and the agent log.
 #[test]
 fn cmd_k_asks_the_agent_about_the_open_issue() {
-    let dir = std::fs::canonicalize(scratch_dir("ask")).unwrap();
+    let dir = scratch_dir("ask");
     std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
     let file = dir.join("issues/doing/migrate.md");
     std::fs::write(&file, "# Migrate\n\n- [ ] point 1\n").unwrap();

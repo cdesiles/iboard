@@ -32,6 +32,16 @@ fn project(tag: &str) -> (Scratch, Located) {
     (dir, located)
 }
 
+/// Polls until the panel has measured: a measure still at work once the test
+/// is over would write its cache into the scratch folder, gone by then, and
+/// so make it again.
+fn measured(app: &mut IboardApp, ctx: &egui::Context) -> bool {
+    until(|| {
+        app.poll_stats(ctx);
+        app.session.stats.as_ref().is_some_and(|s| !s.is_loading())
+    })
+}
+
 /// The panel measures every commit, shows its figures, trends, watch and
 /// files, moves the Agenda's day with `←`, and goes with `esc`.
 #[test]
@@ -178,6 +188,8 @@ fn the_stats_button_opens_the_panel() {
     harness.get_by_label("Stats").click();
     harness.run_steps(2);
     assert!(harness.state().1.session.stats.is_some());
+    let ctx = harness.ctx.clone();
+    assert!(measured(&mut harness.state_mut().1, &ctx));
 }
 
 /// `⌘I` on the board opens the panel too.
@@ -190,4 +202,5 @@ fn cmd_i_opens_the_stats() {
     let press = vec![egui::Event::ModifiersChanged(command), key(Key::I, command)];
     frame(&ctx, &mut app, press);
     assert!(app.session.stats.is_some());
+    assert!(measured(&mut app, &ctx));
 }

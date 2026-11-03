@@ -9,8 +9,7 @@ use egui_kittest::kittest::Queryable;
 /// configuration with the groups Clients (app, site) and Solo (app), whose
 /// Clients board is shown.
 fn configured(tag: &str) -> (Scratch, PathBuf, IboardApp) {
-    let scratch = scratch_dir(tag);
-    let parent = std::fs::canonicalize(&*scratch).unwrap();
+    let parent = scratch_dir(tag);
     for name in ["app", "site"] {
         std::fs::create_dir_all(parent.join(name).join("issues/todo")).unwrap();
     }
@@ -32,7 +31,7 @@ fn configured(tag: &str) -> (Scratch, PathBuf, IboardApp) {
     app.config_file = Some(config.clone());
     app.workspace = crate::workspace::load(&mut UserConfig::load(Some(&config)));
     app.open_group("Clients");
-    (scratch, config, app)
+    (parent, config, app)
 }
 
 fn harness(app: IboardApp) -> Harness<'static, (bool, IboardApp)> {
@@ -125,8 +124,7 @@ fn deleting_the_shown_group_asks_then_the_first_left_opens() {
 
 #[test]
 fn projects_come_from_the_recent_ones_or_the_picker_with_an_issues_folder() {
-    let (scratch, _config, mut app) = configured("groups-add");
-    let parent = std::fs::canonicalize(&*scratch).unwrap();
+    let (parent, _config, mut app) = configured("groups-add");
     app.recents = vec![parent.join("site")];
     app.folder_picker = || {
         let parent = std::fs::canonicalize(std::env::temp_dir()).unwrap();

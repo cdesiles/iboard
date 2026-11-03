@@ -611,8 +611,8 @@ pub struct IboardApp {
     /// `[idesign] enabled`: the beta Design panel and Draft design are
     /// reachable. Off, no path leads to them.
     idesign: bool,
-    /// Where deleted issues go: the user's Trash in the app, a folder of its
-    /// own for a board built in tests.
+    /// Where deleted issues go: the user's Trash in the app, a `Trash` folder
+    /// in the project for a board built in tests.
     trash: Trash,
     /// The last finished review of each issue this session, behind the
     /// card's verdict pill.
@@ -935,6 +935,7 @@ impl IboardApp {
             Ok(scanned) => (scanned, None),
             Err(err) => ((Board::empty(&located), HashMap::new()), Some(err)),
         };
+        let trash = Trash::Folder(located.project_dir.join("Trash"));
         Self {
             located,
             workspace: None,
@@ -953,7 +954,7 @@ impl IboardApp {
             confirm_delete: true,
             appearance: Appearance::default(),
             idesign: false,
-            trash: Trash::Folder(std::env::temp_dir().join("iboard-trash")),
+            trash,
             past_reviews,
             dock_archivable: false,
             dock_span: None,

@@ -1,6 +1,7 @@
 //! The AI build's tests: Ready's Play, its queue, stopping and failing it.
 
 use super::*;
+use crate::build_log::{self, Entry};
 
 /// A board with `ready/001-a.md` and `ready/002-b.md`, and an empty Todo,
 /// Doing and Done; its build agent runs `command`.
@@ -44,6 +45,27 @@ fn in_column(dir: &Path, column: &str) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+/// Stops the build, then waits until its agents logged how all `runs` ended:
+/// one still at work once the test is over would write its log into the
+/// scratch folder, gone by then, and so make it again.
+fn stop_agents(app: &mut IboardApp, dir: &Path, runs: usize) {
+    app.stop_build();
+    let ended = |log: std::fs::DirEntry| {
+        let text = std::fs::read_to_string(log.path()).unwrap_or_default();
+        let entries = build_log::parse(&text);
+        entries
+            .iter()
+            .filter(|entry| matches!(entry, Entry::Outcome { .. }))
+            .count()
+    };
+    let logs = dir.join("issues").join(build_log::DIR);
+    let all_ended = || {
+        let logs = std::fs::read_dir(&logs).into_iter().flatten().flatten();
+        logs.map(ended).sum::<usize>() == runs
+    };
+    assert!(until(all_ended), "the {runs} runs never all ended");
 }
 
 #[test]
@@ -105,6 +127,7 @@ fn stop_ends_the_build_and_keeps_the_issue_where_it_is() {
     assert!(app.session.build.is_none());
     assert_eq!(in_column(&dir, "doing").len(), 1);
     assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
+    stop_agents(&mut app, &dir, 1);
 }
 
 #[test]
@@ -167,6 +190,7 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
     assert_eq!(app.build_place(), Some((1, 1)), "a retry builds one issue");
     assert_eq!(in_column(&dir, "doing"), ["a.md"], "it stays where it is");
     assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
+    stop_agents(&mut app, &dir, 2);
 }
 
 #[test]
@@ -180,6 +204,7 @@ fn retrying_the_issue_at_work_keeps_the_rest_of_the_run() {
     assert!(restarted > started, "the clock starts over");
     assert_eq!(app.build_place(), Some((1, 2)));
     assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
+    stop_agents(&mut app, &dir, 2);
 }
 
 #[test]
@@ -217,6 +242,7 @@ fn two_agents_build_two_issues_at_once() {
     assert_eq!(app.building_now().len(), 2);
     assert!(in_column(&dir, "ready").is_empty());
     assert_eq!(in_column(&dir, "doing"), ["a.md", "b.md"]);
+    stop_agents(&mut app, &dir, 2);
 }
 
 #[test]
@@ -232,6 +258,7 @@ fn one_agent_takes_the_first_issue_and_more_take_the_next() {
         2,
         "fewer let the ones at work finish"
     );
+    stop_agents(&mut app, &dir, 2);
 }
 
 #[test]
@@ -243,6 +270,7 @@ fn no_agents_stops_the_build_and_at_most_sixteen() {
     assert_eq!(in_column(&dir, "ready"), ["002-b.md"]);
     app.apply(vec![Intent::Agents(40)]);
     assert_eq!(app.session.agents, 16);
+    stop_agents(&mut app, &dir, 1);
 }
 
 #[test]
@@ -268,11 +296,12 @@ fn doing_header_adds_and_removes_agents() {
 
 #[test]
 fn stopping_one_card_keeps_the_other_agent_at_work() {
-    let (_dir, mut app) = board("build-stop-one", "sleep 30 # {prompt}");
+    let (dir, mut app) = board("build-stop-one", "sleep 30 # {prompt}");
     app.apply(vec![Intent::Agents(2), Intent::Build(ready(&app))]);
     let first = app.building_now()[0].0.clone();
     app.apply(vec![Intent::StopAgent(first)]);
     assert_eq!(app.building_now().len(), 1);
+    stop_agents(&mut app, &dir, 2);
 }
 
 #[test]
@@ -295,6 +324,7 @@ fn while_play_is_pressed_an_issue_dropped_in_ready_is_built() {
     app.poll_build(&ctx);
     assert_eq!(in_column(&dir, "doing"), ["a.md", "b.md", "c.md"]);
     assert!(in_column(&dir, "ready").is_empty());
+    stop_agents(&mut app, &dir, 3);
 }
 
 #[test]
@@ -309,6 +339,7 @@ fn while_play_is_pressed_ready_is_rescanned_for_other_processes_issues() {
         app.building_now().len() == 3
     }));
     assert_eq!(in_column(&dir, "doing"), ["a.md", "b.md", "c.md"]);
+    stop_agents(&mut app, &dir, 3);
 }
 
 #[test]
@@ -322,6 +353,7 @@ fn stop_stops_watching_ready() {
     app.poll_build(&ctx);
     assert!(app.session.build.is_none());
     assert_eq!(in_column(&dir, "ready"), ["002-b.md", "003-c.md"]);
+    stop_agents(&mut app, &dir, 1);
 }
 
 #[test]
@@ -395,6 +427,7 @@ fn play_leaves_manual_issues_in_ready() {
     app.start_build(ready(&app));
     assert_eq!(in_column(&dir, "ready"), ["001-a.md"]);
     assert_eq!(in_column(&dir, "doing"), ["b.md"]);
+    stop_agents(&mut app, &dir, 1);
 }
 
 /// A `[manual]` issue in Doing offers no Retry, and a retry leaves it alone.
