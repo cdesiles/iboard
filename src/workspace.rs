@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
 use serde::Deserialize;
 
-use crate::discovery::{self, Board, Column, Repo};
+use crate::discovery::{self, Board, Column, Located, Repo};
 use crate::files;
 use crate::issue::Issue;
 use crate::labels;
@@ -148,14 +148,19 @@ pub fn build(group: &Group, virtual_root: &Path, order: &Order) -> Board {
     board
 }
 
-/// The board of the project at `dir`, whose `issues/` must be its own: an
-/// `issues/` found further up belongs to another project.
+/// The board of the project at `dir`.
 fn open(dir: &Path) -> Result<Board> {
+    discovery::build(&locate(dir)?)
+}
+
+/// The project at `dir`, whose `issues/` must be its own: an `issues/` found
+/// further up belongs to another project.
+fn locate(dir: &Path) -> Result<Located> {
     let Ok(dir) = std::fs::canonicalize(dir) else {
         bail!("not found");
     };
     match discovery::locate(&dir) {
-        Ok(located) if located.project_dir == dir => discovery::build(&located),
+        Ok(located) if located.project_dir == dir => Ok(located),
         _ => bail!("no issues/ folder"),
     }
 }

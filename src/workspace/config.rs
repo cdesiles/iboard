@@ -139,9 +139,10 @@ pub fn contract(path: &Path, home: Option<&Path>) -> String {
     }
 }
 
-/// Whether `dir` holds the `issues/` folder a group's project needs.
+/// Whether `dir` holds the issues a group's project needs, where its board
+/// finds them: the `root` its `iboard.toml` sets, else its `issues/` folder.
 pub fn has_issues_dir(dir: &Path) -> bool {
-    dir.join("issues").is_dir()
+    super::locate(dir).is_ok()
 }
 
 #[cfg(test)]
@@ -280,5 +281,22 @@ mod tests {
             "/Users/meow/x"
         );
         assert_eq!(contract(Path::new("/opt/x"), None), "/opt/x");
+    }
+
+    #[test]
+    fn a_project_has_its_issues_where_its_board_finds_them() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        std::fs::create_dir_all(dir.join("custom/tickets/todo")).unwrap();
+        std::fs::write(dir.join("custom/iboard.toml"), "root = \"tickets\"\n").unwrap();
+        std::fs::create_dir_all(dir.join("plain/issues/todo")).unwrap();
+        std::fs::create_dir_all(dir.join("plain/src")).unwrap();
+        assert!(has_issues_dir(&dir.join("custom")), "its configured root");
+        assert!(has_issues_dir(&dir.join("plain")));
+        assert!(
+            !has_issues_dir(&dir.join("plain/src")),
+            "the issues/ of the project above"
+        );
+        assert!(!has_issues_dir(&dir.join("gone")));
     }
 }
