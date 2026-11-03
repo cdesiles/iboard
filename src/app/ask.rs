@@ -12,8 +12,8 @@ use crate::agent::{Asked, Leash, Progress};
 use crate::build_log;
 use crate::reviews::{self, Chat, Turn};
 
-/// Room under the conversation for the message, its leash and the buttons.
-const COMPOSER_HEIGHT: f32 = 230.0;
+/// How tall the message field grows before it scrolls.
+const FIELD_MAX_HEIGHT: f32 = 160.0;
 
 /// The Ask AI panel, open beside an issue.
 pub(super) struct AskPanel {
@@ -334,12 +334,16 @@ impl IboardApp {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 review_head(ui, &format!("Ask AI on {}", file_name(&path)), &detail);
-                let height = (ui.available_height() - COMPOSER_HEIGHT).max(80.0);
+                egui::Panel::bottom("ask-composer")
+                    .resizable(false)
+                    .frame(Frame::new().inner_margin(Margin::same(theme::SPACE_4 as i8)))
+                    .show(ui, |ui| {
+                        action = composer(ui, panel, running.is_some(), terminal);
+                    });
                 theme::scroll_area(
                     ui,
                     egui::ScrollArea::vertical()
                         .id_salt("ask_chat")
-                        .max_height(height)
                         .content_margin(theme::scroll_margin(theme::SPACE_4, theme::SPACE_4))
                         .stick_to_bottom(true)
                         .auto_shrink(false),
@@ -354,11 +358,6 @@ impl IboardApp {
                         }
                     },
                 );
-                Frame::new()
-                    .inner_margin(Margin::same(theme::SPACE_4 as i8))
-                    .show(ui, |ui| {
-                        action = composer(ui, panel, running.is_some(), terminal)
-                    });
             });
         match action {
             Some(PanelAction::Send) => self.send_ask(),
@@ -410,12 +409,20 @@ fn composer(
         true => "Take care of point 1…",
         false => "Answer the agent…",
     };
-    let field = ui.add(
-        egui::TextEdit::multiline(&mut panel.request)
-            .hint_text(hint)
-            .desired_rows(3)
-            .desired_width(ui.available_width()),
-    );
+    let width = ui.available_width();
+    let field = egui::ScrollArea::vertical()
+        .id_salt("ask_field")
+        .max_height(FIELD_MAX_HEIGHT)
+        .stick_to_bottom(true)
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(&mut panel.request)
+                    .hint_text(hint)
+                    .desired_rows(3)
+                    .desired_width(width),
+            )
+        })
+        .inner;
     if std::mem::take(&mut panel.focus) {
         field.request_focus();
     }

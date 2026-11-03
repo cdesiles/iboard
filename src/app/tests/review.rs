@@ -1033,3 +1033,41 @@ fn shift_cmd_t_copies_the_command_that_resumes_the_session() {
     let expected = format!("cd '{}' && claude --resume 's-42'", dir.display());
     assert_eq!(copied, [&expected]);
 }
+
+/// However long the message, the leash and Send stay in view: the field
+/// scrolls instead of pushing them below the panel.
+#[test]
+fn a_long_message_keeps_the_ask_buttons_in_view() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("ask-long");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_issue(file.clone());
+    app.toggle_ask(&file);
+    let lines: Vec<String> = (0..60).map(|n| format!("docker ps line {n}")).collect();
+    app.session.ask_panel.as_mut().unwrap().request = lines.join("\n");
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    harness.run_steps(3);
+    for label in ["Send", "Prevent deploy"] {
+        let rect = harness.get_by_label(label).rect();
+        assert!(
+            rect.bottom() <= window().bottom(),
+            "{label} is in view: {rect:?}"
+        );
+    }
+}
