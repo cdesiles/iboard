@@ -890,3 +890,45 @@ fn cmd_k_asks_the_agent_about_the_open_issue() {
     );
     assert!(app.has_agent_log(&file));
 }
+
+/// `Space` picks cards on the board and `⌘U` updates every picked one, each
+/// in its own run; a card left out is not touched.
+#[test]
+fn space_picks_cards_and_cmd_u_updates_them_all() {
+    let dir = scratch_dir("update-picked");
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let issue = |name: &str| {
+        let path = dir.join("issues/doing").join(name);
+        std::fs::write(&path, format!("# {name}\n")).unwrap();
+        path
+    };
+    let (one, two, left) = (issue("one.md"), issue("two.md"), issue("left.md"));
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "sleep 30 # {prompt}".to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    let ctx = themed_ctx();
+    let none = egui::Modifiers::NONE;
+    let space = || vec![egui::Event::ModifiersChanged(none), key(Key::Space, none)];
+    app.session.selected = Some(one.clone());
+    frame(&ctx, &mut app, space());
+    app.session.selected = Some(two.clone());
+    frame(&ctx, &mut app, space());
+    assert_eq!(app.session.picked, [one.clone(), two.clone()]);
+
+    let command = egui::Modifiers::COMMAND;
+    let press = vec![egui::Event::ModifiersChanged(command), key(Key::U, command)];
+    frame(&ctx, &mut app, press);
+    assert!(app.review_is_running(&one) && app.review_is_running(&two));
+    assert!(
+        !app.review_is_running(&left),
+        "a card left out is not updated"
+    );
+
+    frame(&ctx, &mut app, space());
+    assert_eq!(app.session.picked, [one], "Space again takes the card out");
+}

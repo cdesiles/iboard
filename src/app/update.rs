@@ -32,6 +32,31 @@ impl IboardApp {
         self.run_review(target, &content, prompt);
     }
 
+    /// `⌘U`: on a multi-selection, an update of every picked issue it applies
+    /// to and that is not updating already, each in its own run; on one issue,
+    /// [`Self::toggle_update`].
+    pub(super) fn update_selection(&mut self, path: &Path) {
+        let paths = self.selection_of(path);
+        if paths.len() < 2 {
+            self.toggle_update(path);
+            return;
+        }
+        if !self.agent.configured() {
+            self.open_config();
+            return;
+        }
+        let mut started = 0;
+        for path in &paths {
+            if self.updatable(path) && !self.review_is_running(path) {
+                self.start_update(path);
+                started += 1;
+            }
+        }
+        let noun = if started == 1 { "issue" } else { "issues" };
+        let notice = format!("Updating {started} {noun} with AI");
+        self.session.notice = Some((notice, Instant::now()));
+    }
+
     /// The button and `⌘U`: starts an update, or cancels the one running; with
     /// no agent set up, Settings open instead.
     pub(super) fn toggle_update(&mut self, path: &Path) {

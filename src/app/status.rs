@@ -109,6 +109,11 @@ impl IboardApp {
         let Some(selected) = self.selected_issue() else {
             return idle;
         };
+        let picked = self.session.picked.len();
+        if picked > 0 {
+            ui.label(status_meta(ui, format!("{picked} picked")));
+            return vec![("Space", "pick"), ("⌘U", "update"), ("esc", "clear")];
+        }
         ui.label(status_meta(ui, self.relative(&selected)));
         let done = self
             .board
@@ -124,7 +129,12 @@ impl IboardApp {
         } else if done {
             vec![("↩", "open"), ("A", "archive")]
         } else if self.updatable(&selected) {
-            vec![("↩", "open"), ("⌘U", "update"), ("Del", "delete")]
+            vec![
+                ("↩", "open"),
+                ("⌘U", "update"),
+                ("Space", "pick"),
+                ("Del", "delete"),
+            ]
         } else {
             vec![("↩", "open"), ("Del", "delete")]
         }

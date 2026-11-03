@@ -175,6 +175,17 @@ impl IboardApp {
         self.session.selected = Some(path);
     }
 
+    /// `Space` on the board: `path` joins the multi-selection, or leaves it.
+    pub(super) fn toggle_pick(&mut self, path: PathBuf) {
+        let picked = &mut self.session.picked;
+        match picked.iter().position(|p| *p == path) {
+            Some(at) => {
+                picked.remove(at);
+            }
+            None => picked.push(path),
+        }
+    }
+
     /// What an action on `path` applies to: the whole multi-selection when
     /// `path` is in it, in board order; `path` alone otherwise.
     pub(super) fn selection_of(&self, path: &Path) -> Vec<PathBuf> {

@@ -60,6 +60,9 @@ enum Command {
     ApplyReview,
     /// `⌘K`: Ask AI on the open issue or the selected card, or stop the ask.
     Ask(PathBuf),
+    /// `Space` on the board: the selected card joins the multi-selection, or
+    /// leaves it.
+    TogglePick(PathBuf),
 }
 
 /// The shortcuts that fire for `input` where the keyboard is.
@@ -177,6 +180,8 @@ fn board_keys(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
         Some(Command::Archive(path))
     } else if plain && input.key_pressed(Key::L) {
         Some(Command::Labels(path))
+    } else if plain && input.key_pressed(Key::Space) {
+        Some(Command::TogglePick(path))
     } else {
         None
     });
@@ -505,7 +510,8 @@ impl IboardApp {
             Command::Delete(path) => self.request_delete(path),
             Command::SwitchProject(forward) => self.switch_project(forward),
             Command::Stats => self.open_stats(),
-            Command::Update(path) => self.toggle_update(&path),
+            Command::Update(path) => self.update_selection(&path),
+            Command::TogglePick(path) => self.toggle_pick(path),
             Command::ApplyReview => self.apply_review_proposal(),
             Command::Ask(path) => self.toggle_ask(&path),
         }
