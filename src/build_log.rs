@@ -86,6 +86,7 @@ pub fn entries(line: &str) -> Vec<String> {
             .flatten()
             .filter_map(|part| match part["type"].as_str()? {
                 "text" => message(&part["text"]),
+                "thinking" => thought(&part["thinking"]),
                 "tool_use" => {
                     agent::describe_tool(part["name"].as_str()?, &part["input"]).map(step)
                 }
@@ -99,6 +100,20 @@ pub fn entries(line: &str) -> Vec<String> {
 fn message(text: &serde_json::Value) -> Option<String> {
     let text = text.as_str()?.trim();
     (!text.is_empty()).then(|| text.to_string())
+}
+
+/// The agent's thinking, as a markdown quote; the blank line after it keeps
+/// the next message out of the quote.
+fn thought(text: &serde_json::Value) -> Option<String> {
+    let text = message(text)?;
+    let quoted: Vec<String> = text.lines().map(|line| format!("> {line}")).collect();
+    Some(format!("{}\n", quoted.join("\n")))
+}
+
+/// The run the log ends with, under its heading: the one an agent is on.
+pub fn current_run(text: &str) -> &str {
+    let start = text.rfind("\n── ").map_or(0, |at| at + 1);
+    text[start..].split_once('\n').map_or("", |(_, run)| run)
 }
 
 fn step(step: String) -> String {
@@ -211,6 +226,19 @@ mod tests {
             ]
         );
         assert!(parse("").is_empty());
+    }
+
+    #[test]
+    fn thinking_is_kept_as_a_quote_and_the_current_run_is_the_last() {
+        let claude = r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Check the mount.\nThen size."},{"type":"thinking","thinking":""},{"type":"text","text":"Checks are green."}]}}"#;
+        assert_eq!(
+            entries(claude),
+            ["> Check the mount.\n> Then size.\n", "Checks are green."]
+        );
+        let log = "── a · claude\nold\n✓ Finished in 00:01\n── b · claude\n→ Reading…\nNow.\n";
+        assert_eq!(current_run(log), "→ Reading…\nNow.\n");
+        assert_eq!(current_run("── a · claude\nfirst\n"), "first\n");
+        assert_eq!(current_run(""), "");
     }
 
     #[test]

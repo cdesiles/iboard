@@ -5,6 +5,7 @@
 //! resumes the session of the one before; the conversation is kept in the
 //! issue's sidecar.
 
+use super::agent_log::log_entries;
 use super::review::{review_head, running_line};
 use super::*;
 use crate::agent::{Asked, Leash, Progress};
@@ -24,11 +25,36 @@ pub(super) struct AskPanel {
     focus: bool,
     pub(super) chat: Chat,
     cache: CommonMarkCache,
+    live: LiveRun,
+}
+
+/// The agent log, read again whenever it grows, for the run an ask is on.
+struct LiveRun {
+    file: PathBuf,
+    len: Option<u64>,
+    text: String,
+}
+
+impl LiveRun {
+    /// What the agent said and did so far in its current run.
+    fn current(&mut self) -> &str {
+        let len = std::fs::metadata(&self.file).ok().map(|meta| meta.len());
+        if len != self.len {
+            self.len = len;
+            self.text = build_log::load(&self.file).unwrap_or_default();
+        }
+        build_log::current_run(&self.text)
+    }
 }
 
 impl AskPanel {
-    fn new(path: PathBuf, chat: Chat) -> Self {
+    fn new(path: PathBuf, chat: Chat, log: PathBuf) -> Self {
         Self {
+            live: LiveRun {
+                file: log,
+                len: None,
+                text: String::new(),
+            },
             path,
             request: String::new(),
             read_only: false,
@@ -96,12 +122,12 @@ impl IboardApp {
     /// Opens the panel on the conversation kept for `path`, in place of the
     /// review or the agent log.
     pub(super) fn open_ask(&mut self, path: &Path) {
-        let chat = reviews::load(self.board.root_of(path), path)
-            .chat
-            .unwrap_or_default();
+        let root = self.board.root_of(path);
+        let chat = reviews::load(root, path).chat.unwrap_or_default();
+        let log = build_log::path(root, path);
         self.close_review();
         self.session.agent_log = None;
-        self.session.ask_panel = Some(AskPanel::new(path.to_path_buf(), chat));
+        self.session.ask_panel = Some(AskPanel::new(path.to_path_buf(), chat, log));
     }
 
     /// Continue in terminal: the conversation's session, in Terminal.
@@ -312,6 +338,9 @@ impl IboardApp {
                     |ui| {
                         chat_turns(ui, &panel.chat.turns, &mut panel.cache);
                         if let Some((elapsed, step)) = running.clone() {
+                            ui.add_space(theme::SPACE_3);
+                            let run = panel.live.current().to_string();
+                            log_entries(ui, &run, &mut panel.cache);
                             running_line(ui, elapsed, step);
                         }
                     },

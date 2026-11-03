@@ -133,7 +133,7 @@ impl IboardApp {
 
 /// The log read as what it is: each run under its heading, the agent's
 /// messages as rendered markdown, its steps and outcomes as quiet lines.
-fn log_entries(ui: &mut egui::Ui, text: &str, cache: &mut CommonMarkCache) {
+pub(super) fn log_entries(ui: &mut egui::Ui, text: &str, cache: &mut CommonMarkCache) {
     let p = theme::palette(ui);
     ui.style_mut()
         .text_styles
