@@ -611,6 +611,8 @@ pub struct IboardApp {
     /// `[idesign] enabled`: the beta Design panel and Draft design are
     /// reachable. Off, no path leads to them.
     idesign: bool,
+    /// `[terminal] app`: where Continue in terminal takes an ask's session.
+    terminal: agent::Terminal,
     /// Where deleted issues go: the user's Trash in the app, a folder of its
     /// own for a board built in tests.
     trash: Trash,
@@ -911,6 +913,7 @@ impl IboardApp {
         app.appearance = general::load_appearance(&mut config);
         app.auto = general::load_auto(&mut config);
         app.idesign = general::load_idesign(&mut config);
+        app.terminal = general::load_terminal(&mut config);
         agent::set_direnv(general::load_direnv(&mut config));
         theme::apply(&cc.egui_ctx, app.appearance);
         app.labels = Labels::load(&mut config);
@@ -956,6 +959,7 @@ impl IboardApp {
             confirm_delete: true,
             appearance: Appearance::default(),
             idesign: false,
+            terminal: agent::Terminal::Copy,
             trash: Trash::Folder(std::env::temp_dir().join("iboard-trash")),
             past_reviews,
             dock_archivable: false,

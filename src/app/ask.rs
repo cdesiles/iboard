@@ -130,8 +130,9 @@ impl IboardApp {
         self.session.ask_panel = Some(AskPanel::new(path.to_path_buf(), chat, log));
     }
 
-    /// Continue in terminal: the conversation's session, in Terminal.
-    fn continue_in_terminal(&mut self, path: &Path) {
+    /// Continue in terminal: the command that resumes the conversation's
+    /// session, copied, or typed in the terminal `[terminal] app` names.
+    fn continue_in_terminal(&mut self, ctx: &egui::Context, path: &Path) {
         let Some(session) = self
             .session
             .ask_panel
@@ -140,11 +141,18 @@ impl IboardApp {
         else {
             return;
         };
-        match agent::continue_in_terminal(self.board.project_of(path), &session) {
-            Ok(()) => {
-                let notice = format!("Opened the session of {} in Terminal", file_name(path));
-                self.session.notice = Some((notice, Instant::now()));
+        let command = agent::resume_command(self.board.project_of(path), &session);
+        let done = match self.terminal {
+            agent::Terminal::Copy => {
+                ctx.copy_text(command.clone());
+                Ok(format!("Copied: {command}"))
             }
+            terminal => terminal
+                .open(&command)
+                .map(|()| format!("{}: {}", terminal.label(), file_name(path))),
+        };
+        match done {
+            Ok(notice) => self.session.notice = Some((notice, Instant::now())),
             Err(err) => self.error = Some(err),
         }
     }
@@ -309,6 +317,7 @@ impl IboardApp {
             let step = run.progress.lock().ok().and_then(|step| step.clone());
             (run.since.elapsed(), step)
         });
+        let terminal = self.terminal;
         let Some(panel) = self.session.ask_panel.as_mut() else {
             return;
         };
@@ -347,12 +356,14 @@ impl IboardApp {
                 );
                 Frame::new()
                     .inner_margin(Margin::same(theme::SPACE_4 as i8))
-                    .show(ui, |ui| action = composer(ui, panel, running.is_some()));
+                    .show(ui, |ui| {
+                        action = composer(ui, panel, running.is_some(), terminal)
+                    });
             });
         match action {
             Some(PanelAction::Send) => self.send_ask(),
             Some(PanelAction::Stop) => self.stop_ask(&path),
-            Some(PanelAction::Terminal) => self.continue_in_terminal(&path),
+            Some(PanelAction::Terminal) => self.continue_in_terminal(ui.ctx(), &path),
             None => {}
         }
     }
@@ -388,7 +399,12 @@ fn chat_turns(ui: &mut egui::Ui, turns: &[Turn], cache: &mut CommonMarkCache) {
 }
 
 /// The message, its leash, and Send or Stop.
-fn composer(ui: &mut egui::Ui, panel: &mut AskPanel, running: bool) -> Option<PanelAction> {
+fn composer(
+    ui: &mut egui::Ui,
+    panel: &mut AskPanel,
+    running: bool,
+    terminal: agent::Terminal,
+) -> Option<PanelAction> {
     ui.spacing_mut().item_spacing.y = theme::SPACE_3;
     let hint = match panel.chat.turns.is_empty() {
         true => "Take care of point 1…",
@@ -411,6 +427,7 @@ fn composer(ui: &mut egui::Ui, panel: &mut AskPanel, running: bool) -> Option<Pa
     widgets::checkbox(ui, &mut panel.no_commit, "Prevent commit / push");
     widgets::checkbox(ui, &mut panel.no_deploy, "Prevent deploy");
     let ready = !running && !panel.request.trim().is_empty();
+    let resumable = !running && panel.chat.session.is_some();
     let mut action = None;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
@@ -422,27 +439,35 @@ fn composer(ui: &mut egui::Ui, panel: &mut AskPanel, running: bool) -> Option<Pa
         if send.clicked() {
             action = Some(PanelAction::Send);
         }
-        if running && widgets::button(ui, ButtonKind::Secondary, None, "Stop", None).clicked() {
+        if running
+            && widgets::button(ui, ButtonKind::Secondary, None, "Stop", Some("⌘."))
+                .on_hover_text("Stop the agent")
+                .clicked()
+        {
             action = Some(PanelAction::Stop);
         }
-        let resumable = !running && panel.chat.session.is_some();
-        let terminal = ui
+        let hint = match terminal {
+            agent::Terminal::Copy => "Copy the command that goes on with this Claude Code session, to paste in your terminal",
+            _ => "Go on with this Claude Code session in a new tab, from the project",
+        };
+        let resume = ui
             .add_enabled_ui(resumable, |ui| {
-                widgets::button(
-                    ui,
-                    ButtonKind::Secondary,
-                    None,
-                    "Continue in terminal",
-                    None,
-                )
+                widgets::button(ui, ButtonKind::Secondary, None, terminal.label(), Some("⇧⌘T"))
             })
             .inner
-            .on_hover_text("Go on with this Claude Code session in Terminal, from the project")
+            .on_hover_text(hint)
             .on_disabled_hover_text("Once the agent answered, with Claude Code");
-        if terminal.clicked() {
+        if resume.clicked() {
             action = Some(PanelAction::Terminal);
         }
     });
+    let shift_command = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+    if resumable && ui.input_mut(|i| i.consume_key(shift_command, Key::T)) {
+        action = Some(PanelAction::Terminal);
+    }
+    if running && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Period)) {
+        action = Some(PanelAction::Stop);
+    }
     if ready && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter)) {
         action = Some(PanelAction::Send);
     }

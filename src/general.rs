@@ -89,6 +89,26 @@ pub fn load_direnv(config: &mut UserConfig) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Default, Deserialize, Serialize)]
+struct RawTerminal {
+    app: Option<String>,
+}
+
+/// Where Continue in terminal takes an ask's session: `[terminal] app`,
+/// `"iTerm"` or `"Terminal"`; the command is copied without it.
+pub fn load_terminal(config: &mut UserConfig) -> crate::agent::Terminal {
+    let app = config.section::<RawTerminal>("terminal").app;
+    let app = app.unwrap_or_default();
+    match crate::agent::Terminal::parse(&app) {
+        Some(terminal) => terminal,
+        None => {
+            let problem = format!("[terminal] app: unknown terminal \"{app}\", copying instead");
+            config.problems.push(problem);
+            crate::agent::Terminal::Copy
+        }
+    }
+}
+
 /// The theme the windows draw in. Light unless `[appearance]` says otherwise.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Appearance {

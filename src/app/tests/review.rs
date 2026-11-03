@@ -1001,3 +1001,35 @@ fn an_ask_shows_on_its_card_and_its_answer_waits_for_the_issue() {
     assert!(app.ask_open(&file), "opening the issue shows the answer");
     assert_eq!(pill(&app), None);
 }
+
+/// Continue in terminal copies the command that resumes the conversation's
+/// session from the project, by default, with its button or `⇧⌘T`.
+#[test]
+fn shift_cmd_t_copies_the_command_that_resumes_the_session() {
+    let dir = std::fs::canonicalize(scratch_dir("resume")).unwrap();
+    std::fs::create_dir_all(dir.join("issues/doing")).unwrap();
+    let file = dir.join("issues/doing/migrate.md");
+    std::fs::write(&file, "# Migrate\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_issue(file.clone());
+    app.toggle_ask(&file);
+    app.session.ask_panel.as_mut().unwrap().chat.session = Some("s-42".to_string());
+    let ctx = themed_ctx();
+    frame(&ctx, &mut app, Vec::new());
+    let both = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+    let output = frame(
+        &ctx,
+        &mut app,
+        vec![egui::Event::ModifiersChanged(both), key(Key::T, both)],
+    );
+    let copied: Vec<&String> = output
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            egui::OutputCommand::CopyText(text) => Some(text),
+            _ => None,
+        })
+        .collect();
+    let expected = format!("cd '{}' && claude --resume 's-42'", dir.display());
+    assert_eq!(copied, [&expected]);
+}
