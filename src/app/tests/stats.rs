@@ -98,6 +98,47 @@ fn the_stats_panel_measures_the_history_and_walks_the_agenda() {
     assert!(harness.state().1.session.stats.is_none());
 }
 
+/// Once the history is in, the screen stops asking for frames, and the
+/// Agenda still draws its days.
+#[test]
+fn the_measured_stats_screen_stops_repainting() {
+    let (_dir, located) = project("stats-idle");
+    let mut app = IboardApp::from_located(located);
+    app.open_stats();
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(window().size())
+        .build_ui_state(
+            |ui, (themed, app): &mut (bool, IboardApp)| {
+                if !*themed {
+                    theme::install(ui.ctx());
+                    theme::set_reduced_motion(ui.ctx(), false);
+                    *themed = true;
+                    return;
+                }
+                app.frame_logic(ui.ctx());
+                app.draw(ui);
+            },
+            (false, app),
+        );
+    assert!(until(|| {
+        harness.run_steps(1);
+        !harness
+            .state()
+            .1
+            .session
+            .stats
+            .as_ref()
+            .unwrap()
+            .is_loading()
+    }));
+    harness
+        .try_run()
+        .expect("the measured screen stops asking for frames");
+    let panel = harness.state().1.session.stats.as_ref().unwrap();
+    let today = panel.agenda.selected.format("%a %-d %b, ").to_string();
+    harness.get_by_label_contains(&today);
+}
+
 /// Outside a repository the panel says why it has nothing to show.
 #[test]
 fn the_stats_panel_explains_a_project_without_history() {

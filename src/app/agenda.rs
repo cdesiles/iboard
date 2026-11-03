@@ -379,7 +379,7 @@ fn grid(
             p.ink_muted,
         );
     }
-    let placeholder = theme::skeleton_fill(ui.ctx(), p);
+    let placeholder = shape.is_none().then(|| theme::skeleton_fill(ui.ctx(), p));
     let mut x = rect.left() + WEEKDAYS_W;
     let mut month = None;
     for week in weeks {
@@ -416,11 +416,7 @@ fn grid(
             let top = rect.top() + MONTHS_H + GAP + weekday as f32 * (DAY + GAP);
             let square = Rect::from_min_size(Pos2::new(x, top), Vec2::splat(DAY));
             let count = commits_on(days, day).len();
-            let fill = if shape.is_none() {
-                placeholder
-            } else {
-                theme::agenda_fill(p, count, step)
-            };
+            let fill = placeholder.unwrap_or_else(|| theme::agenda_fill(p, count, step));
             painter.rect_filled(square, CornerRadius::same(4), fill);
             if shape.is_none() {
                 continue;
