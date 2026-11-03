@@ -58,6 +58,8 @@ enum Command {
     Update(PathBuf),
     /// `⌘↩` with a review's proposal shown: apply it.
     ApplyReview,
+    /// `M` in the Reader: the Move to… menu, its columns numbered.
+    MoveTo,
     /// `⌘K`: the Ask AI panel on the open issue or the selected card.
     Ask(PathBuf),
     /// `Space` on the board: the selected card joins the multi-selection, or
@@ -136,6 +138,9 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
         }
         if cx.editable && pressed(Key::E) {
             out.push(Command::Edit(path.clone()));
+        }
+        if pressed(Key::M) {
+            out.push(Command::MoveTo);
         }
     }
     // `Del` (or Backspace) asks to delete the selected card, or the issue the
@@ -514,6 +519,7 @@ impl IboardApp {
             Command::Edit(path) => self.start_editing(&path),
             Command::Archive(path) => self.archive_issue(&path),
             Command::Labels(path) => self.toggle_label_picker(path),
+            Command::MoveTo => self.session.open_move_menu = true,
             Command::Delete(path) => self.request_delete(path),
             Command::SwitchProject(forward) => self.switch_project(forward),
             Command::Stats => self.open_stats(),

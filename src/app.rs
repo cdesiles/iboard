@@ -701,6 +701,8 @@ struct Session {
     confirm: Option<Confirm>,
     /// The Ask AI dialog, while it is open.
     ask_panel: Option<ask::AskPanel>,
+    /// `M` asked for the Move to… menu; it opens on the next draw.
+    open_move_menu: bool,
     /// The asks the agent works on, by issue.
     asks: HashMap<PathBuf, ask::AskRun>,
     /// The issues whose ask was answered while they were not open.
@@ -780,6 +782,7 @@ impl Default for Session {
             discarded: None,
             confirm: None,
             ask_panel: None,
+            open_move_menu: false,
             asks: HashMap::new(),
             answered: HashSet::new(),
             new_card: None,

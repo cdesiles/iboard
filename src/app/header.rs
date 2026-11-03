@@ -262,15 +262,25 @@ impl IboardApp {
             .filter(|column| Some(&column.dir) != here.as_ref())
             .map(|column| (column.name.clone(), column.dir.clone()))
             .collect();
-        let button = widgets::button(ui, ButtonKind::Secondary, None, "Move to…", None)
-            .on_hover_text("Send this issue to another column");
+        let button = widgets::button(ui, ButtonKind::Secondary, None, "Move to…", Some("M"))
+            .on_hover_text("Send this issue to another column: M, then its number");
+        let menu = egui::Popup::default_response_id(&button);
+        if std::mem::take(&mut self.session.open_move_menu) {
+            egui::Popup::open_id(ui.ctx(), menu);
+        }
         let picked = egui::Popup::menu(&button)
             .width(MOVE_MENU_WIDTH)
             .show(|ui| {
                 ui.set_min_width(MOVE_MENU_WIDTH);
                 let mut picked = None;
-                for (name, dir) in &columns {
-                    if widgets::menu_row(ui, MOVE_MENU_WIDTH, name, "", false).clicked() {
+                for (at, (name, dir)) in columns.iter().enumerate() {
+                    let key = super::refine::NUMBERS.get(at);
+                    let hint = key.map(|_| (at + 1).to_string()).unwrap_or_default();
+                    let typed = key.is_some_and(|key| {
+                        ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, *key))
+                    });
+                    if widgets::menu_row(ui, MOVE_MENU_WIDTH, name, &hint, false).clicked() || typed
+                    {
                         picked = Some(dir.clone());
                     }
                 }
@@ -278,6 +288,7 @@ impl IboardApp {
             })
             .and_then(|inner| inner.inner);
         if let Some(dir) = picked {
+            egui::Popup::close_id(ui.ctx(), menu);
             self.send_to(path, &dir);
         }
     }

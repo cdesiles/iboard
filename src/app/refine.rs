@@ -32,7 +32,7 @@ const STACKED_MIN_H: f32 = 320.0;
 /// The head and the foot around the panes.
 const CHROME_H: f32 = 36.0 + 41.0;
 
-const NUMBERS: [Key; 9] = [
+pub(super) const NUMBERS: [Key; 9] = [
     Key::Num1,
     Key::Num2,
     Key::Num3,

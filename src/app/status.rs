@@ -172,8 +172,13 @@ impl IboardApp {
             ));
         }
         let mut hints = match self.can_edit(path) {
-            true => vec![("E", "edit"), ("Del", "delete"), ("esc", "back")],
-            false => vec![("Del", "delete"), ("esc", "back")],
+            true => vec![
+                ("E", "edit"),
+                ("M", "move"),
+                ("Del", "delete"),
+                ("esc", "back"),
+            ],
+            false => vec![("M", "move"), ("Del", "delete"), ("esc", "back")],
         };
         if self.updatable(path) {
             hints.insert(0, ("⌘U", "update"));

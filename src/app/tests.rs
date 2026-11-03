@@ -396,6 +396,28 @@ fn move_to_sends_the_open_issue_and_keeps_it_open() {
     assert!(matches!(&app.session.screen, Screen::Detail(open) if *open == moved));
 }
 
+/// `M` opens Move to… in the Reader and a column's number sends the issue
+/// there.
+#[test]
+fn m_then_a_number_moves_the_open_issue() {
+    let dir = scratch_dir("move-keys");
+    for column in ["ready", "doing", "done"] {
+        std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
+    }
+    let file = dir.join("issues/doing/task.md");
+    std::fs::write(&file, "# Task\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_issue(file.clone());
+    let ctx = themed_ctx();
+    let none = egui::Modifiers::NONE;
+    frame(&ctx, &mut app, Vec::new());
+    frame(&ctx, &mut app, vec![key(Key::M, none)]);
+    frame(&ctx, &mut app, vec![key(Key::Num2, none)]);
+    let moved = dir.join("issues/done/task.md");
+    assert!(moved.exists() && !file.exists(), "2 is Done, after Ready");
+    assert!(matches!(&app.session.screen, Screen::Detail(open) if *open == moved));
+}
+
 /// A long error keeps its Dismiss button in the window.
 #[test]
 fn a_long_error_can_still_be_dismissed() {
