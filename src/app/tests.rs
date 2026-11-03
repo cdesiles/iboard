@@ -412,10 +412,40 @@ fn m_then_a_number_moves_the_open_issue() {
     let none = egui::Modifiers::NONE;
     frame(&ctx, &mut app, Vec::new());
     frame(&ctx, &mut app, vec![key(Key::M, none)]);
-    frame(&ctx, &mut app, vec![key(Key::Num2, none)]);
+    frame(&ctx, &mut app, vec![key(Key::Num3, none)]);
     let moved = dir.join("issues/done/task.md");
-    assert!(moved.exists() && !file.exists(), "2 is Done, after Ready");
+    assert!(
+        moved.exists() && !file.exists(),
+        "3 is Done, after Todo and Ready"
+    );
     assert!(matches!(&app.session.screen, Screen::Detail(open) if *open == moved));
+}
+
+/// A project without a `done/` folder can still send an issue to Done:
+/// Move to… offers it in its place and creates the folder.
+#[test]
+fn move_to_creates_a_standard_column_the_project_lacks() {
+    let dir = scratch_dir("move-missing");
+    for column in ["ready", "doing", "blocked"] {
+        std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
+    }
+    let file = dir.join("issues/ready/task.md");
+    std::fs::write(&file, "# Task\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_issue(file.clone());
+    let names: Vec<String> = app
+        .move_targets(&file)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(names, ["Todo", "Doing", "Blocked", "Done"]);
+    let ctx = themed_ctx();
+    let none = egui::Modifiers::NONE;
+    frame(&ctx, &mut app, Vec::new());
+    frame(&ctx, &mut app, vec![key(Key::M, none)]);
+    frame(&ctx, &mut app, vec![key(Key::Num4, none)]);
+    let moved = dir.join("issues/done/task.md");
+    assert!(moved.exists() && !file.exists(), "4 is Done, created");
 }
 
 /// A long error keeps its Dismiss button in the window.

@@ -700,7 +700,7 @@ fn is_known_column(dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn column_rank(dir: &Path) -> u8 {
+pub fn column_rank(dir: &Path) -> u8 {
     dir.file_name()
         .and_then(|n| n.to_str())
         .and_then(canonical)
@@ -708,7 +708,7 @@ pub(crate) fn column_rank(dir: &Path) -> u8 {
         .unwrap_or(u8::MAX)
 }
 
-pub(crate) fn canonical_name(dir: &Path) -> Option<&'static str> {
+pub fn canonical_name(dir: &Path) -> Option<&'static str> {
     dir.file_name()
         .and_then(|n| n.to_str())
         .and_then(canonical)

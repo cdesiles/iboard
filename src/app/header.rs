@@ -1,5 +1,6 @@
 //! The header bar: the breadcrumb, the project menu and the toolbar.
 
+use super::moves::MoveTarget;
 use super::*;
 
 impl IboardApp {
@@ -254,14 +255,7 @@ impl IboardApp {
     /// Move to…, in the Reader: the other columns, to send the issue to
     /// without going back to the board.
     fn move_button(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let here = self.board.column_of(path).map(|column| column.dir.clone());
-        let columns: Vec<(String, PathBuf)> = self
-            .board
-            .columns
-            .iter()
-            .filter(|column| Some(&column.dir) != here.as_ref())
-            .map(|column| (column.name.clone(), column.dir.clone()))
-            .collect();
+        let columns = self.move_targets(path);
         let button = widgets::button(ui, ButtonKind::Secondary, None, "Move to…", Some("M"))
             .on_hover_text("Send this issue to another column: M, then its number");
         let menu = egui::Popup::default_response_id(&button);
@@ -273,7 +267,7 @@ impl IboardApp {
             .show(|ui| {
                 ui.set_min_width(MOVE_MENU_WIDTH);
                 let mut picked = None;
-                for (at, (name, dir)) in columns.iter().enumerate() {
+                for (at, (name, target)) in columns.iter().enumerate() {
                     let key = super::refine::NUMBERS.get(at);
                     let hint = key.map(|_| (at + 1).to_string()).unwrap_or_default();
                     let typed = key.is_some_and(|key| {
@@ -281,16 +275,18 @@ impl IboardApp {
                     });
                     if widgets::menu_row(ui, MOVE_MENU_WIDTH, name, &hint, false).clicked() || typed
                     {
-                        picked = Some(dir.clone());
+                        picked = Some(target.clone());
                     }
                 }
                 picked
             })
             .and_then(|inner| inner.inner);
-        if let Some(dir) = picked {
-            egui::Popup::close_id(ui.ctx(), menu);
-            self.send_to(path, &dir);
+        match picked {
+            Some(MoveTarget::Column(dir)) => self.send_to(path, &dir),
+            Some(MoveTarget::Missing(kind)) => self.send_to_missing(path, kind),
+            None => return,
         }
+        egui::Popup::close_id(ui.ctx(), menu);
     }
 
     /// Commits, `Open` while its popup shows, and the newest commit's hash.
