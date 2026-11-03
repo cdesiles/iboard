@@ -654,7 +654,7 @@ pub struct IboardApp {
     /// never touch the user's file.
     config_file: Option<PathBuf>,
     /// What the user configuration holds that iboard could not use, shown in
-    /// Settings until the next save.
+    /// Settings until the next save or until the file reads again.
     config_problem: Option<String>,
     /// The ReviewSettings dialog, while it is open.
     settings: Option<settings_ui::Dialog>,
@@ -914,11 +914,7 @@ impl IboardApp {
         app.workspace = workspace::load(&mut config);
         app.reload_project_order(&mut config);
         app.order_dir = workspace::order::dir();
-        if !config.problems.is_empty() {
-            let problem = config.problems.join(" ");
-            app.error = Some(format!("Settings: {problem}"));
-            app.config_problem = Some(problem);
-        }
+        app.report_config_problems(&config.problems);
         app.catalog = Catalog::probing();
         let first = app.workspace.as_ref().and_then(|w| w.groups.first());
         if let (true, Some(first)) = (all, first.map(|group| group.name.clone())) {

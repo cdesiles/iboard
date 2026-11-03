@@ -72,13 +72,18 @@ impl IboardApp {
     }
 
     /// Reads the groups from the configuration again, keeping the group on
-    /// screen when it is still there.
+    /// screen when it is still there. A configuration with problems, saved
+    /// halfway through an edit, leaves the workspace as it is.
     fn reload_groups(&mut self) {
         let mut user = UserConfig::load(self.config_file.as_deref());
-        self.reload_project_order(&mut user);
         let groups = workspace::load(&mut user)
             .map(|w| w.groups)
             .unwrap_or_default();
+        self.report_config_problems(&user.problems);
+        if !user.problems.is_empty() {
+            return;
+        }
+        self.reload_project_order(&mut user);
         let same: Vec<(String, String)> = groups
             .iter()
             .map(|group| (group.name.clone(), group.name.clone()))
@@ -157,6 +162,23 @@ impl IboardApp {
         if stamp != self.config_stamp {
             self.config_stamp = stamp;
             self.reload_groups();
+        }
+    }
+
+    /// Shows `problems`, what the user configuration holds that iboard could
+    /// not use, in the error strip and in Settings, instead of the last ones.
+    pub(super) fn report_config_problems(&mut self, problems: &[String]) {
+        let shown = self
+            .config_problem
+            .take()
+            .map(|problem| format!("Settings: {problem}"));
+        if self.error == shown {
+            self.error = None;
+        }
+        if !problems.is_empty() {
+            let problem = problems.join(" ");
+            self.error = Some(format!("Settings: {problem}"));
+            self.config_problem = Some(problem);
         }
     }
 }

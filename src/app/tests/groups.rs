@@ -220,3 +220,55 @@ fn an_outside_edit_reloads_the_groups() {
     assert_eq!(app.workspace.as_ref().unwrap().groups.len(), 1);
     assert_eq!(app.group.as_deref(), Some("Solo"), "Clients is gone");
 }
+
+/// Writes `text` to the configuration as an editor outside iboard does, then
+/// runs the frame that notices.
+fn edit_outside(harness: &mut Harness<'static, (bool, IboardApp)>, config: &Path, text: &str) {
+    std::fs::write(config, text).unwrap();
+    let app = &mut harness.state_mut().1;
+    app.config_stamp = None;
+    app.config_checked = Instant::now() - Duration::from_secs(5);
+    harness.run_steps(1);
+}
+
+#[test]
+fn a_file_saved_mid_edit_keeps_the_board_until_it_reads_again() {
+    let (_scratch, config, app) = configured("groups-mid-edit");
+    let good = std::fs::read_to_string(&config).unwrap();
+    let mut harness = harness(app);
+    for broken in [
+        "[[workspace.group]]\nname = \n",
+        "[[workspace.group]]\nrepos = []\n",
+    ] {
+        edit_outside(&mut harness, &config, broken);
+        harness.get_by_label_contains("Settings: ");
+        let app = &harness.state().1;
+        assert_eq!(app.board.name(), "Clients", "{broken}");
+        assert_eq!(app.workspace.as_ref().map(|w| w.groups.len()), Some(2));
+    }
+
+    edit_outside(&mut harness, &config, &good);
+    assert!(harness.query_by_label_contains("Settings: ").is_none());
+    assert!(harness.state().1.config_problem.is_none());
+    assert_eq!(harness.state().1.board.name(), "Clients");
+}
+
+#[test]
+fn reloading_a_file_saved_mid_edit_keeps_the_groups() {
+    let (_scratch, config, mut app) = configured("groups-reload-broken");
+    app.open_groups(false);
+    let mut harness = harness(app);
+    std::fs::write(&config, "[[workspace.group]]\nname = \n").unwrap();
+    dialog(&mut harness).draft.groups[1].name = "Alone".into();
+    press(&mut harness, "Save");
+    press(&mut harness, "Reload");
+
+    let names: Vec<String> = dialog(&mut harness)
+        .draft
+        .groups
+        .iter()
+        .map(|group| group.name.clone())
+        .collect();
+    assert_eq!(names, ["Clients", "Solo"]);
+    assert_eq!(harness.state().1.board.name(), "Clients");
+}
