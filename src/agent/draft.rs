@@ -54,7 +54,15 @@ fn run_draft(
         tool => tool.key(),
     };
     let issue = project.unwrap_or(Path::new("."));
-    let mut command = command(config, &model, prompt, &prompt_file, issue, Purpose::Draft);
+    let mut command = command(
+        config,
+        &model,
+        prompt,
+        &prompt_file,
+        issue,
+        Purpose::Draft,
+        None,
+    );
     if let Some(dir) = project.map(Workspace::of) {
         command.current_dir(dir.dir);
     }

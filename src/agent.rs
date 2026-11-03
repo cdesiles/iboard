@@ -648,6 +648,7 @@ fn command(
     prompt_file: &Path,
     issue: &Path,
     purpose: Purpose,
+    resume: Option<&str>,
 ) -> Command {
     let mut command = match config.tool {
         Tool::Custom => {
@@ -703,6 +704,9 @@ fn command(
                     command.arg("--disallowedTools").arg(denied.join(","));
                 }
             }
+            if let (Tool::Claude, Some(session)) = (tool, resume) {
+                command.arg("--resume").arg(session);
+            }
             if !model.is_empty() {
                 command.arg("--model").arg(model);
             }
@@ -754,17 +758,31 @@ pub fn run(
     )
 }
 
-/// Where an agent runs: the project it reads or edits, and for a build the
-/// log its output goes to.
+/// Where an agent runs: the project it reads or edits, for a build or an ask
+/// the log its output goes to, and for an ask the Claude Code session it
+/// resumes and the one it ran in.
 struct Workspace<'a> {
     dir: &'a Path,
     log: Option<&'a Path>,
+    resume: Option<&'a str>,
+    session: Option<&'a Mutex<Option<String>>>,
 }
 
 impl<'a> Workspace<'a> {
     fn of(dir: &'a Path) -> Self {
-        Workspace { dir, log: None }
+        Workspace {
+            dir,
+            log: None,
+            resume: None,
+            session: None,
+        }
     }
+}
+
+/// The Claude Code session a line of the agent's stream names, if any.
+fn session_of(line: &str) -> Option<String> {
+    let event: serde_json::Value = serde_json::from_str(line).ok()?;
+    event["session_id"].as_str().map(str::to_string)
 }
 
 /// [`run`] for `purpose`, in `workspace` when set; the agent's steps land in
@@ -794,7 +812,8 @@ fn run_with(
         Tool::Custom => "the custom command",
         tool => tool.key(),
     };
-    let mut command = command(config, &model, prompt, &prompt_file, issue, purpose);
+    let resume = workspace.and_then(|workspace| workspace.resume);
+    let mut command = command(config, &model, prompt, &prompt_file, issue, purpose, resume);
     if let Some(workspace) = workspace {
         command.current_dir(workspace.dir);
         if direnv::applies(DIRENV.load(Ordering::Relaxed), workspace.dir)
@@ -812,7 +831,13 @@ fn run_with(
         ANSWER_TIMEOUT
     };
     let streams = progress.filter(|_| !custom);
+    let session = workspace.and_then(|workspace| workspace.session);
     let output = process::run_with(command, what, cancel, timeout, |line| {
+        if let Some(session) = session
+            && let Some(id) = session_of(line)
+        {
+            *session.lock().unwrap_or_else(PoisonError::into_inner) = Some(id);
+        }
         if let Some(progress) = streams
             && let Some(step) = step_of(line)
         {
@@ -972,57 +997,95 @@ pub fn start_build(
     project: &Path,
     log: &Path,
 ) -> (Job<Result<String, String>>, Progress) {
-    start_logged(config, prompt, issue, (project, log), Purpose::Build)
+    let logged = Logged::new(config, prompt, issue, (project, log), Purpose::Build);
+    let progress = Progress::default();
+    let steps = Arc::clone(&progress);
+    let job = Job::spawn(move |cancel| logged.run(cancel, &steps).map(|asked| asked.answer));
+    (job, progress)
 }
 
-/// [`start_build`] for what the author of `issue` asked, within `leash`.
+/// What an ask answered, and the Claude Code session it ran in, which a
+/// follow-up resumes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asked {
+    pub answer: String,
+    pub session: Option<String>,
+}
+
+/// [`start_build`] for what the author of `issue` asked, within `leash`;
+/// with `resume`, the Claude Code session of the ask before goes on.
 pub fn start_ask(
     config: &AgentConfig,
     prompt: &str,
     issue: &Path,
     (project, log): (&Path, &Path),
     leash: Leash,
-) -> (Job<Result<String, String>>, Progress) {
-    start_logged(config, prompt, issue, (project, log), Purpose::Ask(leash))
-}
-
-fn start_logged(
-    config: &AgentConfig,
-    prompt: &str,
-    issue: &Path,
-    (project, log): (&Path, &Path),
-    purpose: Purpose,
-) -> (Job<Result<String, String>>, Progress) {
-    let (config, prompt) = (config.clone(), prompt.to_string());
-    let (issue, project, log) = (
-        issue.to_path_buf(),
-        project.to_path_buf(),
-        log.to_path_buf(),
-    );
+    resume: Option<&str>,
+) -> (Job<Result<Asked, String>>, Progress) {
+    let mut logged = Logged::new(config, prompt, issue, (project, log), Purpose::Ask(leash));
+    logged.resume = resume.map(str::to_string);
     let progress = Progress::default();
     let steps = Arc::clone(&progress);
-    let job = Job::spawn(move |cancel| {
+    let job = Job::spawn(move |cancel| logged.run(cancel, &steps));
+    (job, progress)
+}
+
+/// A run whose output goes to the issue's agent log: a build or an ask.
+struct Logged {
+    config: AgentConfig,
+    prompt: String,
+    issue: PathBuf,
+    project: PathBuf,
+    log: PathBuf,
+    purpose: Purpose,
+    resume: Option<String>,
+}
+
+impl Logged {
+    fn new(
+        config: &AgentConfig,
+        prompt: &str,
+        issue: &Path,
+        (project, log): (&Path, &Path),
+        purpose: Purpose,
+    ) -> Self {
+        Logged {
+            config: config.clone(),
+            prompt: prompt.to_string(),
+            issue: issue.to_path_buf(),
+            project: project.to_path_buf(),
+            log: log.to_path_buf(),
+            purpose,
+            resume: None,
+        }
+    }
+
+    /// Runs the agent under a heading in the log, then notes how it went.
+    fn run(&self, cancel: &Cancel, steps: &Progress) -> Result<Asked, String> {
         let at = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
         let started = std::time::Instant::now();
-        let _ = build_log::append(&log, &build_log::heading(&at, &config.label()));
+        let _ = build_log::append(&self.log, &build_log::heading(&at, &self.config.label()));
+        let session = Mutex::new(None);
         let workspace = Workspace {
-            dir: &project,
-            log: Some(&log),
+            dir: &self.project,
+            log: Some(&self.log),
+            resume: self.resume.as_deref(),
+            session: Some(&session),
         };
-        let steps = Some(&steps);
+        let (config, prompt, issue) = (&self.config, &self.prompt, &self.issue);
         let result = run_with(
-            &config,
-            &prompt,
-            &issue,
+            config,
+            prompt,
+            issue,
             cancel,
-            purpose,
-            steps,
+            self.purpose,
+            Some(steps),
             Some(&workspace),
         );
-        let _ = build_log::append(&log, &build_log::outcome(&result, started.elapsed()));
-        result
-    });
-    (job, progress)
+        let _ = build_log::append(&self.log, &build_log::outcome(&result, started.elapsed()));
+        let session = session.into_inner().unwrap_or_else(PoisonError::into_inner);
+        result.map(|answer| Asked { answer, session })
+    }
 }
 
 /// What one streamed event says the agent is doing: a tool call from

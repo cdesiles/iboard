@@ -40,7 +40,7 @@ impl AskDraft {
 
 /// An ask the agent is working on.
 pub(super) struct AskRun {
-    answer: Job<Result<String, String>>,
+    answer: Job<Result<agent::Asked, String>>,
 }
 
 impl IboardApp {
@@ -93,7 +93,7 @@ impl IboardApp {
         let project = self.board.project_of(&draft.path).to_path_buf();
         let log = build_log::path(self.board.root_of(&draft.path), &draft.path);
         let ends = (project.as_path(), log.as_path());
-        let (answer, _) = agent::start_ask(&config, &prompt, &draft.path, ends, leash);
+        let (answer, _) = agent::start_ask(&config, &prompt, &draft.path, ends, leash, None);
         self.session.asks.insert(draft.path, AskRun { answer });
     }
 
@@ -105,7 +105,10 @@ impl IboardApp {
             .session
             .asks
             .iter()
-            .filter_map(|(path, run)| Some((path.clone(), run.answer.answer()?)))
+            .filter_map(|(path, run)| {
+                let answer = run.answer.answer()?.map(|asked| asked.answer);
+                Some((path.clone(), answer))
+            })
             .collect();
         if self.session.asks.len() > done.len() {
             ctx.request_repaint_after(job::POLL_EVERY);

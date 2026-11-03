@@ -155,6 +155,7 @@ fn each_tool_gets_its_one_shot_arguments() {
         file,
         issue,
         Purpose::Answer,
+        None,
     );
     assert_eq!(args(&built), ["run", "--model", "vendor/model", "PROMPT"]);
     let built = command(
@@ -167,6 +168,7 @@ fn each_tool_gets_its_one_shot_arguments() {
             mode: ReviewMode::Quick,
             plan: false,
         },
+        None,
     );
     assert_eq!(args(&built), ["run", "--format", "json", "PROMPT"]);
 
@@ -174,14 +176,14 @@ fn each_tool_gets_its_one_shot_arguments() {
         tool: Tool::Claude,
         ..AgentConfig::default()
     };
-    let built = command(&claude, "", "PROMPT", file, issue, Purpose::Answer);
+    let built = command(&claude, "", "PROMPT", file, issue, Purpose::Answer, None);
     assert_eq!(args(&built), ["-p", "PROMPT"]);
     let stream = ["-p", "--output-format", "stream-json", "--verbose"];
     let quick = Purpose::Review {
         mode: ReviewMode::Quick,
         plan: false,
     };
-    let built = command(&claude, "", "PROMPT", file, issue, quick);
+    let built = command(&claude, "", "PROMPT", file, issue, quick, None);
     assert_eq!(
         args(&built),
         [&stream[..], &["--tools", "", "PROMPT"]].concat()
@@ -190,9 +192,9 @@ fn each_tool_gets_its_one_shot_arguments() {
         mode: ReviewMode::Deep,
         plan: false,
     };
-    let built = command(&claude, "", "PROMPT", file, issue, deep);
+    let built = command(&claude, "", "PROMPT", file, issue, deep, None);
     assert_eq!(args(&built), [&stream[..], &["PROMPT"]].concat());
-    let built = command(&claude, "", "PROMPT", file, issue, Purpose::Build);
+    let built = command(&claude, "", "PROMPT", file, issue, Purpose::Build, None);
     assert_eq!(
         args(&built),
         [&stream[..], &["--permission-mode", "acceptEdits", "PROMPT"]].concat()
@@ -208,6 +210,7 @@ fn each_tool_gets_its_one_shot_arguments() {
             mode: ReviewMode::Deep,
             plan: true,
         },
+        None,
     );
     assert_eq!(built.get_program(), "sh");
     assert_eq!(
@@ -649,8 +652,8 @@ fn asked(config: &AgentConfig, leash: Leash) -> String {
     let scratch = tempfile::tempdir().unwrap();
     let log = scratch.path().join("ask.log");
     let ends = (scratch.path(), log.as_path());
-    let (job, _) = start_ask(config, "PROMPT", Path::new("a.md"), ends, leash);
-    job.wait().unwrap().unwrap()
+    let (job, _) = start_ask(config, "PROMPT", Path::new("a.md"), ends, leash, None);
+    job.wait().unwrap().unwrap().answer
 }
 
 #[test]
@@ -689,4 +692,36 @@ fn ask_edits_or_reads_and_claude_is_denied_what_the_leash_holds() {
         deploys: true,
     };
     assert!(!asked(&tool(Tool::Claude), open).contains("--disallowedTools"));
+}
+
+#[test]
+fn an_ask_resumes_its_session_and_names_the_one_it_ran_in() {
+    let scratch = tempfile::tempdir().unwrap();
+    let log = scratch.path().join("ask.log");
+    let ends = (scratch.path(), log.as_path());
+    let leash = Leash {
+        edits: true,
+        commits: true,
+        deploys: true,
+    };
+    let (job, _) = start_ask(
+        &tool(Tool::Claude),
+        "PROMPT",
+        Path::new("a.md"),
+        ends,
+        leash,
+        Some("s-41"),
+    );
+    let answer = job.wait().unwrap().unwrap().answer;
+    assert!(answer.contains("--resume\ns-41\n--model"), "{answer}");
+
+    let init = r#"{"type":"system","subtype":"init","session_id":"s-42"}"#;
+    let config = custom(&format!(
+        "printf '%s\\n' '{init}'; printf done # {{prompt}}"
+    ));
+    let (job, _) = start_ask(&config, "PROMPT", Path::new("a.md"), ends, leash, None);
+    assert_eq!(
+        job.wait().unwrap().unwrap().session.as_deref(),
+        Some("s-42")
+    );
 }
