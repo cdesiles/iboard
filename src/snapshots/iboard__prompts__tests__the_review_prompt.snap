@@ -1,6 +1,6 @@
 ---
 source: src/prompts.rs
-expression: "review_prompt(ISSUE, ReviewMode::Quick)"
+expression: "review_prompt(ISSUE, ReviewMode::Quick, &[])"
 ---
 You review software issues before they are implemented. Read only the issue: do not open files or run tools. Judge the issue below on three axes and answer with nothing but this exact format:
 
@@ -12,6 +12,8 @@ CLARITY: Pass|Challenge|Block
 <one or two sentences: could a human or an agent implement it without a follow-up question; is there enough guidance on the user experience; list what is missing, contradictory or assumed>
 PROPOSAL:
 <a full improved issue in markdown, or the single word NONE>
+
+The proposal replaces the issue as it is written: write every section out in full, never a placeholder such as "(unchanged)" or "same as before". Format it as Markdown: commands, file names, paths and identifiers in backticks, and several steps as a list, one per line.
 
 ---
 # Taller header

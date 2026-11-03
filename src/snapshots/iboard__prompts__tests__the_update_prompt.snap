@@ -13,6 +13,8 @@ CLARITY: Pass|Challenge|Block
 PROPOSAL:
 <the whole issue rewritten as things stand, keeping its front matter and its structure, its next step brought up to date; or the single word NONE when it is still accurate>
 
+The proposal replaces the issue as it is written: write every section out in full, never a placeholder such as "(unchanged)" or "same as before". Format it as Markdown: commands, file names, paths and identifiers in backticks, and several steps as a list, one per line.
+
 ---
 # Taller header
 

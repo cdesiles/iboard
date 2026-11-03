@@ -96,12 +96,21 @@ pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]
          PROPOSAL:\n\
          <a full improved issue in markdown, or the single word NONE>\n\
          \n\
+         {PROPOSAL_RULES}\n\
+         \n\
          ---\n\
          {content}"
     );
     push_notes(&mut prompt, notes);
     prompt
 }
+
+/// How an agent writes the proposal it is asked for: the issue's whole new
+/// text, which Apply puts in place as is.
+const PROPOSAL_RULES: &str = "The proposal replaces the issue as it is written: write every \
+     section out in full, never a placeholder such as \"(unchanged)\" or \"same as before\". \
+     Format it as Markdown: commands, file names, paths and identifiers in backticks, and \
+     several steps as a list, one per line.";
 
 /// The instruction for Update with AI: the agent checks, in the issue's
 /// project, where the issue stands on `today`, changes nothing, and answers in
@@ -123,6 +132,8 @@ pub fn update_prompt(content: &str, today: &str) -> String {
          PROPOSAL:\n\
          <the whole issue rewritten as things stand, keeping its front matter and its structure, \
          its next step brought up to date; or the single word NONE when it is still accurate>\n\
+         \n\
+         {PROPOSAL_RULES}\n\
          \n\
          ---\n\
          {content}"
