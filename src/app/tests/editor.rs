@@ -33,6 +33,25 @@ fn renaming_an_issue_via_the_editor_moves_the_file() {
     );
 }
 
+/// Bug: a name edited in the editor left the review panel on the old file.
+#[test]
+fn the_review_panel_follows_a_rename_in_the_editor() {
+    let (_dir, file, mut app) = open_issue_with_review("rename-review");
+
+    app.start_editing(&file);
+    app.session.editor.as_mut().unwrap().name = "01-renamed".to_string();
+    app.flush_autosave(false);
+
+    let renamed = file.with_file_name("01-renamed.md");
+    assert!(renamed.exists(), "the issue is renamed on disk");
+    assert_eq!(
+        app.session.review.as_ref().map(|review| &review.path),
+        Some(&renamed),
+        "the review panel follows the renamed file"
+    );
+    assert_eq!(app.session.selected, Some(renamed), "so does the selection");
+}
+
 #[test]
 fn renaming_onto_an_existing_issue_is_refused() {
     let dir = scratch_dir("rename-clash");

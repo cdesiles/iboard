@@ -91,13 +91,7 @@ impl IboardApp {
         };
         if let Some((old, target)) = renamed {
             self.rename_images(&old, &target);
-            // Keep the reader and the selection on the issue's new file name.
-            self.session.selected = Some(target.clone());
-            if let Screen::Detail(open) = &mut self.session.screen
-                && open != &target
-            {
-                *open = target;
-            }
+            self.apply_renames(&[(old, target)]);
         }
         if saved {
             self.refresh();
