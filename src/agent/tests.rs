@@ -1,5 +1,7 @@
 use super::answer::proposal_of;
+use super::tools::{parse_claude_model, parse_model_list, parse_opencode_favorites, parse_version};
 use super::*;
+use crate::settings;
 
 #[test]
 fn verdicts_survive_markdown_and_punctuation() {
