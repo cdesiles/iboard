@@ -60,6 +60,7 @@ pub(super) struct AskRun {
 enum PanelAction {
     Send,
     Stop,
+    Terminal,
 }
 
 impl IboardApp {
@@ -101,6 +102,25 @@ impl IboardApp {
         self.close_review();
         self.session.agent_log = None;
         self.session.ask_panel = Some(AskPanel::new(path.to_path_buf(), chat));
+    }
+
+    /// Continue in terminal: the conversation's session, in Terminal.
+    fn continue_in_terminal(&mut self, path: &Path) {
+        let Some(session) = self
+            .session
+            .ask_panel
+            .as_ref()
+            .and_then(|panel| panel.chat.session.clone())
+        else {
+            return;
+        };
+        match agent::continue_in_terminal(self.board.project_of(path), &session) {
+            Ok(()) => {
+                let notice = format!("Opened the session of {} in Terminal", file_name(path));
+                self.session.notice = Some((notice, Instant::now()));
+            }
+            Err(err) => self.error = Some(err),
+        }
     }
 
     fn stop_ask(&mut self, path: &Path) {
@@ -303,6 +323,7 @@ impl IboardApp {
         match action {
             Some(PanelAction::Send) => self.send_ask(),
             Some(PanelAction::Stop) => self.stop_ask(&path),
+            Some(PanelAction::Terminal) => self.continue_in_terminal(&path),
             None => {}
         }
     }
@@ -374,6 +395,23 @@ fn composer(ui: &mut egui::Ui, panel: &mut AskPanel, running: bool) -> Option<Pa
         }
         if running && widgets::button(ui, ButtonKind::Secondary, None, "Stop", None).clicked() {
             action = Some(PanelAction::Stop);
+        }
+        let resumable = !running && panel.chat.session.is_some();
+        let terminal = ui
+            .add_enabled_ui(resumable, |ui| {
+                widgets::button(
+                    ui,
+                    ButtonKind::Secondary,
+                    None,
+                    "Continue in terminal",
+                    None,
+                )
+            })
+            .inner
+            .on_hover_text("Go on with this Claude Code session in Terminal, from the project")
+            .on_disabled_hover_text("Once the agent answered, with Claude Code");
+        if terminal.clicked() {
+            action = Some(PanelAction::Terminal);
         }
     });
     if ready && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter)) {

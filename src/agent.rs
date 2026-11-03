@@ -1004,6 +1004,24 @@ pub fn start_build(
     (job, progress)
 }
 
+/// Opens Claude Code's `session` in Terminal, from `project`, through
+/// direnv when agent runs there are.
+pub fn continue_in_terminal(project: &Path, session: &str) -> Result<(), String> {
+    let direnv = direnv::applies(DIRENV.load(Ordering::Relaxed), project)
+        .then(|| find_binary("direnv"))
+        .flatten();
+    let script = terminal::script(project, session, &Tool::Claude.program(), direnv.as_deref());
+    let file = terminal::write(&std::env::temp_dir(), &script, session)?;
+    let status = Command::new("open")
+        .arg(&file)
+        .status()
+        .map_err(|err| format!("Couldn't run open: {err}"))?;
+    match status.success() {
+        true => Ok(()),
+        false => Err(format!("open {} failed", file.display())),
+    }
+}
+
 /// What an ask answered, and the Claude Code session it ran in, which a
 /// follow-up resumes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1449,6 +1467,7 @@ fn verdict_and_note(rest: &str) -> Option<(Verdict, &str)> {
 
 mod direnv;
 mod draft;
+mod terminal;
 
 pub use draft::{DraftText, start_draft};
 
