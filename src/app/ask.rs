@@ -214,7 +214,7 @@ impl IboardApp {
         }
         for (path, result) in done {
             self.session.asks.remove(&path);
-            self.refresh();
+            self.rescan();
             match result {
                 Ok(asked) => {
                     let line = asked

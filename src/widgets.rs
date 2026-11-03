@@ -46,7 +46,7 @@ pub fn thinking(ui: &mut Ui, size: f32) -> Response {
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Working"));
     let time = (!theme::reduced_motion(ui.ctx())).then(|| ui.input(|i| i.time));
     if time.is_some() {
-        ui.ctx().request_repaint();
+        ui.ctx().request_repaint_after(theme::ANIMATION_FRAME);
     }
     theme::thinking_mark(ui.painter(), rect, time, p.ink, p.accent);
     response

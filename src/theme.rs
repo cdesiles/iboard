@@ -422,6 +422,11 @@ pub fn reduced_motion(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp(reduced_motion_id()).unwrap_or(false))
 }
 
+/// How often the endless animations (the Thinking mark, Skeletons) move: at
+/// the display's rate they kept the app redrawing and lagging while an agent
+/// worked.
+pub const ANIMATION_FRAME: std::time::Duration = std::time::Duration::from_millis(66);
+
 /// How long an animation of `secs` lasts here: none with reduced motion.
 pub fn motion(ctx: &egui::Context, secs: f32) -> f32 {
     if reduced_motion(ctx) { 0.0 } else { secs }
@@ -433,7 +438,7 @@ pub fn skeleton_fill(ctx: &egui::Context, p: &Palette) -> Color32 {
     if reduced_motion(ctx) {
         return p.surface_sunken;
     }
-    ctx.request_repaint();
+    ctx.request_repaint_after(ANIMATION_FRAME);
     let phase = (ctx.input(|i| i.time) % 1.6 / 1.6) as f32;
     let opacity = 0.75 + 0.25 * (phase * std::f32::consts::TAU).cos();
     p.surface.lerp_to_gamma(p.surface_sunken, opacity)

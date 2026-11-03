@@ -319,6 +319,14 @@ impl IboardApp {
         true
     }
 
+    /// Reads the board again off the UI thread; it is adopted once read.
+    pub(super) fn rescan(&mut self) {
+        self.last_refresh = Instant::now();
+        let source = self.source();
+        let rescan = Job::spawn(move |_| scan(&source));
+        self.session.scan = Some((rescan, self.board_generation));
+    }
+
     /// The Diff screen's own keys: `⌘F` finds, and the moves between files,
     /// hunks and lines while the find field does not have the keyboard.
     fn diff_keys(&mut self, ctx: &egui::Context) {
@@ -541,10 +549,7 @@ impl IboardApp {
         // RESCAN_EVERY, off the UI thread.
         if self.auto || self.watching_ready() {
             if self.session.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
-                self.last_refresh = Instant::now();
-                let source = self.source();
-                let rescan = Job::spawn(move |_| scan(&source));
-                self.session.scan = Some((rescan, self.board_generation));
+                self.rescan();
             }
             ctx.request_repaint_after(RESCAN_EVERY);
         }
