@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help hooks run iboard idesign list check test lint fmt toolchain build release install app install-app clean
+.PHONY: help hooks run iboard idesign list check test lint fmt toolchain build release install app install-app bump clean
 
 # `make run` launches iboard; `make run idesign` switches to the design tool.
 BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
@@ -7,6 +7,11 @@ BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
 SWIFT_FORMAT := $(shell xcrun --find swift-format 2>/dev/null)
 PINNED_RUST := $(shell sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
 VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
+NEXT_VERSION = $(shell echo $(VERSION) | awk -F. -v to='$(TO)' '\
+	to == "major" { printf "%d.0.0", $$1 + 1 } \
+	to == "minor" { printf "%d.%d.0", $$1, $$2 + 1 } \
+	to == "patch" { printf "%d.%d.%d", $$1, $$2, $$3 + 1 } \
+	to ~ /^[0-9]+\.[0-9]+\.[0-9]+$$/ { print to }')
 APP_DIR ?= $(HOME)/Applications
 
 help: ## Show this help
@@ -90,3 +95,15 @@ install-app: app ## Install target/iboard.app into ~/Applications (or $(APP_DIR)
 	rm -rf "$(APP_DIR)/iboard.app"
 	cp -R target/iboard.app "$(APP_DIR)/iboard.app"
 	@echo "Installed $(APP_DIR)/iboard.app"
+
+##@ Version
+
+bump: ## Set the version, commit and tag it: make bump TO=patch, minor, major or x.y.z
+	@test -n "$(NEXT_VERSION)" || { echo 'usage: make bump TO=patch|minor|major|x.y.z' >&2; exit 2; }
+	@git diff --quiet HEAD -- Cargo.toml Cargo.lock || { echo 'Cargo.toml or Cargo.lock has uncommitted changes' >&2; exit 1; }
+	@if git rev-parse --quiet --verify refs/tags/v$(NEXT_VERSION) >/dev/null; then echo 'v$(NEXT_VERSION) is already tagged' >&2; exit 1; fi
+	sed -i.bak 's/^version = ".*"/version = "$(NEXT_VERSION)"/' Cargo.toml && rm Cargo.toml.bak
+	cargo update --workspace
+	git commit -m 'Release $(NEXT_VERSION)' -- Cargo.toml Cargo.lock
+	git tag -a v$(NEXT_VERSION) -m 'iboard $(NEXT_VERSION)'
+	@echo 'Push it with: git push --follow-tags'
