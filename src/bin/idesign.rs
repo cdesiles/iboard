@@ -27,7 +27,7 @@ use iboard::design_ui;
 const DEFAULT_WIDTH: u32 = 1200;
 const DEFAULT_HEIGHT: u32 = 900;
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq)]
 struct Flags {
     group: Option<String>,
     intent: Option<String>,
@@ -40,86 +40,69 @@ struct Flags {
     browser: bool,
 }
 
-fn main() -> ExitCode {
-    let mut positionals: Vec<String> = Vec::new();
-    let mut flags = Flags::default();
+impl Flags {
+    fn any(&self) -> bool {
+        *self != Self::default()
+    }
+}
 
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "-h" | "--help" => {
+#[derive(Debug, PartialEq)]
+struct Cli {
+    positionals: Vec<String>,
+    flags: Flags,
+}
+
+enum Failure {
+    Usage(String),
+    Unknown(String),
+    Error(String),
+    Invalid,
+}
+
+impl From<String> for Failure {
+    fn from(message: String) -> Self {
+        Self::Error(message)
+    }
+}
+
+impl Failure {
+    fn report(self) -> ExitCode {
+        match self {
+            Self::Usage(message) => {
+                eprintln!("idesign: {message}");
+                ExitCode::from(2)
+            }
+            Self::Unknown(message) => {
+                eprintln!("idesign: {message}\n");
                 print_help();
-                return ExitCode::SUCCESS;
+                ExitCode::from(2)
             }
-            "-V" | "--version" => {
-                println!("{} {}", env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"));
-                return ExitCode::SUCCESS;
+            Self::Error(message) => {
+                eprintln!("idesign: {message}");
+                ExitCode::FAILURE
             }
-            "--group" => match take(&mut args, "--group") {
-                Ok(value) => flags.group = Some(value),
-                Err(code) => return code,
-            },
-            "--intent" => match take(&mut args, "--intent") {
-                Ok(value) => flags.intent = Some(value),
-                Err(code) => return code,
-            },
-            "--into" => match take(&mut args, "--into") {
-                Ok(value) => flags.into = Some(value),
-                Err(code) => return code,
-            },
-            "--out" => match take(&mut args, "--out") {
-                Ok(value) => flags.out = Some(value),
-                Err(code) => return code,
-            },
-            "--theme" => match take(&mut args, "--theme") {
-                Ok(value) => flags.theme = Some(value),
-                Err(code) => return code,
-            },
-            "--width" => match take_number(&mut args, "--width") {
-                Ok(value) => flags.width = Some(value),
-                Err(code) => return code,
-            },
-            "--height" => match take_number(&mut args, "--height") {
-                Ok(value) => flags.height = Some(value),
-                Err(code) => return code,
-            },
-            "--view" => flags.view = true,
-            "--browser" => flags.browser = true,
-            other if other.starts_with('-') => {
-                eprintln!("idesign: unknown option `{other}`\n");
-                print_help();
-                return ExitCode::from(2);
-            }
-            other => positionals.push(other.to_string()),
+            Self::Invalid => ExitCode::FAILURE,
         }
     }
+}
 
-    let command = positionals
-        .first()
-        .map(String::as_str)
-        .unwrap_or("show")
-        .to_string();
-    // No command is the default `show`; the rest is empty, not a panic.
-    let rest: &[String] = positionals.get(1..).unwrap_or(&[]);
-
-    // No command in a terminal: browse the system in a window. Piped output, or
-    // any command or flag, stays a CLI so scripts keep working.
-    let flags_set = flags.group.is_some()
-        || flags.intent.is_some()
-        || flags.into.is_some()
-        || flags.out.is_some()
-        || flags.theme.is_some()
-        || flags.width.is_some()
-        || flags.height.is_some()
-        || flags.view;
+fn main() -> ExitCode {
+    let cli = match parse(std::env::args().skip(1)) {
+        Ok(cli) => cli,
+        Err(code) => return code,
+    };
     // `--browser` always opens the egui panel, even where a live catalog exists.
-    if flags.browser {
+    if cli.flags.browser {
         let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         return run_gui(start);
     }
     // A bare run in a terminal opens the live catalog when the webview helper
     // was built, and the egui browser otherwise (or with no system).
-    if wants_gui(&positionals, flags_set, std::io::stdout().is_terminal()) {
+    if wants_gui(
+        &cli.positionals,
+        cli.flags.any(),
+        std::io::stdout().is_terminal(),
+    ) {
         let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         if design::catalog::available()
             && let Ok(system) = DesignSystem::discover(&start)
@@ -129,97 +112,122 @@ fn main() -> ExitCode {
                     println!("{}", path.display());
                     ExitCode::SUCCESS
                 }
-                Err(err) => {
-                    eprintln!("idesign: {err}");
-                    ExitCode::FAILURE
-                }
+                Err(err) => Failure::from(err).report(),
             };
         }
         return run_gui(start);
     }
+    match run(&cli) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(failure) => failure.report(),
+    }
+}
 
-    match command.as_str() {
+fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, ExitCode> {
+    let mut positionals: Vec<String> = Vec::new();
+    let mut flags = Flags::default();
+
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print_help();
+                return Err(ExitCode::SUCCESS);
+            }
+            "-V" | "--version" => {
+                println!("{} {}", env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"));
+                return Err(ExitCode::SUCCESS);
+            }
+            "--group" => flags.group = Some(take(&mut args, "--group")?),
+            "--intent" => flags.intent = Some(take(&mut args, "--intent")?),
+            "--into" => flags.into = Some(take(&mut args, "--into")?),
+            "--out" => flags.out = Some(take(&mut args, "--out")?),
+            "--theme" => flags.theme = Some(take(&mut args, "--theme")?),
+            "--width" => flags.width = Some(take_number(&mut args, "--width")?),
+            "--height" => flags.height = Some(take_number(&mut args, "--height")?),
+            "--view" => flags.view = true,
+            "--browser" => flags.browser = true,
+            other if other.starts_with('-') => {
+                return Err(Failure::Unknown(format!("unknown option `{other}`")).report());
+            }
+            other => positionals.push(other.to_string()),
+        }
+    }
+    Ok(Cli { positionals, flags })
+}
+
+fn take(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, ExitCode> {
+    args.next()
+        .ok_or_else(|| Failure::Usage(format!("{flag} needs a value")).report())
+}
+
+fn take_number(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<u32, ExitCode> {
+    let value = take(args, flag)?;
+    value
+        .parse::<u32>()
+        .map_err(|_| Failure::Usage(format!("{flag} needs a number, got `{value}`")).report())
+}
+
+fn run(cli: &Cli) -> Result<(), Failure> {
+    let flags = &cli.flags;
+    let command = cli
+        .positionals
+        .first()
+        .map(String::as_str)
+        .unwrap_or("show");
+    // No command is the default `show`; the rest is empty, not a panic.
+    let rest: &[String] = cli.positionals.get(1..).unwrap_or(&[]);
+
+    match command {
         "render" => {
             let (Some(html), Some(png)) = (rest.first(), rest.get(1)) else {
-                eprintln!("idesign: render needs an HTML file and an output PNG");
-                return ExitCode::from(2);
+                return Err(Failure::Usage(
+                    "render needs an HTML file and an output PNG".to_string(),
+                ));
             };
-            return render_file(Path::new(html), Path::new(png), &flags);
+            return render_file(Path::new(html), Path::new(png), flags);
         }
         "import" => {
             let Some(package) = rest.first() else {
-                eprintln!("idesign: import needs a package folder");
-                return ExitCode::from(2);
+                return Err(Failure::Usage("import needs a package folder".to_string()));
             };
-            return import(package, rest.get(1), &flags);
+            return import(package, rest.get(1), flags);
         }
         _ => {}
     }
 
     // Everything else reads the design system first.
-    let (name, path) = match command.as_str() {
+    let (name, path) = match command {
         "add-component" | "preview" => (rest.first().cloned(), rest.get(1).cloned()),
         _ => (None, rest.first().cloned()),
     };
     let start = resolve(path.as_ref());
 
-    let mut system = match DesignSystem::discover(&start) {
-        Ok(system) => system,
-        Err(err) => {
-            eprintln!("idesign: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let mut system = DesignSystem::discover(&start)?;
 
-    match command.as_str() {
+    match command {
         "show" => print!("{}", system.describe()),
         "list" => list(&system),
         "tokens" => tokens(&system),
         "validate" => return validate(&system),
-        "catalog" => return catalog(&system, &flags),
+        "catalog" => return catalog(&system, flags),
         "add-component" => {
             let Some(name) = name else {
-                eprintln!("idesign: add-component needs a NAME");
-                return ExitCode::from(2);
+                return Err(Failure::Usage("add-component needs a NAME".to_string()));
             };
             let group = flags.group.as_deref().unwrap_or("Components");
-            match system.add_component(&name, group, flags.intent.as_deref()) {
-                Ok(dir) => println!("created {}", dir.display()),
-                Err(err) => {
-                    eprintln!("idesign: {err}");
-                    return ExitCode::FAILURE;
-                }
-            }
+            let dir = system.add_component(&name, group, flags.intent.as_deref())?;
+            println!("created {}", dir.display());
         }
         "preview" => {
             let Some(name) = name else {
-                eprintln!("idesign: preview needs a component NAME");
-                return ExitCode::from(2);
+                return Err(Failure::Usage("preview needs a component NAME".to_string()));
             };
-            return preview(&system, &name, &flags);
+            return preview(&system, &name, flags);
         }
-        other => {
-            eprintln!("idesign: unknown command `{other}`\n");
-            print_help();
-            return ExitCode::from(2);
-        }
+        other => return Err(Failure::Unknown(format!("unknown command `{other}`"))),
     }
-    ExitCode::SUCCESS
-}
-
-fn take(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, ExitCode> {
-    args.next().ok_or_else(|| {
-        eprintln!("idesign: {flag} needs a value");
-        ExitCode::from(2)
-    })
-}
-
-fn take_number(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<u32, ExitCode> {
-    let value = take(args, flag)?;
-    value.parse::<u32>().map_err(|_| {
-        eprintln!("idesign: {flag} needs a number, got `{value}`");
-        ExitCode::from(2)
-    })
+    Ok(())
 }
 
 fn resolve(path: Option<&String>) -> PathBuf {
@@ -227,69 +235,30 @@ fn resolve(path: Option<&String>) -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
-fn render_file(html: &Path, png: &Path, flags: &Flags) -> ExitCode {
+fn render_file(html: &Path, png: &Path, flags: &Flags) -> Result<(), Failure> {
     let width = flags.width.unwrap_or(DEFAULT_WIDTH);
     let height = flags.height.unwrap_or(DEFAULT_HEIGHT);
-    match design::render::snapshot(html, png, width, height) {
-        Ok(path) => {
-            println!("{}", path.display());
-            ExitCode::SUCCESS
-        }
-        Err(err) => {
-            eprintln!("idesign: {err}");
-            ExitCode::FAILURE
-        }
-    }
+    let path = design::render::snapshot(html, png, width, height)?;
+    println!("{}", path.display());
+    Ok(())
 }
 
-fn preview(system: &DesignSystem, name: &str, flags: &Flags) -> ExitCode {
+fn preview(system: &DesignSystem, name: &str, flags: &Flags) -> Result<(), Failure> {
     let Some(component) = system.components.iter().find(|c| c.name == name) else {
-        eprintln!("idesign: no component named `{name}`");
-        return ExitCode::FAILURE;
+        return Err(Failure::Error(format!("no component named `{name}`")));
     };
     let theme = flags.theme.as_deref().unwrap_or("light");
-    let html = match design::css::preview_html(system, component, theme) {
-        Ok(html) => html,
-        Err(err) => {
-            eprintln!("idesign: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let (html_path, png) = match design::render::preview_paths(name) {
-        Ok(paths) => paths,
-        Err(err) => {
-            eprintln!("idesign: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    if let Err(err) = std::fs::write(&html_path, &html) {
-        eprintln!("idesign: couldn't write {}: {err}", html_path.display());
-        return ExitCode::FAILURE;
-    }
+    let html = design::css::preview_html(system, component, theme)?;
+    let (html_path, png) = design::render::preview_paths(name)?;
+    std::fs::write(&html_path, &html)
+        .map_err(|err| format!("couldn't write {}: {err}", html_path.display()))?;
     let out = flags.out.as_ref().map(PathBuf::from).unwrap_or(png);
-    let width = flags.width.unwrap_or(DEFAULT_WIDTH);
-    let height = flags.height.unwrap_or(DEFAULT_HEIGHT);
-    match design::render::snapshot(&html_path, &out, width, height) {
-        Ok(path) => {
-            println!("{}", path.display());
-            ExitCode::SUCCESS
-        }
-        Err(err) => {
-            eprintln!("idesign: {err}");
-            ExitCode::FAILURE
-        }
-    }
+    render_file(&html_path, &out, flags)
 }
 
-fn import(package: &str, path: Option<&String>, flags: &Flags) -> ExitCode {
+fn import(package: &str, path: Option<&String>, flags: &Flags) -> Result<(), Failure> {
     let package_dir = Path::new(package);
-    let read = match design::open_design::read(package_dir) {
-        Ok(read) => read,
-        Err(err) => {
-            eprintln!("idesign: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let read = design::open_design::read(package_dir)?;
     for warning in &read.warnings {
         println!("note: {warning}");
     }
@@ -298,27 +267,19 @@ fn import(package: &str, path: Option<&String>, flags: &Flags) -> ExitCode {
         None => resolve(path).join("design"),
     };
     if design_dir.join("design-system.json").is_file() {
-        eprintln!(
-            "idesign: {} already holds a design system; pass --into to choose another folder",
+        return Err(Failure::Error(format!(
+            "{} already holds a design system; pass --into to choose another folder",
             design_dir.display()
-        );
-        return ExitCode::FAILURE;
+        )));
     }
-    match read.write(&design_dir) {
-        Ok(system) => {
-            println!(
-                "imported {} ({}) into {}",
-                system.meta.title,
-                system.meta.namespace,
-                design_dir.display()
-            );
-            ExitCode::SUCCESS
-        }
-        Err(err) => {
-            eprintln!("idesign: {err}");
-            ExitCode::FAILURE
-        }
-    }
+    let system = read.write(&design_dir)?;
+    println!(
+        "imported {} ({}) into {}",
+        system.meta.title,
+        system.meta.namespace,
+        design_dir.display()
+    );
+    Ok(())
 }
 
 /// One line per component, naming which files it ships.
@@ -393,29 +354,20 @@ fn format_value(value: &TokenValue, themes: &[&str]) -> String {
 }
 
 /// Write the live catalog page, and optionally show it.
-fn catalog(system: &DesignSystem, flags: &Flags) -> ExitCode {
+fn catalog(system: &DesignSystem, flags: &Flags) -> Result<(), Failure> {
     let theme = flags.theme.as_deref().unwrap_or("light");
     let out = flags.out.as_deref().map(Path::new);
-    let path = match design::catalog::write(system, theme, out) {
-        Ok(path) => path,
-        Err(err) => {
-            eprintln!("idesign: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let path = design::catalog::write(system, theme, out)?;
     if flags.view {
         let title = format!("{} — design catalog", system.meta.title);
-        if let Err(err) = design::catalog::open(&path, &title) {
-            eprintln!("idesign: {err}");
-            return ExitCode::FAILURE;
-        }
+        design::catalog::open(&path, &title)?;
     }
     println!("{}", path.display());
-    ExitCode::SUCCESS
+    Ok(())
 }
 
 /// Fatal errors first, then warnings; exit 1 when anything is fatal.
-fn validate(system: &DesignSystem) -> ExitCode {
+fn validate(system: &DesignSystem) -> Result<(), Failure> {
     let errors = system.errors();
     for warning in &system.warnings {
         println!("warning: {warning}");
@@ -430,9 +382,9 @@ fn validate(system: &DesignSystem) -> ExitCode {
             system.components.len(),
             system.warnings.len()
         );
-        ExitCode::SUCCESS
+        Ok(())
     } else {
-        ExitCode::FAILURE
+        Err(Failure::Invalid)
     }
 }
 
@@ -605,6 +557,95 @@ fn run_gui(start: PathBuf) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn args(line: &str) -> Vec<String> {
+        line.split_whitespace().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn options_and_positionals_mix_in_any_order() {
+        let cli = parse(args(
+            "preview --theme dark Button --width 640 design --view",
+        ));
+        assert_eq!(
+            cli,
+            Ok(Cli {
+                positionals: args("preview Button design"),
+                flags: Flags {
+                    theme: Some("dark".to_string()),
+                    width: Some(640),
+                    view: true,
+                    ..Flags::default()
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn every_option_is_read() {
+        let cli = parse(args(
+            "--group Controls --intent -x --into dir --out a.png --theme dark \
+             --width 10 --height 20 --view --browser",
+        ))
+        .unwrap();
+        assert!(cli.positionals.is_empty());
+        assert_eq!(
+            cli.flags,
+            Flags {
+                group: Some("Controls".to_string()),
+                intent: Some("-x".to_string()),
+                into: Some("dir".to_string()),
+                out: Some("a.png".to_string()),
+                theme: Some("dark".to_string()),
+                width: Some(10),
+                height: Some(20),
+                view: true,
+                browser: true,
+            }
+        );
+    }
+
+    #[test]
+    fn any_option_counts_as_a_flag() {
+        assert!(!parse(args("")).unwrap().flags.any());
+        assert!(!parse(args("show design")).unwrap().flags.any());
+        for option in [
+            "--group G",
+            "--intent why",
+            "--into dir",
+            "--out a.png",
+            "--theme dark",
+            "--width 0",
+            "--height 0",
+            "--view",
+            "--browser",
+        ] {
+            assert!(parse(args(option)).unwrap().flags.any(), "{option}");
+        }
+    }
+
+    #[test]
+    fn a_wrong_option_is_a_usage_error() {
+        for wrong in [
+            "--group",
+            "list --theme",
+            "--width wide",
+            "--height -1",
+            "--nope",
+            "list -x",
+        ] {
+            assert_eq!(parse(args(wrong)), Err(ExitCode::from(2)), "{wrong}");
+        }
+    }
+
+    #[test]
+    fn help_and_version_stop_the_parse() {
+        for flag in ["-h", "--help", "-V", "--version"] {
+            let line = format!("list {flag} --nope");
+            assert_eq!(parse(args(&line)), Err(ExitCode::SUCCESS), "{line}");
+        }
+        assert_eq!(parse(args("--nope --help")), Err(ExitCode::from(2)));
+    }
 
     #[test]
     fn the_browser_opens_only_for_a_bare_run_in_a_terminal() {
