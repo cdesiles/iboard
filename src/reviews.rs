@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::discovery;
 use crate::files;
+use crate::priority;
 
 /// The folder under the issues root; discovery skips dot-folders.
 pub const DIR: &str = ".reviews";
@@ -75,7 +75,7 @@ pub fn content_hash(text: &str) -> String {
 /// The key an issue's sidecar goes by: `003-split.md` → `split`.
 pub fn slug(issue: &Path) -> String {
     let name = files::file_name(issue);
-    let name = discovery::strip_priority(&name);
+    let name = priority::strip_priority(&name);
     name.strip_suffix(".md").unwrap_or(name).to_string()
 }
 

@@ -11,7 +11,7 @@ use std::path::Path;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
 
 use super::PAGE;
-use crate::{build_log, discovery, git};
+use crate::{build_log, git, priority};
 
 /// One issue closed on the page, and how long it took.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +96,7 @@ pub(super) fn collect(dir: &Path, root: &Path, newest: &str) -> Result<Cycles, S
 }
 
 fn slug(file: &str) -> String {
-    let name = discovery::strip_priority(file);
+    let name = priority::strip_priority(file);
     name.strip_suffix(".md").unwrap_or(name).to_string()
 }
 

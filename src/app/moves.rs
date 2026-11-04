@@ -1,11 +1,12 @@
 //! Moving, reordering, deleting and archiving issue files, and undoing a delete.
 
 use super::*;
+use crate::priority;
 
 impl IboardApp {
     /// Moves a dragged issue into another column's directory, keeping its file
     /// name apart from the Ready priority number (see
-    /// [`discovery::moved_name`]). An existing file with the same name is never
+    /// [`priority::moved_name`]). An existing file with the same name is never
     /// overwritten. On a workspace board the issue stays in its own project.
     /// Returns the issue's new path on success.
     pub(super) fn move_issue(&mut self, path: &Path, target_dir: &Path) -> Option<PathBuf> {
@@ -23,7 +24,7 @@ impl IboardApp {
         if from_dir == target_dir {
             return Some(path.to_path_buf());
         }
-        let name = discovery::moved_name(&name.to_string_lossy(), from_dir, target_dir);
+        let name = priority::moved_name(&name.to_string_lossy(), from_dir, target_dir);
         let target = target_dir.join(&name);
         if target.exists() {
             self.error = Some(format!(
@@ -139,7 +140,7 @@ impl IboardApp {
         order.splice(at..at, moved.iter().cloned());
         let renamed = match self.showing_group() {
             true => self.reorder_across(dir, &all, &order),
-            false => discovery::renumber_each(&order),
+            false => priority::renumber_each(&order),
         };
         match renamed {
             Ok(renames) => self.apply_renames(&renames),

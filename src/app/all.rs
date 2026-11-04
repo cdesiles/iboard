@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::discovery::Repo;
+use crate::priority;
 
 /// What the board shows: one project, or every project of a group.
 #[derive(Clone)]
@@ -107,7 +108,7 @@ impl IboardApp {
         for folder in folders {
             let after = own(order, folder);
             if own(before, folder) != after {
-                renames.extend(discovery::renumber(folder, &after)?);
+                renames.extend(priority::renumber(folder, &after)?);
             }
         }
         let renamed: Vec<PathBuf> = order

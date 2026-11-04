@@ -19,6 +19,7 @@ use crate::discovery::{self, Board, Column, Located, Repo};
 use crate::files;
 use crate::issue::Issue;
 use crate::labels;
+use crate::priority;
 use crate::settings::{self, UserConfig};
 
 pub mod config;
@@ -227,7 +228,7 @@ fn sort(column: &mut Column, repos: &[Repo]) {
     };
     if discovery::is_orderable_column(&column.dir) {
         column.issues.sort_by_key(|issue| {
-            let priority = discovery::priority(&files::file_name(&issue.path));
+            let priority = priority::priority(&files::file_name(&issue.path));
             (priority.unwrap_or(u32::MAX), rank(issue))
         });
     } else if discovery::is_doing_column(&column.dir) || discovery::is_done_column(&column.dir) {

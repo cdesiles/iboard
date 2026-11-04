@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::discovery::{self, Board};
 use crate::files;
+use crate::priority;
 use crate::settings;
 
 const DIR: &str = "group-order";
@@ -60,7 +61,7 @@ impl Order {
 /// the priority number, which changes when the project renumbers.
 pub fn key(project: &str, path: &Path) -> String {
     let name = files::file_name(path);
-    format!("{project}/{}", discovery::strip_priority(&name))
+    format!("{project}/{}", priority::strip_priority(&name))
 }
 
 /// The issues of several projects, each list in its project's own order, as

@@ -36,6 +36,7 @@ pub mod menu;
 pub mod new_issue;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod pasteboard;
+pub mod priority;
 pub mod process;
 pub mod prompts;
 pub mod reviews;

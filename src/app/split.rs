@@ -3,6 +3,7 @@
 //! taking it all back.
 
 use super::*;
+use crate::priority;
 
 /// One proposed ticket, as the panel lets the user trim it.
 #[derive(Clone)]
@@ -176,7 +177,7 @@ impl IboardApp {
             return;
         };
         if discovery::is_orderable_column(&dir) {
-            match discovery::renumber_each(&order) {
+            match priority::renumber_each(&order) {
                 Ok(renames) => {
                     for child in &mut children {
                         if let Some((_, new)) = renames.iter().find(|(old, _)| old == child) {
