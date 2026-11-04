@@ -1,7 +1,8 @@
 //! The AI review's tests: running, keeping and applying it.
 
 use super::*;
-use crate::app::review::{PLAN_NOTE, ReviewStatus};
+use crate::app::review::PLAN_NOTE;
+use crate::app::split::Split;
 
 /// Reviewing and "Not written yet" are for issues still in Todo.
 #[test]
@@ -92,7 +93,7 @@ fn a_review_is_kept_beside_the_issue() {
         .review
         .as_ref()
         .expect("the panel is back");
-    assert!(matches!(review.status, ReviewStatus::Done { .. }));
+    assert!(review.split.is_none());
 
     std::fs::write(&file, "# Demo\n\nContext, edited.\n").unwrap();
     restarted.refresh();
@@ -117,14 +118,16 @@ pub(super) fn open_issue_with_review(tag: &str) -> (Scratch, PathBuf, IboardApp)
                    CLARITY: Block\nWhich tool runs it?\nPROPOSAL:\n# Demo\n\nBetter.";
     app.session.review = Some(ReviewState {
         path: file.clone(),
-        draft: false,
-        mode: ReviewMode::Quick,
-        plan: false,
-        agent: "opencode · vendor/model".to_string(),
-        status: ReviewStatus::Done {
+        review: PastReview {
+            draft: false,
+            mode: ReviewMode::Quick,
+            plan: false,
+            agent: "opencode · vendor/model".to_string(),
             raw: raw.to_string(),
             report: agent::parse(raw),
+            stale: false,
         },
+        split: None,
         follow_up: String::new(),
     });
     (dir, file, app)
@@ -345,12 +348,11 @@ fn a_size_block_splits_the_issue_in_place() {
     assert!(until(|| {
         app.poll_split();
         !matches!(
-            app.session.review.as_ref().unwrap().status,
-            ReviewStatus::Splitting { .. }
+            app.session.review.as_ref().unwrap().split,
+            Some(Split::Cutting { .. })
         )
     }));
-    let ReviewStatus::SplitReady { drafts, .. } = &app.session.review.as_ref().unwrap().status
-    else {
+    let Some(Split::Ready(drafts)) = &app.session.review.as_ref().unwrap().split else {
         panic!("the tickets are proposed");
     };
     assert_eq!(drafts.len(), 2);
@@ -490,7 +492,7 @@ fn a_ready_review_opens_from_its_card() {
     let app = &harness.state().1;
     assert!(matches!(&app.session.screen, Screen::Detail(path) if *path == file));
     let review = app.session.review.as_ref().expect("the panel opens");
-    assert!(matches!(review.status, ReviewStatus::Done { .. }));
+    assert!(review.split.is_none());
     assert!(!app.session.review_runs.is_ready(&file), "seen now");
     assert!(harness.query_by_label("Review ready").is_none());
 }
@@ -579,7 +581,8 @@ fn a_background_review_runs_claude_in_plan_mode() {
 
     harness.get_by_label("Review ready").click();
     harness.run_steps(2);
-    assert!(harness.state().1.session.review.as_ref().unwrap().plan);
+    let review = &harness.state().1.session.review.as_ref().unwrap().review;
+    assert!(review.plan);
     harness.get_by_label(PLAN_NOTE);
 }
 
@@ -610,7 +613,8 @@ fn a_custom_review_has_no_plan_note() {
     land(&mut harness, &file);
     harness.get_by_label("Review ready").click();
     harness.run_steps(2);
-    assert!(!harness.state().1.session.review.as_ref().unwrap().plan);
+    let review = &harness.state().1.session.review.as_ref().unwrap().review;
+    assert!(!review.plan);
     assert!(harness.query_by_label(PLAN_NOTE).is_none());
 }
 

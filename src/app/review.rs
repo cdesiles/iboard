@@ -1,5 +1,6 @@
 //! The AI review: running it, its panel, and applying its proposal.
 
+use super::split::Split;
 use super::*;
 
 impl IboardApp {
@@ -74,8 +75,8 @@ impl IboardApp {
         };
         let target = ReviewTarget {
             path: review.path.clone(),
-            draft: review.draft,
-            mode: review.mode,
+            draft: review.review.draft,
+            mode: review.review.mode,
         };
         let follow_up = review.follow_up.trim().to_string();
         if follow_up.is_empty() {
@@ -84,10 +85,7 @@ impl IboardApp {
         let Some(content) = self.review_content(&target.path, target.draft) else {
             return;
         };
-        let previous = match &review.status {
-            ReviewStatus::Done { raw, .. } => Some(raw.clone()),
-            _ => None,
-        };
+        let previous = review.split.is_none().then(|| review.review.raw.clone());
         let notes = self.reviewer_notes(&target.path);
         let mut prompt = prompts::review_prompt(&content, target.mode, &notes);
         if let Some(raw) = previous {
@@ -125,17 +123,11 @@ impl IboardApp {
             return;
         }
         let path = path.to_path_buf();
-        if let Some(past) = self.past_reviews.get(&path).cloned() {
+        if let Some(review) = self.past_reviews.get(&path).cloned() {
             self.session.review = Some(ReviewState {
                 path,
-                draft: past.draft,
-                mode: past.mode,
-                plan: past.plan,
-                agent: past.agent,
-                status: ReviewStatus::Done {
-                    raw: past.raw,
-                    report: past.report,
-                },
+                review,
+                split: None,
                 follow_up: String::new(),
             });
         }
@@ -194,12 +186,10 @@ impl IboardApp {
 
     /// Whether the review panel shows a proposal `⌘↩` would apply.
     pub(super) fn proposal_shown(&self) -> bool {
-        self.session.review.as_ref().is_some_and(|review| {
-            matches!(
-                &review.status,
-                ReviewStatus::Done { report: Some(report), .. } if report.proposal.is_some()
-            )
-        })
+        self.session
+            .review
+            .as_ref()
+            .is_some_and(|review| review.proposal().is_some())
     }
 
     /// Whether a review of `path` is running in the background.
@@ -214,14 +204,7 @@ impl IboardApp {
             return;
         };
         let path = review.path.clone();
-        let proposal = match &review.status {
-            ReviewStatus::Done {
-                report: Some(report),
-                ..
-            } => report.proposal.clone(),
-            _ => None,
-        };
-        let Some(proposal) = proposal else {
+        let Some(proposal) = review.proposal().map(str::to_string) else {
             return;
         };
         if !self
@@ -346,12 +329,13 @@ impl IboardApp {
             return;
         };
         let name = file_name(&review.path);
-        let source = if review.draft { "draft" } else { "file" };
-        let agent = format!("{} · {}", review.agent, review.mode.scope_name());
-        let plan = review.plan;
+        let past = &review.review;
+        let source = if past.draft { "draft" } else { "file" };
+        let agent = format!("{} · {}", past.agent, past.mode.scope_name());
+        let plan = past.plan;
         let mut follow_up = review.follow_up.clone();
-        let mut drafts = match &review.status {
-            ReviewStatus::SplitReady { drafts, .. } => Some(drafts.clone()),
+        let mut drafts = match &review.split {
+            Some(Split::Ready(drafts)) => Some(drafts.clone()),
             _ => None,
         };
         let mut action = None;
@@ -379,11 +363,8 @@ impl IboardApp {
                             );
                             ui.add_space(theme::SPACE_2);
                         }
-                        action = review_body(ui, &review.status, drafts.as_deref_mut());
-                        if matches!(
-                            review.status,
-                            ReviewStatus::Done { .. } | ReviewStatus::Failed { .. }
-                        ) {
+                        action = review_body(ui, review, drafts.as_deref_mut());
+                        if matches!(review.split, None | Some(Split::Failed(_))) {
                             ui.add_space(theme::SPACE_2);
                             widgets::text_entry(
                                 ui,
@@ -409,15 +390,13 @@ impl IboardApp {
                             .filter(|draft| draft.include)
                             .count();
                         let asked = !follow_up.trim().is_empty();
-                        action = review_footer(ui, &review.status, asked, kept).or(action.take());
+                        action = review_footer(ui, review, asked, kept).or(action.take());
                     });
             });
 
         if let Some(review) = self.session.review.as_mut() {
             review.follow_up = follow_up;
-            if let (Some(drafts), ReviewStatus::SplitReady { drafts: kept, .. }) =
-                (drafts, &mut review.status)
-            {
+            if let (Some(drafts), Some(Split::Ready(kept))) = (drafts, &mut review.split) {
                 *kept = drafts;
             }
         }
@@ -429,11 +408,10 @@ impl IboardApp {
             Some(PanelAction::Cancel) => self.close_review(),
             Some(PanelAction::Dismiss) => self.session.review = None,
             Some(PanelAction::Retry) => {
-                let target = self
-                    .session
-                    .review
-                    .as_ref()
-                    .map(|review| (review.path.clone(), review.draft, review.mode));
+                let target =
+                    self.session.review.as_ref().map(|review| {
+                        (review.path.clone(), review.review.draft, review.review.mode)
+                    });
                 if let Some((path, draft, mode)) = target {
                     self.start_review_in(&path, draft, mode);
                 }
@@ -461,41 +439,22 @@ pub(super) struct ReviewTarget {
 /// The review panel on one issue: its findings, or the split they led to.
 pub(super) struct ReviewState {
     pub(super) path: PathBuf,
-    /// True when the agent read the editor draft rather than the saved file.
-    pub(super) draft: bool,
-    pub(super) mode: ReviewMode,
-    /// True when the agent ran in plan mode, unable to change the repository.
-    pub(super) plan: bool,
-    /// The configured tool (and model), shown in the panel header.
-    pub(super) agent: String,
-    pub(super) status: ReviewStatus,
+    pub(super) review: PastReview,
+    /// The split the findings led to, shown in their place.
+    pub(super) split: Option<Split>,
     /// The "Ask again" follow-up, kept between renders.
     pub(super) follow_up: String,
 }
 
-/// The review panel: the findings, or a split under way.
-pub(super) enum ReviewStatus {
-    Done {
-        raw: String,
-        report: Option<Report>,
-    },
-    Failed {
-        error: String,
-    },
-    /// The agent is cutting the issue; `raw` and `report` are the review it
-    /// came from, to go back to.
-    Splitting {
-        answer: Job<Result<String, String>>,
-        progress: agent::Progress,
-        raw: String,
-        report: Option<Report>,
-    },
-    /// The tickets the agent proposed, waiting to be created.
-    SplitReady {
-        drafts: Vec<split::SplitDraft>,
-        raw: String,
-        report: Option<Report>,
-    },
+impl ReviewState {
+    /// The rewrite Apply and `⌘↩` take to the editor: the review's, while no
+    /// split shows in its place.
+    pub(super) fn proposal(&self) -> Option<&str> {
+        if self.split.is_some() {
+            return None;
+        }
+        self.review.report.as_ref()?.proposal.as_deref()
+    }
 }
 
 /// The reviews running in the background, one per issue, and the issues
@@ -558,10 +517,13 @@ pub(super) type ReviewPill = (&'static str, Color32, &'static str);
 /// reopen it.
 #[derive(Clone)]
 pub(super) struct PastReview {
-    draft: bool,
+    /// True when the agent read the editor draft rather than the saved file.
+    pub(super) draft: bool,
     pub(super) mode: ReviewMode,
-    plan: bool,
-    agent: String,
+    /// True when the agent ran in plan mode, unable to change the repository.
+    pub(super) plan: bool,
+    /// The configured tool (and model), shown in the panel header.
+    pub(super) agent: String,
     pub(super) raw: String,
     pub(super) report: Option<Report>,
     /// The issue changed since the agent read it.
@@ -814,29 +776,24 @@ enum PanelAction {
 /// (Size offering a split when it is not a Pass), or the split's tickets.
 fn review_body(
     ui: &mut egui::Ui,
-    status: &ReviewStatus,
+    review: &ReviewState,
     drafts: Option<&mut [split::SplitDraft]>,
 ) -> Option<PanelAction> {
     let p = theme::palette(ui);
     let mut action = None;
-    match status {
-        ReviewStatus::Splitting {
-            answer, progress, ..
-        } => {
+    match (&review.split, &review.review.report) {
+        (Some(Split::Cutting { answer, progress }), _) => {
             let step = agent::step(progress).or(Some("The agent is cutting the issue…".into()));
             running_line(ui, answer.elapsed(), step);
         }
-        ReviewStatus::Failed { error } => {
+        (Some(Split::Failed(error)), _) => {
             ui.label(RichText::new(error).color(p.danger));
         }
-        ReviewStatus::SplitReady { .. } => split::drafts_ui(ui, drafts.unwrap_or_default()),
-        ReviewStatus::Done { raw, report: None } => {
-            ui.label(RichText::new(raw).color(p.ink_muted));
+        (Some(Split::Ready(_)), _) => split::drafts_ui(ui, drafts.unwrap_or_default()),
+        (None, None) => {
+            ui.label(RichText::new(&review.review.raw).color(p.ink_muted));
         }
-        ReviewStatus::Done {
-            report: Some(report),
-            ..
-        } => {
+        (None, Some(report)) => {
             for finding in &report.findings {
                 let (label, color) = verdict_look(finding.verdict, p);
                 ui.horizontal(|ui| {
@@ -869,7 +826,7 @@ fn review_body(
 /// The panel's buttons, right to left: the main action first.
 fn review_footer(
     ui: &mut egui::Ui,
-    status: &ReviewStatus,
+    review: &ReviewState,
     asked: bool,
     kept: usize,
 ) -> Option<PanelAction> {
@@ -884,8 +841,8 @@ fn review_footer(
                     action = Some(picked);
                 }
             };
-            match status {
-                ReviewStatus::Splitting { .. } => {
+            match &review.split {
+                Some(Split::Cutting { .. }) => {
                     button(
                         ui,
                         ButtonKind::Secondary,
@@ -894,7 +851,7 @@ fn review_footer(
                         PanelAction::Cancel,
                     );
                 }
-                ReviewStatus::SplitReady { .. } => {
+                Some(Split::Ready(_)) => {
                     let create = format!("Create {kept} tickets");
                     let kind = if kept > 0 {
                         ButtonKind::Primary
@@ -911,12 +868,8 @@ fn review_footer(
                     );
                     button(ui, ButtonKind::Ghost, "Dismiss", None, PanelAction::Dismiss);
                 }
-                ReviewStatus::Done { .. } | ReviewStatus::Failed { .. } => {
-                    let has_proposal = matches!(
-                        status,
-                        ReviewStatus::Done { report: Some(report), .. } if report.proposal.is_some()
-                    );
-                    ui.add_enabled_ui(has_proposal, |ui| {
+                None | Some(Split::Failed(_)) => {
+                    ui.add_enabled_ui(review.proposal().is_some(), |ui| {
                         button(
                             ui,
                             ButtonKind::Primary,
@@ -925,7 +878,7 @@ fn review_footer(
                             PanelAction::Apply,
                         );
                     });
-                    if matches!(status, ReviewStatus::Failed { .. }) {
+                    if matches!(review.split, Some(Split::Failed(_))) {
                         button(ui, ButtonKind::Secondary, "Retry", None, PanelAction::Retry);
                     }
                     if asked {

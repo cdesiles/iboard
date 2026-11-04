@@ -2,7 +2,7 @@
 //! The shortcuts are a keymap: the input and where the keyboard is give a
 //! list of [`Command`]s, applied in order.
 
-use super::review::ReviewStatus;
+use super::split::Split;
 use super::*;
 
 /// How far two fingers swipe right, in points, to go back.
@@ -562,7 +562,7 @@ impl IboardApp {
                 .session
                 .review
                 .as_ref()
-                .is_some_and(|review| matches!(review.status, ReviewStatus::Splitting { .. }))
+                .is_some_and(|review| matches!(review.split, Some(Split::Cutting { .. })))
             || self
                 .session
                 .refine

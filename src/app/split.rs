@@ -2,7 +2,6 @@
 //! preview in the review panel, writing them in the original's place, and
 //! taking it all back.
 
-use super::review::ReviewStatus;
 use super::*;
 
 /// One proposed ticket, as the panel lets the user trim it.
@@ -11,6 +10,18 @@ pub(super) struct SplitDraft {
     pub(super) title: String,
     pub(super) body: String,
     pub(super) include: bool,
+}
+
+/// A split of the reviewed issue, in the review panel.
+pub(super) enum Split {
+    /// The agent is cutting the issue.
+    Cutting {
+        answer: Job<Result<String, String>>,
+        progress: agent::Progress,
+    },
+    /// The tickets the agent proposed, waiting to be created.
+    Ready(Vec<SplitDraft>),
+    Failed(String),
 }
 
 /// A split `⌘Z` can still take back.
@@ -29,11 +40,7 @@ impl IboardApp {
         let Some(review) = self.session.review.as_ref() else {
             return;
         };
-        let ReviewStatus::Done {
-            raw,
-            report: Some(report),
-        } = &review.status
-        else {
+        let (None, Some(report)) = (&review.split, &review.review.report) else {
             return;
         };
         let reason = report
@@ -42,8 +49,7 @@ impl IboardApp {
             .find(|finding| finding.axis == agent::Axis::Size)
             .map(|finding| finding.body.clone())
             .unwrap_or_default();
-        let (path, mode) = (review.path.clone(), review.mode);
-        let (raw, report) = (raw.clone(), Some(report.clone()));
+        let (path, mode) = (review.path.clone(), review.review.mode);
         let Some(content) = self.board.find(&path).map(|issue| issue.markdown.clone()) else {
             return;
         };
@@ -52,12 +58,7 @@ impl IboardApp {
         let project = Some(self.board.project_of(&path));
         let (answer, progress) = agent::start_review(&self.agent, &prompt, &path, project, mode);
         if let Some(review) = self.session.review.as_mut() {
-            review.status = ReviewStatus::Splitting {
-                answer,
-                progress,
-                raw,
-                report,
-            };
+            review.split = Some(Split::Cutting { answer, progress });
         }
     }
 
@@ -66,27 +67,19 @@ impl IboardApp {
         let Some(review) = self.session.review.as_mut() else {
             return;
         };
-        let ReviewStatus::Splitting { answer, .. } = &review.status else {
+        let Some(Split::Cutting { answer, .. }) = &review.split else {
             return;
         };
         let Some(result) = answer.answer() else {
-            return;
-        };
-        let placeholder = ReviewStatus::Failed {
-            error: String::new(),
-        };
-        let ReviewStatus::Splitting { raw, report, .. } =
-            std::mem::replace(&mut review.status, placeholder)
-        else {
             return;
         };
         let drafts = result.and_then(|answer| {
             agent::parse_split(&answer)
                 .ok_or_else(|| "The agent's answer had no tickets to create.".to_string())
         });
-        review.status = match drafts {
-            Ok(drafts) => ReviewStatus::SplitReady {
-                drafts: drafts
+        review.split = Some(match drafts {
+            Ok(drafts) => Split::Ready(
+                drafts
                     .into_iter()
                     .map(|draft| SplitDraft {
                         title: draft.title,
@@ -94,25 +87,17 @@ impl IboardApp {
                         include: true,
                     })
                     .collect(),
-                raw,
-                report,
-            },
-            Err(error) => ReviewStatus::Failed { error },
-        };
+            ),
+            Err(error) => Split::Failed(error),
+        });
     }
 
     /// "Back to review": the findings the split started from.
     pub(super) fn back_to_review(&mut self) {
-        let Some(review) = self.session.review.as_mut() else {
-            return;
-        };
-        if let ReviewStatus::SplitReady { raw, report, .. }
-        | ReviewStatus::Splitting { raw, report, .. } = &mut review.status
+        if let Some(review) = self.session.review.as_mut()
+            && let Some(Split::Cutting { .. } | Split::Ready(_)) = review.split
         {
-            review.status = ReviewStatus::Done {
-                raw: std::mem::take(raw),
-                report: report.take(),
-            };
+            review.split = None;
         }
     }
 
@@ -121,7 +106,7 @@ impl IboardApp {
         let Some(review) = self.session.review.as_ref() else {
             return;
         };
-        let ReviewStatus::SplitReady { drafts, .. } = &review.status else {
+        let Some(Split::Ready(drafts)) = &review.split else {
             return;
         };
         let drafts: Vec<SplitDraft> = drafts
