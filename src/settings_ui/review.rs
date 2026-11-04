@@ -1,9 +1,10 @@
 //! Settings › AI review and AI build: which agent runs, and with which model;
 //! for the review, also how far it reads.
 
-use egui::{Frame, Id, Key, Margin, Modifiers, RichText, Vec2};
+use egui::{Frame, Id, Margin};
 
-use super::{Catalog, Dialog, Menu};
+use super::select_menu::Menu;
+use super::{Catalog, Dialog};
 use crate::agent::{Detected, Models, ReviewMode, Tool};
 use crate::format::display_path;
 use crate::theme::{self, Icon};
@@ -21,14 +22,109 @@ pub(super) struct ModelRow {
     pub(super) favorite: bool,
 }
 
-impl Dialog {
-    fn open_menu(&mut self, menu: Menu) {
-        self.menu = Some(menu);
-        self.filter.clear();
-        self.focus_filter = menu == Menu::Model;
-        self.highlight = 0;
+/// The model menu's options: Default, then the favorites and every model
+/// under their group heads, the highlight scrolled into view. Returns the
+/// value clicked.
+fn model_list(
+    ui: &mut egui::Ui,
+    rows: &[ModelRow],
+    highlight: usize,
+    current: &str,
+    default: Option<&str>,
+) -> Option<String> {
+    let favorites = rows.iter().filter(|row| row.favorite).count();
+    let listed = rows.len().saturating_sub(1 + favorites);
+    let mut picked = None;
+    for (index, row) in rows.iter().enumerate() {
+        if index == 1 {
+            menu_separator(ui);
+            if favorites > 0 {
+                widgets::menu_group(ui, "Favorites");
+            }
+        }
+        if index == 1 + favorites && listed > 0 {
+            widgets::menu_group(ui, &format!("All models · {listed}"));
+        }
+        let (name, meta) = if row.value.is_empty() {
+            ("Default", default.unwrap_or_default())
+        } else if row.favorite {
+            (row.value.as_str(), "★")
+        } else {
+            (row.value.as_str(), "")
+        };
+        let option = widgets::menu_option(
+            ui,
+            MenuOption {
+                name,
+                mono: !row.value.is_empty(),
+                muted: false,
+                meta,
+                checked: row.value == current,
+                active: index == highlight,
+            },
+        );
+        if index == highlight {
+            option.scroll_to_me(None);
+        }
+        if option.clicked() {
+            picked = Some(row.value.clone());
+        }
     }
+    picked
+}
 
+/// What the model menu says under its options: the models are loading, why
+/// listing them failed (with Retry), or, when `unmatched`, that no model
+/// matches the filter. True when Retry was clicked.
+fn list_status(ui: &mut egui::Ui, tool: Tool, models: Option<&Models>, unmatched: bool) -> bool {
+    let p = theme::palette(ui);
+    let mut retry = false;
+    match models.map(|models| &models.list) {
+        None => {
+            menu_separator(ui);
+            menu_note(
+                ui,
+                &format!("Loading models from {}…", tool.key()),
+                p.ink_muted,
+            );
+        }
+        Some(Err(error)) => {
+            menu_separator(ui);
+            menu_note(ui, error, p.danger);
+            Frame::new()
+                .inner_margin(Margin::symmetric(theme::SPACE_3 as i8, 0))
+                .show(ui, |ui| {
+                    retry = widgets::button(
+                        ui,
+                        ButtonKind::Secondary,
+                        Some(Icon::Refresh),
+                        "Retry",
+                        None,
+                    )
+                    .clicked();
+                });
+        }
+        Some(Ok(_)) if unmatched => menu_note(ui, "No model matches.", p.ink_muted),
+        Some(Ok(_)) => {}
+    }
+    retry
+}
+
+/// The help under the model select: what Default runs.
+fn model_help(tool: Tool, models: Option<&Models>) -> &'static str {
+    match (tool, models) {
+        (Tool::OpenCode, Some(Models { default: None, .. })) => {
+            "OpenCode has no favorite model, so Default lets it pick."
+        }
+        (Tool::Claude, Some(Models { default: None, .. })) => {
+            "Claude Code has no model in its settings, so Default lets it pick."
+        }
+        (Tool::Claude, _) => "Default uses the model in Claude Code's settings.",
+        _ => "Default uses the first favorite in OpenCode.",
+    }
+}
+
+impl Dialog {
     pub(super) fn choose_tool(&mut self, tool: Tool, catalog: &mut Catalog) {
         if tool != self.form.tool {
             self.form.tool = tool;
@@ -36,7 +132,7 @@ impl Dialog {
             self.invalid = None;
         }
         catalog.load(tool);
-        self.menu = None;
+        self.menu.close();
     }
 
     pub(super) fn review_body(&mut self, ui: &mut egui::Ui, catalog: &mut Catalog) {
@@ -61,16 +157,16 @@ impl Dialog {
         let p = theme::palette(ui);
         field_label(ui, "Tool");
         let tool = self.form.tool;
-        let open = self.menu == Some(Menu::Tool);
+        let open = self.menu.is_open(Menu::Tool);
         let response =
             widgets::select(ui, Id::new("review-tool"), tool.name(), tool.binary(), open);
-        self.toggle_on(&response, Menu::Tool);
+        self.menu.toggle_on(&response, Menu::Tool);
 
-        if self.menu == Some(Menu::Tool) {
+        if self.menu.is_open(Menu::Tool) {
             let options = Tool::ALL;
-            let picked = self.keyboard(ui, options.len());
+            let picked = self.menu.keyboard(ui, options.len());
             let mut picked = picked.map(|index| options[index]);
-            let shown = self.popup(ui, &response, Menu::Tool, |dialog, ui| {
+            self.menu.popup(ui, &response, Menu::Tool, |menu, ui| {
                 for (index, option) in options.into_iter().enumerate() {
                     let detected = catalog.detected(option);
                     let (meta, missing) = match (option.binary(), detected) {
@@ -95,7 +191,7 @@ impl Dialog {
                             muted: missing,
                             meta: &meta,
                             checked: option == tool,
-                            active: index == dialog.highlight,
+                            active: index == menu.highlight,
                         },
                     )
                     .clicked()
@@ -106,8 +202,6 @@ impl Dialog {
             });
             if let Some(option) = picked {
                 self.choose_tool(option, catalog);
-            } else if !shown {
-                self.menu = None;
             }
         }
 
@@ -202,34 +296,17 @@ impl Dialog {
         } else {
             (current.clone(), None)
         };
-        let open = self.menu == Some(Menu::Model);
+        let open = self.menu.is_open(Menu::Model);
         let response = widgets::select(ui, Id::new("review-model"), &value, hint.as_deref(), open);
-        self.toggle_on(&response, Menu::Model);
+        self.menu.toggle_on(&response, Menu::Model);
 
-        if self.menu == Some(Menu::Model) {
+        if self.menu.is_open(Menu::Model) {
             let rows = self.model_rows(models);
-            let picked = self.keyboard(ui, rows.len());
+            let picked = self.menu.keyboard(ui, rows.len());
             let mut picked = picked.map(|index| rows[index].value.clone());
             let mut retry = false;
-            let favorites = rows.iter().filter(|row| row.favorite).count();
-            let listed = rows.len().saturating_sub(1 + favorites);
-            let shown = self.popup(ui, &response, Menu::Model, |dialog, ui| {
-                let filter = widgets::text_entry(
-                    ui,
-                    egui::TextEdit::singleline(&mut dialog.filter)
-                        .id(Id::new("review-model-filter"))
-                        .hint_text(RichText::new("Filter models").color(p.ink_faint))
-                        .font(theme::ui_body())
-                        .margin(Margin::symmetric(theme::SPACE_3 as i8, 3))
-                        .min_size(Vec2::new(0.0, theme::CONTROL_H))
-                        .desired_width(f32::INFINITY),
-                );
-                if std::mem::take(&mut dialog.focus_filter) {
-                    filter.request_focus();
-                }
-                if filter.changed() {
-                    dialog.highlight = 0;
-                }
+            self.menu.popup(ui, &response, Menu::Model, |menu, ui| {
+                menu.filter_field(ui, Id::new("review-model-filter"), "Filter models");
                 ui.add_space(theme::SPACE_2);
                 theme::scroll_area(
                     ui,
@@ -238,71 +315,13 @@ impl Dialog {
                         .max_height(MODEL_LIST_MAX_H),
                     true,
                     |ui| {
-                        for (index, row) in rows.iter().enumerate() {
-                            if index == 1 {
-                                menu_separator(ui);
-                                if favorites > 0 {
-                                    widgets::menu_group(ui, "Favorites");
-                                }
-                            }
-                            if index == 1 + favorites && listed > 0 {
-                                widgets::menu_group(ui, &format!("All models · {listed}"));
-                            }
-                            let (name, meta) = if row.value.is_empty() {
-                                ("Default", default.clone().unwrap_or_default())
-                            } else if row.favorite {
-                                (row.value.as_str(), "★".to_string())
-                            } else {
-                                (row.value.as_str(), String::new())
-                            };
-                            let option = widgets::menu_option(
-                                ui,
-                                MenuOption {
-                                    name,
-                                    mono: !row.value.is_empty(),
-                                    muted: false,
-                                    meta: &meta,
-                                    checked: row.value == current,
-                                    active: index == dialog.highlight,
-                                },
-                            );
-                            if index == dialog.highlight {
-                                option.scroll_to_me(None);
-                            }
-                            if option.clicked() {
-                                picked = Some(row.value.clone());
-                            }
+                        if let Some(row) =
+                            model_list(ui, &rows, menu.highlight, &current, default.as_deref())
+                        {
+                            picked = Some(row);
                         }
-                        match models.map(|models| &models.list) {
-                            None => {
-                                menu_separator(ui);
-                                menu_note(
-                                    ui,
-                                    &format!("Loading models from {}…", tool.key()),
-                                    p.ink_muted,
-                                );
-                            }
-                            Some(Err(error)) => {
-                                menu_separator(ui);
-                                menu_note(ui, error, p.danger);
-                                Frame::new()
-                                    .inner_margin(Margin::symmetric(theme::SPACE_3 as i8, 0))
-                                    .show(ui, |ui| {
-                                        retry = widgets::button(
-                                            ui,
-                                            ButtonKind::Secondary,
-                                            Some(Icon::Refresh),
-                                            "Retry",
-                                            None,
-                                        )
-                                        .clicked();
-                                    });
-                            }
-                            Some(Ok(_)) if rows.len() == 1 && !dialog.filter.is_empty() => {
-                                menu_note(ui, "No model matches.", p.ink_muted);
-                            }
-                            Some(Ok(_)) => {}
-                        }
+                        let unmatched = rows.len() == 1 && !menu.filter.is_empty();
+                        retry = list_status(ui, tool, models, unmatched);
                     },
                 );
             });
@@ -311,30 +330,18 @@ impl Dialog {
             }
             if let Some(model) = picked {
                 self.form.model = model;
-                self.menu = None;
-            } else if !shown {
-                self.menu = None;
+                self.menu.close();
             }
         }
 
         ui.add_space(theme::SPACE_2);
-        let text = match (tool, models) {
-            (Tool::OpenCode, Some(Models { default: None, .. })) => {
-                "OpenCode has no favorite model, so Default lets it pick."
-            }
-            (Tool::Claude, Some(Models { default: None, .. })) => {
-                "Claude Code has no model in its settings, so Default lets it pick."
-            }
-            (Tool::Claude, _) => "Default uses the model in Claude Code's settings.",
-            _ => "Default uses the first favorite in OpenCode.",
-        };
-        help(ui, text, p.ink_muted);
+        help(ui, model_help(tool, models), p.ink_muted);
     }
 
     /// The model menu's pickable rows: Default, the favorites, then every
     /// model, narrowed by the filter.
     pub(super) fn model_rows(&self, models: Option<&Models>) -> Vec<ModelRow> {
-        let filter = self.filter.trim().to_lowercase();
+        let filter = self.menu.filter.trim().to_lowercase();
         let matches = |text: &str| filter.is_empty() || text.to_lowercase().contains(&filter);
         let mut rows = vec![ModelRow {
             value: String::new(),
@@ -358,80 +365,5 @@ impl Dialog {
             }
         }
         rows
-    }
-
-    /// Opens or closes `menu` from its select: a click, or `space` / `↓` while
-    /// the select has focus.
-    fn toggle_on(&mut self, response: &egui::Response, menu: Menu) {
-        let keyed = response.has_focus()
-            && self.menu.is_none()
-            && response.ctx.input_mut(|i| {
-                i.consume_key(Modifiers::NONE, Key::Space)
-                    || i.consume_key(Modifiers::NONE, Key::ArrowDown)
-            });
-        if response.clicked() || keyed {
-            if self.menu == Some(menu) {
-                self.menu = None;
-            } else {
-                self.open_menu(menu);
-            }
-        }
-    }
-
-    /// Moves the highlight among `count` options with `↑ ↓`; returns the one
-    /// `↩` picked. `esc` closes the menu and gives focus back to the dialog.
-    fn keyboard(&mut self, ui: &egui::Ui, count: usize) -> Option<usize> {
-        let (up, down, enter, escape) = ui.input_mut(|i| {
-            (
-                i.consume_key(Modifiers::NONE, Key::ArrowUp),
-                i.consume_key(Modifiers::NONE, Key::ArrowDown),
-                i.consume_key(Modifiers::NONE, Key::Enter),
-                i.consume_key(Modifiers::NONE, Key::Escape),
-            )
-        });
-        if escape {
-            self.menu = None;
-            return None;
-        }
-        if count == 0 {
-            return None;
-        }
-        if down {
-            self.highlight = (self.highlight + 1).min(count - 1);
-        }
-        if up {
-            self.highlight = self.highlight.saturating_sub(1);
-        }
-        self.highlight = self.highlight.min(count - 1);
-        enter.then_some(self.highlight)
-    }
-
-    /// Shows `menu` under its select, as wide as it. False when it closed
-    /// because of a click elsewhere.
-    fn popup(
-        &mut self,
-        ui: &egui::Ui,
-        anchor: &egui::Response,
-        menu: Menu,
-        content: impl FnOnce(&mut Self, &mut egui::Ui),
-    ) -> bool {
-        if self.menu != Some(menu) {
-            return false;
-        }
-        let mut open = true;
-        egui::Popup::from_response(anchor)
-            .id(Id::new(("review-menu", menu as u8)))
-            .open_bool(&mut open)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .gap(theme::SPACE_2)
-            .width(anchor.rect.width())
-            .frame(widgets::popover_frame(ui).inner_margin(Margin::same(theme::SPACE_2 as i8)))
-            .show(|ui| {
-                ui.set_width(anchor.rect.width() - 2.0 * theme::SPACE_2);
-                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                content(self, ui);
-            });
-        // A click on the select itself is handled by `toggle_on`.
-        open || anchor.clicked()
     }
 }

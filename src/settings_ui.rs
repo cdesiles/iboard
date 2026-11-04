@@ -11,6 +11,7 @@ mod catalog;
 mod general;
 mod labels;
 mod review;
+mod select_menu;
 mod titles;
 
 use egui::{Key, Modifiers, Vec2};
@@ -23,17 +24,11 @@ use crate::theme;
 use crate::titles::{Availability, Engine};
 use crate::widgets::{self, FooterClick};
 pub use catalog::Catalog;
+use select_menu::SelectMenu;
 
 /// Height of the tab body. Fixed, so the panel stands still when the tab
 /// changes; taller content scrolls inside it.
 const DIALOG_BODY_H: f32 = 420.0;
-
-/// Which select's menu is open.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Menu {
-    Tool,
-    Model,
-}
 
 /// What the dialog asks of the app after a frame.
 #[derive(Debug, PartialEq, Eq)]
@@ -95,13 +90,7 @@ pub struct Dialog {
     invalid: Option<String>,
     /// Why saving failed, shown above the footer.
     pub save_error: Option<String>,
-    menu: Option<Menu>,
-    /// The model menu's filter.
-    filter: String,
-    /// The keyboard highlight among the open menu's options.
-    highlight: usize,
-    /// Give the model filter focus on the next frame.
-    focus_filter: bool,
+    menu: SelectMenu,
 }
 
 impl Dialog {
@@ -132,10 +121,7 @@ impl Dialog {
             user_language: crate::titles::user_language(),
             invalid: None,
             save_error: None,
-            menu: None,
-            filter: String::new(),
-            highlight: 0,
-            focus_filter: false,
+            menu: SelectMenu::default(),
         }
     }
 
@@ -201,7 +187,7 @@ impl Dialog {
         // An open menu owns the arrows, `↩` and `esc`; otherwise `esc` closes
         // and `⌘↩` saves.
         let mut action = Action::Keep;
-        if self.menu.is_none() {
+        if self.menu.is_closed() {
             if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter)) {
                 action = Action::Save;
             } else if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
@@ -257,7 +243,7 @@ impl Dialog {
         widgets::modal_header(ui, "Settings", |ui| {
             if let Some(tab) = tabs(ui, self.tab) {
                 self.tab = tab;
-                self.menu = None;
+                self.menu.close();
                 self.invalid = None;
             }
         })
@@ -281,6 +267,7 @@ fn tabs(ui: &mut egui::Ui, current: Tab) -> Option<Tab> {
 
 #[cfg(test)]
 mod tests {
+    use super::select_menu::Menu;
     use super::*;
     use crate::agent::{self, Models, Tool};
 
@@ -320,7 +307,7 @@ mod tests {
     #[test]
     fn the_filter_narrows_models_but_keeps_default() {
         let mut dialog = Dialog::new(&AgentConfig::default(), Engine::Manual, true, Tab::Review);
-        dialog.filter = "ONE".into();
+        dialog.menu.filter = "ONE".into();
         let models = models(&[("a/one", false), ("b/two", true)]);
         let values: Vec<String> = dialog
             .model_rows(Some(&models))
@@ -395,7 +382,9 @@ mod tests {
                     true,
                     Tab::Review,
                 );
-                dialog.menu = menu;
+                if let Some(menu) = menu {
+                    dialog.menu.open(menu);
+                }
                 for _ in 0..2 {
                     let mut action = Action::Keep;
                     ctx.run_ui(input.clone(), |ui| {
