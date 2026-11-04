@@ -2,6 +2,7 @@
 //! The shortcuts are a keymap: the input and where the keyboard is give a
 //! list of [`Command`]s, applied in order.
 
+use super::review::ReviewStatus;
 use super::*;
 
 /// How far two fingers swipe right, in points, to go back.

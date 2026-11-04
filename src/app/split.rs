@@ -2,6 +2,7 @@
 //! preview in the review panel, writing them in the original's place, and
 //! taking it all back.
 
+use super::review::ReviewStatus;
 use super::*;
 
 /// One proposed ticket, as the panel lets the user trim it.

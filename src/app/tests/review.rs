@@ -1,7 +1,7 @@
 //! The AI review's tests: running, keeping and applying it.
 
 use super::*;
-use crate::app::review::PLAN_NOTE;
+use crate::app::review::{PLAN_NOTE, ReviewStatus};
 
 /// Reviewing and "Not written yet" are for issues still in Todo.
 #[test]

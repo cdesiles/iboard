@@ -3,6 +3,7 @@
 //! rewritten as things are. Its answer is a review, in the same panel; Apply
 //! opens the editor with the update, and saving it is the accept.
 
+use super::review::ReviewTarget;
 use super::*;
 
 impl IboardApp {

@@ -86,6 +86,7 @@ use labelling::*;
 use new_issue_ui::*;
 pub use quitting::on_signals;
 use reader::*;
+use review::{PastReview, ReviewPill, ReviewState};
 
 #[cfg(target_os = "macos")]
 const ABOUT: &str = "**iboard** is an opinionated issue tracker that lives entirely as Markdown \
@@ -133,18 +134,6 @@ const MOVE_MENU_WIDTH: f32 = 180.0;
 
 /// Width of the AI review panel beside the reader or editor page.
 const REVIEW_PANEL_WIDTH: f32 = 360.0;
-
-/// Width of the Review button's menu, in points.
-const REVIEW_MENU_WIDTH: f32 = 240.0;
-
-/// A choice made in the Review button's menu.
-enum ReviewMenu {
-    Review,
-    /// A review in the scope Settings › AI review did not choose.
-    OtherScope,
-    Refine,
-    Settings,
-}
 
 /// An issue action available from a card or the detail header.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -199,94 +188,6 @@ struct CardExtras {
     build: Option<CardBuild>,
     /// Offers Add label: Doing and Done keep the labels they have.
     labelling: bool,
-}
-
-/// A card's review pill: its word, colour and tooltip.
-type ReviewPill = (&'static str, Color32, &'static str);
-
-/// An issue's last review, read from its sidecar, so its card pill can
-/// reopen it.
-#[derive(Clone)]
-struct PastReview {
-    draft: bool,
-    mode: ReviewMode,
-    plan: bool,
-    agent: String,
-    raw: String,
-    report: Option<Report>,
-    /// The issue changed since the agent read it.
-    stale: bool,
-}
-
-impl PastReview {
-    fn new(stored: &reviews::StoredReview, markdown: &str) -> Self {
-        Self {
-            draft: stored.draft,
-            mode: ReviewMode::from_key(&stored.mode),
-            plan: stored.plan,
-            agent: stored.agent.clone(),
-            raw: stored.raw.clone(),
-            report: agent::parse(&stored.raw),
-            stale: stored.is_stale(markdown),
-        }
-    }
-
-    /// The pill: the worst verdict of the three, or "Reviewed" when the
-    /// answer did not parse.
-    fn pill(&self, p: &Palette) -> (&'static str, Color32) {
-        let verdicts = self
-            .report
-            .iter()
-            .flat_map(|r| r.findings.iter().map(|f| f.verdict));
-        let worst = verdicts.max_by_key(|v| match v {
-            agent::Verdict::Pass => 0,
-            agent::Verdict::Challenge => 1,
-            agent::Verdict::Block => 2,
-        });
-        match worst {
-            Some(agent::Verdict::Pass) => ("Pass", p.status_done),
-            Some(agent::Verdict::Challenge) => ("Challenge", p.review),
-            Some(agent::Verdict::Block) => ("Block", p.danger),
-            None => ("Reviewed", p.review),
-        }
-    }
-}
-
-impl PastReview {
-    /// The card's pill: the verdict, faint once the issue changed since.
-    fn card_pill(&self, p: &Palette) -> ReviewPill {
-        let (word, color) = self.pill(p);
-        let color = if self.stale { p.ink_faint } else { color };
-        (word, color, verdict_hint(word, self.stale))
-    }
-}
-
-/// What a card's verdict pill means: the worst of the review's three axes.
-fn verdict_hint(word: &str, stale: bool) -> &'static str {
-    match (word, stale) {
-        ("Pass", false) => {
-            "Last AI review: Pass. Relevance, size and clarity are all fine. Click to show it"
-        }
-        ("Challenge", false) => {
-            "Last AI review: Challenge. Relevance, size or clarity is worth another look, \
-             nothing blocks. Click to show it"
-        }
-        ("Block", false) => {
-            "Last AI review: Block. Relevance, size or clarity is a real problem \
-             (for an update: done, or no longer worth doing). Click to show it"
-        }
-        (_, false) => "Last AI review. Click to show it",
-        ("Pass", true) => "Last AI review: Pass, before the issue's last edit. Click to show it",
-        ("Challenge", true) => {
-            "Last AI review: Challenge (relevance, size or clarity worth another look), \
-             before the issue's last edit. Click to show it"
-        }
-        ("Block", true) => {
-            "Last AI review: Block (relevance, size or clarity a real problem), \
-             before the issue's last edit. Click to show it"
-        }
-        (_, true) => "Last AI review, before the issue's last edit. Click to show it",
-    }
 }
 
 /// A destructive action waiting for confirmation.
@@ -528,53 +429,6 @@ impl EditorState {
     fn is_dirty(&self) -> bool {
         self.text != self.baseline || self.name != self.baseline_name
     }
-}
-
-/// What a review reads, and how far it goes.
-struct ReviewTarget {
-    path: PathBuf,
-    draft: bool,
-    mode: ReviewMode,
-}
-
-/// The review panel on one issue: its findings, or the split they led to.
-struct ReviewState {
-    path: PathBuf,
-    /// True when the agent read the editor draft rather than the saved file.
-    draft: bool,
-    mode: ReviewMode,
-    /// True when the agent ran in plan mode, unable to change the repository.
-    plan: bool,
-    /// The configured tool (and model), shown in the panel header.
-    agent: String,
-    status: ReviewStatus,
-    /// The "Ask again" follow-up, kept between renders.
-    follow_up: String,
-}
-
-/// The review panel: the findings, or a split under way.
-enum ReviewStatus {
-    Done {
-        raw: String,
-        report: Option<Report>,
-    },
-    Failed {
-        error: String,
-    },
-    /// The agent is cutting the issue; `raw` and `report` are the review it
-    /// came from, to go back to.
-    Splitting {
-        answer: Job<Result<String, String>>,
-        progress: agent::Progress,
-        raw: String,
-        report: Option<Report>,
-    },
-    /// The tickets the agent proposed, waiting to be created.
-    SplitReady {
-        drafts: Vec<split::SplitDraft>,
-        raw: String,
-        report: Option<Report>,
-    },
 }
 
 pub struct IboardApp {
