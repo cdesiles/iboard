@@ -10,17 +10,17 @@ fn verdicts_survive_markdown_and_punctuation() {
                   - CLARITY: Block.\nWhich tool?\n\
                   **PROPOSAL:**\n# Better\n";
     let report = parse(answer).expect("a report");
-    let verdicts: Vec<(&str, Verdict)> = report
+    let verdicts: Vec<(Axis, Verdict)> = report
         .findings
         .iter()
-        .map(|finding| (finding.axis.as_str(), finding.verdict))
+        .map(|finding| (finding.axis, finding.verdict))
         .collect();
     assert_eq!(
         verdicts,
         [
-            ("Relevance", Verdict::Pass),
-            ("Size", Verdict::Challenge),
-            ("Clarity", Verdict::Block)
+            (Axis::Relevance, Verdict::Pass),
+            (Axis::Size, Verdict::Challenge),
+            (Axis::Clarity, Verdict::Block)
         ]
     );
     assert_eq!(report.findings[1].body, "split it\nIt does two things.");
@@ -490,7 +490,7 @@ PROPOSAL:
 Some context.";
     let report = parse(answer).expect("the shape is complete");
     assert_eq!(report.findings.len(), 3);
-    assert_eq!(report.findings[0].axis, "Relevance");
+    assert_eq!(report.findings[0].axis, Axis::Relevance);
     assert_eq!(report.findings[0].verdict, Verdict::Pass);
     assert_eq!(report.findings[1].verdict, Verdict::Challenge);
     assert_eq!(report.findings[2].verdict, Verdict::Block);

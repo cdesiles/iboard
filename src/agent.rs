@@ -891,7 +891,8 @@ mod draft;
 mod tools;
 
 pub use answer::{
-    Challenge, Draft, Finding, Report, Verdict, choice_parts, parse, parse_refinement, parse_split,
+    Axis, Challenge, Draft, Finding, Report, Verdict, choice_parts, parse, parse_refinement,
+    parse_split,
 };
 pub use draft::{DraftText, start_draft};
 pub use tools::{Detected, Model, Models, detect, list_models};

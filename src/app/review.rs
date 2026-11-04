@@ -581,59 +581,66 @@ impl PastReview {
         }
     }
 
+    /// The review's verdict: the worst of its three, `None` when the answer
+    /// did not parse.
+    fn verdict(&self) -> Option<agent::Verdict> {
+        self.report
+            .iter()
+            .flat_map(|r| r.findings.iter().map(|f| f.verdict))
+            .max()
+    }
+
     /// The pill: the worst verdict of the three, or "Reviewed" when the
     /// answer did not parse.
     pub(super) fn pill(&self, p: &Palette) -> (&'static str, Color32) {
-        let verdicts = self
-            .report
-            .iter()
-            .flat_map(|r| r.findings.iter().map(|f| f.verdict));
-        let worst = verdicts.max_by_key(|v| match v {
-            agent::Verdict::Pass => 0,
-            agent::Verdict::Challenge => 1,
-            agent::Verdict::Block => 2,
-        });
-        match worst {
-            Some(agent::Verdict::Pass) => ("Pass", p.status_done),
-            Some(agent::Verdict::Challenge) => ("Challenge", p.review),
-            Some(agent::Verdict::Block) => ("Block", p.danger),
-            None => ("Reviewed", p.review),
-        }
+        self.verdict()
+            .map_or(("Reviewed", p.review), |verdict| verdict_look(verdict, p))
     }
 
     /// The card's pill: the verdict, faint once the issue changed since.
     pub(super) fn card_pill(&self, p: &Palette) -> ReviewPill {
         let (word, color) = self.pill(p);
         let color = if self.stale { p.ink_faint } else { color };
-        (word, color, verdict_hint(word, self.stale))
+        (word, color, verdict_hint(self.verdict(), self.stale))
+    }
+}
+
+/// A verdict's word, and the colour of its pill.
+fn verdict_look(verdict: agent::Verdict, p: &Palette) -> (&'static str, Color32) {
+    match verdict {
+        agent::Verdict::Pass => ("Pass", p.status_done),
+        agent::Verdict::Challenge => ("Challenge", p.review),
+        agent::Verdict::Block => ("Block", p.danger),
     }
 }
 
 /// What a card's verdict pill means: the worst of the review's three axes.
-fn verdict_hint(word: &str, stale: bool) -> &'static str {
-    match (word, stale) {
-        ("Pass", false) => {
+fn verdict_hint(verdict: Option<agent::Verdict>, stale: bool) -> &'static str {
+    match (verdict, stale) {
+        (Some(agent::Verdict::Pass), false) => {
             "Last AI review: Pass. Relevance, size and clarity are all fine. Click to show it"
         }
-        ("Challenge", false) => {
+        (Some(agent::Verdict::Challenge), false) => {
             "Last AI review: Challenge. Relevance, size or clarity is worth another look, \
              nothing blocks. Click to show it"
         }
-        ("Block", false) => {
+        (Some(agent::Verdict::Block), false) => {
             "Last AI review: Block. Relevance, size or clarity is a real problem \
              (for an update: done, or no longer worth doing). Click to show it"
         }
-        (_, false) => "Last AI review. Click to show it",
-        ("Pass", true) => "Last AI review: Pass, before the issue's last edit. Click to show it",
-        ("Challenge", true) => {
+        (None, false) => "Last AI review. Click to show it",
+        (Some(agent::Verdict::Pass), true) => {
+            "Last AI review: Pass, before the issue's last edit. Click to show it"
+        }
+        (Some(agent::Verdict::Challenge), true) => {
             "Last AI review: Challenge (relevance, size or clarity worth another look), \
              before the issue's last edit. Click to show it"
         }
-        ("Block", true) => {
+        (Some(agent::Verdict::Block), true) => {
             "Last AI review: Block (relevance, size or clarity a real problem), \
              before the issue's last edit. Click to show it"
         }
-        (_, true) => "Last AI review, before the issue's last edit. Click to show it",
+        (None, true) => "Last AI review, before the issue's last edit. Click to show it",
     }
 }
 
@@ -831,14 +838,10 @@ fn review_body(
             ..
         } => {
             for finding in &report.findings {
-                let (label, color) = match finding.verdict {
-                    agent::Verdict::Pass => ("Pass", p.status_done),
-                    agent::Verdict::Challenge => ("Challenge", p.review),
-                    agent::Verdict::Block => ("Block", p.danger),
-                };
+                let (label, color) = verdict_look(finding.verdict, p);
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(&finding.axis)
+                        RichText::new(finding.axis.name())
                             .font(theme::ui_strong())
                             .color(p.ink),
                     );
@@ -847,7 +850,7 @@ fn review_body(
                 if !finding.body.is_empty() {
                     ui.label(RichText::new(&finding.body).color(p.ink_muted));
                 }
-                if finding.axis == "Size" && finding.verdict != agent::Verdict::Pass {
+                if finding.axis == agent::Axis::Size && finding.verdict != agent::Verdict::Pass {
                     ui.add_space(theme::SPACE_2);
                     if widgets::button(ui, ButtonKind::Review, None, "Split into tickets…", None)
                         .on_hover_text("Ask the agent to cut this issue into smaller ones")

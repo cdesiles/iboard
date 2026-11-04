@@ -39,7 +39,7 @@ impl IboardApp {
         let reason = report
             .findings
             .iter()
-            .find(|finding| finding.axis == "Size")
+            .find(|finding| finding.axis == agent::Axis::Size)
             .map(|finding| finding.body.clone())
             .unwrap_or_default();
         let (path, mode) = (review.path.clone(), review.mode);

@@ -26,8 +26,42 @@ pub fn parse_split(text: &str) -> Option<Vec<Draft>> {
     (drafts.len() >= 2).then_some(drafts)
 }
 
-/// The verdict on one axis of the review.
+/// One axis of the review: what a finding judges the issue on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    Relevance,
+    Size,
+    Clarity,
+}
+
+impl Axis {
+    const ALL: [Self; 3] = [Self::Relevance, Self::Size, Self::Clarity];
+
+    /// Its key in the agent's answer, as in `SIZE: Pass`.
+    fn key(self) -> &'static str {
+        match self {
+            Self::Relevance => "RELEVANCE",
+            Self::Size => "SIZE",
+            Self::Clarity => "CLARITY",
+        }
+    }
+
+    fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|axis| axis.key() == key)
+    }
+
+    /// The name in the review panel.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Relevance => "Relevance",
+            Self::Size => "Size",
+            Self::Clarity => "Clarity",
+        }
+    }
+}
+
+/// The verdict on one axis of the review, ranked from the best to the worst.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Verdict {
     Pass,
     Challenge,
@@ -48,7 +82,7 @@ impl Verdict {
 /// One finding: an axis, a verdict and the agent's explanation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    pub axis: String,
+    pub axis: Axis,
     pub verdict: Verdict,
     pub body: String,
 }
@@ -64,25 +98,23 @@ pub struct Report {
 /// Parses the agent's answer. Returns `None` when the answer does not carry the
 /// three findings, so the UI can show it verbatim instead.
 pub fn parse(text: &str) -> Option<Report> {
-    const AXES: [&str; 3] = ["RELEVANCE", "SIZE", "CLARITY"];
     let mut findings: Vec<Finding> = Vec::new();
-    let mut current: Option<(String, Verdict)> = None;
+    let mut current: Option<(Axis, Verdict)> = None;
     let mut body = String::new();
     let mut proposal_lines: Vec<&str> = Vec::new();
     let mut in_proposal = false;
 
-    let flush = |findings: &mut Vec<Finding>,
-                 current: &mut Option<(String, Verdict)>,
-                 body: &mut String| {
-        if let Some((axis, verdict)) = current.take() {
-            findings.push(Finding {
-                axis,
-                verdict,
-                body: body.trim().to_string(),
-            });
-        }
-        body.clear();
-    };
+    let flush =
+        |findings: &mut Vec<Finding>, current: &mut Option<(Axis, Verdict)>, body: &mut String| {
+            if let Some((axis, verdict)) = current.take() {
+                findings.push(Finding {
+                    axis,
+                    verdict,
+                    body: body.trim().to_string(),
+                });
+            }
+            body.clear();
+        };
 
     for line in text.lines() {
         let trimmed = line.trim();
@@ -100,16 +132,11 @@ pub fn parse(text: &str) -> Option<Report> {
                 }
                 continue;
             }
-            if AXES.contains(&key.as_str())
+            if let Some(axis) = Axis::from_key(&key)
                 && let Some((verdict, note)) = verdict_and_note(rest)
             {
                 flush(&mut findings, &mut current, &mut body);
-                let axis = match key.as_str() {
-                    "RELEVANCE" => "Relevance",
-                    "SIZE" => "Size",
-                    _ => "Clarity",
-                };
-                current = Some((axis.to_string(), verdict));
+                current = Some((axis, verdict));
                 if !note.is_empty() {
                     body.push_str(note);
                     body.push('\n');
@@ -124,7 +151,7 @@ pub fn parse(text: &str) -> Option<Report> {
     }
     flush(&mut findings, &mut current, &mut body);
 
-    if findings.len() != AXES.len() {
+    if findings.len() != Axis::ALL.len() {
         return None;
     }
     let proposal = proposal_of(&proposal_lines.join("\n"));
