@@ -1,0 +1,342 @@
+//! The line icons of the design system (see `design/components/Icons`).
+
+use egui::{Color32, CornerRadius, Painter, Pos2, Rect, Stroke, Vec2};
+
+use super::thinking;
+
+/// The line icons of the design system, drawn on a 14pt box with a 1.6pt
+/// stroke so they need no icon font.
+#[derive(Clone, Copy)]
+pub enum Icon {
+    Plus,
+    Minus,
+    Refresh,
+    Edit,
+    /// The back chevron, pointing left.
+    Back,
+    /// A waste basket: delete an issue for good.
+    Trash,
+    /// A lidded box: move a done issue to `.archive`.
+    Archive,
+    /// A small down chevron, marking a control that opens a menu.
+    ChevronDown,
+    /// A speech bubble with a question mark: ask an agent to review.
+    Review,
+    /// A cross: close a dialog.
+    Close,
+    /// A tick: the chosen option of a select menu.
+    Check,
+    /// A magnifier: the board filter.
+    Search,
+    /// Two arrows pointing outwards: expand.
+    Expand,
+    /// A tag with a small plus at the lower right: add a label.
+    TagPlus,
+    /// A node on a line: the git commits behind an issue.
+    Commit,
+    /// A right-pointing triangle: start the AI build.
+    Play,
+    /// A rounded square: stop the AI build.
+    Stop,
+    /// A prompt in a rounded square: the build agent's log.
+    Log,
+    /// The iboard "i" rocking its card: an agent is at work.
+    Thinking,
+    /// A triangle with an exclamation mark: a signal is on.
+    Warning,
+    /// A flame: a hot spot, complex and often changed.
+    Flame,
+    /// Two stacked sheets: project groups.
+    Layers,
+    /// Six dots: something that can be dragged into place.
+    Grip,
+}
+
+pub const ICON_SIZE: f32 = 14.0;
+
+pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
+    let grid = Grid {
+        painter,
+        rect,
+        scale: rect.width() / 24.0,
+        stroke: Stroke::new(1.6, color),
+    };
+    match icon {
+        Icon::Plus
+        | Icon::Minus
+        | Icon::Back
+        | Icon::Refresh
+        | Icon::Close
+        | Icon::Check
+        | Icon::Search
+        | Icon::ChevronDown
+        | Icon::Expand => basic_icon(&grid, icon),
+        Icon::Edit | Icon::Trash | Icon::Archive | Icon::TagPlus | Icon::Commit => {
+            document_icon(&grid, icon);
+        }
+        Icon::Play | Icon::Stop | Icon::Thinking | Icon::Log | Icon::Review => {
+            agent_icon(&grid, icon);
+        }
+        Icon::Layers | Icon::Grip | Icon::Warning | Icon::Flame => project_icon(&grid, icon),
+    }
+}
+
+/// Lucide's 24-unit grid laid over an icon's rect, and the pen the icons
+/// draw with.
+struct Grid<'a> {
+    painter: &'a Painter,
+    rect: Rect,
+    scale: f32,
+    stroke: Stroke,
+}
+
+impl Grid<'_> {
+    fn at(&self, x: f32, y: f32) -> Pos2 {
+        Pos2::new(
+            self.rect.min.x + x * self.scale,
+            self.rect.min.y + y * self.scale,
+        )
+    }
+
+    fn points(&self, points: &[(f32, f32)]) -> Vec<Pos2> {
+        points.iter().map(|&(x, y)| self.at(x, y)).collect()
+    }
+
+    fn line(&self, points: &[(f32, f32)]) {
+        self.painter.line(self.points(points), self.stroke);
+    }
+
+    fn closed(&self, points: &[(f32, f32)]) {
+        let shape = egui::Shape::closed_line(self.points(points), self.stroke);
+        self.painter.add(shape);
+    }
+
+    fn segment(&self, (x0, y0): (f32, f32), (x1, y1): (f32, f32)) {
+        let points = [self.at(x0, y0), self.at(x1, y1)];
+        self.painter.line_segment(points, self.stroke);
+    }
+
+    fn circle(&self, (x, y): (f32, f32), radius: f32) {
+        let center = self.at(x, y);
+        self.painter
+            .circle_stroke(center, radius * self.scale, self.stroke);
+    }
+
+    fn dot(&self, (x, y): (f32, f32), radius: f32) {
+        let center = self.at(x, y);
+        self.painter
+            .circle_filled(center, radius * self.scale, self.stroke.color);
+    }
+
+    fn square(&self, (x0, y0): (f32, f32), (x1, y1): (f32, f32)) {
+        let square = Rect::from_min_max(self.at(x0, y0), self.at(x1, y1));
+        let radius = CornerRadius::same((2.0 * self.scale).round() as u8);
+        self.painter
+            .rect_stroke(square, radius, self.stroke, egui::StrokeKind::Middle);
+    }
+}
+
+/// The plain controls: add, remove, go back, refresh, close, pick, search,
+/// open a menu, expand.
+fn basic_icon(g: &Grid, icon: Icon) {
+    match icon {
+        Icon::Plus => {
+            g.segment((12.0, 5.0), (12.0, 19.0));
+            g.segment((5.0, 12.0), (19.0, 12.0));
+        }
+        Icon::Minus => g.segment((5.0, 12.0), (19.0, 12.0)),
+        Icon::Back => g.line(&[(15.0, 18.0), (9.0, 12.0), (15.0, 6.0)]),
+        Icon::Refresh => {
+            // A clockwise 300° arc with an arrow head where it ends, top right.
+            let center = g.at(12.0, 12.0);
+            let radius = 8.0 * g.scale;
+            let end_angle = 300.0_f32.to_radians();
+            let points: Vec<Pos2> = (0..=24)
+                .map(|i| {
+                    let t = (i as f32 / 24.0) * end_angle;
+                    center + radius * Vec2::new(t.cos(), t.sin())
+                })
+                .collect();
+            let end = *points.last().unwrap_or(&center);
+            g.painter.line(points, g.stroke);
+            let direction = Vec2::new(-end_angle.sin(), end_angle.cos());
+            let head = 5.0 * g.scale;
+            let barb = |angle: f32| {
+                end - head * (egui::emath::Rot2::from_angle(angle.to_radians()) * direction)
+            };
+            g.painter.line(vec![barb(40.0), end, barb(-40.0)], g.stroke);
+        }
+        Icon::Close => {
+            g.segment((18.0, 6.0), (6.0, 18.0));
+            g.segment((6.0, 6.0), (18.0, 18.0));
+        }
+        Icon::Check => g.line(&[(20.0, 6.0), (9.0, 17.0), (4.0, 12.0)]),
+        Icon::Search => {
+            g.circle((11.0, 11.0), 7.0);
+            g.segment((20.0, 20.0), (16.0, 16.0));
+        }
+        Icon::ChevronDown => g.line(&[(6.0, 9.5), (12.0, 15.0), (18.0, 9.5)]),
+        Icon::Expand => {
+            // Lucide's maximize-2: two corner brackets and a diagonal each.
+            g.line(&[(15.0, 3.0), (21.0, 3.0), (21.0, 9.0)]);
+            g.line(&[(9.0, 21.0), (3.0, 21.0), (3.0, 15.0)]);
+            g.segment((21.0, 3.0), (14.0, 10.0));
+            g.segment((3.0, 21.0), (10.0, 14.0));
+        }
+        _ => {}
+    }
+}
+
+/// What can be done to an issue: edit, delete, archive, label it, see its
+/// commits.
+fn document_icon(g: &Grid, icon: Icon) {
+    match icon {
+        Icon::Edit => g.line(&[
+            (17.0, 3.0),
+            (21.0, 7.0),
+            (7.5, 20.5),
+            (2.0, 22.0),
+            (3.5, 16.5),
+            (17.0, 3.0),
+        ]),
+        Icon::Trash => trash_icon(g),
+        Icon::Archive => {
+            // A lidded box; the handle becomes a short line.
+            g.line(&[(2.0, 3.0), (22.0, 3.0), (22.0, 8.0), (2.0, 8.0), (2.0, 3.0)]);
+            g.line(&[(4.0, 8.0), (4.0, 21.0), (20.0, 21.0), (20.0, 8.0)]);
+            g.segment((10.0, 12.0), (14.0, 12.0));
+        }
+        Icon::TagPlus => {
+            // Lucide's tag, shrunk to leave the lower right to a small plus.
+            g.line(&[
+                (2.5, 2.5),
+                (11.0, 2.5),
+                (19.0, 10.5),
+                (10.5, 19.0),
+                (2.5, 11.0),
+                (2.5, 2.5),
+            ]);
+            g.dot((7.0, 7.0), 1.3);
+            g.segment((19.0, 15.0), (19.0, 23.0));
+            g.segment((15.0, 19.0), (23.0, 19.0));
+        }
+        Icon::Commit => {
+            // Lucide's git-commit: a node on a vertical line.
+            g.segment((12.0, 2.5), (12.0, 8.5));
+            g.segment((12.0, 15.5), (12.0, 21.5));
+            g.circle((12.0, 12.0), 3.5);
+        }
+        _ => {}
+    }
+}
+
+/// iboard's soft bin: a round knob on the lid, a tapered body with rounded
+/// bottom corners, two short ribs.
+fn trash_icon(g: &Grid) {
+    g.segment((4.5, 7.0), (19.5, 7.0));
+    let knob: Vec<_> = (0..=8)
+        .map(|i| {
+            let t = std::f32::consts::PI * (1.0 + i as f32 / 8.0);
+            (12.0 + 2.5 * t.cos(), 7.0 + 2.5 * t.sin())
+        })
+        .collect();
+    g.line(&knob);
+    let body = [
+        (6.5, 7.0),
+        (7.4, 18.1),
+        (7.83, 19.56),
+        (8.93, 20.62),
+        (10.4, 21.0),
+        (13.6, 21.0),
+        (15.07, 20.62),
+        (16.17, 19.56),
+        (16.6, 18.1),
+        (17.5, 7.0),
+    ];
+    g.line(&body);
+    g.segment((10.0, 11.0), (10.0, 16.5));
+    g.segment((14.0, 11.0), (14.0, 16.5));
+}
+
+/// An agent's work: start and stop the build, watch it think, read its log,
+/// ask it for a review.
+fn agent_icon(g: &Grid, icon: Icon) {
+    match icon {
+        // Lucide's play.
+        Icon::Play => g.closed(&[(6.0, 3.0), (20.0, 12.0), (6.0, 21.0)]),
+        Icon::Stop => g.square((5.0, 5.0), (19.0, 19.0)),
+        Icon::Thinking => thinking::icon(g.painter, g.rect),
+        Icon::Log => {
+            // Lucide's square-terminal.
+            g.square((3.0, 3.0), (21.0, 21.0));
+            g.line(&[(7.0, 8.0), (10.0, 11.0), (7.0, 14.0)]);
+            g.segment((12.0, 15.0), (17.0, 15.0));
+        }
+        Icon::Review => {
+            // A speech bubble (Lucide's message-circle-question): a circle
+            // with a tail at the lower left, and a question mark inside.
+            let center = g.at(11.5, 11.0);
+            let radius = 7.6 * g.scale;
+            let bubble: Vec<Pos2> = (0..=40)
+                .map(|i| {
+                    let turn = std::f32::consts::TAU * (i as f32 / 40.0);
+                    center + radius * Vec2::new(turn.cos(), turn.sin())
+                })
+                .collect();
+            g.painter.line(bubble, g.stroke);
+            g.line(&[(5.4, 16.6), (3.6, 20.6), (8.4, 19.2)]);
+            g.line(&[
+                (9.6, 9.4),
+                (10.2, 8.2),
+                (11.8, 7.8),
+                (13.4, 8.6),
+                (13.5, 10.2),
+                (11.8, 11.3),
+                (11.7, 12.6),
+            ]);
+            g.dot((11.7, 15.0), 1.0);
+        }
+        _ => {}
+    }
+}
+
+/// The project's marks: the ProjectMenu footer's groups and Reorder grip,
+/// the Stats screen's signals and hot spots.
+fn project_icon(g: &Grid, icon: Icon) {
+    match icon {
+        Icon::Layers => {
+            g.closed(&[(12.0, 3.0), (21.0, 8.0), (12.0, 13.0), (3.0, 8.0)]);
+            g.line(&[(3.0, 13.0), (12.0, 18.0), (21.0, 13.0)]);
+        }
+        Icon::Grip => {
+            let dots = [
+                (9.0, 6.0),
+                (15.0, 6.0),
+                (9.0, 12.0),
+                (15.0, 12.0),
+                (9.0, 18.0),
+                (15.0, 18.0),
+            ];
+            for dot in dots {
+                g.dot(dot, 1.6);
+            }
+        }
+        Icon::Warning => {
+            g.closed(&[(12.0, 3.5), (21.5, 20.0), (2.5, 20.0)]);
+            g.segment((12.0, 9.5), (12.0, 13.5));
+            g.dot((12.0, 16.8), 0.9);
+        }
+        Icon::Flame => g.closed(&[
+            (12.0, 2.5),
+            (16.5, 8.0),
+            (19.0, 13.5),
+            (17.5, 18.5),
+            (12.0, 21.5),
+            (6.5, 18.5),
+            (5.0, 13.5),
+            (7.5, 9.0),
+            (9.5, 12.0),
+        ]),
+        _ => {}
+    }
+}
