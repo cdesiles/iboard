@@ -185,6 +185,7 @@ fn absorb(board: &mut Board, project: Board, group: &str) {
                 board.columns.push(Column {
                     name: column.name.clone(),
                     dir,
+                    kind: column.kind,
                     issues: Vec::new(),
                 });
                 board.columns.len() - 1
@@ -204,15 +205,13 @@ fn absorb(board: &mut Board, project: Board, group: &str) {
         .extend(warnings.map(|warning| format!("{name}: {warning}")));
 }
 
-/// The merged column `column` joins: its canonical name (`wip/` is Doing),
+/// The merged column `column` joins: its kind's name (`wip/` is Doing),
 /// the root column's name for loose files, else its folder's name.
 fn kind(column: &Column, root: &Path) -> String {
-    let name = if column.dir == root {
-        column.name.clone()
-    } else {
-        discovery::canonical_name(&column.dir)
-            .map(str::to_string)
-            .unwrap_or_else(|| files::file_name(&column.dir))
+    let name = match column.kind {
+        Some(kind) => kind.name().to_string(),
+        None if column.dir == root => column.name.clone(),
+        None => files::file_name(&column.dir),
     };
     name.to_lowercase()
 }

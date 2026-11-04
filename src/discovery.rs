@@ -23,19 +23,70 @@ pub struct Located {
     pub config: Option<Config>,
 }
 
+/// What a known column folder is for, in board order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnKind {
+    Backlog,
+    Todo,
+    Ready,
+    Doing,
+    Review,
+    Later,
+    Blocked,
+    Done,
+}
+
+impl ColumnKind {
+    /// The kind of the folder `dir`, under any of its names: `wip/` is Doing.
+    pub fn of(dir: &Path) -> Option<Self> {
+        let name = dir.file_name()?.to_str()?;
+        match name.to_ascii_lowercase().as_str() {
+            "backlog" | "icebox" => Some(Self::Backlog),
+            "todo" | "to-do" | "to_do" => Some(Self::Todo),
+            "ready" => Some(Self::Ready),
+            "doing" | "in-progress" | "in_progress" | "inprogress" | "wip" => Some(Self::Doing),
+            "review" => Some(Self::Review),
+            "later" => Some(Self::Later),
+            "blocked" => Some(Self::Blocked),
+            "done" | "completed" => Some(Self::Done),
+            _ => None,
+        }
+    }
+
+    /// The title of its column.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Backlog => "Backlog",
+            Self::Todo => "Todo",
+            Self::Ready => "Ready",
+            Self::Doing => "Doing",
+            Self::Review => "Review",
+            Self::Later => "Later",
+            Self::Blocked => "Blocked",
+            Self::Done => "Done",
+        }
+    }
+}
+
 pub struct Column {
     pub name: String,
     /// The directory holding this column's issues. Dropping a card here moves
     /// its markdown file into this directory.
     pub dir: PathBuf,
+    /// Its folder's kind: none for an unknown folder or the files at the
+    /// issues root.
+    pub kind: Option<ColumnKind>,
     pub issues: Vec<Issue>,
 }
 
 impl Column {
     /// Whether the "+" / new-issue affordance is offered here. New issues
-    /// start life in the todo column.
+    /// start life in Todo, or in the root files column when it is named so.
     pub fn accepts_new_issues(&self) -> bool {
-        self.name.eq_ignore_ascii_case("todo")
+        match self.kind {
+            Some(kind) => kind == ColumnKind::Todo,
+            None => self.name.eq_ignore_ascii_case(ColumnKind::Todo.name()),
+        }
     }
 
     /// Whether this is the Done column.
@@ -397,7 +448,7 @@ fn column_dirs(
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
             .filter(|path| path.is_dir() && !is_hidden(path))
-            .filter(|path| is_known_column(path) || contains_markdown(path))
+            .filter(|path| ColumnKind::of(path).is_some() || contains_markdown(path))
             .collect();
         subs.sort_by(|a, b| {
             column_rank(a).cmp(&column_rank(b)).then_with(|| {
@@ -422,19 +473,22 @@ fn root_column(
     if root_files.is_empty() {
         return None;
     }
-    let has_todo_dir = dirs.iter().any(|dir| column_rank(dir) == 1);
+    let has_todo_dir = dirs
+        .iter()
+        .any(|dir| ColumnKind::of(dir) == Some(ColumnKind::Todo));
     let name = config
         .and_then(|c| c.root_column_name.clone())
         .unwrap_or_else(|| {
             if has_todo_dir {
-                "Backlog".to_string()
+                ColumnKind::Backlog.name().to_string()
             } else {
-                "Todo".to_string()
+                ColumnKind::Todo.name().to_string()
             }
         });
     Some(Column {
         name,
         dir: root.to_path_buf(),
+        kind: None,
         issues: load_issues(root_files, warnings),
     })
 }
@@ -443,20 +497,22 @@ fn root_column(
 fn folder_column(root: &Path, dir: &Path, warnings: &mut Vec<String>) -> Column {
     let files = collect_markdown(dir, warnings);
     let mut issues = load_issues(files, warnings);
-    match canonical_name(dir) {
-        Some("Done") => {
+    let kind = ColumnKind::of(dir);
+    match kind {
+        Some(ColumnKind::Done) => {
             sort_recent_first(dir, &mut issues, true);
             for issue in &mut issues {
                 let log = build_log::load(&build_log::path(root, &issue.path));
                 issue.built_in = log.as_deref().and_then(build_log::took);
             }
         }
-        Some("Doing") => sort_recent_first(dir, &mut issues, false),
+        Some(ColumnKind::Doing) => sort_recent_first(dir, &mut issues, false),
         _ => {}
     }
     Column {
         name: display_name(dir),
         dir: dir.to_path_buf(),
+        kind,
         issues,
     }
 }
@@ -492,30 +548,36 @@ fn sort_recent_first(dir: &Path, issues: &mut [Issue], show_date: bool) {
 
 /// Whether `dir` is the Ready column, whose issues carry a priority prefix.
 pub fn is_ready_column(dir: &Path) -> bool {
-    canonical_name(dir) == Some("Ready")
+    ColumnKind::of(dir) == Some(ColumnKind::Ready)
 }
 
 /// Whether `dir` is the Doing column, where the AI build's agent works.
 pub fn is_doing_column(dir: &Path) -> bool {
-    canonical_name(dir) == Some("Doing")
+    ColumnKind::of(dir) == Some(ColumnKind::Doing)
 }
 
 /// Whether `dir` is the Done column.
 pub fn is_done_column(dir: &Path) -> bool {
-    canonical_name(dir) == Some("Done")
+    ColumnKind::of(dir) == Some(ColumnKind::Done)
 }
 
 /// Whether a column's order is its file-name order, so dropping a card at a
 /// position can renumber the files. Todo and Ready; Doing and Done are sorted
 /// by date instead.
 pub fn is_orderable_column(dir: &Path) -> bool {
-    matches!(canonical_name(dir), Some("Todo" | "Ready"))
+    matches!(
+        ColumnKind::of(dir),
+        Some(ColumnKind::Todo | ColumnKind::Ready)
+    )
 }
 
 /// Whether a column's issues can be edited on the board. Todo and Ready are
 /// the working columns; Doing and Done are the agent's and the finished ones.
 pub fn is_editable_column(dir: &Path) -> bool {
-    !matches!(canonical_name(dir), Some("Doing" | "Review" | "Done"))
+    !matches!(
+        ColumnKind::of(dir),
+        Some(ColumnKind::Doing | ColumnKind::Review | ColumnKind::Done)
+    )
 }
 
 /// The width of the priority prefix in Ready: `001-make-colour-green.md`.
@@ -663,50 +725,16 @@ fn collect_markdown(dir: &Path, warnings: &mut Vec<String>) -> Vec<PathBuf> {
     files
 }
 
-/// Maps a directory name to its canonical title and sort rank.
-fn canonical(name: &str) -> Option<(&'static str, u8)> {
-    let lower = name.to_ascii_lowercase();
-    match lower.as_str() {
-        "backlog" | "icebox" => Some(("Backlog", 0)),
-        "todo" | "to-do" | "to_do" => Some(("Todo", 1)),
-        "ready" => Some(("Ready", 2)),
-        "doing" | "in-progress" | "in_progress" | "inprogress" | "wip" => Some(("Doing", 3)),
-        "review" => Some(("Review", 4)),
-        "later" => Some(("Later", 5)),
-        "blocked" => Some(("Blocked", 6)),
-        "done" | "completed" => Some(("Done", 7)),
-        _ => None,
-    }
-}
-
 fn display_name(dir: &Path) -> String {
     let raw = dir.file_name().and_then(|n| n.to_str()).unwrap_or("Column");
-    match canonical(raw) {
-        Some((name, _)) => name.to_string(),
+    match ColumnKind::of(dir) {
+        Some(kind) => kind.name().to_string(),
         None => title_case(raw),
     }
 }
 
-fn is_known_column(dir: &Path) -> bool {
-    dir.file_name()
-        .and_then(|n| n.to_str())
-        .map(|name| canonical(name).is_some())
-        .unwrap_or(false)
-}
-
 pub(crate) fn column_rank(dir: &Path) -> u8 {
-    dir.file_name()
-        .and_then(|n| n.to_str())
-        .and_then(canonical)
-        .map(|(_, rank)| rank)
-        .unwrap_or(u8::MAX)
-}
-
-pub(crate) fn canonical_name(dir: &Path) -> Option<&'static str> {
-    dir.file_name()
-        .and_then(|n| n.to_str())
-        .and_then(canonical)
-        .map(|(name, _)| name)
+    ColumnKind::of(dir).map_or(u8::MAX, |kind| kind as u8)
 }
 
 fn contains_markdown(dir: &Path) -> bool {
@@ -876,10 +904,26 @@ mod tests {
         fs::write(dir.join("issues/loose.md"), "# Loose\n").unwrap();
         let board = build(&locate(dir).unwrap()).unwrap();
         assert_eq!(names(&board), ["Todo", "Doing"]);
+        assert!(board.columns[0].accepts_new_issues());
 
         fs::create_dir_all(dir.join("issues/todo")).unwrap();
         let board = build(&locate(dir).unwrap()).unwrap();
         assert_eq!(names(&board), ["Backlog", "Todo", "Doing"]);
+        assert!(!board.columns[0].accepts_new_issues());
+        assert!(board.columns[1].accepts_new_issues());
+    }
+
+    #[test]
+    fn root_files_take_new_issues_even_in_a_folder_named_like_a_column() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        fs::create_dir_all(dir.join("backlog/done")).unwrap();
+        fs::write(dir.join("backlog/loose.md"), "# Loose\n").unwrap();
+        fs::write(dir.join("iboard.toml"), "root = \"backlog\"\n").unwrap();
+        let board = build(&locate(dir).unwrap()).unwrap();
+        assert_eq!(names(&board), ["Todo", "Done"]);
+        assert_eq!(board.columns[0].kind, None);
+        assert!(board.columns[0].accepts_new_issues());
     }
 
     #[test]
