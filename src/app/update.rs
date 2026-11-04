@@ -71,12 +71,11 @@ impl IboardApp {
         {
             self.toggle_update(path);
         }
-        if self.session.review_runs.is_ready(path)
-            && widgets::button(ui, ButtonKind::Review, None, "Update ready", None)
-                .on_hover_text("The agent's answer is in: show it")
-                .clicked()
-        {
-            self.show_past_review(path.to_path_buf());
-        }
+        self.ready_button(
+            ui,
+            path,
+            "Update ready",
+            "The agent's answer is in: show it",
+        );
     }
 }

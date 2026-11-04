@@ -270,7 +270,6 @@ impl IboardApp {
             Some(if running { "⌘⇧R" } else { "⌘R" }),
             running || configured,
         );
-        let draft = self.session.detail_mode == DetailMode::Edit;
         if main.on_hover_text(hint).clicked() {
             if running {
                 self.cancel_review_run(path);
@@ -281,7 +280,6 @@ impl IboardApp {
             }
         }
         let caret = caret.on_hover_text("Review options");
-        let p = theme::palette(ui);
         let runs_with = if configured {
             self.agent.label()
         } else {
@@ -291,62 +289,23 @@ impl IboardApp {
             ReviewMode::Quick => ReviewMode::Deep,
             ReviewMode::Deep => ReviewMode::Quick,
         };
-        let picked = egui::Popup::menu(&caret)
-            .width(REVIEW_MENU_WIDTH)
-            .align(egui::RectAlign::BOTTOM_END)
-            .show(|ui| {
-                ui.set_min_width(REVIEW_MENU_WIDTH);
-                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                let mut picked = None;
-                let option = |ui: &mut egui::Ui, name: &str, mono: bool, meta: &str| {
-                    widgets::menu_option(
-                        ui,
-                        widgets::MenuOption {
-                            name,
-                            mono,
-                            muted: false,
-                            meta,
-                            checked: false,
-                            active: false,
-                        },
-                    )
-                };
-                if option(ui, "Refine with a challenger", false, "⌘R").clicked() {
-                    picked = Some(ReviewMenu::Refine);
-                }
-                if option(ui, "Review this issue", false, "⌘⇧R").clicked() {
-                    picked = Some(ReviewMenu::Review);
-                }
-                let (other, meta) = match other_scope {
-                    ReviewMode::Deep => ("Deep review", "reads the repo"),
-                    ReviewMode::Quick => ("Quick review", "ticket only"),
-                };
-                if option(ui, other, false, meta).clicked() {
-                    picked = Some(ReviewMenu::OtherScope);
-                }
-                ui.add_space(theme::SPACE_2);
-                ui.separator();
-                widgets::menu_group(ui, "Runs with");
-                let (rect, _) = ui.allocate_exact_size(
-                    Vec2::new(ui.available_width(), theme::CONTROL_H),
-                    Sense::hover(),
-                );
-                ui.painter().text(
-                    Pos2::new(
-                        rect.min.x + 2.0 * theme::SPACE_3 + theme::ICON_SIZE,
-                        rect.center().y,
-                    ),
-                    egui::Align2::LEFT_CENTER,
-                    &runs_with,
-                    egui::FontId::monospace(12.0),
-                    p.ink,
-                );
-                if option(ui, "AI settings…", false, "⌘,").clicked() {
-                    picked = Some(ReviewMenu::Settings);
-                }
-                picked
-            })
-            .and_then(|inner| inner.inner);
+        let picked = review_menu(&caret, &runs_with, other_scope);
+        self.apply_review_menu(path, picked, other_scope);
+        self.ready_button(ui, path, "Review ready", "The review is in: show it");
+    }
+
+    /// Runs the Review menu's pick. While a review runs, its reviews and
+    /// Refine do nothing; with no agent set up, they open Settings as AI
+    /// settings does.
+    fn apply_review_menu(
+        &mut self,
+        path: &Path,
+        picked: Option<ReviewMenu>,
+        other_scope: ReviewMode,
+    ) {
+        let running = self.review_is_running(path);
+        let configured = self.agent.configured();
+        let draft = self.session.detail_mode == DetailMode::Edit;
         match picked {
             Some(ReviewMenu::Review | ReviewMenu::OtherScope | ReviewMenu::Refine) if running => {}
             Some(ReviewMenu::Review) if configured => self.start_review(path, draft),
@@ -364,9 +323,14 @@ impl IboardApp {
             }
             None => {}
         }
+    }
+
+    /// Review ready, or Update ready, beside its button once the answer on
+    /// `path` is in: a click shows it.
+    pub(super) fn ready_button(&mut self, ui: &mut egui::Ui, path: &Path, label: &str, hint: &str) {
         if self.session.review_runs.is_ready(path)
-            && widgets::button(ui, ButtonKind::Review, None, "Review ready", None)
-                .on_hover_text("The review is in: show it")
+            && widgets::button(ui, ButtonKind::Review, None, label, None)
+                .on_hover_text(hint)
                 .clicked()
         {
             self.show_past_review(path.to_path_buf());
@@ -558,6 +522,72 @@ impl CardReviews<'_> {
         }
         self.past.get(path).map(|past| past.card_pill(p))
     }
+}
+
+/// The Review button's menu, under its caret: Refine, the review in either
+/// scope, what the agent runs with, and AI settings.
+fn review_menu(
+    caret: &egui::Response,
+    runs_with: &str,
+    other_scope: ReviewMode,
+) -> Option<ReviewMenu> {
+    egui::Popup::menu(caret)
+        .width(REVIEW_MENU_WIDTH)
+        .align(egui::RectAlign::BOTTOM_END)
+        .show(|ui| {
+            ui.set_min_width(REVIEW_MENU_WIDTH);
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            let p = theme::palette(ui);
+            let mut picked = None;
+            let option = |ui: &mut egui::Ui, name: &str, meta: &str| {
+                widgets::menu_option(
+                    ui,
+                    widgets::MenuOption {
+                        name,
+                        mono: false,
+                        muted: false,
+                        meta,
+                        checked: false,
+                        active: false,
+                    },
+                )
+            };
+            if option(ui, "Refine with a challenger", "⌘R").clicked() {
+                picked = Some(ReviewMenu::Refine);
+            }
+            if option(ui, "Review this issue", "⌘⇧R").clicked() {
+                picked = Some(ReviewMenu::Review);
+            }
+            let (other, meta) = match other_scope {
+                ReviewMode::Deep => ("Deep review", "reads the repo"),
+                ReviewMode::Quick => ("Quick review", "ticket only"),
+            };
+            if option(ui, other, meta).clicked() {
+                picked = Some(ReviewMenu::OtherScope);
+            }
+            ui.add_space(theme::SPACE_2);
+            ui.separator();
+            widgets::menu_group(ui, "Runs with");
+            let (rect, _) = ui.allocate_exact_size(
+                Vec2::new(ui.available_width(), theme::CONTROL_H),
+                Sense::hover(),
+            );
+            ui.painter().text(
+                Pos2::new(
+                    rect.min.x + 2.0 * theme::SPACE_3 + theme::ICON_SIZE,
+                    rect.center().y,
+                ),
+                egui::Align2::LEFT_CENTER,
+                runs_with,
+                egui::FontId::monospace(12.0),
+                p.ink,
+            );
+            if option(ui, "AI settings…", "⌘,").clicked() {
+                picked = Some(ReviewMenu::Settings);
+            }
+            picked
+        })
+        .and_then(|inner| inner.inner)
 }
 
 /// How much of the review head the agent, mode and source may take; they
