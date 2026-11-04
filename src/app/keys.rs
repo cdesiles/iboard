@@ -521,14 +521,7 @@ impl IboardApp {
                 .session
                 .editor
                 .as_ref()
-                .map(|e| {
-                    e.is_dirty()
-                        && e.conflict.is_none()
-                        && e.last_edit
-                            .map(|t| t.elapsed() >= AUTOSAVE_AFTER)
-                            .unwrap_or(false)
-                })
-                .unwrap_or(false);
+                .is_some_and(EditorState::autosave_due);
         if due {
             self.flush_autosave(false);
         }

@@ -218,8 +218,7 @@ impl IboardApp {
         if let Some(editor) = self.session.editor.as_mut()
             && editor.path == path
         {
-            editor.text = proposal;
-            editor.last_edit = Some(Instant::now());
+            editor.replace(proposal);
         }
         self.session.detail_mode = DetailMode::Edit;
         self.session.review = None;

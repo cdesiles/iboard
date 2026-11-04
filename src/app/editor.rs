@@ -2,6 +2,162 @@
 
 use super::*;
 
+/// How long after the last keystroke an edit is written to disk.
+pub(super) const AUTOSAVE_AFTER: Duration = Duration::from_millis(800);
+
+/// The in-progress edit of one issue.
+pub(super) struct EditorState {
+    pub(super) path: PathBuf,
+    /// Current buffer, edited by the user.
+    pub(super) text: String,
+    /// Content as last seen on disk (loaded or saved), for dirty detection.
+    baseline: String,
+    /// File name as edited by the user.
+    pub(super) name: String,
+    /// File name as last seen on disk (loaded or saved).
+    baseline_name: String,
+    /// Newer on-disk content that arrived while we have unsaved edits.
+    conflict: Option<String>,
+    last_edit: Option<Instant>,
+    pub(super) error: Option<String>,
+}
+
+impl EditorState {
+    pub(super) fn new(path: PathBuf, content: String) -> Self {
+        let name = file_name(&path);
+        Self {
+            path,
+            baseline: content.clone(),
+            text: content,
+            baseline_name: name.clone(),
+            name,
+            conflict: None,
+            last_edit: None,
+            error: None,
+        }
+    }
+
+    pub(super) fn is_dirty(&self) -> bool {
+        self.text != self.baseline || self.name != self.baseline_name
+    }
+
+    /// The buffer or the name just changed: autosave waits for a pause.
+    pub(super) fn mark_edited(&mut self) {
+        self.last_edit = Some(Instant::now());
+    }
+
+    /// The buffer becomes `text`, an unsaved edit: an agent's proposal.
+    pub(super) fn replace(&mut self, text: String) {
+        self.text = text;
+        self.mark_edited();
+    }
+
+    /// Unsaved edits, no conflict, and no keystroke for `AUTOSAVE_AFTER`.
+    pub(super) fn autosave_due(&self) -> bool {
+        self.is_dirty()
+            && self.conflict.is_none()
+            && self
+                .last_edit
+                .is_some_and(|edit| edit.elapsed() >= AUTOSAVE_AFTER)
+    }
+
+    /// What the file now holds on disk: taken in when nothing is unsaved,
+    /// kept as a conflict otherwise.
+    fn adopt(&mut self, disk: &str) {
+        if disk == self.baseline {
+            return;
+        }
+        if self.is_dirty() {
+            // Someone (or something) wrote while we have unsaved work.
+            self.conflict = Some(disk.to_string());
+        } else {
+            // No local edits: quietly adopt the newest content.
+            self.text = disk.to_string();
+            self.baseline = disk.to_string();
+            self.conflict = None;
+        }
+    }
+
+    /// Writes the buffer if it is dirty, renaming the file when its name was
+    /// edited too. With `force`, also overwrites a detected conflict ("Keep
+    /// mine"). False when there was nothing to write, or when it failed,
+    /// `error` saying why.
+    fn write(&mut self, force: bool) -> bool {
+        if !self.is_dirty() {
+            return false;
+        }
+        if self.conflict.is_some() && !force {
+            return false;
+        }
+
+        // Work out the target path from the (possibly edited) file name.
+        if self.name.trim().is_empty() {
+            self.error = Some("the file name cannot be empty".to_string());
+            return false;
+        }
+        let desired = normalize_file_name(&self.name);
+        let target = self.path.with_file_name(&desired);
+        if target != self.path && target.exists() {
+            self.error = Some(format!(
+                "Couldn't rename to {desired}: that file already exists. Pick another name."
+            ));
+            return false;
+        }
+
+        // Save the content under the current name, then move the file if the
+        // name changed. A refused rename leaves the saved content in place.
+        if let Err(err) = atomic_write(&self.path, &self.text) {
+            self.error = Some(format!("Couldn't save {}: {err}", file_name(&self.path)));
+            return false;
+        }
+        if target != self.path {
+            match std::fs::rename(&self.path, &target) {
+                Ok(()) => {
+                    self.path = target;
+                    self.baseline_name = desired.clone();
+                    self.name = desired;
+                }
+                Err(err) => {
+                    self.error = Some(format!("Couldn't rename to {desired}: {err}"));
+                    self.mark_saved();
+                    return false;
+                }
+            }
+        }
+
+        self.mark_saved();
+        if force {
+            self.conflict = None;
+        }
+        self.error = None;
+        true
+    }
+
+    /// The buffer is what the file holds.
+    pub(super) fn mark_saved(&mut self) {
+        self.baseline = self.text.clone();
+        self.last_edit = None;
+    }
+
+    /// Drops the edits for what the file holds on disk ("Reload").
+    fn reload(&mut self, disk: &str) {
+        self.text = disk.to_string();
+        self.baseline = disk.to_string();
+        self.conflict = None;
+        self.last_edit = None;
+        self.error = None;
+    }
+
+    /// Drops unsaved edits, to the content and the file name.
+    fn discard(&mut self) {
+        self.text = self.baseline.clone();
+        self.name = self.baseline_name.clone();
+        self.conflict = None;
+        self.last_edit = None;
+        self.error = None;
+    }
+}
+
 impl IboardApp {
     /// Notices external changes to the file being edited.
     pub(super) fn reconcile_editor(&mut self) {
@@ -11,91 +167,26 @@ impl IboardApp {
         let Some(issue) = self.board.find(&editor.path) else {
             return;
         };
-        let disk = &issue.markdown;
-        if disk == &editor.baseline {
-            return;
-        }
-        if editor.is_dirty() {
-            // Someone (or something) wrote while we have unsaved work.
-            editor.conflict = Some(disk.clone());
-        } else {
-            // No local edits: quietly adopt the newest content.
-            editor.text = disk.clone();
-            editor.baseline = disk.clone();
-            editor.conflict = None;
-        }
+        editor.adopt(&issue.markdown);
     }
 
-    /// Writes the buffer if it is dirty, renaming the file when its name was
-    /// edited too. With `force`, also overwrites a detected conflict ("Keep
-    /// mine").
+    /// Writes the buffer if it is dirty, renaming the file and its images
+    /// when its name was edited too. With `force`, also overwrites a
+    /// detected conflict ("Keep mine").
     pub(super) fn flush_autosave(&mut self, force: bool) {
-        let mut renamed: Option<(PathBuf, PathBuf)> = None;
-        let saved = {
-            let Some(editor) = self.session.editor.as_mut() else {
-                return;
-            };
-            if !editor.is_dirty() {
-                return;
-            }
-            if editor.conflict.is_some() && !force {
-                return;
-            }
-
-            // Work out the target path from the (possibly edited) file name.
-            if editor.name.trim().is_empty() {
-                editor.error = Some("the file name cannot be empty".to_string());
-                return;
-            }
-            let desired = normalize_file_name(&editor.name);
-            let target = editor.path.with_file_name(&desired);
-            if target != editor.path && target.exists() {
-                editor.error = Some(format!(
-                    "Couldn't rename to {desired}: that file already exists. Pick another name."
-                ));
-                return;
-            }
-
-            // Save the content under the current name, then move the file if the
-            // name changed. A refused rename leaves the saved content in place.
-            if let Err(err) = atomic_write(&editor.path, &editor.text) {
-                editor.error = Some(format!("Couldn't save {}: {err}", file_name(&editor.path)));
-                return;
-            }
-            if target != editor.path {
-                match std::fs::rename(&editor.path, &target) {
-                    Ok(()) => {
-                        renamed = Some((editor.path.clone(), target.clone()));
-                        editor.path = target;
-                        editor.baseline_name = desired.clone();
-                        editor.name = desired.clone();
-                    }
-                    Err(err) => {
-                        editor.error = Some(format!("Couldn't rename to {desired}: {err}"));
-                        editor.baseline = editor.text.clone();
-                        editor.last_edit = None;
-                        editor.saved_flash = Some(Instant::now());
-                        return;
-                    }
-                }
-            }
-
-            editor.baseline = editor.text.clone();
-            if force {
-                editor.conflict = None;
-            }
-            editor.last_edit = None;
-            editor.saved_flash = Some(Instant::now());
-            editor.error = None;
-            true
+        let Some(editor) = self.session.editor.as_mut() else {
+            return;
         };
-        if let Some((old, target)) = renamed {
-            self.rename_images(&old, &target);
-            self.apply_renames(&[(old, target)]);
+        let old = editor.path.clone();
+        if !editor.write(force) {
+            return;
         }
-        if saved {
-            self.refresh();
+        let new = editor.path.clone();
+        if new != old {
+            self.rename_images(&old, &new);
+            self.apply_renames(&[(old, new)]);
         }
+        self.refresh();
     }
 
     pub(super) fn reload_editor_from_disk(&mut self) {
@@ -105,21 +196,13 @@ impl IboardApp {
         let Some(issue) = self.board.find(&editor.path) else {
             return;
         };
-        editor.text = issue.markdown.clone();
-        editor.baseline = issue.markdown.clone();
-        editor.conflict = None;
-        editor.last_edit = None;
-        editor.error = None;
+        editor.reload(&issue.markdown);
     }
 
     /// Drops unsaved edits (content and file name) and returns to the reader.
     pub(super) fn discard_edits(&mut self) {
         if let Some(editor) = self.session.editor.as_mut() {
-            editor.text = editor.baseline.clone();
-            editor.name = editor.baseline_name.clone();
-            editor.conflict = None;
-            editor.last_edit = None;
-            editor.error = None;
+            editor.discard();
         }
         self.session.detail_mode = DetailMode::Preview;
     }
@@ -157,15 +240,7 @@ impl IboardApp {
 
     /// Saves unsaved edits unless they conflict with the file on disk.
     pub(super) fn save_pending(&mut self) {
-        let should_save = self
-            .session
-            .editor
-            .as_ref()
-            .map(|e| e.is_dirty() && e.conflict.is_none())
-            .unwrap_or(false);
-        if should_save {
-            self.flush_autosave(false);
-        }
+        self.flush_autosave(false);
     }
 
     pub(super) fn has_unsaved_edits(&self) -> bool {
@@ -295,7 +370,7 @@ fn editor_bar(ui: &mut egui::Ui, editor: &mut EditorState, folder: &str) {
                 .desired_width(240.0),
         );
         if response.changed() {
-            editor.last_edit = Some(Instant::now());
+            editor.mark_edited();
             ui.ctx().request_repaint_after(AUTOSAVE_AFTER);
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -396,7 +471,7 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                         output.response.request_focus();
                     }
                     if output.response.changed() {
-                        editor.last_edit = Some(Instant::now());
+                        editor.mark_edited();
                         ui.ctx().request_repaint_after(AUTOSAVE_AFTER);
                     }
                 },

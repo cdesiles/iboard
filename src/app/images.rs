@@ -2,7 +2,7 @@
 //! shown by the reader, and carried through renames, deletes and splits.
 
 use super::compose::TitleStage;
-use super::editor::EDITOR_ID;
+use super::editor::{AUTOSAVE_AFTER, EDITOR_ID};
 use super::*;
 use crate::assets::{self, Carry};
 
@@ -142,7 +142,7 @@ impl IboardApp {
                 let root = self.board.root_of(&editor.path);
                 let link = assets::add(root, &reviews::slug(&editor.path), &png)?;
                 insert_at_caret(ctx, EDITOR_ID, &mut editor.text, &link);
-                editor.last_edit = Some(Instant::now());
+                editor.mark_edited();
                 ctx.request_repaint_after(AUTOSAVE_AFTER);
                 Ok::<(), std::io::Error>(())
             }),
@@ -210,8 +210,8 @@ impl IboardApp {
             });
         match relinked {
             Ok(text) => {
-                editor.text = text.clone();
-                editor.baseline = text;
+                editor.text = text;
+                editor.mark_saved();
             }
             Err(err) => {
                 self.error = Some(format!(

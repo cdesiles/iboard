@@ -81,6 +81,7 @@ use board::*;
 use card::*;
 use compose::Composer;
 use design_panel::DraftJob;
+use editor::EditorState;
 use enrich::Enrichment;
 use filter_bar::*;
 use intent::Intent;
@@ -97,9 +98,6 @@ files right next to your code.\n\nReport issues at https://github.com/cdesiles/i
 
 /// How often Auto reads the board again.
 const RESCAN_EVERY: Duration = Duration::from_secs(2);
-
-/// How long after the last keystroke an edit is written to disk.
-const AUTOSAVE_AFTER: Duration = Duration::from_millis(800);
 
 /// On macOS the header bar doubles as the window's title bar (the native
 /// title is hidden and the content runs under the traffic lights).
@@ -186,45 +184,6 @@ struct Deleted {
     /// Its images, when they went to the Trash with it.
     images: Option<images::TrashedImages>,
     at: Instant,
-}
-
-/// The in-progress edit of one issue.
-struct EditorState {
-    path: PathBuf,
-    /// Current buffer, edited by the user.
-    text: String,
-    /// Content as last seen on disk (loaded or saved), for dirty detection.
-    baseline: String,
-    /// File name as edited by the user.
-    name: String,
-    /// File name as last seen on disk (loaded or saved).
-    baseline_name: String,
-    /// Newer on-disk content that arrived while we have unsaved edits.
-    conflict: Option<String>,
-    last_edit: Option<Instant>,
-    saved_flash: Option<Instant>,
-    error: Option<String>,
-}
-
-impl EditorState {
-    fn new(path: PathBuf, content: String) -> Self {
-        let name = file_name(&path);
-        Self {
-            path,
-            baseline: content.clone(),
-            text: content,
-            baseline_name: name.clone(),
-            name,
-            conflict: None,
-            last_edit: None,
-            saved_flash: Some(Instant::now()),
-            error: None,
-        }
-    }
-
-    fn is_dirty(&self) -> bool {
-        self.text != self.baseline || self.name != self.baseline_name
-    }
 }
 
 pub struct IboardApp {
