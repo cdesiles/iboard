@@ -207,9 +207,9 @@ impl FilterBar {
         row.available_width() - count_width - chips_width >= text_width.max(FILTER_TEXT_MIN)
     }
 
-    /// Right to left: the chips, "Labels", the count, the key hint, then the
-    /// text taking what is left. Returns the chip picked and the text's
-    /// response.
+    /// Right to left: the chips, "Labels", the count, the key hint while ⌘
+    /// is held, then the text taking what is left. Returns the chip picked
+    /// and the text's response.
     fn trailing(
         &mut self,
         row: &mut egui::Ui,
@@ -237,7 +237,7 @@ impl FilterBar {
                 if let Some(count) = &extras.count {
                     ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
                 }
-                if !extras.open {
+                if !extras.open && widgets::key_hints_shown(ui.ctx()) {
                     let key = if extras.active { "esc" } else { "⌘F" };
                     let width = widgets::text_width(ui, key, theme::meta()) + 8.0;
                     let (cap, _) = ui.allocate_exact_size(Vec2::new(width, 16.0), Sense::hover());

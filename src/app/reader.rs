@@ -431,22 +431,20 @@ fn paint_edit_outline(ui: &egui::Ui, outline: Rect) {
         egui::FontSelection::Default,
     );
     let kbd_width = 18.0;
+    let key = widgets::key_hints_shown(ui.ctx());
+    let key_width = if key { kbd_width + theme::SPACE_2 } else { 0.0 };
     let right = outline.max.x - theme::SPACE_3;
     let y = outline.min.y;
+    let text_left = right - key_width - galley.size().x;
     let legend = Rect::from_min_max(
-        Pos2::new(
-            right - kbd_width - theme::SPACE_2 - galley.size().x - theme::SPACE_2,
-            y - 8.0,
-        ),
+        Pos2::new(text_left - theme::SPACE_2, y - 8.0),
         Pos2::new(right + theme::SPACE_2, y + 8.0),
     );
     painter.rect_filled(legend, CornerRadius::ZERO, p.surface);
-    let kbd_left = right - kbd_width;
-    widgets::paint_kbd(ui, "E", Pos2::new(kbd_left, y));
-    let text_pos = Pos2::new(
-        kbd_left - theme::SPACE_2 - galley.size().x,
-        y - galley.size().y / 2.0,
-    );
+    if key {
+        widgets::paint_kbd(ui, "E", Pos2::new(right - kbd_width, y));
+    }
+    let text_pos = Pos2::new(text_left, y - galley.size().y / 2.0);
     painter.galley(text_pos, galley, p.ink_muted);
 }
 
@@ -758,8 +756,8 @@ pub(super) fn sheet_head(ui: &mut egui::Ui, head: SheetHead) {
     ui.add_space(20.0);
 }
 
-/// "Click below the text to keep writing E" in `ink-faint`, at the foot of
-/// the empty rest of the sheet.
+/// "Click below the text to keep writing" in `ink-faint`, at the foot of the
+/// empty rest of the sheet, with its key `E` while ⌘ is held.
 pub(super) fn paint_rest_hint(ui: &egui::Ui, rest: Rect) {
     let p = theme::palette(ui);
     let text = egui::WidgetText::from(
@@ -773,9 +771,10 @@ pub(super) fn paint_rest_hint(ui: &egui::Ui, rest: Rect) {
         f32::INFINITY,
         egui::FontSelection::Default,
     );
-    let kbd_width = 18.0;
+    let key = widgets::key_hints_shown(ui.ctx());
     let gap = 6.0;
-    let width = theme::ICON_SIZE + gap + text.size().x + gap + kbd_width;
+    let kbd_width = if key { gap + 18.0 } else { 0.0 };
+    let width = theme::ICON_SIZE + gap + text.size().x + kbd_width;
     let y = rest.max.y - 8.0;
     let mut x = rest.center().x - width / 2.0;
     let icon = Rect::from_min_size(
@@ -789,6 +788,7 @@ pub(super) fn paint_rest_hint(ui: &egui::Ui, rest: Rect) {
         text.clone(),
         p.ink_faint,
     );
-    x += text.size().x + gap;
-    widgets::paint_kbd(ui, "E", Pos2::new(x, y));
+    if key {
+        widgets::paint_kbd(ui, "E", Pos2::new(x + text.size().x + gap, y));
+    }
 }

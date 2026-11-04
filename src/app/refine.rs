@@ -1066,8 +1066,11 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
     action
 }
 
-/// The keys that apply where the keyboard is.
+/// The keys that apply where the keyboard is, while ⌘ is held.
 fn footer_hints(ui: &mut egui::Ui, refine: &Refinement) {
+    if !widgets::key_hints_shown(ui.ctx()) {
+        return;
+    }
     if refine.is_running() {
         widgets::hint(ui, "esc", "cancel");
         return;

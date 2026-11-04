@@ -5,8 +5,8 @@ use super::dock::IssueDrag;
 use super::*;
 
 impl IboardApp {
-    /// The 24pt bottom strip: where you are on the left, what you can press on
-    /// the right.
+    /// The 24pt bottom strip: where you are on the left and, while ⌘ is held,
+    /// what you can press on the right.
     pub(super) fn status_bar(&mut self, ui: &mut egui::Ui) {
         ui.style_mut().interaction.selectable_labels = false;
         ui.horizontal_centered(|ui| {
@@ -16,6 +16,9 @@ impl IboardApp {
                 Screen::Detail(path) => self.detail_status(ui, &path),
                 Screen::Diff => self.diff_status(ui),
             };
+            if !widgets::key_hints_shown(ui.ctx()) {
+                return;
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_4;
                 for (key, action) in hints.into_iter().rev() {

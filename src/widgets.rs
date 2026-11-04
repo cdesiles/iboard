@@ -13,6 +13,7 @@ use crate::theme::{self, Icon};
 
 mod button;
 mod dialog;
+mod key_hints;
 mod menu;
 mod pill;
 mod select;
@@ -23,6 +24,7 @@ pub use dialog::{
     focus_ring, help, modal, modal_footer, modal_frame, modal_header, paint_focus_halo,
     paint_focus_ring, popover_frame, rule, segmented, text_entry, text_field,
 };
+pub use key_hints::{key_hints, key_hints_shown};
 pub use menu::{
     MenuOption, menu_group, menu_note, menu_option, menu_quiet, menu_row, menu_separator,
 };
@@ -132,7 +134,8 @@ pub fn paint_kbd_in(ui: &Ui, key: &str, left_center: Pos2, edge: Color32, ink: C
     size.x
 }
 
-/// A key cap followed by what it does, as a hint row in the status bar.
+/// A key cap followed by what it does, as a hint row in the status bar. Its
+/// caller draws it only while [`key_hints_shown`].
 pub fn hint(ui: &mut Ui, key: &str, action: &str) {
     let p = theme::palette(ui);
     let text = galley(ui, key, theme::meta(), p.ink_muted);

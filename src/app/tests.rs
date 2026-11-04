@@ -3,6 +3,7 @@
 use super::nav::step_selection;
 use super::*;
 
+mod bars;
 mod build;
 mod compose;
 mod design_panel;
@@ -502,34 +503,6 @@ fn a_scan_error_clears_itself_once_the_board_reads_again() {
     std::fs::rename(dir.join("gone"), &issues).unwrap();
     app.refresh();
     assert!(app.scan_error.is_none());
-}
-
-/// The board's header names the project, then its issues path.
-#[test]
-fn the_board_header_names_the_project_before_the_path() {
-    use egui_kittest::kittest::Queryable;
-    let dir = scratch_dir("project-name");
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
-    let name = harness.state().1.board.name();
-    let path = display_path(&harness.state().1.board.root);
-    let name = harness.get_by_label(&name).rect();
-    let path = harness.get_by_label(&path).rect();
-    assert!(name.max.x <= path.min.x, "{name:?} then {path:?}");
 }
 
 /// `⌘F` opens the filter with its suggestions; `↓ ↩` picks one as a token,

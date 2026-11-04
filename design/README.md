@@ -16,7 +16,7 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 - **The file is the truth.** Every screen shows what is on disk. Name things the way the filesystem does (`todo/ai-assist.md`), never with an invented ID.
 - **Quiet chrome, loud content.** Navigation and controls use `ink-muted` and `line-strong`; only issue text uses `ink`. Color is spent on state (column, selection, unsaved, review), never on decoration.
 - **Small but visible.** Controls are 24pt tall, yet every control edge uses `line-strong` (at least 3:1 on every surface) and every text token clears 4.5:1. Never shrink a control below `control-h` or set text in `line` or a lighter grey.
-- **Keyboard first, pointer complete.** Every action has a shortcut shown next to it, and every shortcut has a visible control.
+- **Keyboard first, pointer complete.** Every action has a shortcut, and every shortcut has a visible control. The keys stay out of sight until you ask: hold ⌘ alone for half a second and each key slides out beside its control (buttons, the filter, footers, popups) while the status bar lists the screen's keys. Letting go, or pressing anything with ⌘, puts them away, so a shortcut never flashes them. Tooltips and menus always show their keys.
 - **Type to filter.** Any list that opens (the ProjectMenu, the GroupsDialog and LabelPicker menus, select menus, filter suggestions) filters the moment you type: the first printable key goes into its filter field, already holding that character, with no click and no shortcut first. A list short enough to hide its field shows it on that first key. `↑ ↓` still move, `↩` opens the first match, `esc` clears the filter before it closes anything.
 
 ## Content
@@ -66,7 +66,7 @@ Navigation is three discreet pieces:
 
 1. **Board button** at the far left of the Reader and Editor header: a bordered secondary button, chevron, "Board" and `esc`. Discreet means small, not invisible: it keeps the `line-strong` edge every control has.
 2. **Breadcrumb in the header**, in `ink-muted`: `iboard / Todo / AI assist to refine an issue`. Every segment but the last is a link back, with a hover fill and underline. On the board it shows only the project name and path. There the project name opens the ProjectMenu: the groups (each its own board), then your projects in your own order, scrolling inside the menu and filtered by typing, then a footer strip on `bg` with three actions: **Add project…**, **Edit groups…** (GroupsDialog, written back to `[[workspace.group]]` in `~/.config/iboard/iboard.toml`; the board reloads in place) and **Reorder** (drag or `⌥↑ ⌥↓`, saved as a user preference).
-3. **Status bar at the bottom**: the current file path on the left, save state and the two or three shortcuts that apply to the current screen on the right.
+3. **Status bar at the bottom**: the current file path and save state on the left; while ⌘ is held, the two or three shortcuts that apply to the current screen on the right.
 
 There is no sidebar and no tab bar. Three screens are enough: Board, Reader, Editor.
 
@@ -178,7 +178,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 
 ## Motion
 
-Motion is short and only ever says where something went: the filter field widening (120ms), the drop zones sliding up (140ms), the Design panel's rail sliding to its components (220ms), the naming dot's pulse, the Thinking mark's rocking card. When macOS asks for reduced motion (Accessibility › Display › Reduce motion), every one of them is skipped: states change in one frame, the dot stays still and the Thinking card rests at −8°. The app reads the setting once at launch (`theme::reduced_motion`); `bundle.css` gates the same transitions behind `prefers-reduced-motion`, which reads the same setting in WebKit.
+Motion is short and only ever says where something went: the filter field widening (120ms), the key hints sliding out of their buttons while ⌘ is held (120ms), the drop zones sliding up (140ms), the Design panel's rail sliding to its components (220ms), the naming dot's pulse, the Thinking mark's rocking card. When macOS asks for reduced motion (Accessibility › Display › Reduce motion), every one of them is skipped: states change in one frame, the dot stays still and the Thinking card rests at −8°. The app reads the setting once at launch (`theme::reduced_motion`); `bundle.css` gates the same transitions behind `prefers-reduced-motion`, which reads the same setting in WebKit.
 
 ## Iconography
 

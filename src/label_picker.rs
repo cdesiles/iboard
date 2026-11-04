@@ -404,7 +404,11 @@ fn hand_off(ui: &egui::Ui, picker: &mut LabelPicker, field: &Response, pill_ids:
     }
 }
 
+/// Its keys, while ⌘ is held.
 fn key_hints(ui: &mut egui::Ui) {
+    if !widgets::key_hints_shown(ui.ctx()) {
+        return;
+    }
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
         widgets::hint(ui, "↩", "add");

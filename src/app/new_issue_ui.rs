@@ -912,8 +912,9 @@ fn title_field(row: &mut egui::Ui, composer: &mut Composer) {
     }
 }
 
-/// Key hints on the left; Discard, Close, Draft with Review and Add to Todo
-/// on the right, with Keep my notes before them once there is a draft.
+/// Key hints on the left while ⌘ is held; Discard, Close, Draft with Review
+/// and Add to Todo on the right, with Keep my notes before them once there is
+/// a draft.
 fn foot(
     ui: &mut egui::Ui,
     composer: &Composer,
@@ -969,6 +970,9 @@ fn foot(
                         widgets::checkbox(ui, view.keep_notes, "Keep my notes under ## Notes");
                     }
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        if !widgets::key_hints_shown(ui.ctx()) {
+                            return;
+                        }
                         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
                         let hints: &[(&str, &str)] = if drafting {
                             &[("esc", "stop, keep what arrived")]

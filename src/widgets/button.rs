@@ -64,6 +64,8 @@ struct ButtonContent {
     icon: Option<Icon>,
     text: Option<Arc<Galley>>,
     hint: Option<Arc<Galley>>,
+    /// How far out the shortcut is: it only shows while ⌘ is held.
+    reveal: f32,
     width: f32,
 }
 
@@ -92,7 +94,14 @@ fn button_content(
 ) -> ButtonContent {
     let ink = button_colors(theme::palette(ui), kind).3;
     let text = (!label.is_empty()).then(|| galley(ui, label, theme::ui_button(), ink));
-    let hint = shortcut.map(|s| galley(ui, s, theme::meta(), ink));
+    // An icon button keeps its key in its tooltip.
+    let reveal = match (shortcut, &text) {
+        (Some(_), Some(_)) => super::key_hints(ui.ctx()),
+        _ => 0.0,
+    };
+    let hint = shortcut
+        .filter(|_| reveal > 0.0)
+        .map(|s| galley(ui, s, theme::meta(), ink));
     let (pad_left, icon_gap) = button_insets(kind);
     let width = if text.is_none() && hint.is_none() {
         theme::CONTROL_H
@@ -105,7 +114,7 @@ fn button_content(
             w += text.size().x;
         }
         if let Some(hint) = &hint {
-            w += BUTTON_GAP + hint.size().x;
+            w += reveal * (BUTTON_GAP + hint.size().x);
         }
         w
     };
@@ -113,6 +122,7 @@ fn button_content(
         icon,
         text,
         hint,
+        reveal,
         width,
     }
 }
@@ -147,7 +157,11 @@ fn paint_button(
     );
 
     let ButtonContent {
-        icon, text, hint, ..
+        icon,
+        text,
+        hint,
+        reveal,
+        ..
     } = content;
     let center_y = rect.center().y;
     let (pad_left, icon_gap) = button_insets(kind);
@@ -180,11 +194,15 @@ fn paint_button(
         } else {
             ink
         };
-        painter.galley_with_override_text_color(
-            Pos2::new(x, center_y - size.y / 2.0),
-            hint,
-            hint_ink,
-        );
+        // Sliding out, the key comes from behind the right padding.
+        let shown = rect.with_max_x(rect.max.x - theme::SPACE_3);
+        painter
+            .with_clip_rect(shown.intersect(painter.clip_rect()))
+            .galley_with_override_text_color(
+                Pos2::new(x, center_y - size.y / 2.0),
+                hint,
+                hint_ink.gamma_multiply(reveal),
+            );
     }
 }
 

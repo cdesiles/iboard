@@ -8,7 +8,7 @@ Buttons are 24pt-tall verbs with a `line-strong` edge, so they stay visible whil
 - Danger: `danger` fill, `on-danger` label. Only as the confirm button inside ConfirmDialog.
 - Back: a secondary button with a leading chevron, "Board" and its key `esc` in `ink-muted`. Always bordered; navigation that people use constantly must not hide.
 - Ghost: no border, `ink-muted` label. Only for icon buttons inside a row of other buttons (dialog close, column `+`), never for navigation.
-- A key hint sits after the label in mono 11pt, in the label colour (`Edit E`, `Delete Del`).
+- At rest a button shows its label alone. While ⌘ is held (see Kbd), its key hint slides out after the label in mono 11pt, in the label colour (`Edit E`, `Delete Del`), and the button grows to fit it.
 - Icon-only buttons are 24×24 and need an accessible name and a tooltip with the shortcut.
 - Label in `ui-strong` at 12pt; icon 14pt line, 6pt gap.
 - Disabled keeps the shape but drops to `line` and `ink-faint`; never hide a button that will become available.
