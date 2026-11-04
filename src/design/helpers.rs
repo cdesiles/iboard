@@ -82,10 +82,7 @@ fn prune(path: &Path, name: &str) {
 }
 
 fn write_executable(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    files::atomic_write(path, bytes)?;
+    files::write_creating(path, bytes)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

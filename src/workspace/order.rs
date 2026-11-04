@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::discovery::{self, Board};
-use crate::files;
+use crate::files::{self, WriteError};
 use crate::priority;
 use crate::settings;
 
@@ -48,12 +48,10 @@ impl Order {
 
     pub fn save(&self, file: &Path) -> Result<(), String> {
         let text = toml::to_string(self).map_err(|err| err.to_string())?;
-        if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| format!("Couldn't create {}: {err}", parent.display()))?;
-        }
-        files::atomic_write(file, text)
-            .map_err(|err| format!("Couldn't write {}: {err}", file.display()))
+        files::write_creating(file, text).map_err(|err| match err {
+            WriteError::Folder(dir, err) => format!("Couldn't create {}: {err}", dir.display()),
+            WriteError::File(err) => format!("Couldn't write {}: {err}", file.display()),
+        })
     }
 }
 

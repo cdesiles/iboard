@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::files;
+use crate::files::{self, WriteError};
 use crate::priority;
 
 /// The folder under the issues root; discovery skips dot-folders.
@@ -116,12 +116,10 @@ pub fn save(root: &Path, issue: &Path, sidecar: &Sidecar) -> Result<(), String> 
     let path = sidecar_path(root, issue);
     let text =
         toml::to_string(sidecar).map_err(|err| format!("Couldn't encode a review: {err}"))?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)
-            .map_err(|err| format!("Couldn't create {}: {err}", dir.display()))?;
-    }
-    files::atomic_write(&path, text)
-        .map_err(|err| format!("Couldn't save {}: {err}", path.display()))
+    files::write_creating(&path, text).map_err(|err| match err {
+        WriteError::Folder(dir, err) => format!("Couldn't create {}: {err}", dir.display()),
+        WriteError::File(err) => format!("Couldn't save {}: {err}", path.display()),
+    })
 }
 
 /// Keeps `review` as the last review of `issue`, with its comments.

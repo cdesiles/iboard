@@ -581,7 +581,7 @@ fn collect_markdown(dir: &Path, warnings: &mut Vec<String>) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = entries
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .filter(|path| path.is_file() && !is_hidden(path) && is_markdown(path))
+        .filter(|path| path.is_file() && !is_hidden(path) && files::is_markdown(path))
         .collect();
     files.sort_by(|a, b| natural_cmp(&files::file_name(a), &files::file_name(b)));
     files
@@ -604,15 +604,8 @@ fn contains_markdown(dir: &Path) -> bool {
         .map(|entries| {
             entries
                 .filter_map(|entry| entry.ok())
-                .any(|entry| entry.path().is_file() && is_markdown(&entry.path()))
+                .any(|entry| entry.path().is_file() && files::is_markdown(&entry.path()))
         })
-        .unwrap_or(false)
-}
-
-fn is_markdown(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
         .unwrap_or(false)
 }
 

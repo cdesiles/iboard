@@ -453,13 +453,8 @@ impl Cache {
     /// Failures are ignored: the measures are read again next time.
     fn write(&mut self, file: &Path) {
         self.version = CACHE_VERSION;
-        let Some(parent) = file.parent() else {
-            return;
-        };
-        if std::fs::create_dir_all(parent).is_ok()
-            && let Ok(json) = serde_json::to_vec(self)
-        {
-            let _ = files::atomic_write(file, json);
+        if let Ok(json) = serde_json::to_vec(self) {
+            let _ = files::write_creating(file, json);
         }
     }
 }

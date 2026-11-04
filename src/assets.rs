@@ -47,9 +47,8 @@ pub fn next_name(dir: &Path) -> String {
 /// it.
 pub fn add(root: &Path, slug: &str, png: &[u8]) -> std::io::Result<String> {
     let dir = folder(root, slug);
-    std::fs::create_dir_all(&dir)?;
     let name = next_name(&dir);
-    files::atomic_write(&dir.join(&name), png)?;
+    files::write_creating(&dir.join(&name), png)?;
     Ok(format!("![screenshot]({})", link(slug, &name)))
 }
 

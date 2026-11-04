@@ -46,19 +46,13 @@ pub fn latest(file: &Path) -> Option<PathBuf> {
 /// Writes the list atomically (hidden temp file + rename). Failures are
 /// ignored: a cache that cannot be written must never break the app.
 pub fn write(file: &Path, projects: &[PathBuf]) {
-    let Some(parent) = file.parent() else {
-        return;
-    };
-    if std::fs::create_dir_all(parent).is_err() {
-        return;
-    }
     let mut body = projects
         .iter()
         .map(|project| project.to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join("\n");
     body.push('\n');
-    let _ = files::atomic_write(file, body);
+    let _ = files::write_creating(file, body);
 }
 
 /// Moves `project` to the front of `list`, removing any earlier copy, and

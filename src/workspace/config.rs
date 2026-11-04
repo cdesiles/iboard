@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, value};
 
 use super::Group;
-use crate::files;
+use crate::settings;
 
 /// What a save could not do.
 #[derive(Debug, PartialEq, Eq)]
@@ -57,8 +57,8 @@ pub fn save_projects(
     })
 }
 
-/// Reads `file`, applies `change` to it and writes it back, keeping every
-/// key, table and comment it does not touch.
+/// Edits `file` as [`settings::edit`] does, unless it no longer has the
+/// fingerprint `expected`, and drops a `[workspace]` left empty.
 fn edit(
     file: &Path,
     expected: Option<u64>,
@@ -67,28 +67,17 @@ fn edit(
     if expected.is_some_and(|expected| expected != fingerprint(file)) {
         return Err(SaveError::Changed);
     }
-    let failed =
-        |what: String| SaveError::Failed(format!("Couldn't save {}: {what}", file.display()));
-    let text = match std::fs::read_to_string(file) {
-        Ok(text) => text,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(err) => return Err(failed(err.to_string())),
-    };
-    let mut document: DocumentMut = text
-        .parse()
-        .map_err(|err: toml_edit::TomlError| failed(err.message().to_string()))?;
-    change(&mut document);
-    if document
-        .get("workspace")
-        .and_then(Item::as_table)
-        .is_some_and(Table::is_empty)
-    {
-        document.remove("workspace");
-    }
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| failed(err.to_string()))?;
-    }
-    files::atomic_write(file, document.to_string()).map_err(|err| failed(err.to_string()))
+    settings::edit(file, |document| {
+        change(document);
+        if document
+            .get("workspace")
+            .and_then(Item::as_table)
+            .is_some_and(Table::is_empty)
+        {
+            document.remove("workspace");
+        }
+    })
+    .map_err(SaveError::Failed)
 }
 
 fn workspace_table(document: &mut DocumentMut) -> Option<&mut Table> {
@@ -221,6 +210,20 @@ mod tests {
                 .unwrap()
                 .contains("name = \"A\"")
         );
+    }
+
+    #[test]
+    fn a_broken_file_is_left_alone_and_its_line_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("iboard.toml");
+        let broken = "[ai]\ntool = \"claude\"\n[workspace\n";
+        std::fs::write(&file, broken).unwrap();
+        let err = save(&file, &[group("A", &[])], None, None).unwrap_err();
+        assert!(
+            matches!(&err, SaveError::Failed(why) if why.contains("line 3")),
+            "{err:?}"
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), broken);
     }
 
     #[test]

@@ -16,7 +16,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use toml_edit::{DocumentMut, Item, Table};
 
-use crate::files;
+use crate::files::{self, WriteError};
 
 const DIR: &str = "iboard";
 const FILE: &str = "iboard.toml";
@@ -139,9 +139,24 @@ impl Section {
     }
 }
 
-/// Writes `sections` into `file`, keeping everything else as written. A file
-/// that does not parse is left alone, so a typo is never written over.
+/// Writes `sections` into `file`, keeping everything else as written.
 pub fn save(file: &Path, sections: &[Section]) -> Result<(), String> {
+    edit(file, |document| {
+        for section in sections {
+            match &section.body {
+                Some(body) => merge(document, section.name, body),
+                None => {
+                    document.remove(section.name);
+                }
+            }
+        }
+    })
+}
+
+/// Reads `file`, applies `change` to it and writes it back, keeping every
+/// key, table and comment it does not touch. A file that does not parse is
+/// left alone, so a typo is never written over.
+pub fn edit(file: &Path, change: impl FnOnce(&mut DocumentMut)) -> Result<(), String> {
     let text = match std::fs::read_to_string(file) {
         Ok(text) => text,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -154,20 +169,11 @@ pub fn save(file: &Path, sections: &[Section]) -> Result<(), String> {
             describe(&text, err.span(), err.message())
         )
     })?;
-    for section in sections {
-        match &section.body {
-            Some(body) => merge(&mut document, section.name, body),
-            None => {
-                document.remove(section.name);
-            }
-        }
-    }
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|err| format!("Couldn't create {}: {err}", parent.display()))?;
-    }
-    files::atomic_write(file, document.to_string())
-        .map_err(|err| format!("Couldn't save {}: {err}", file.display()))
+    change(&mut document);
+    files::write_creating(file, document.to_string()).map_err(|err| match err {
+        WriteError::Folder(dir, err) => format!("Couldn't create {}: {err}", dir.display()),
+        WriteError::File(err) => format!("Couldn't save {}: {err}", file.display()),
+    })
 }
 
 /// Gives `[name]` exactly `body`'s keys. A key that stays keeps its place and

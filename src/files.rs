@@ -32,18 +32,22 @@ pub fn file_name(path: &Path) -> String {
         .to_string()
 }
 
+/// Whether `path` ends in `.md` or `.markdown`, in any case: the files
+/// discovery reads as issues.
+pub fn is_markdown(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
+        .unwrap_or(false)
+}
+
 /// Makes sure a user-typed file name keeps a markdown extension so the issue
 /// stays visible to discovery, and caps it at [`MAX_FILE_NAME_BYTES`] so the
 /// filesystem accepts it. A missing or non-markdown extension is replaced with
 /// `.md`.
 pub fn normalize_file_name(input: &str) -> String {
     let trimmed = input.trim();
-    let is_markdown = Path::new(trimmed)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
-        .unwrap_or(false);
-    let (stem, ext) = if is_markdown {
+    let (stem, ext) = if is_markdown(Path::new(trimmed)) {
         let ext = Path::new(trimmed)
             .extension()
             .and_then(|ext| ext.to_str())
@@ -149,6 +153,30 @@ pub fn atomic_write(path: &Path, contents: impl AsRef<[u8]>) -> std::io::Result<
     result
 }
 
+/// What [`write_creating`] could not do: create the folder, or write the file.
+#[derive(Debug)]
+pub enum WriteError {
+    Folder(PathBuf, std::io::Error),
+    File(std::io::Error),
+}
+
+impl From<WriteError> for std::io::Error {
+    fn from(err: WriteError) -> Self {
+        match err {
+            WriteError::Folder(_, err) | WriteError::File(err) => err,
+        }
+    }
+}
+
+/// [`atomic_write`], creating the folder `path` goes in first. Issue saves
+/// keep to `atomic_write`, so a column deleted meanwhile is not brought back.
+pub fn write_creating(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), WriteError> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|err| WriteError::Folder(dir.to_path_buf(), err))?;
+    }
+    atomic_write(path, contents).map_err(WriteError::File)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,5 +256,23 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, ["taken"]);
+    }
+
+    #[test]
+    fn only_write_creating_makes_a_missing_folder() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        let file = dir.join("gone/issue.md");
+        assert!(atomic_write(&file, "text").is_err());
+        assert!(!dir.join("gone").exists());
+
+        write_creating(&file, "text").unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "text");
+
+        std::fs::write(dir.join("file"), "").unwrap();
+        assert!(matches!(
+            write_creating(&dir.join("file/sub/issue.md"), "text"),
+            Err(WriteError::Folder(folder, _)) if folder == dir.join("file/sub")
+        ));
     }
 }

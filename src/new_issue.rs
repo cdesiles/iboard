@@ -293,10 +293,7 @@ impl Parked {
         if self.notes.trim().is_empty() {
             return clear(path);
         }
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        crate::files::atomic_write(path, self.to_text())
+        crate::files::write_creating(path, self.to_text()).map_err(Into::into)
     }
 
     pub fn load(path: &Path) -> Option<Self> {
