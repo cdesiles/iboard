@@ -10,8 +10,8 @@ use std::path::Path;
 
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
 
-use super::{PAGE, git};
-use crate::{build_log, discovery};
+use super::PAGE;
+use crate::{build_log, discovery, git};
 
 /// One issue closed on the page, and how long it took.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,7 +46,7 @@ impl Cycles {
 /// The cycle of each issue closed by the page's commits, up to `newest`,
 /// with the issues kept under `root`.
 pub(super) fn collect(dir: &Path, root: &Path, newest: &str) -> Result<Cycles, String> {
-    let log = git(
+    let log = git::output(
         dir,
         &[
             "log",
@@ -56,11 +56,9 @@ pub(super) fn collect(dir: &Path, root: &Path, newest: &str) -> Result<Cycles, S
             newest,
         ],
     )?;
-    let added = git(
+    let added = git::output(
         root,
         &[
-            "-c",
-            "core.quotePath=false",
             "log",
             "--diff-filter=A",
             "--format=%x00%cI",

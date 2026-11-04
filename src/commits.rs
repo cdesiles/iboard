@@ -7,9 +7,10 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use crate::git;
 
 /// One commit whose message names an issue's file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,23 +62,18 @@ pub fn for_file(dir: &Path, file_name: &str) -> Vec<Commit> {
 }
 
 fn run(dir: &Path, file_name: &str) -> Vec<Commit> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["log", "--all", "--extended-regexp", "--grep"])
-        .arg(whole_name(file_name))
-        .arg("--format=%h%x09%cI%x09%s")
-        .output();
-    let Ok(output) = output else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(parse_line)
-        .collect()
+    let pattern = whole_name(file_name);
+    let args = [
+        "log",
+        "--all",
+        "--extended-regexp",
+        "--grep",
+        &pattern,
+        "--format=%h%x09%cI%x09%s",
+    ];
+    git::output(dir, &args)
+        .map(|log| log.lines().filter_map(parse_line).collect())
+        .unwrap_or_default()
 }
 
 /// A `git log --extended-regexp` pattern for `file_name` as a whole name: a
@@ -108,6 +104,7 @@ fn parse_line(line: &str) -> Option<Commit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     #[test]
     fn a_file_is_found_by_its_whole_name_only() {

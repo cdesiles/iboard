@@ -12,14 +12,13 @@ mod cycle;
 mod measure;
 
 use std::collections::{BTreeMap, HashMap};
-use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 
 use crate::files;
+use crate::git::{self, Batch};
 use crate::job::Cancel;
 pub use cycle::{Cycle, Cycles, span};
 pub use measure::{FileMetrics, Language, language_of, measure};
@@ -261,9 +260,9 @@ struct Listed {
 
 /// The commits of `page`, newest first, plus one more when older ones exist.
 fn list(dir: &Path, page: usize) -> Result<Vec<Listed>, String> {
-    let head = git(dir, &["rev-parse", "--verify", "--quiet", "HEAD"])
+    let head = git::output(dir, &["rev-parse", "--verify", "--quiet", "HEAD"])
         .map_err(|_| "This project has no commits yet.".to_string())?;
-    let out = git(
+    let out = git::output(
         dir,
         &[
             "log",
@@ -324,7 +323,7 @@ fn measure_commit(
     blobs: &mut Blobs,
     commit: &Listed,
 ) -> Result<Snapshot, String> {
-    let tree = git(
+    let tree = git::output(
         dir,
         &["ls-tree", "-r", "-z", "-l", "--full-tree", &commit.hash],
     )?;
@@ -397,7 +396,7 @@ fn top(items: impl Iterator<Item = (String, usize)>, count: usize) -> Vec<(Strin
 /// The source files at `newest`, with how many of the page's commits
 /// changed each.
 fn files_at(dir: &Path, newest: &str) -> Result<Vec<FileStat>, String> {
-    let out = git(
+    let out = git::output(
         dir,
         &[
             "log",
@@ -412,7 +411,7 @@ fn files_at(dir: &Path, newest: &str) -> Result<Vec<FileStat>, String> {
     for path in out.lines().filter(|line| !line.is_empty()) {
         *changes.entry(path).or_default() += 1;
     }
-    let tree = git(dir, &["ls-tree", "-r", "-z", "-l", "--full-tree", newest])?;
+    let tree = git::output(dir, &["ls-tree", "-r", "-z", "-l", "--full-tree", newest])?;
     let mut batch = Batch::open(dir)?;
     let mut files = Vec::new();
     for entry in entries(&tree) {
@@ -441,7 +440,7 @@ fn files_at(dir: &Path, newest: &str) -> Result<Vec<FileStat>, String> {
 /// author's local date.
 fn agenda(dir: &Path) -> Result<BTreeMap<String, Vec<DayCommit>>, String> {
     let start = chrono::Local::now() - chrono::Duration::days(AGENDA_DAYS);
-    let out = git(
+    let out = git::output(
         dir,
         &[
             "log",
@@ -471,7 +470,7 @@ fn agenda(dir: &Path) -> Result<BTreeMap<String, Vec<DayCommit>>, String> {
 
 /// Where the measures of the repository holding `dir` are kept.
 fn cache_file(dir: &Path) -> Option<PathBuf> {
-    let common = git(dir, &["rev-parse", "--git-common-dir"]).ok()?;
+    let common = git::output(dir, &["rev-parse", "--git-common-dir"]).ok()?;
     Some(dir.join(common.trim()).join("iboard").join("stats.json"))
 }
 
@@ -504,84 +503,11 @@ impl Cache {
     }
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .map_err(|err| format!("git: {err}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "git {}: {}",
-            args.first().unwrap_or(&""),
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-/// One `git cat-file --batch`, reading objects by name.
-struct Batch {
-    child: Child,
-    input: ChildStdin,
-    output: BufReader<ChildStdout>,
-}
-
-impl Batch {
-    fn open(dir: &Path) -> Result<Self, String> {
-        let mut child = Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(["cat-file", "--batch"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|err| format!("git: {err}"))?;
-        let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
-            return Err("git cat-file: no pipe".to_string());
-        };
-        Ok(Self {
-            child,
-            input,
-            output: BufReader::new(output),
-        })
-    }
-
-    /// The object's bytes, or `None` when it does not exist.
-    fn read(&mut self, object: &str) -> Result<Option<Vec<u8>>, String> {
-        let broken = |err: std::io::Error| format!("git cat-file: {err}");
-        writeln!(self.input, "{object}").map_err(broken)?;
-        self.input.flush().map_err(broken)?;
-        let mut header = String::new();
-        self.output.read_line(&mut header).map_err(broken)?;
-        let header = header.trim_end();
-        if header.ends_with(" missing") || header.ends_with(" ambiguous") {
-            return Ok(None);
-        }
-        let size: usize = header
-            .rsplit(' ')
-            .next()
-            .and_then(|size| size.parse().ok())
-            .ok_or_else(|| format!("git cat-file: unexpected `{header}`"))?;
-        let mut bytes = vec![0; size + 1];
-        self.output.read_exact(&mut bytes).map_err(broken)?;
-        bytes.pop();
-        Ok(Some(bytes))
-    }
-}
-
-impl Drop for Batch {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
 
     fn repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -750,6 +676,29 @@ mod tests {
             .map(|c| (c.issue.as_str(), c.seconds))
             .collect();
         assert_eq!(cycles, [("a.md", 3600)]);
+    }
+
+    #[test]
+    fn a_file_with_a_non_ascii_name_counts_its_changes() {
+        let dir = repo();
+        let file = "src/caf\u{e9}.rs";
+        import(
+            dir.path(),
+            &[
+                ("one", Some((file, "fn a() {}\n"))),
+                ("two", Some((file, "fn a() {}\nfn b() {}\n"))),
+            ],
+        );
+        let stats = collect(
+            dir.path(),
+            dir.path(),
+            0,
+            &Progress::default(),
+            &Cancel::default(),
+        )
+        .unwrap();
+        let cafe = stats.files.iter().find(|f| f.path == file).unwrap();
+        assert_eq!(cafe.changes, 2);
     }
 
     #[test]

@@ -24,6 +24,7 @@ pub mod files;
 pub mod filter;
 pub mod format;
 pub mod general;
+pub mod git;
 pub mod history;
 pub mod issue;
 pub mod job;

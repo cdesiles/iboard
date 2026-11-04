@@ -8,11 +8,12 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
 use chrono::{DateTime, Local};
+
+use crate::git;
 
 type Dates = HashMap<PathBuf, DateTime<Local>>;
 
@@ -34,7 +35,7 @@ pub fn done_dates(dir: &Path, files: &[PathBuf]) -> Dates {
 /// The date of the last commit touching each file directly inside `dir`.
 /// Empty outside a git repository, or when git is missing.
 fn committed_dates(dir: &Path) -> Dates {
-    let Some(head) = git(dir, &["rev-parse", "HEAD"]) else {
+    let Ok(head) = git::output(dir, &["rev-parse", "HEAD"]) else {
         return Dates::new();
     };
     {
@@ -47,11 +48,9 @@ fn committed_dates(dir: &Path) -> Dates {
     }
     // Not under the lock: a scan in the background must not hold up one on
     // the UI thread while git walks the history.
-    let dates = git(
+    let dates = git::output(
         dir,
         &[
-            "-c",
-            "core.quotePath=false",
             "log",
             "--format=%x00%cI",
             "--name-only",
@@ -105,20 +104,6 @@ fn file_time(path: &Path) -> Option<DateTime<Local>> {
     #[cfg(not(unix))]
     let changed: Option<SystemTime> = None;
     modified.max(changed).map(DateTime::<Local>::from)
-}
-
-fn git(dir: &Path, args: &[&str]) -> Option<String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8(output.stdout).ok()?;
-    Some(text.trim_end().to_string())
 }
 
 #[cfg(test)]

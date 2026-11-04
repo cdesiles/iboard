@@ -101,11 +101,7 @@ pub fn run_with(
         .stderr(Stdio::piped());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let spawned = {
-        let _one_at_a_time = SPAWNING.lock().unwrap_or_else(PoisonError::into_inner);
-        command.spawn()
-    };
-    let mut child = spawned.map_err(|err| format!("Couldn't run {what}: {err}"))?;
+    let mut child = spawn(&mut command).map_err(|err| format!("Couldn't run {what}: {err}"))?;
     running().push(child.id());
     let stdout = child.stdout.take().map(Drain::start);
     let stderr = child.stderr.take().map(Drain::start);
@@ -137,6 +133,13 @@ pub fn run_with(
         stdout: stdout.map(Drain::finish).unwrap_or_default(),
         stderr: stderr.map(Drain::finish).unwrap_or_default(),
     })
+}
+
+/// Starts `command` while no other thread starts one, so its pipes reach no
+/// process started alongside it.
+pub fn spawn(command: &mut Command) -> std::io::Result<Child> {
+    let _one_at_a_time = SPAWNING.lock().unwrap_or_else(PoisonError::into_inner);
+    command.spawn()
 }
 
 /// Calls `on_signal`, on a thread of its own, each time SIGTERM, SIGINT or

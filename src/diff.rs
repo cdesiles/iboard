@@ -2,11 +2,10 @@
 //! numbered lines for the Diff screen.
 
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 
 use crate::job::Cancel;
-use crate::process;
+use crate::{git, process};
 
 /// How long `git show` may take before it is given up.
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -114,10 +113,8 @@ pub fn show(dir: &Path, hashes: &[String], cancel: &Cancel) -> Result<Vec<Commit
 }
 
 fn show_one(dir: &Path, hash: &str, cancel: &Cancel) -> Result<CommitDiff, String> {
-    let mut command = Command::new("git");
+    let mut command = git::command(dir);
     command
-        .arg("-C")
-        .arg(dir)
         .args([
             "show",
             "--no-color",
@@ -283,6 +280,7 @@ fn hunk_ranges(header: &str) -> ((u32, u32), (u32, u32)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     const SHOW: &str = "\
 abc1234\tFix the parser
