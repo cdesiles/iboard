@@ -21,13 +21,18 @@ impl IboardApp {
     /// Hands the prompt to the agent in the background and returns at once:
     /// the issue's card and reader show the run until its answer lands.
     pub(super) fn run_review(&mut self, target: ReviewTarget, content: &str, prompt: String) {
-        if !self.agent.configured() {
+        if !self.prefs.agent.configured() {
             self.open_config();
             return;
         }
         let project = Some(self.board.project_of(&target.path));
-        let (answer, _) =
-            agent::start_plan_review(&self.agent, &prompt, &target.path, project, target.mode);
+        let (answer, _) = agent::start_plan_review(
+            &self.prefs.agent,
+            &prompt,
+            &target.path,
+            project,
+            target.mode,
+        );
         self.mark_notes_sent(&target.path);
         self.close_review();
         let runs = &mut self.session.review_runs;
@@ -37,7 +42,7 @@ impl IboardApp {
             ReviewRun {
                 draft: target.draft,
                 mode: target.mode,
-                agent: self.agent.label(),
+                agent: self.prefs.agent.label(),
                 hash: reviews::content_hash(content),
                 answer,
             },
@@ -47,7 +52,7 @@ impl IboardApp {
     /// Starts a review of the open issue (or the editor draft), in the scope
     /// Settings › AI review chose.
     pub(super) fn start_review(&mut self, path: &Path, draft: bool) {
-        self.start_review_in(path, draft, self.agent.scope);
+        self.start_review_in(path, draft, self.prefs.agent.scope);
     }
 
     /// Starts a one-shot review in `mode`.
@@ -230,7 +235,7 @@ impl IboardApp {
     /// settings.
     pub(super) fn review_button(&mut self, ui: &mut egui::Ui, path: &Path) {
         let running = self.review_is_running(path);
-        let configured = self.agent.configured();
+        let configured = self.prefs.agent.configured();
         let label = if running { "Reviewing…" } else { "Refine" };
         let hint = if running {
             "The review runs in the background: cancel it (⌘⇧R)"
@@ -263,11 +268,11 @@ impl IboardApp {
         }
         let caret = caret.on_hover_text("Review options");
         let runs_with = if configured {
-            self.agent.label()
+            self.prefs.agent.label()
         } else {
             "No agent set up yet".to_string()
         };
-        let other_scope = match self.agent.scope {
+        let other_scope = match self.prefs.agent.scope {
             ReviewMode::Quick => ReviewMode::Deep,
             ReviewMode::Deep => ReviewMode::Quick,
         };
@@ -286,7 +291,7 @@ impl IboardApp {
         other_scope: ReviewMode,
     ) {
         let running = self.review_is_running(path);
-        let configured = self.agent.configured();
+        let configured = self.prefs.agent.configured();
         let draft = self.session.detail_mode == DetailMode::Edit;
         match picked {
             Some(ReviewMenu::Review | ReviewMenu::OtherScope | ReviewMenu::Refine) if running => {}

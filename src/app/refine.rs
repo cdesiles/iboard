@@ -181,7 +181,7 @@ impl IboardApp {
     /// Opens a refinement of a Todo issue: the challenger speaks first. A
     /// conversation already held on it comes back instead.
     pub(super) fn start_refinement(&mut self, path: &Path) {
-        if !self.agent.configured() {
+        if !self.prefs.agent.configured() {
             self.open_config();
             return;
         }
@@ -195,7 +195,7 @@ impl IboardApp {
         self.session.review = None;
         self.session.refine = Some(Refinement {
             path: path.to_path_buf(),
-            agent: self.agent.label(),
+            agent: self.prefs.agent.label(),
             turns: Vec::new(),
             note: String::new(),
             choice: None,
@@ -236,7 +236,7 @@ impl IboardApp {
         refine.error = None;
         let project = Some(self.board.project_of(&path));
         refine.running = Some(agent::start_review(
-            &self.agent,
+            &self.prefs.agent,
             &prompt,
             &path,
             project,

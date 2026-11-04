@@ -94,7 +94,7 @@ fn a_group_board_has_no_stats() {
 #[test]
 fn a_review_runs_in_its_project_and_is_kept_there() {
     let (_scratch, _app_dir, site_dir, mut app) = two_projects("all-review");
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "printf 'RELEVANCE: Pass\\n%s\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' \"$(pwd -P)\" # {prompt}"
@@ -121,7 +121,7 @@ fn a_review_runs_in_its_project_and_is_kept_there() {
 #[test]
 fn play_builds_each_card_in_its_own_project() {
     let (_scratch, app_dir, site_dir, mut app) = two_projects("all-build");
-    app.build_agent = AgentConfig {
+    app.prefs.build_agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "touch built # {prompt}".to_string(),

@@ -21,9 +21,6 @@ pub(super) struct FilterBar {
     pub(super) filter: Filter,
     /// Give the text focus on the next frame.
     pub(super) focus: bool,
-    /// The one-click label tokens pinned in the config; `None` offers the
-    /// board's three most used labels.
-    pub(super) suggestions: Option<Vec<String>>,
     /// The suggestion chip reached with `↓`, while the field has focus.
     pub(super) chip_cursor: Option<usize>,
     /// The field is in use: focused, or being clicked (a click on a chip
@@ -47,12 +44,19 @@ impl IboardApp {
     pub(super) fn filter_field(&mut self, ui: &mut egui::Ui) {
         let shown = (!self.filter_bar.filter.is_empty())
             .then(|| self.visible_grid().iter().map(Vec::len).sum::<usize>());
-        self.filter_bar.show(ui, &self.board, shown);
+        let suggestions = self.prefs.suggestions.as_deref();
+        self.filter_bar.show(ui, &self.board, suggestions, shown);
     }
 }
 
 impl FilterBar {
-    fn show(&mut self, ui: &mut egui::Ui, board: &Board, shown: Option<usize>) {
+    fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        board: &Board,
+        suggestions: Option<&[String]>,
+        shown: Option<usize>,
+    ) {
         let ctx = ui.ctx().clone();
         let focused = ctx.memory(|m| m.has_focus(filter_id()));
         if !focused {
@@ -64,7 +68,11 @@ impl FilterBar {
         let extras = Extras {
             open,
             active,
-            chips: if open { self.chips(board) } else { Vec::new() },
+            chips: if open {
+                self.chips(board, suggestions)
+            } else {
+                Vec::new()
+            },
             count: shown.map(|shown| format!("{shown} of {}", board.issue_count())),
         };
         self.row(ui, rect, focused, extras);
@@ -121,9 +129,9 @@ impl FilterBar {
     }
 
     /// The suggestions not already picked.
-    fn chips(&self, board: &Board) -> Vec<String> {
+    fn chips(&self, board: &Board, suggestions: Option<&[String]>) -> Vec<String> {
         let issues = board.columns.iter().flat_map(|column| &column.issues);
-        filter::suggestions(self.suggestions.as_deref(), issues)
+        filter::suggestions(suggestions, issues)
             .into_iter()
             .filter(|word| !self.filter.tokens.contains(word))
             .collect()

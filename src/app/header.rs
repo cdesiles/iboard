@@ -335,7 +335,7 @@ impl IboardApp {
                 "Delete",
                 delete_key,
             )
-            .on_hover_text(if self.confirm_delete {
+            .on_hover_text(if self.prefs.confirm_delete {
                 "Delete this issue (asks to confirm)"
             } else {
                 "Delete this issue"
@@ -389,7 +389,7 @@ impl IboardApp {
     /// board already reloads itself. `⌘R` keeps working either way, but on a
     /// Todo issue it refines.
     pub(super) fn refresh_button(&mut self, ui: &mut egui::Ui) {
-        if self.auto {
+        if self.prefs.auto {
             return;
         }
         if widgets::button(

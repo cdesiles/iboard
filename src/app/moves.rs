@@ -210,7 +210,7 @@ impl IboardApp {
         if paths.is_empty() {
             return;
         }
-        if self.confirm_delete {
+        if self.prefs.confirm_delete {
             self.session.confirm = Some(Confirm::Delete(paths));
             return;
         }

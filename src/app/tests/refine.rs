@@ -11,7 +11,7 @@ fn refining(tag: &str, command: &str) -> (Scratch, PathBuf, IboardApp) {
     let file = todo.join("01-demo.md");
     std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         command: command.to_string(),
         configured: true,
@@ -114,7 +114,7 @@ fn a_refinement_and_a_review_replace_each_other() {
     assert!(app.session.refine.is_some() && app.session.review.is_none());
 
     app.session.refine = None;
-    app.agent.configured = false;
+    app.prefs.agent.configured = false;
     app.start_refinement(&file);
     assert!(app.settings.is_some() && app.session.refine.is_none());
 }

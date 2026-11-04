@@ -159,7 +159,7 @@ impl IboardApp {
         ui.style_mut().interaction.selectable_labels = false;
         let mut intents = Vec::new();
         let outcome = self.reader_sheet(ui, &sheet, &layout, &mut intents);
-        if let Some(picked) = layout.not_written(ui, &missing, self.agent.configured()) {
+        if let Some(picked) = layout.not_written(ui, &missing, self.prefs.agent.configured()) {
             intents.push(match picked {
                 NotWritten::Section(section) => Intent::AddSection {
                     path: path.to_path_buf(),
@@ -213,7 +213,7 @@ impl IboardApp {
         };
         let mut note_actions = Vec::new();
         let cache = &mut self.reader.cache;
-        let labels = &self.labels;
+        let labels = &self.prefs.labels;
         theme::scroll_area(
             ui,
             egui::ScrollArea::vertical()

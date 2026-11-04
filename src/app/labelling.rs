@@ -59,7 +59,7 @@ impl IboardApp {
             self.board.columns.iter().flat_map(|column| &column.issues),
             usize::MAX,
         );
-        match label_picker::show(ui, picker, &has, &board, &self.labels) {
+        match label_picker::show(ui, picker, &has, &board, &self.prefs.labels) {
             Some(label_picker::Outcome::Close) => self.session.label_picker = None,
             Some(label_picker::Outcome::Add(label)) => {
                 self.add_label(&label, ctx.input(|i| i.time));

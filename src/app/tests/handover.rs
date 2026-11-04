@@ -76,7 +76,7 @@ fn from_the_editor_the_handover_waits_for_the_edits() {
     let (_scratch, alpha, beta, mut app, later) = alpha_and_beta("handover-editor");
     let ctx = themed_ctx();
     let a = alpha.join("issues/todo/a.md");
-    app.auto = false;
+    app.prefs.auto = false;
     app.open_issue(a.clone());
     app.start_editing(&a);
     app.session.editor.as_mut().unwrap().text = "# Alpha\n\nmore\n".to_string();

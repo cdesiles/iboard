@@ -256,9 +256,8 @@ impl Dialog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::AgentConfig;
     use crate::settings_ui::Tab;
-    use crate::titles::Engine;
+    use iboard::preferences::Preferences;
 
     #[test]
     fn a_new_label_is_named_like_the_labels_in_titles() {
@@ -269,7 +268,7 @@ mod tests {
 
     #[test]
     fn adding_a_label_needs_a_name_and_a_colour_and_recolours_a_known_one() {
-        let mut dialog = Dialog::new(&AgentConfig::default(), Engine::Manual, true, Tab::Labels);
+        let mut dialog = Dialog::new(&Preferences::default(), Tab::Labels);
         dialog.label_rows = vec![("ops".to_string(), String::new())];
         dialog.new_hex = "#1a6e42".to_string();
         assert_eq!(dialog.add_label(), Err("Name the label first.".to_string()));

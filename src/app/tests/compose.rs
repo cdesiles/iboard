@@ -188,7 +188,7 @@ fn drafting(tag: &str, answer: &str) -> (Scratch, PathBuf, IboardApp) {
     )
     .unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         command: format!("printf '%s\\n' {answer} # {{prompt}}"),
         configured: true,
@@ -254,7 +254,7 @@ fn undo_draft_goes_back_to_the_notes() {
 #[test]
 fn a_failed_draft_keeps_the_notes() {
     let (_dir, _todo, mut app) = drafting("compose-draft-fail", "");
-    app.agent.command = "exit 3 # {prompt}".into();
+    app.prefs.agent.command = "exit 3 # {prompt}".into();
     let ctx = egui::Context::default();
     app.start_draft();
     assert!(until(|| {
@@ -274,7 +274,7 @@ fn composer_with_engine(tag: &str) -> (Scratch, PathBuf, IboardApp) {
     std::fs::create_dir_all(&todo).unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     // A stand-in that answers at once: no test ever runs a real agent.
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         command: "true # {prompt}".to_string(),
         configured: true,

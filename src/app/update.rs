@@ -43,7 +43,7 @@ impl IboardApp {
             self.show_past_review(path.to_path_buf());
         } else if self.review_is_running(path) {
             self.cancel_review_run(path);
-        } else if !self.agent.configured() {
+        } else if !self.prefs.agent.configured() {
             self.open_config();
         } else {
             self.start_update(path);
@@ -54,7 +54,7 @@ impl IboardApp {
     /// answer is in, Update ready shows it.
     pub(super) fn update_button(&mut self, ui: &mut egui::Ui, path: &Path) {
         let running = self.review_is_running(path);
-        let configured = self.agent.configured();
+        let configured = self.prefs.agent.configured();
         let (icon, label) = match running {
             true => (Icon::Thinking, "Updating…"),
             false => (Icon::Review, "Update with AI"),

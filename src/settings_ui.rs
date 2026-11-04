@@ -19,11 +19,11 @@ use egui::{Key, Modifiers, Vec2};
 use crate::agent::AgentConfig;
 use crate::general::Appearance;
 use crate::job;
-use crate::labels::Labels;
 use crate::theme;
 use crate::titles::{Availability, Engine};
 use crate::widgets::{self, FooterClick};
 pub use catalog::Catalog;
+use iboard::preferences::Preferences;
 use select_menu::SelectMenu;
 
 /// Height of the tab body. Fixed, so the panel stands still when the tab
@@ -94,22 +94,22 @@ pub struct Dialog {
 }
 
 impl Dialog {
-    pub fn new(config: &AgentConfig, engine: Engine, confirm_delete: bool, tab: Tab) -> Self {
+    pub fn new(prefs: &Preferences, tab: Tab) -> Self {
         let availability = Engine::ALL
             .into_iter()
-            .map(|engine| (engine, crate::titles::availability(engine, config)))
+            .map(|engine| (engine, crate::titles::availability(engine, &prefs.agent)))
             .collect();
         Self {
             tab,
             review_seen: false,
-            form: config.clone(),
+            form: prefs.agent.clone(),
             build_seen: false,
-            build_form: config.clone(),
-            engine,
-            confirm_delete,
-            appearance: Appearance::default(),
-            auto: true,
-            label_rows: Vec::new(),
+            build_form: prefs.build_agent.clone(),
+            engine: prefs.title_engine,
+            confirm_delete: prefs.confirm_delete,
+            appearance: prefs.appearance,
+            auto: prefs.auto,
+            label_rows: prefs.labels.entries(),
             labels_seen: false,
             renames: Vec::new(),
             rename: None,
@@ -125,34 +125,16 @@ impl Dialog {
         }
     }
 
-    /// Fills Settings › Labels: the coloured labels, then the ones issues use
-    /// without a colour yet.
-    pub fn with_labels(mut self, labels: &Labels, used: impl IntoIterator<Item = String>) -> Self {
-        let mut rows = labels.entries();
+    /// Adds to Settings › Labels, beside the coloured labels, the ones issues
+    /// use without a colour yet.
+    pub fn with_used_labels(mut self, used: impl IntoIterator<Item = String>) -> Self {
+        let rows = &mut self.label_rows;
         for name in used {
             if !rows.iter().any(|(known, _)| *known == name) {
                 rows.push((name, String::new()));
             }
         }
         rows.sort_by(|a, b| a.0.cmp(&b.0));
-        self.label_rows = rows;
-        self
-    }
-
-    /// Starts Settings › AI build on the agent that implements issues.
-    pub fn with_build(mut self, build: &AgentConfig) -> Self {
-        self.build_form = build.clone();
-        self
-    }
-
-    /// Starts Settings › General on the current theme.
-    pub fn with_appearance(mut self, appearance: Appearance) -> Self {
-        self.appearance = appearance;
-        self
-    }
-
-    pub fn with_auto(mut self, auto: bool) -> Self {
-        self.auto = auto;
         self
     }
 
@@ -284,9 +266,16 @@ mod tests {
         }
     }
 
+    fn with_agent(agent: AgentConfig) -> Preferences {
+        Preferences {
+            agent,
+            ..Preferences::default()
+        }
+    }
+
     #[test]
     fn the_model_menu_lists_default_then_favorites_then_all() {
-        let dialog = Dialog::new(&AgentConfig::default(), Engine::Manual, true, Tab::Review);
+        let dialog = Dialog::new(&Preferences::default(), Tab::Review);
         let models = models(&[("a/one", false), ("b/two", true)]);
         let rows: Vec<(String, bool)> = dialog
             .model_rows(Some(&models))
@@ -306,7 +295,7 @@ mod tests {
 
     #[test]
     fn the_filter_narrows_models_but_keeps_default() {
-        let mut dialog = Dialog::new(&AgentConfig::default(), Engine::Manual, true, Tab::Review);
+        let mut dialog = Dialog::new(&Preferences::default(), Tab::Review);
         dialog.menu.filter = "ONE".into();
         let models = models(&[("a/one", false), ("b/two", true)]);
         let values: Vec<String> = dialog
@@ -320,13 +309,11 @@ mod tests {
     #[test]
     fn changing_the_tool_resets_the_model_to_default() {
         let mut dialog = Dialog::new(
-            &AgentConfig {
+            &with_agent(AgentConfig {
                 tool: Tool::OpenCode,
                 model: "a/one".into(),
                 ..AgentConfig::default()
-            },
-            Engine::Manual,
-            true,
+            }),
             Tab::Review,
         );
         let mut catalog = Catalog::default();
@@ -342,13 +329,11 @@ mod tests {
     #[test]
     fn a_custom_command_without_prompt_keeps_the_dialog_open() {
         let mut dialog = Dialog::new(
-            &AgentConfig {
+            &with_agent(AgentConfig {
                 tool: Tool::Custom,
                 command: "llm -m {model}".into(),
                 ..AgentConfig::default()
-            },
-            Engine::Manual,
-            true,
+            }),
             Tab::Review,
         );
         assert!(!dialog.validate());
@@ -374,12 +359,10 @@ mod tests {
         for tool in Tool::ALL {
             for menu in [None, Some(Menu::Tool), Some(Menu::Model)] {
                 let mut dialog = Dialog::new(
-                    &AgentConfig {
+                    &with_agent(AgentConfig {
                         tool,
                         ..AgentConfig::default()
-                    },
-                    Engine::Manual,
-                    true,
+                    }),
                     Tab::Review,
                 );
                 if let Some(menu) = menu {
@@ -418,8 +401,11 @@ mod tests {
             Tab::Labels,
         ] {
             for confirm in [true, false] {
-                let mut dialog = Dialog::new(&AgentConfig::default(), Engine::Apple, confirm, tab)
-                    .with_labels(&Labels::presets(), ["ops".to_string()]);
+                let prefs = Preferences {
+                    confirm_delete: confirm,
+                    ..Preferences::default()
+                };
+                let mut dialog = Dialog::new(&prefs, tab).with_used_labels(["ops".to_string()]);
                 for _ in 0..2 {
                     let mut action = Action::Keep;
                     ctx.run_ui(input.clone(), |ui| {

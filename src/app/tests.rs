@@ -184,7 +184,7 @@ fn renders_board_reader_and_editor() {
     app.move_selection(Key::ArrowDown);
     draw(&ctx, &mut app, vec![]); // board with a selected card
 
-    app.auto = false;
+    app.prefs.auto = false;
     app.start_editing(&file);
     app.session.editor.as_mut().unwrap().text.push_str("more\n");
     app.show_preview();
@@ -929,14 +929,14 @@ fn with_asking_off_delete_is_immediate_and_command_z_restores() {
     let file = doing.join("sidebar.md");
     std::fs::write(&file, "# Sidebar\n\nCollapse it.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    assert!(app.confirm_delete, "asking is on by default");
+    assert!(app.prefs.confirm_delete, "asking is on by default");
 
     app.request_delete(file.clone());
     assert!(app.session.confirm.is_some(), "on: the dialog opens");
     assert!(file.exists());
     app.session.confirm = None;
 
-    app.confirm_delete = false;
+    app.prefs.confirm_delete = false;
     app.request_delete(file.clone());
     assert!(app.session.confirm.is_none(), "off: no dialog");
     assert!(!file.exists(), "off: deleted at once");
@@ -1223,7 +1223,7 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
     std::fs::create_dir_all(&todo).unwrap();
     std::fs::write(todo.join("a.md"), "# A\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.auto = true;
+    app.prefs.auto = true;
     let ctx = egui::Context::default();
 
     std::fs::write(todo.join("b.md"), "# B\n").unwrap();

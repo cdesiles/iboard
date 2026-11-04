@@ -237,7 +237,7 @@ fn deleting_a_ticket_trashes_its_images_and_undo_brings_them_back() {
         "# Demo\n\n![s](../.assets/demo/01.png)\n",
     );
     app.trash = Trash::Folder(dir.join("Trash"));
-    app.confirm_delete = false;
+    app.prefs.confirm_delete = false;
     let shots = dir.join("issues/.assets/demo");
 
     app.request_delete(file.clone());

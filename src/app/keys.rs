@@ -516,7 +516,7 @@ impl IboardApp {
     /// periodic refresh, and waking up for a running review.
     pub(super) fn background(&mut self, ctx: &egui::Context) {
         // Debounced autosave, while Auto is on.
-        let due = self.auto
+        let due = self.prefs.auto
             && self
                 .session
                 .editor
@@ -528,7 +528,7 @@ impl IboardApp {
 
         // Auto, or Play watching Ready, reads the board again every
         // RESCAN_EVERY, off the UI thread.
-        if self.auto || self.watching_ready() {
+        if self.prefs.auto || self.watching_ready() {
             if self.session.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
                 self.last_refresh = Instant::now();
                 let source = self.source();

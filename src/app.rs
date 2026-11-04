@@ -20,7 +20,6 @@ use crate::discovery::{self, Board, Column, Located};
 use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_name};
 use crate::filter::{self, Filter};
 use crate::format::{display_path, relative_time, stopwatch};
-use crate::general::{self, Appearance};
 use crate::instance::{self, Request};
 use crate::issue::Issue;
 use crate::job::{self, Job};
@@ -37,6 +36,7 @@ use crate::widgets::{self, ButtonKind};
 use crate::workspace::{self, Group, Workspace};
 use crate::{design_ui, recents, sheet};
 use iboard::design::{self, DesignSystem};
+use iboard::preferences::Preferences;
 use iboard::prompts;
 
 mod agenda;
@@ -200,8 +200,6 @@ pub struct IboardApp {
     reader: Reader,
     /// The filter field in the header, and the filter it holds.
     filter_bar: FilterBar,
-    /// What names the composer's new issues.
-    title_engine: Engine,
     /// NewIssueModal keeps your notes under `## Notes` after a draft.
     keep_notes: bool,
     /// The Settings tab `⌘,` reopens.
@@ -213,13 +211,6 @@ pub struct IboardApp {
     uninitialised: Option<(PathBuf, String)>,
     /// Why the board could not be read; the next good scan clears it.
     scan_error: Option<String>,
-    /// Settings › General: deleting an issue asks first.
-    confirm_delete: bool,
-    /// Settings › General: the theme the window draws in.
-    appearance: Appearance,
-    /// `[idesign] enabled`: the beta Design panel and Draft design are
-    /// reachable. Off, no path leads to them.
-    idesign: bool,
     /// Where deleted issues go: the user's Trash in the app, a `Trash` folder
     /// in the project for a board built in tests.
     trash: Trash,
@@ -234,9 +225,6 @@ pub struct IboardApp {
     dock_span: Option<egui::Rangef>,
     /// The board's report, this frame, of the column a card is dragged from.
     dragged_column: Option<egui::Rangef>,
-    /// Auto: reload when files change on disk, save edits as you type and when
-    /// leaving the editor. Off, the editor asks before dropping unsaved edits.
-    auto: bool,
     last_refresh: Instant,
     /// Counts the boards adopted, so a background scan that started before
     /// a newer board never replaces it.
@@ -255,10 +243,8 @@ pub struct IboardApp {
     /// What the iboards started later ask this window to show; `None` when no
     /// socket hands them over (a board built in tests).
     handovers: Option<Receiver<Request>>,
-    /// The user-configured AI tool and model.
-    agent: AgentConfig,
-    /// The agent that implements Ready issues: `[build]`, or `agent`.
-    build_agent: AgentConfig,
+    /// What the user configuration sets, and Settings edits.
+    prefs: Preferences,
     /// The user configuration Settings saves to; `None` in tests, so they
     /// never touch the user's file.
     config_file: Option<PathBuf>,
@@ -282,9 +268,6 @@ pub struct IboardApp {
     config_checked: Instant,
     /// The installed agents and their models, for the settings dialog.
     catalog: Catalog,
-    /// The label colours: the built-in preset, overridden by `[labels]` in the
-    /// user configuration.
-    labels: Labels,
     /// Where a pasted image comes from: the pasteboard in the app, none in
     /// tests unless they hold one.
     clipboard: images::Clipboard,
@@ -471,17 +454,9 @@ impl IboardApp {
                 .ok()
         });
         let mut config = UserConfig::load(app.config_file.as_deref());
-        app.agent = agent::load(&mut config);
-        app.build_agent = agent::load_build(&mut config, &app.agent);
-        app.filter_bar.suggestions = filter::load_suggestions(&mut config);
-        app.title_engine = titles::load_engine(&mut config);
-        app.confirm_delete = general::load_confirm_delete(&mut config);
-        app.appearance = general::load_appearance(&mut config);
-        app.auto = general::load_auto(&mut config);
-        app.idesign = general::load_idesign(&mut config);
-        agent::set_direnv(general::load_direnv(&mut config));
-        theme::apply(&cc.egui_ctx, app.appearance);
-        app.labels = Labels::load(&mut config);
+        app.prefs = Preferences::load(&mut config);
+        agent::set_direnv(app.prefs.direnv);
+        theme::apply(&cc.egui_ctx, app.prefs.appearance);
         app.workspace = workspace::load(&mut config);
         app.reload_project_order(&mut config);
         app.order_dir = workspace::order::dir();
@@ -512,21 +487,16 @@ impl IboardApp {
             board,
             reader: Reader::default(),
             filter_bar: FilterBar::default(),
-            title_engine: Engine::Manual,
             keep_notes: true,
             settings_tab: settings_ui::Tab::General,
             error: None,
             uninitialised: None,
             scan_error,
-            confirm_delete: true,
-            appearance: Appearance::default(),
-            idesign: false,
             trash,
             past_reviews,
             dock_archivable: false,
             dock_span: None,
             dragged_column: None,
-            auto: true,
             last_refresh: Instant::now(),
             board_generation: 0,
             closing: false,
@@ -535,8 +505,10 @@ impl IboardApp {
             recents_file: None,
             pending_title: None,
             handovers: None,
-            agent: AgentConfig::default(),
-            build_agent: AgentConfig::default(),
+            prefs: Preferences {
+                title_engine: Engine::Manual,
+                ..Preferences::default()
+            },
             config_file: None,
             config_problem: None,
             settings: None,
@@ -547,7 +519,6 @@ impl IboardApp {
             config_stamp: None,
             config_checked: Instant::now(),
             catalog: Catalog::default(),
-            labels: Labels::presets(),
             clipboard: images::Clipboard::Held(None),
         }
     }

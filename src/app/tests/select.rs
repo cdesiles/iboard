@@ -185,7 +185,7 @@ fn deleting_a_picked_card_deletes_the_selection() {
         "one confirmation for both"
     );
 
-    app.confirm_delete = false;
+    app.prefs.confirm_delete = false;
     app.request_delete(a.clone());
     assert!(!a.exists() && !b.exists() && c.exists());
     assert!(app.session.picked.is_empty());

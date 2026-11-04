@@ -43,7 +43,7 @@ fn design_panel_loads_and_creates_a_component() {
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     write_min_design(&dir);
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.idesign = true;
+    app.prefs.idesign = true;
 
     app.open_design();
     assert!(
@@ -90,7 +90,7 @@ fn design_panel_reports_a_missing_system() {
     let dir = scratch_dir("design-missing");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.idesign = true;
+    app.prefs.idesign = true;
 
     app.open_design();
     assert!(app.session.design_system.is_none());
@@ -125,11 +125,11 @@ fn design_panel_drafts_a_component_with_the_agent() {
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     write_min_design(&dir);
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.idesign = true;
+    app.prefs.idesign = true;
     app.open_design();
 
     // A fake agent: prints a fenced HTML fragment, ignores the prompt.
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "printf '```html\\n<button class=\"ib-btn\">Hi</button>\\n```' # {prompt}"
@@ -177,7 +177,7 @@ fn the_design_button_falls_back_to_the_panel() {
     let dir = scratch_dir("design-button");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.idesign = true;
+    app.prefs.idesign = true;
     app.show_design(true, false);
     assert!(app.session.design.is_some(), "no system: the panel says so");
     assert!(app.session.design_error.is_some());
@@ -201,8 +201,8 @@ fn with_idesign_off_no_path_reaches_the_design_panel() {
     std::fs::write(&issue, "# Open\n").unwrap();
     write_min_design(&dir);
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    assert!(!app.idesign, "off by default");
-    app.agent.configured = true;
+    assert!(!app.prefs.idesign, "off by default");
+    app.prefs.agent.configured = true;
 
     let offers = |app: IboardApp, label: &str| {
         let mut harness = egui_kittest::Harness::builder()
@@ -250,7 +250,7 @@ fn with_idesign_off_no_path_reaches_the_design_panel() {
     assert!(dir.join("design/components/Button/preview.html").is_file());
 
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.idesign = true;
+    app.prefs.idesign = true;
     let (offered, _) = offers(app, "Design");
     assert!(offered, "on, the board offers it again");
 }

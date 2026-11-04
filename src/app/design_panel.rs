@@ -18,7 +18,7 @@ impl IboardApp {
     }
 
     pub(super) fn show_design(&mut self, live: bool, dark: bool) {
-        if !self.idesign {
+        if !self.prefs.idesign {
             return;
         }
         if live && let Ok(system) = DesignSystem::discover(&self.located.project_dir) {
@@ -36,7 +36,7 @@ impl IboardApp {
     }
 
     pub(super) fn open_design(&mut self) {
-        if !self.idesign {
+        if !self.prefs.idesign {
             return;
         }
         match DesignSystem::discover(&self.located.project_dir) {
@@ -59,7 +59,7 @@ impl IboardApp {
         let Some(mut panel) = self.session.design.take() else {
             return;
         };
-        if !self.idesign {
+        if !self.prefs.idesign {
             return;
         }
         let action = panel.show(
@@ -67,7 +67,7 @@ impl IboardApp {
             self.session.design_system.as_ref(),
             self.session.design_error.as_deref(),
             design::render::available(),
-            self.agent.configured(),
+            self.prefs.agent.configured(),
         );
         let keep = self.handle_design_action(&mut panel, action);
         if keep {
@@ -82,7 +82,7 @@ impl IboardApp {
         panel: &mut design_ui::Panel,
         action: design_ui::Action,
     ) -> bool {
-        if !self.idesign {
+        if !self.prefs.idesign {
             return false;
         }
         match action {
@@ -104,7 +104,7 @@ impl IboardApp {
                         Err(err) => panel.status = Some(err),
                     }
                 }
-                if created && draft && self.agent.configured() {
+                if created && draft && self.prefs.agent.configured() {
                     self.start_design_draft(&name, &group, &intent);
                     panel.status = Some(format!("Drafting {name}…"));
                 }
@@ -134,7 +134,7 @@ impl IboardApp {
     /// Ask the configured agent to draft a component's preview fragment. The
     /// prompt is built from the just-scaffolded component and the system.
     pub(super) fn start_design_draft(&mut self, name: &str, group: &str, intent: &str) {
-        if !self.idesign {
+        if !self.prefs.idesign {
             return;
         }
         let Some(system) = self.session.design_system.as_ref() else {
@@ -149,7 +149,7 @@ impl IboardApp {
         self.session.design_draft = Some(DraftJob {
             name: name.to_string(),
             job: agent::start(
-                &self.agent,
+                &self.prefs.agent,
                 &prompt,
                 &preview,
                 Some(&self.board.project_dir),

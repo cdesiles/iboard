@@ -79,12 +79,12 @@ impl IboardApp {
                             root: &self.board.root,
                             board: &self.board,
                             parked: parked && column.accepts_new_issues(),
-                            labels: &self.labels,
+                            labels: &self.prefs.labels,
                             reviews: review::CardReviews {
                                 past: &self.past_reviews,
                                 runs: &self.session.review_runs,
                             },
-                            can_review: self.agent.configured(),
+                            can_review: self.prefs.agent.configured(),
                             builds: Builds {
                                 running: &running,
                                 agents,

@@ -22,9 +22,9 @@ fn enrichment_drafts_an_artifact_for_an_issue() {
 
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
-    app.idesign = true;
+    app.prefs.idesign = true;
     // A fake agent: prints a whole HTML page, ignores the prompt.
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "printf '<!doctype html><html><body><h1>Demo</h1></body></html>' # {prompt}"
@@ -68,7 +68,7 @@ fn enrichment_without_an_agent_opens_the_settings_instead() {
     let file = todo.join("01-demo.md");
     std::fs::write(&file, "# Demo\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.idesign = true;
+    app.prefs.idesign = true;
 
     app.start_enrichment(&file);
     assert!(app.session.enrichment.is_none(), "nothing started");
@@ -89,8 +89,8 @@ fn done_issues_offer_no_draft_design() {
     std::fs::write(&open, "# Open\n").unwrap();
     std::fs::write(&shipped, "# Shipped\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.idesign = true;
-    app.agent.configured = true;
+    app.prefs.idesign = true;
+    app.prefs.agent.configured = true;
 
     let offers_draft = |mut app: IboardApp, path: &Path| {
         app.open_issue(path.to_path_buf());

@@ -61,7 +61,7 @@ impl IboardApp {
             folder: &folder,
             dir: Some(dir.as_path()).filter(|dir| dir.is_dir()),
             sections: &self.board.reader_sections,
-            labels: &self.labels,
+            labels: &self.prefs.labels,
             keep_notes: &mut self.keep_notes,
             blocked,
         };

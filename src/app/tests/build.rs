@@ -16,7 +16,7 @@ fn board(tag: &str, command: &str) -> (Scratch, IboardApp) {
         std::fs::write(dir.join("issues/ready").join(name), format!("# {title}\n")).unwrap();
     }
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.build_agent = AgentConfig {
+    app.prefs.build_agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: command.to_string(),
@@ -135,7 +135,7 @@ fn stop_ends_the_build_and_keeps_the_issue_where_it_is() {
 #[test]
 fn without_a_build_agent_play_opens_its_settings() {
     let (_dir, mut app) = board("build-unset", "true # {prompt}");
-    app.build_agent = AgentConfig::default();
+    app.prefs.build_agent = AgentConfig::default();
     app.apply(vec![Intent::Build(ready(&app))]);
     assert!(app.session.build.is_none());
     assert_eq!(
@@ -333,7 +333,7 @@ fn while_play_is_pressed_an_issue_dropped_in_ready_is_built() {
 fn while_play_is_pressed_ready_is_rescanned_for_other_processes_issues() {
     let (dir, mut app) = board("build-watch-disk", "sleep 30 # {prompt}");
     let ctx = themed_ctx();
-    app.auto = false;
+    app.prefs.auto = false;
     app.apply(vec![Intent::Agents(3), Intent::Build(ready(&app))]);
     std::fs::write(dir.join("issues/ready/003-c.md"), "# C\n").unwrap();
     assert!(until(|| {

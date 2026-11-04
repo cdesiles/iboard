@@ -209,7 +209,7 @@ impl IboardApp {
             settings_ui::Action::Save => {
                 // The AI review settings are written once they were seen, so
                 // saving a title engine never marks an agent as set up.
-                let save_review = dialog.review_seen || self.agent.configured();
+                let save_review = dialog.review_seen || self.prefs.agent.configured();
                 if save_review && !dialog.validate() {
                     dialog.tab = settings_ui::Tab::Review;
                     return;
@@ -219,69 +219,45 @@ impl IboardApp {
                     dialog.tab = settings_ui::Tab::Build;
                     return;
                 }
-                let mut config = dialog.form.clone();
-                config.configured = self.agent.configured() || save_review;
-                let mut build = dialog.build_form.clone();
-                build.configured = self.build_agent.configured() || save_build;
-                let engine = dialog.engine;
-                let confirm_delete = dialog.confirm_delete;
-                let appearance = dialog.appearance;
-                let auto = dialog.auto;
+                let mut prefs = Preferences {
+                    title_engine: dialog.engine,
+                    confirm_delete: dialog.confirm_delete,
+                    appearance: dialog.appearance,
+                    auto: dialog.auto,
+                    ..self.prefs.clone()
+                };
+                if save_review {
+                    prefs.agent = AgentConfig {
+                        configured: true,
+                        ..dialog.form.clone()
+                    };
+                }
+                if save_build {
+                    prefs.build_agent = AgentConfig {
+                        configured: true,
+                        ..dialog.build_form.clone()
+                    };
+                }
                 // `[labels]` is rewritten only once its tab was looked at.
-                let label_table = dialog
-                    .labels_seen
-                    .then(|| labels::table(&dialog.label_rows));
+                if dialog.labels_seen {
+                    prefs.labels = Labels::with(&labels::table(&dialog.label_rows));
+                }
                 let renames = dialog.renames.clone();
                 // Only what changed is written, so a setting another window
                 // saved in the meantime survives.
-                let changed = || -> Result<Vec<settings::Section>, String> {
-                    let mut sections = Vec::new();
-                    if save_review && config != self.agent {
-                        sections.push(agent::section(&config)?);
+                let result = prefs.sections_since(&self.prefs).and_then(|sections| {
+                    match &self.config_file {
+                        Some(file) if !sections.is_empty() => settings::save(file, &sections),
+                        _ => Ok(()),
                     }
-                    if save_build && build != self.build_agent {
-                        sections.push(agent::build_section(&build)?);
-                    }
-                    if engine != self.title_engine {
-                        sections.push(titles::section(engine)?);
-                    }
-                    if confirm_delete != self.confirm_delete {
-                        sections.push(general::section(confirm_delete)?);
-                    }
-                    if appearance != self.appearance {
-                        sections.push(general::appearance_section(appearance)?);
-                    }
-                    if auto != self.auto {
-                        sections.push(general::auto_section(auto)?);
-                    }
-                    if let Some(table) = &label_table
-                        && *table != labels::table(&self.labels.entries())
-                    {
-                        sections.push(labels::section(table)?);
-                    }
-                    Ok(sections)
-                };
-                let result = changed().and_then(|sections| match &self.config_file {
-                    Some(file) if !sections.is_empty() => settings::save(file, &sections),
-                    _ => Ok(()),
                 });
                 match result {
                     Ok(()) => {
                         self.settings_tab = dialog.tab;
-                        if save_review {
-                            self.agent = config;
-                        }
-                        if save_build {
-                            self.build_agent = build;
-                        }
-                        self.title_engine = engine;
-                        self.confirm_delete = confirm_delete;
-                        self.appearance = appearance;
-                        self.auto = auto;
-                        theme::apply(ui.ctx(), appearance);
-                        if let Some(table) = &label_table {
+                        theme::apply(ui.ctx(), prefs.appearance);
+                        self.prefs = prefs;
+                        if dialog.labels_seen {
                             self.rename_labels(&renames);
-                            self.labels = Labels::with(table);
                         }
                         self.config_problem = None;
                         self.settings = None;
@@ -315,12 +291,7 @@ impl IboardApp {
             .flat_map(|issue| issue.labels.iter().cloned())
             .filter(|label| !labels::is_origin(label))
             .collect();
-        let mut dialog =
-            settings_ui::Dialog::new(&self.agent, self.title_engine, self.confirm_delete, tab)
-                .with_labels(&self.labels, used)
-                .with_build(&self.build_agent)
-                .with_appearance(self.appearance)
-                .with_auto(self.auto);
+        let mut dialog = settings_ui::Dialog::new(&self.prefs, tab).with_used_labels(used);
         dialog.save_error = self.config_problem.clone();
         self.settings = Some(dialog);
     }

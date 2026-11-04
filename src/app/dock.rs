@@ -78,7 +78,7 @@ impl IboardApp {
                 } else {
                     DropZone::Delete
                 };
-                if let Some(path) = drop_zone(ui, inner, zone, self.confirm_delete) {
+                if let Some(path) = drop_zone(ui, inner, zone, self.prefs.confirm_delete) {
                     dropped = Some(match zone {
                         DropZone::Archive => DockDrop::Archive(path),
                         DropZone::Delete => DockDrop::Delete(path),

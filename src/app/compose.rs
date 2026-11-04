@@ -114,8 +114,8 @@ impl IboardApp {
     pub(super) fn show_composer(&mut self) {
         // Checked on every open: Apple Intelligence or an agent may have been
         // set up meanwhile.
-        let engine = Some(self.title_engine).filter(|engine| {
-            *engine != Engine::Manual && titles::availability(*engine, &self.agent).is_ready()
+        let engine = Some(self.prefs.title_engine).filter(|engine| {
+            *engine != Engine::Manual && titles::availability(*engine, &self.prefs.agent).is_ready()
         });
         if let Some(engine) = engine {
             titles::prewarm(engine);
@@ -290,7 +290,7 @@ impl IboardApp {
             (composer.engine, composer.stage)
         {
             composer.naming = Some(NamingRun {
-                answer: titles::start(engine, &self.agent, &description),
+                answer: titles::start(engine, &self.prefs.agent, &description),
                 then_edit: edit,
             });
             composer.stage = TitleStage::Naming;
@@ -412,7 +412,7 @@ impl IboardApp {
 
     /// Why Draft with Review can't run, if it can't.
     pub(super) fn draft_blocked(&self) -> Option<&'static str> {
-        if !self.agent.configured() {
+        if !self.prefs.agent.configured() {
             Some("Set up Review in ⌘, › AI review")
         } else if self
             .session
@@ -435,7 +435,7 @@ impl IboardApp {
         let labels = self.known_labels();
         let sections = self.board.reader_sections.clone();
         let project = self.board.project_dir.clone();
-        let agent = self.agent.clone();
+        let agent = self.prefs.agent.clone();
         let Some(composer) = self.session.composer.as_mut() else {
             return;
         };

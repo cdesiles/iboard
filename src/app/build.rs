@@ -100,7 +100,7 @@ impl IboardApp {
     /// there are agents (one when none were left), leaving out the manual
     /// ones. Without a build agent set up, Settings › AI build opens instead.
     pub(super) fn start_build(&mut self, mut paths: Vec<PathBuf>) {
-        if !self.build_agent.configured() {
+        if !self.prefs.build_agent.configured() {
             self.open_settings(settings_ui::Tab::Build);
             return;
         }
@@ -169,7 +169,7 @@ impl IboardApp {
         if !self.board.find(&path).is_some_and(buildable) {
             return;
         }
-        if !self.build_agent.configured() {
+        if !self.prefs.build_agent.configured() {
             self.open_settings(settings_ui::Tab::Build);
             return;
         }
@@ -289,7 +289,8 @@ impl IboardApp {
         let prompt = prompts::build_prompt(&self.relative(&issue), &content);
         let project = self.board.project_of(&issue).to_path_buf();
         let log = build_log::path(self.board.root_of(&issue), &issue);
-        let (answer, _) = agent::start_build(&self.build_agent, &prompt, &issue, &project, &log);
+        let (answer, _) =
+            agent::start_build(&self.prefs.build_agent, &prompt, &issue, &project, &log);
         Some(Run {
             issue,
             answer,

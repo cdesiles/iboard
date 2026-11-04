@@ -38,10 +38,10 @@ impl IboardApp {
     /// Start a UX enrichment: an agent drafts a static mockup of the issue,
     /// binding to the project's design system when there is one.
     pub(super) fn start_enrichment(&mut self, path: &Path) {
-        if !self.idesign || self.board.column_of(path).is_some_and(Column::is_done) {
+        if !self.prefs.idesign || self.board.column_of(path).is_some_and(Column::is_done) {
             return;
         }
-        if !self.agent.configured() {
+        if !self.prefs.agent.configured() {
             self.open_config();
             return;
         }
@@ -59,7 +59,7 @@ impl IboardApp {
             html: None,
             png: None,
             status: EnrichStatus::Running(agent::start(
-                &self.agent,
+                &self.prefs.agent,
                 &prompt,
                 path,
                 Some(self.board.project_of(path)),
@@ -98,7 +98,7 @@ impl IboardApp {
             "light",
         );
         let answer = agent::start(
-            &self.agent,
+            &self.prefs.agent,
             &prompt,
             &path,
             Some(self.board.project_of(&path)),

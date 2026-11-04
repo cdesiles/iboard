@@ -28,13 +28,13 @@ fn the_settings_dialog_saves_with_command_enter() {
     };
     frame(&mut app, vec![key(Key::Enter, egui::Modifiers::COMMAND)]);
     assert!(app.settings.is_some(), "an invalid command keeps it open");
-    assert!(!app.agent.configured());
+    assert!(!app.prefs.agent.configured());
 
     app.settings.as_mut().unwrap().form.command = "llm < {prompt}".to_string();
     frame(&mut app, vec![key(Key::Enter, egui::Modifiers::COMMAND)]);
     assert!(app.settings.is_none(), "saved and closed");
-    assert!(app.agent.configured());
-    assert_eq!(app.agent.label(), "custom · default");
+    assert!(app.prefs.agent.configured());
+    assert_eq!(app.prefs.agent.label(), "custom · default");
 
     app.open_config();
     frame(&mut app, vec![key(Key::Escape, egui::Modifiers::NONE)]);
@@ -136,7 +136,7 @@ fn auto_is_on_and_only_settings_turns_it_off() {
             (false, app),
         );
     harness.run_steps(2);
-    assert!(harness.state().1.auto, "on by default");
+    assert!(harness.state().1.prefs.auto, "on by default");
     assert!(harness.query_by_label("Auto").is_none(), "not on the board");
     assert!(harness.query_by_label("Refresh").is_none());
 
@@ -152,7 +152,7 @@ fn auto_is_on_and_only_settings_turns_it_off() {
     harness.get_by_label("Save").click();
     harness.run_steps(2);
 
-    assert!(!harness.state().1.auto);
+    assert!(!harness.state().1.prefs.auto);
     assert!(
         harness.query_by_label("Refresh").is_some(),
         "Refresh is back"
@@ -230,9 +230,9 @@ fn the_review_scope_is_saved_with_the_review_agent() {
     let config = dir.join("iboard.toml");
     let mine = "# mine\n[ai]\ntool = \"claude\" # my agent\nmodel = \"default\"\n";
     std::fs::write(&config, mine).unwrap();
-    app.agent = agent::load(&mut settings::UserConfig::load(Some(&config)));
+    app.prefs.agent = agent::load(&mut settings::UserConfig::load(Some(&config)));
     assert_eq!(
-        app.agent.scope,
+        app.prefs.agent.scope,
         ReviewMode::Quick,
         "an existing file is quick"
     );
@@ -260,7 +260,7 @@ fn the_review_scope_is_saved_with_the_review_agent() {
     harness.run_steps(2);
 
     assert!(harness.state().1.settings.is_none(), "Save closed Settings");
-    assert_eq!(harness.state().1.agent.scope, ReviewMode::Deep);
+    assert_eq!(harness.state().1.prefs.agent.scope, ReviewMode::Deep);
     assert_eq!(
         std::fs::read_to_string(&config).unwrap(),
         format!("{mine}scope = \"project\"\n")

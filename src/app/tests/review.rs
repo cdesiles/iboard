@@ -15,7 +15,7 @@ fn only_todo_issues_are_reviewed() {
     let file = ready.join("001-queued.md");
     std::fs::write(&file, "# Queued\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent.configured = true;
+    app.prefs.agent.configured = true;
     assert!(!app.is_todo_issue(&file));
     app.start_review(&file, false);
     assert!(
@@ -33,7 +33,7 @@ fn a_review_runs_from_the_issue_project() {
     let file = todo.join("demo.md");
     std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "printf 'RELEVANCE: Pass\\n%s\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' \"$(pwd -P)\" # {prompt}"
@@ -60,7 +60,7 @@ fn a_review_is_kept_beside_the_issue() {
     let file = todo.join("demo.md");
     std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "printf 'RELEVANCE: Pass\\nok\\nSIZE: Block\\nsplit\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}"
@@ -191,7 +191,7 @@ fn polling_a_running_review_adopts_the_answer() {
 
     let located = discovery::locate(&dir).unwrap();
     let mut app = IboardApp::from_located(located);
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         command: "cat {prompt}".to_string(),
         configured: true,
@@ -227,7 +227,7 @@ fn a_deep_review_says_so_and_is_kept_as_deep() {
     let file = todo.join("demo.md");
     std::fs::write(&file, "# Demo\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "grep -q 'read the repository' {prompt} && printf %s {mode}".to_string(),
@@ -254,7 +254,7 @@ fn a_margin_comment_reaches_the_review() {
     let file = todo.join("demo.md");
     std::fs::write(&file, "# Demo\n\nThree files over 1,100 lines.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "grep -q 'Only design.rs matters' {prompt} && printf noted".to_string(),
@@ -328,7 +328,7 @@ fn a_size_block_splits_the_issue_in_place() {
     }
     let big = todo.join("002-big.md");
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "if grep -q '=== TICKET ===' {prompt}; then \
@@ -409,7 +409,7 @@ fn reviewing(tag: &str, command: &str) -> (Scratch, PathBuf, Drawn) {
     std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
     std::fs::write(todo.join("02-other.md"), "# Other\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: command.to_string(),
@@ -504,7 +504,7 @@ fn a_ready_review_opens_in_the_reader() {
     use egui_kittest::kittest::Queryable;
     let (dir, file, mut harness) = reviewing("review-ready-reader", PASSING);
     let gate = dir.join("gate");
-    harness.state_mut().1.agent.command = format!(
+    harness.state_mut().1.prefs.agent.command = format!(
         "while [ ! -e '{}' ]; do sleep 0.01; done; {PASSING}",
         gate.display()
     );
@@ -559,7 +559,7 @@ fn a_failed_review_keeps_the_last_one() {
 /// The board runs `tool`'s review, which answers with its arguments.
 fn plan_review(tag: &str, tool: agent::Tool) -> (Scratch, PathBuf, Drawn) {
     let (dir, file, mut harness) = reviewing(tag, PASSING);
-    harness.state_mut().1.agent.tool = tool;
+    harness.state_mut().1.prefs.agent.tool = tool;
     (dir, file, harness)
 }
 
@@ -632,7 +632,7 @@ fn the_review_runs_in_the_scope_settings_chose() {
     ] {
         let command = format!("grep -q '{told}' {{prompt}} && {answer}");
         let (_dir, file, mut harness) = reviewing("review-scope", &command);
-        harness.state_mut().1.agent.scope = scope;
+        harness.state_mut().1.prefs.agent.scope = scope;
         harness.get_by_label("Review").click();
         harness.run_steps(1);
         land(&mut harness, &file);
@@ -656,7 +656,7 @@ fn an_update_rewrites_a_doing_issue_through_the_editor() {
     std::fs::write(&file, "# Migrate\n\nNext: check the dumps.\n").unwrap();
     std::fs::write(dir.join("issues/done/old.md"), "# Old\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "printf 'RELEVANCE: Block\\ndone in %s\\nSIZE: Pass\\nnothing left\\nCLARITY: Challenge\\nstale\\nPROPOSAL:\\n# Migrate\\n\\nDone.' \"$(pwd -P)\" # {prompt}"
@@ -694,7 +694,7 @@ fn cmd_u_starts_and_cancels_an_update() {
     let file = dir.join("issues/doing/migrate.md");
     std::fs::write(&file, "# Migrate\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "sleep 30 # {prompt}".to_string(),
@@ -721,7 +721,7 @@ fn a_long_agent_name_keeps_the_review_panel_in_its_place() {
     let file = dir.join("issues/doing/migrate.md");
     std::fs::write(&file, "# Migrate\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: "a-model-whose-name-goes-on-and-on-well-past-the-panel".to_string(),
         command: "printf 'RELEVANCE: Pass\\nok\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}"
@@ -770,7 +770,7 @@ fn a_finished_update_shows_by_itself_and_applies_with_cmd_enter() {
     std::fs::write(&one, "# One\n").unwrap();
     std::fs::write(&two, "# Two\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "printf 'RELEVANCE: Challenge\\nstale\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL:\\n# Updated' # {prompt}"
@@ -819,7 +819,7 @@ fn quitting_with_a_run_at_work_asks_first() {
     let file = dir.join("issues/doing/migrate.md");
     std::fs::write(&file, "# Migrate\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.agent = AgentConfig {
+    app.prefs.agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "sleep 30 # {prompt}".to_string(),
@@ -859,7 +859,7 @@ fn cmd_k_asks_the_agent_about_the_open_issue() {
     let file = dir.join("issues/doing/migrate.md");
     std::fs::write(&file, "# Migrate\n\n- [ ] point 1\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.build_agent = AgentConfig {
+    app.prefs.build_agent = AgentConfig {
         tool: agent::Tool::Custom,
         model: String::new(),
         command: "printf 'Did point 1 in %s, as %s' \"$(pwd -P)\" \"$IBOARD_MODE\" # {prompt}"

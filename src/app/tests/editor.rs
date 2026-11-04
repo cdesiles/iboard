@@ -87,7 +87,7 @@ fn editing_with_unsaved_change(tag: &str, auto: bool) -> (Scratch, PathBuf, Iboa
 
     let located = discovery::locate(&dir).unwrap();
     let mut app = IboardApp::from_located(located);
-    app.auto = auto;
+    app.prefs.auto = auto;
     app.open_issue(file.clone());
     app.start_editing(&file);
     app.session.editor.as_mut().unwrap().text = "# Demo\n\nmore\n".to_string();
@@ -179,7 +179,7 @@ fn command_s_saves_the_editor() {
     let file = todo.join("demo.md");
     std::fs::write(&file, "# Demo\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.auto = false;
+    app.prefs.auto = false;
     app.start_editing(&file);
     app.session.editor.as_mut().unwrap().text = "# Demo\n\nMore.\n".into();
 

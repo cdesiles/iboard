@@ -82,7 +82,7 @@ impl IboardApp {
     /// The Design panel and Draft design: on with `[idesign]`, for a single
     /// project, whose design system they read.
     pub(super) fn design_reachable(&self) -> bool {
-        self.idesign && !self.showing_group()
+        self.prefs.idesign && !self.showing_group()
     }
 
     /// After a drop in the merged column `dir` that left it in `order`:

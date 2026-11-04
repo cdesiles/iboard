@@ -28,7 +28,7 @@ impl IboardApp {
         let editing = matches!(self.session.screen, Screen::Detail(_))
             && self.session.detail_mode == DetailMode::Edit;
         if editing {
-            if self.auto {
+            if self.prefs.auto {
                 self.save_pending();
             }
             if self.has_unsaved_edits() {

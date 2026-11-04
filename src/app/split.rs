@@ -57,7 +57,8 @@ impl IboardApp {
         let notes = self.reviewer_notes(&path);
         let prompt = prompts::split_prompt(&content, &reason, &notes);
         let project = Some(self.board.project_of(&path));
-        let (answer, progress) = agent::start_review(&self.agent, &prompt, &path, project, mode);
+        let (answer, progress) =
+            agent::start_review(&self.prefs.agent, &prompt, &path, project, mode);
         if let Some(review) = self.session.review.as_mut() {
             review.split = Some(Split::Cutting { answer, progress });
         }

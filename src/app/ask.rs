@@ -78,8 +78,8 @@ impl IboardApp {
             return;
         }
         let config = match draft.read_only {
-            true => self.agent.clone(),
-            false => self.build_agent.clone(),
+            true => self.prefs.agent.clone(),
+            false => self.prefs.build_agent.clone(),
         };
         if !config.configured() {
             self.open_config();
