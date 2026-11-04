@@ -10,6 +10,7 @@
 //! binary; `idesign` creates, browses, validates and renders a project's
 //! design system, in a terminal or in its own window.
 
+pub mod agenda;
 pub mod agent;
 pub mod assets;
 pub mod build_log;

@@ -17,8 +17,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
+use crate::agenda::{self, DayCommit};
 use crate::files;
 use crate::git::{self, Batch};
 use crate::job::Cancel;
@@ -31,9 +33,6 @@ pub const PAGE: usize = 100;
 
 /// A file this long, in code lines, counts as large.
 pub const LARGE_FILE: usize = 500;
-
-/// How many days the agenda covers, up to today: a year of whole weeks.
-pub const AGENDA_DAYS: i64 = 53 * 7;
 
 /// A file at least this complex, and changed at least [`HOTSPOT_CHANGES`]
 /// times on the page, is a hot spot.
@@ -154,15 +153,6 @@ impl FileStat {
     }
 }
 
-/// One commit of a day, in the agenda.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DayCommit {
-    /// The author's local `HH:MM`.
-    pub time: String,
-    pub short: String,
-    pub subject: String,
-}
-
 /// One page of history, measured.
 #[derive(Debug, Clone, Default)]
 pub struct Stats {
@@ -172,9 +162,9 @@ pub struct Stats {
     pub older: bool,
     /// Oldest first.
     pub snapshots: Vec<Snapshot>,
-    /// The commits of each local `YYYY-MM-DD`, newest first, over the
-    /// [`AGENDA_DAYS`] up to today.
-    pub agenda: BTreeMap<String, Vec<DayCommit>>,
+    /// The commits of each local day, newest first, over the
+    /// [`agenda::AGENDA_DAYS`] up to today.
+    pub agenda: BTreeMap<NaiveDate, Vec<DayCommit>>,
     /// The source files at the page's newest commit, most code first.
     pub files: Vec<FileStat>,
     /// The issues the page's commits closed, and how long each took.
@@ -236,7 +226,7 @@ pub fn collect(
         Some(newest) => files_at(dir, &newest.hash)?,
         None => Vec::new(),
     };
-    let agenda = agenda(dir)?;
+    let agenda = agenda::collect(dir)?;
     let cycles = match commits.first() {
         Some(newest) => cycle::collect(dir, root, &newest.hash)?,
         None => Cycles::default(),
@@ -437,38 +427,6 @@ fn files_at(dir: &Path, newest: &str) -> Result<Vec<FileStat>, String> {
     }
     files.sort_by(|a, b| b.code.cmp(&a.code).then_with(|| a.path.cmp(&b.path)));
     Ok(files)
-}
-
-/// The commits of each day over the [`AGENDA_DAYS`] up to today, by the
-/// author's local date.
-fn agenda(dir: &Path) -> Result<BTreeMap<String, Vec<DayCommit>>, String> {
-    let start = chrono::Local::now() - chrono::Duration::days(AGENDA_DAYS);
-    let out = git::output(
-        dir,
-        &[
-            "log",
-            &format!("--since={}", start.to_rfc3339()),
-            "--date=format-local:%Y-%m-%d %H:%M",
-            "--format=%ad%x1f%h%x1f%s",
-            "HEAD",
-        ],
-    )?;
-    let mut days: BTreeMap<String, Vec<DayCommit>> = BTreeMap::new();
-    for line in out.lines() {
-        let mut fields = line.splitn(3, '\x1f');
-        let (Some(when), Some(short)) = (fields.next(), fields.next()) else {
-            continue;
-        };
-        let Some((day, time)) = when.split_once(' ') else {
-            continue;
-        };
-        days.entry(day.to_string()).or_default().push(DayCommit {
-            time: time.to_string(),
-            short: short.to_string(),
-            subject: fields.next().unwrap_or_default().to_string(),
-        });
-    }
-    Ok(days)
 }
 
 /// Where the measures of the repository holding `dir` are kept.

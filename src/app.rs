@@ -617,7 +617,7 @@ struct Session {
     /// The project stats panel, from Tools › Project Stats….
     stats: Option<stats::StatsPanel>,
     /// The Agenda's range, kept between openings of the stats panel.
-    agenda_range: agenda::Range,
+    agenda_range: iboard::agenda::Range,
 }
 
 impl Default for Session {
@@ -660,7 +660,7 @@ impl Default for Session {
             agents: 1,
             agent_log: None,
             stats: None,
-            agenda_range: agenda::Range::default(),
+            agenda_range: iboard::agenda::Range::default(),
         }
     }
 }

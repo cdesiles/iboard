@@ -5,10 +5,11 @@
 
 use std::sync::Arc;
 
+use iboard::agenda::{Agenda, Range};
 use iboard::format::thousands;
 use iboard::stats::{self, Cycles, FileStat, Limits, Progress, Signal, Snapshot, Stats};
 
-use super::agenda::{self, Agenda};
+use super::agenda;
 use super::*;
 
 /// A trend's chart height, and the width of its name and value beside it.
@@ -103,7 +104,7 @@ pub(super) struct StatsPanel {
 }
 
 impl StatsPanel {
-    fn new(dir: &Path, root: &Path, page: usize, range: agenda::Range) -> Self {
+    fn new(dir: &Path, root: &Path, page: usize, range: Range) -> Self {
         let progress = Arc::new(Progress::default());
         let shared = Arc::clone(&progress);
         let dir = dir.to_path_buf();
