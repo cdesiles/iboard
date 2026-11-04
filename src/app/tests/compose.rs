@@ -2,6 +2,7 @@
 //! ticket just written.
 
 use super::*;
+use crate::app::compose::{ComposerField, TitleStage};
 use crate::app::dock::IssueDrag;
 
 /// Bug: a new ticket is renumbered to position 1 a moment after it shows,

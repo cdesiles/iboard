@@ -2,6 +2,7 @@
 //! file, exactly as `↩` will write it, on the right. See
 //! `design/components/NewIssueModal`.
 
+use super::compose::{ComposerField, Drafted, TitleStage};
 use super::*;
 use iboard::new_issue;
 

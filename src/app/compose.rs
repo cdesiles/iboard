@@ -4,6 +4,100 @@
 use super::*;
 use iboard::new_issue::{self, Parked};
 
+/// How long the composer waits for a title before the user types one.
+const NAMING_BUDGET: Duration = Duration::from_secs(3);
+
+/// How long `⌘Z` can bring back a discarded new issue.
+pub(super) const DISCARD_UNDO: Duration = Duration::from_secs(10);
+
+/// NewIssueModal's read model: your notes, the title iboard names from them,
+/// and the agent's draft. Closed with notes, it stays parked for the next
+/// `⌘N`. Nothing touches Todo until the issue is added.
+#[derive(Default)]
+pub(super) struct Composer {
+    pub(super) title: String,
+    /// Your notes.
+    pub(super) description: String,
+    /// Shown over the board; closed, it holds the parked notes.
+    pub(super) open: bool,
+    /// The engine that names issues, checked when the composer opened;
+    /// `None` when it is Off or unavailable, so titles are typed (Manual).
+    pub(super) engine: Option<Engine>,
+    pub(super) stage: TitleStage,
+    /// The engine's answer while naming.
+    pub(super) naming: Option<NamingRun>,
+    /// The field to give keyboard focus on the next frame.
+    pub(super) focus: Option<ComposerField>,
+    /// Select the whole title when it gets focus, so typing replaces it.
+    pub(super) select_title: bool,
+    pub(super) error: Option<String>,
+    /// The images pasted before the issue has a name.
+    pub(super) images: Option<images::PendingImages>,
+    /// What the agent wrote, once it has started writing.
+    pub(super) draft: Option<Drafted>,
+    /// The agent at work on the draft.
+    pub(super) drafting: Option<DraftRun>,
+    /// Why the last draft failed, until the next one.
+    pub(super) draft_error: Option<String>,
+    /// The issue pane keeps the line being written in view.
+    pub(super) follow: bool,
+}
+
+/// A draft in the issue pane, and what it was made from.
+pub(super) struct Drafted {
+    pub(super) draft: iboard::new_issue::Draft,
+    pub(super) notes_hash: u64,
+    /// `tool · model · 14s`, once the agent is done.
+    pub(super) receipt: Option<String>,
+    /// `esc` stopped the agent before it finished.
+    pub(super) stopped: bool,
+    /// The title before the draft, for Undo draft.
+    title_before: (String, TitleStage),
+}
+
+pub(super) struct DraftRun {
+    pub(super) job: Job<Result<String, String>>,
+    text: agent::DraftText,
+    agent: String,
+}
+
+impl Composer {
+    /// Nothing typed: closing it loses nothing.
+    pub(super) fn is_empty(&self) -> bool {
+        self.title.trim().is_empty() && self.description.trim().is_empty()
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ComposerField {
+    Title,
+    Description,
+}
+
+/// Where the composer's title stands while the user has not typed one.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum TitleStage {
+    /// Named on save, if an engine is ready.
+    #[default]
+    Idle,
+    /// Waiting for the engine.
+    Naming,
+    /// The engine's suggestion, untouched.
+    Inferred,
+    /// The title Review drafted, untouched.
+    Drafted,
+    /// The engine failed or was too slow: the first line names the issue.
+    Failed,
+    /// `esc` while naming: the user types the title.
+    Skipped,
+}
+
+pub(super) struct NamingRun {
+    pub(super) answer: Job<Result<String, String>>,
+    /// `⌘↩`: write and open the Editor as soon as the title is in.
+    then_edit: bool,
+}
+
 impl IboardApp {
     /// Opens NewIssueModal over the board, from any screen.
     pub(super) fn open_composer(&mut self) {

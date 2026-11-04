@@ -1,5 +1,6 @@
 //! The status bar, and the strip naming what failed.
 
+use super::compose::DISCARD_UNDO;
 use super::dock::IssueDrag;
 use super::*;
 

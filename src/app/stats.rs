@@ -10,6 +10,7 @@ use iboard::format::thousands;
 use iboard::stats::{self, Limits, Progress, Snapshot, Stats};
 
 use super::agenda;
+use super::compose::TitleStage;
 use super::*;
 
 mod files;

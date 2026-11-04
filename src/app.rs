@@ -79,6 +79,7 @@ mod windows;
 use all::Source;
 use board::*;
 use card::*;
+use compose::Composer;
 use design_panel::DraftJob;
 use enrich::Enrichment;
 use filter_bar::*;
@@ -99,12 +100,6 @@ const RESCAN_EVERY: Duration = Duration::from_secs(2);
 
 /// How long after the last keystroke an edit is written to disk.
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(800);
-
-/// How long the composer waits for a title before the user types one.
-const NAMING_BUDGET: Duration = Duration::from_secs(3);
-
-/// How long `⌘Z` can bring back a discarded new issue.
-const DISCARD_UNDO: Duration = Duration::from_secs(10);
 
 /// On macOS the header bar doubles as the window's title bar (the native
 /// title is hidden and the content runs under the traffic lights).
@@ -191,94 +186,6 @@ struct Deleted {
     /// Its images, when they went to the Trash with it.
     images: Option<images::TrashedImages>,
     at: Instant,
-}
-
-/// NewIssueModal's read model: your notes, the title iboard names from them,
-/// and the agent's draft. Closed with notes, it stays parked for the next
-/// `⌘N`. Nothing touches Todo until the issue is added.
-#[derive(Default)]
-struct Composer {
-    title: String,
-    /// Your notes.
-    description: String,
-    /// Shown over the board; closed, it holds the parked notes.
-    open: bool,
-    /// The engine that names issues, checked when the composer opened;
-    /// `None` when it is Off or unavailable, so titles are typed (Manual).
-    engine: Option<Engine>,
-    stage: TitleStage,
-    /// The engine's answer while naming.
-    naming: Option<NamingRun>,
-    /// The field to give keyboard focus on the next frame.
-    focus: Option<ComposerField>,
-    /// Select the whole title when it gets focus, so typing replaces it.
-    select_title: bool,
-    error: Option<String>,
-    /// The images pasted before the issue has a name.
-    images: Option<images::PendingImages>,
-    /// What the agent wrote, once it has started writing.
-    draft: Option<Drafted>,
-    /// The agent at work on the draft.
-    drafting: Option<DraftRun>,
-    /// Why the last draft failed, until the next one.
-    draft_error: Option<String>,
-    /// The issue pane keeps the line being written in view.
-    follow: bool,
-}
-
-/// A draft in the issue pane, and what it was made from.
-struct Drafted {
-    draft: iboard::new_issue::Draft,
-    notes_hash: u64,
-    /// `tool · model · 14s`, once the agent is done.
-    receipt: Option<String>,
-    /// `esc` stopped the agent before it finished.
-    stopped: bool,
-    /// The title before the draft, for Undo draft.
-    title_before: (String, TitleStage),
-}
-
-struct DraftRun {
-    job: Job<Result<String, String>>,
-    text: agent::DraftText,
-    agent: String,
-}
-
-impl Composer {
-    /// Nothing typed: closing it loses nothing.
-    fn is_empty(&self) -> bool {
-        self.title.trim().is_empty() && self.description.trim().is_empty()
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ComposerField {
-    Title,
-    Description,
-}
-
-/// Where the composer's title stands while the user has not typed one.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum TitleStage {
-    /// Named on save, if an engine is ready.
-    #[default]
-    Idle,
-    /// Waiting for the engine.
-    Naming,
-    /// The engine's suggestion, untouched.
-    Inferred,
-    /// The title Review drafted, untouched.
-    Drafted,
-    /// The engine failed or was too slow: the first line names the issue.
-    Failed,
-    /// `esc` while naming: the user types the title.
-    Skipped,
-}
-
-struct NamingRun {
-    answer: Job<Result<String, String>>,
-    /// `⌘↩`: write and open the Editor as soon as the title is in.
-    then_edit: bool,
 }
 
 /// The in-progress edit of one issue.
@@ -434,7 +341,7 @@ struct Session {
     detail_mode: DetailMode,
     editor: Option<EditorState>,
     composer: Option<Composer>,
-    /// A new issue discarded, for `⌘Z` in the next [`DISCARD_UNDO`].
+    /// A new issue discarded, for `⌘Z` in the next [`compose::DISCARD_UNDO`].
     discarded: Option<(Composer, Instant)>,
     /// The issue the composer just wrote, highlighted for a moment.
     new_card: Option<(PathBuf, Instant)>,

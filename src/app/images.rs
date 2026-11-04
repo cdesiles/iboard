@@ -1,6 +1,7 @@
 //! Images in an issue: pasted or dropped into the composer or the editor,
 //! shown by the reader, and carried through renames, deletes and splits.
 
+use super::compose::TitleStage;
 use super::editor::EDITOR_ID;
 use super::*;
 use crate::assets::{self, Carry};
