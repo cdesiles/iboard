@@ -1,4 +1,4 @@
-//! Paths and times the way the UI shows them.
+//! Paths, times and numbers the way the UI shows them.
 
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -37,6 +37,19 @@ pub fn relative_time(time: SystemTime) -> String {
 pub fn stopwatch(duration: Duration) -> String {
     let secs = duration.as_secs();
     format!("{:02}:{:02}", secs / 60, secs % 60)
+}
+
+/// `12345` as `12,345`.
+pub fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (at, c) in digits.chars().enumerate() {
+        if at > 0 && (digits.len() - at).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
 }
 
 #[cfg(test)]

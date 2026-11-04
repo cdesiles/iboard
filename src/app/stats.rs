@@ -5,7 +5,8 @@
 
 use std::sync::Arc;
 
-use iboard::stats::{self, Cycles, FileStat, Progress, Snapshot, Stats};
+use iboard::format::thousands;
+use iboard::stats::{self, Cycles, FileStat, Limits, Progress, Signal, Snapshot, Stats};
 
 use super::agenda::{self, Agenda};
 use super::*;
@@ -17,14 +18,6 @@ const TREND_LABEL_W: f32 = 150.0;
 const AXIS_W: f32 = 56.0;
 /// Narrower than this, the Refactor watch goes under the trends.
 const SIDE_BY_SIDE: f32 = 760.0;
-/// Complexity per thousand code lines above which a refactor is due.
-const COMPLEXITY_LIMIT: f32 = 130.0;
-/// A rise in complexity per kLOC over the page that turns its signal on.
-const COMPLEXITY_GROWTH: f32 = 0.05;
-/// A fall of the test share, in points, that turns its signal on.
-const TESTS_SLIDE: f32 = 3.0;
-/// How much slower the page's newer issues may close before cycle time drifts.
-const CYCLE_DRIFT: f32 = 1.5;
 /// The files listed before "Show all".
 const FILES_SHOWN: usize = 8;
 /// Placeholders wait this long, and the Thinking mark and clock this long.
@@ -336,12 +329,13 @@ fn stats_body(ui: &mut egui::Ui, panel: &mut StatsPanel) -> Option<StatsAsk> {
         return None;
     }
     tiles(ui, stats);
+    let limits = Limits::default();
     let mut draft = None;
     let mut hovered = None;
     split(
         ui,
-        |ui| hovered = trends(ui, stats, panel.hovered),
-        |ui| draft = watch(ui, stats),
+        |ui| hovered = trends(ui, stats, &limits, panel.hovered),
+        |ui| draft = watch(ui, stats, &limits),
     );
     if hovered != panel.hovered {
         panel.hovered = hovered;
@@ -608,7 +602,12 @@ fn series(stats: &Stats, measure: Measure) -> (Vec<Option<f32>>, Option<Vec<Opti
 
 /// The four trends on one axis, each on its own scale; returns the commit
 /// under the pointer, shared by every row's crosshair.
-fn trends(ui: &mut egui::Ui, stats: &Stats, hovered: Option<usize>) -> Option<usize> {
+fn trends(
+    ui: &mut egui::Ui,
+    stats: &Stats,
+    limits: &Limits,
+    hovered: Option<usize>,
+) -> Option<usize> {
     block(ui, |ui| {
         let p = theme::palette(ui);
         ui.horizontal(|ui| {
@@ -626,7 +625,7 @@ fn trends(ui: &mut egui::Ui, stats: &Stats, hovered: Option<usize>) -> Option<us
             let (values, extra) = series(stats, measure);
             ui.horizontal(|ui| {
                 trend_label(ui, measure, &values, hovered);
-                let limit = (measure == Measure::Complexity).then_some(COMPLEXITY_LIMIT);
+                let limit = (measure == Measure::Complexity).then_some(limits.complexity);
                 let chart = Chart {
                     values: &values,
                     extra: extra.as_deref(),
@@ -818,132 +817,9 @@ fn runs(values: &[Option<f32>], point: &impl Fn(usize, f32) -> Pos2) -> Vec<Vec<
     runs
 }
 
-/// One reason to plan a refactor, on or off, with its numbers.
-#[derive(Debug, Clone, PartialEq)]
-struct Signal {
-    name: &'static str,
-    on: bool,
-    detail: String,
-}
-
-/// The four signals of the Refactor watch, from the page's oldest commit to
-/// its newest.
-fn signals(stats: &Stats) -> Vec<Signal> {
-    let (Some(base), Some(now)) = (stats.snapshots.first(), stats.snapshots.last()) else {
-        return Vec::new();
-    };
-    let (was, is) = (base.complexity_per_kloc(), now.complexity_per_kloc());
-    let growth = if was > 0.0 { is / was - 1.0 } else { 0.0 };
-    let slide = (base.test_share() - now.test_share()) * 100.0;
-    let hot = stats.files.iter().filter(|f| f.is_hotspot()).count();
-    let (older, newer) = cycle_halves(stats);
-    let drift = match (older.percentile(0.5), newer.percentile(0.5)) {
-        (Some(before), Some(after)) => Some((before, after)),
-        _ => None,
-    };
-    vec![
-        Signal {
-            name: "Complexity grows faster than code",
-            on: growth > COMPLEXITY_GROWTH || is > COMPLEXITY_LIMIT,
-            detail: format!(
-                "{was:.0} → {is:.0} per kLOC ({:+.0}%), limit {COMPLEXITY_LIMIT:.0}",
-                growth * 100.0
-            ),
-        },
-        Signal {
-            name: "Tests are sliding",
-            on: slide >= TESTS_SLIDE,
-            detail: format!(
-                "{:.1}% → {:.1}% of the code is tests",
-                base.test_share() * 100.0,
-                now.test_share() * 100.0
-            ),
-        },
-        Signal {
-            name: "Hotspots",
-            on: hot > 0,
-            detail: format!(
-                "{hot} files with complexity ≥ {} and ≥ {} changes",
-                stats::HOTSPOT_COMPLEXITY,
-                stats::HOTSPOT_CHANGES
-            ),
-        },
-        Signal {
-            name: "Cycle time drifts",
-            on: drift.is_some_and(|(before, after)| after as f32 > before as f32 * CYCLE_DRIFT),
-            detail: drift.map_or(
-                "too few issues closed to tell".to_string(),
-                |(before, after)| {
-                    format!(
-                        "median {} on the newer half, {} before",
-                        stats::span(after),
-                        stats::span(before)
-                    )
-                },
-            ),
-        },
-    ]
-}
-
-/// The page's closed issues split at its middle commit: older, newer.
-fn cycle_halves(stats: &Stats) -> (Cycles, Cycles) {
-    let middle = stats.snapshots.len() / 2;
-    let mut halves = (Cycles::default(), Cycles::default());
-    for cycle in &stats.cycles.cycles {
-        let at = stats.snapshots.iter().position(|s| s.short == cycle.short);
-        match at {
-            Some(at) if at < middle => halves.0.cycles.push(cycle.clone()),
-            Some(_) => halves.1.cycles.push(cycle.clone()),
-            None => {}
-        }
-    }
-    halves
-}
-
-/// The files a refactor should start from: the hot spots, or else the most
-/// complex and changed.
-fn culprits(files: &[FileStat]) -> Vec<&FileStat> {
-    let hot: Vec<&FileStat> = files.iter().filter(|f| f.is_hotspot()).collect();
-    if !hot.is_empty() {
-        return hot;
-    }
-    let mut ranked: Vec<&FileStat> = files.iter().filter(|f| f.changes > 0).collect();
-    ranked.sort_by_key(|f| std::cmp::Reverse(f.complexity * f.changes));
-    ranked.truncate(3);
-    ranked
-}
-
-/// The refactor issue the watch drafts: its title and description.
-fn refactor_draft(stats: &Stats, signals: &[Signal]) -> (String, String) {
-    let on: Vec<&Signal> = signals.iter().filter(|s| s.on).collect();
-    let mut body = format!(
-        "Project stats turned on {} of {} refactor signals over the last {} commits:\n\n",
-        on.len(),
-        signals.len(),
-        stats.snapshots.len()
-    );
-    for signal in &on {
-        body.push_str(&format!("- {}: {}\n", signal.name, signal.detail));
-    }
-    let files = culprits(&stats.files);
-    if !files.is_empty() {
-        body.push_str("\n## Files\n\n");
-        for f in files {
-            body.push_str(&format!(
-                "- `{}`: {} lines, complexity {}, {} changes\n",
-                f.path,
-                thousands(f.code),
-                f.complexity,
-                f.changes
-            ));
-        }
-    }
-    ("[refactor] Plan a refactor".to_string(), body)
-}
-
 /// The verdict, the four signals behind it, and the draft it offers.
-fn watch(ui: &mut egui::Ui, stats: &Stats) -> Option<StatsAsk> {
-    let signals = signals(stats);
+fn watch(ui: &mut egui::Ui, stats: &Stats, limits: &Limits) -> Option<StatsAsk> {
+    let signals = stats::signals(stats, limits);
     let on = signals.iter().filter(|s| s.on).count();
     block(ui, |ui| {
         let p = theme::palette(ui);
@@ -955,7 +831,7 @@ fn watch(ui: &mut egui::Ui, stats: &Stats) -> Option<StatsAsk> {
             .inner_margin(Margin::same(theme::SPACE_3 as i8))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                if on < 2 {
+                if !stats::refactor_due(&signals) {
                     ui.label(
                         RichText::new("No refactor needed now")
                             .font(theme::ui_strong())
@@ -968,7 +844,7 @@ fn watch(ui: &mut egui::Ui, stats: &Stats) -> Option<StatsAsk> {
                         .font(theme::ui_strong())
                         .color(p.ink),
                 );
-                let files = culprits(&stats.files).len();
+                let files = stats::culprits(&stats.files).len();
                 ui.label(
                     RichText::new(format!(
                         "{on} of {} signals are on, mostly from {files} files.",
@@ -986,7 +862,7 @@ fn watch(ui: &mut egui::Ui, stats: &Stats) -> Option<StatsAsk> {
                 )
                 .clicked()
                 {
-                    let (title, body) = refactor_draft(stats, &signals);
+                    let (title, body) = stats::refactor_draft(stats, &signals);
                     ask = Some(StatsAsk::DraftRefactor(title, body));
                 }
             });
@@ -1158,19 +1034,6 @@ fn stats_footer(ui: &mut egui::Ui, stats: Option<&Stats>) {
         });
 }
 
-/// `12345` as `12,345`.
-fn thousands(n: usize) -> String {
-    let digits = n.to_string();
-    let mut out = String::new();
-    for (at, c) in digits.chars().enumerate() {
-        if at > 0 && (digits.len() - at).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1192,54 +1055,6 @@ mod tests {
             short: short.into(),
             seconds: days * 86_400,
         }
-    }
-
-    fn file(path: &str, complexity: usize, changes: usize) -> FileStat {
-        FileStat {
-            path: path.into(),
-            changes,
-            code: 400,
-            complexity,
-        }
-    }
-
-    #[test]
-    fn two_signals_draft_a_refactor_naming_the_hot_spots() {
-        let stats = Stats {
-            snapshots: vec![
-                snapshot("a", 1000, 100, 300),
-                snapshot("b", 1000, 110, 280),
-                snapshot("c", 1000, 120, 260),
-                snapshot("d", 1000, 140, 250),
-            ],
-            files: vec![file("src/app.rs", 90, 12), file("src/lib.rs", 10, 20)],
-            cycles: Cycles {
-                cycles: vec![cycle("a", 1), cycle("d", 4)],
-                unknown: 0,
-            },
-            ..Stats::default()
-        };
-        let on: Vec<&str> = signals(&stats)
-            .iter()
-            .filter(|s| s.on)
-            .map(|s| s.name)
-            .collect();
-        assert_eq!(
-            on,
-            [
-                "Complexity grows faster than code",
-                "Tests are sliding",
-                "Hotspots",
-                "Cycle time drifts"
-            ]
-        );
-        let (title, body) = refactor_draft(&stats, &signals(&stats));
-        assert_eq!(title, "[refactor] Plan a refactor");
-        assert!(
-            body.contains("- `src/app.rs`: 400 lines, complexity 90, 12 changes"),
-            "{body}"
-        );
-        assert!(!body.contains("src/lib.rs"), "{body}");
     }
 
     #[test]

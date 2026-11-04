@@ -1,6 +1,7 @@
 //! A project's health across its history: code size, complexity, tests and
 //! TODOs at each of the last commits, its files and those that change most,
-//! when work happened, and how long the issues closed took.
+//! when work happened, how long the issues closed took, and whether a
+//! refactor is due.
 //!
 //! Commits are read a page of [`PAGE`] at a time along the first-parent line
 //! of `HEAD`. A commit's measures never change, so each is kept in
@@ -10,6 +11,7 @@
 
 mod cycle;
 mod measure;
+mod watch;
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -22,6 +24,7 @@ use crate::git::{self, Batch};
 use crate::job::Cancel;
 pub use cycle::{Cycle, Cycles, span};
 pub use measure::{FileMetrics, Language, language_of, measure};
+pub use watch::{Limits, Signal, culprits, refactor_draft, refactor_due, signals};
 
 /// How many commits one page of history holds.
 pub const PAGE: usize = 100;
