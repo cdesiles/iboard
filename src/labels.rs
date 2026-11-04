@@ -32,7 +32,7 @@ const PRESETS: [(&str, &str); 5] = [
 pub struct Rgb(pub u8, pub u8, pub u8);
 
 /// The resolved label colours: lowercased name → colour.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Labels {
     colors: BTreeMap<String, Rgb>,
 }
