@@ -865,9 +865,8 @@ impl IboardApp {
                 self.refresh();
             }
             Err(err) => {
-                let error = format!("{err:#}");
-                self.uninitialised = Some((project, error.clone()));
-                self.error = Some(error);
+                self.uninitialised = Some((project, err.clone()));
+                self.error = Some(err);
             }
         }
     }
@@ -878,7 +877,7 @@ impl IboardApp {
         self.uninitialised = None;
         match discovery::init(&project) {
             Ok(_) => self.open_project(project),
-            Err(err) => self.error = Some(format!("{err:#}")),
+            Err(err) => self.error = Some(err),
         }
     }
 
@@ -1007,7 +1006,7 @@ type Scanned = (Board, HashMap<PathBuf, PastReview>);
 /// unique within one.
 fn scan(source: &Source) -> Result<Scanned, String> {
     let board = match source {
-        Source::Project(located) => discovery::build(located).map_err(|err| format!("{err:#}"))?,
+        Source::Project(located) => discovery::build(located)?,
         Source::Group(group, file) => {
             let order = workspace::Order::load(file.as_deref());
             workspace::build(group, &workspace::virtual_root(&group.name), &order)

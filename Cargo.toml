@@ -22,7 +22,6 @@ default = ["gui"]
 gui = ["dep:eframe", "dep:egui", "dep:egui_commonmark", "dep:egui_extras", "dep:image", "dep:objc2-app-kit", "dep:block2", "dep:two-face", "dep:syntect"]
 
 [dependencies]
-anyhow = "1.0.104"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 eframe = { version = "0.36.2", optional = true }
 egui = { version = "0.36.2", optional = true }

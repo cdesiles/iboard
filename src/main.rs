@@ -78,7 +78,7 @@ fn main() -> eframe::Result {
                 discovery::INIT_COLUMNS.join(", ")
             ),
             Err(err) => {
-                eprintln!("iboard: {err:#}");
+                eprintln!("iboard: {err}");
                 std::process::exit(1);
             }
         }
@@ -90,7 +90,7 @@ fn main() -> eframe::Result {
         Ok(located) => Some(located),
         Err(_) if !init && has_workspace() => None,
         Err(err) => {
-            eprintln!("iboard: {err:#}");
+            eprintln!("iboard: {err}");
             std::process::exit(1);
         }
     };
@@ -111,7 +111,7 @@ fn main() -> eframe::Result {
                 return Ok(());
             }
             Err(err) => {
-                eprintln!("iboard: {err:#}");
+                eprintln!("iboard: {err}");
                 std::process::exit(1);
             }
         }

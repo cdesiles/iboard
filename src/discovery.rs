@@ -9,8 +9,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
-
 use crate::build_log;
 use crate::config::Config;
 use crate::files;
@@ -204,7 +202,7 @@ pub fn renumber_each(order: &[PathBuf]) -> Result<Vec<(PathBuf, PathBuf)>, Strin
 
 /// Walks up from `start` looking for a configured project or an `issues/`
 /// directory. Running from inside the issues folder (or any sub-folder) also works.
-pub fn locate(start: &Path) -> Result<Located> {
+pub fn locate(start: &Path) -> Result<Located, String> {
     let start = if start.is_file() {
         start.parent().unwrap_or(start)
     } else {
@@ -220,11 +218,11 @@ pub fn locate(start: &Path) -> Result<Located> {
                 None => dir.join("issues"),
             };
             if !root.is_dir() {
-                bail!(
+                return Err(format!(
                     "config {} points to `{}`, which is not a directory",
                     loaded.path.display(),
                     root.display()
-                );
+                ));
             }
             return Ok(Located {
                 project_dir: dir,
@@ -253,10 +251,12 @@ pub fn locate(start: &Path) -> Result<Located> {
 
         match dir.parent() {
             Some(parent) if parent != dir => dir = parent.to_path_buf(),
-            _ => bail!(
-                "no `issues/` directory found from `{}` (and no parent contains one)",
-                origin.display()
-            ),
+            _ => {
+                return Err(format!(
+                    "no `issues/` directory found from `{}` (and no parent contains one)",
+                    origin.display()
+                ));
+            }
         }
     }
 }
@@ -270,7 +270,7 @@ pub const INIT_COLUMNS: [&str; 4] = ["todo", "ready", "doing", "done"];
 /// project being started below it; a path that does not exist yet is created as
 /// a fresh project. Existing files and directories are never touched, so
 /// running it again is safe.
-pub fn init(start: &Path) -> Result<Located> {
+pub fn init(start: &Path) -> Result<Located, String> {
     let start = if start.is_file() {
         start.parent().unwrap_or(start).to_path_buf()
     } else {
@@ -334,16 +334,17 @@ pub fn init(start: &Path) -> Result<Located> {
 /// Creates the issues root and one directory per standard column. Each column
 /// gets a `.gitkeep`, because git does not track empty directories and the
 /// layout is meant to survive a clone.
-fn create_columns(root: &Path) -> Result<()> {
+fn create_columns(root: &Path) -> Result<(), String> {
     fs::create_dir_all(root)
-        .with_context(|| format!("cannot create issues directory {}", root.display()))?;
+        .map_err(|err| format!("cannot create issues directory {}: {err}", root.display()))?;
     for name in INIT_COLUMNS {
         let dir = root.join(name);
         fs::create_dir_all(&dir)
-            .with_context(|| format!("cannot create column {}", dir.display()))?;
+            .map_err(|err| format!("cannot create column {}: {err}", dir.display()))?;
         let keep = dir.join(".gitkeep");
         if !keep.exists() {
-            fs::File::create(&keep).with_context(|| format!("cannot create {}", keep.display()))?;
+            fs::File::create(&keep)
+                .map_err(|err| format!("cannot create {}: {err}", keep.display()))?;
         }
     }
     Ok(())
@@ -373,7 +374,7 @@ fn project_name(title: Option<&str>, project_dir: &Path) -> String {
 }
 
 /// Scans the issues directory into columns.
-pub fn build(located: &Located) -> Result<Board> {
+pub fn build(located: &Located) -> Result<Board, String> {
     let root = &located.root;
     let config = located.config.as_ref();
     let mut warnings = Vec::new();
@@ -396,7 +397,7 @@ pub fn build(located: &Located) -> Result<Board> {
 
     if dirs.is_empty() {
         let entries = fs::read_dir(root)
-            .with_context(|| format!("cannot read issues directory {}", root.display()))?;
+            .map_err(|err| format!("cannot read issues directory {}: {err}", root.display()))?;
         let mut subs: Vec<PathBuf> = entries
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
