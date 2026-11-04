@@ -269,17 +269,27 @@ pub fn help(ui: &mut Ui, text: &str, color: Color32) {
     ui.add(egui::Label::new(RichText::new(text).font(theme::ui_small()).color(color)).wrap());
 }
 
+/// The 24pt text field in `font`, its `hint` in `ink-faint`: the caller sets
+/// its width and adds it with [`text_entry`].
+pub fn field_edit<'a>(
+    ui: &Ui,
+    text: &'a mut String,
+    hint: &str,
+    font: FontId,
+) -> egui::TextEdit<'a> {
+    let p = theme::palette(ui);
+    egui::TextEdit::singleline(text)
+        .hint_text(RichText::new(hint).color(p.ink_faint))
+        .font(font)
+        .margin(Margin::symmetric(theme::SPACE_3 as i8, 4))
+        .min_size(Vec2::new(0.0, theme::CONTROL_H))
+}
+
 /// A full-width mono text field.
 pub fn text_field(ui: &mut Ui, text: &mut String, hint: &str) -> Response {
-    let p = theme::palette(ui);
     text_entry(
         ui,
-        egui::TextEdit::singleline(text)
-            .hint_text(RichText::new(hint).color(p.ink_faint))
-            .font(FontId::monospace(12.0))
-            .margin(Margin::symmetric(theme::SPACE_3 as i8, 4))
-            .min_size(Vec2::new(0.0, theme::CONTROL_H))
-            .desired_width(f32::INFINITY),
+        field_edit(ui, text, hint, FontId::monospace(12.0)).desired_width(f32::INFINITY),
     )
 }
 

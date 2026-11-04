@@ -1,7 +1,7 @@
 //! The menu under a Settings select: which one is open, its keyboard
 //! highlight and the model menu's filter.
 
-use egui::{Id, Key, Margin, Modifiers, RichText, Vec2};
+use egui::{Id, Key, Margin, Modifiers, Vec2};
 
 use crate::theme;
 use crate::widgets;
@@ -94,15 +94,11 @@ impl SelectMenu {
     /// The filter at the top of the menu: it takes focus as the menu opens,
     /// and typing brings the highlight back to the first option.
     pub(super) fn filter_field(&mut self, ui: &mut egui::Ui, id: Id, hint: &str) {
-        let p = theme::palette(ui);
         let filter = widgets::text_entry(
             ui,
-            egui::TextEdit::singleline(&mut self.filter)
+            widgets::field_edit(ui, &mut self.filter, hint, theme::ui_body())
                 .id(id)
-                .hint_text(RichText::new(hint).color(p.ink_faint))
-                .font(theme::ui_body())
                 .margin(Margin::symmetric(theme::SPACE_3 as i8, 3))
-                .min_size(Vec2::new(0.0, theme::CONTROL_H))
                 .desired_width(f32::INFINITY),
         );
         if std::mem::take(&mut self.focus_filter) {

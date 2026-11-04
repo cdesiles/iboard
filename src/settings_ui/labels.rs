@@ -1,6 +1,6 @@
 //! Settings › Labels: label colours, renames and new labels.
 
-use egui::{Align, CornerRadius, FontId, Frame, Layout, Margin, RichText, Stroke, Vec2};
+use egui::{Align, CornerRadius, FontId, Frame, Layout, Margin, Stroke};
 
 use super::Dialog;
 use crate::labels::{self};
@@ -33,12 +33,8 @@ fn hex_field(ui: &mut egui::Ui, hex: &mut String, hint: &str) -> egui::Response 
     let invalid = !hex.trim().is_empty() && labels::parse_hex(hex).is_none();
     let response = widgets::text_entry(
         ui,
-        egui::TextEdit::singleline(hex)
-            .hint_text(RichText::new(hint).color(p.ink_faint))
-            .font(FontId::monospace(12.0))
+        widgets::field_edit(ui, hex, hint, FontId::monospace(12.0))
             .char_limit(7)
-            .margin(Margin::symmetric(theme::SPACE_3 as i8, 4))
-            .min_size(Vec2::new(0.0, theme::CONTROL_H))
             .desired_width(80.0),
     );
     if invalid {
@@ -191,16 +187,11 @@ impl Dialog {
     /// The row adding a label: its name, its colour, the chip they make and
     /// Add.
     fn add_row(&mut self, ui: &mut egui::Ui) {
-        let p = theme::palette(ui);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = theme::SPACE_3;
             widgets::text_entry(
                 ui,
-                egui::TextEdit::singleline(&mut self.new_label)
-                    .hint_text(RichText::new("name").color(p.ink_faint))
-                    .font(FontId::monospace(12.0))
-                    .margin(Margin::symmetric(theme::SPACE_3 as i8, 4))
-                    .min_size(Vec2::new(0.0, theme::CONTROL_H))
+                widgets::field_edit(ui, &mut self.new_label, "name", FontId::monospace(12.0))
                     .desired_width(140.0),
             );
             hex_field(ui, &mut self.new_hex, "#rrggbb");

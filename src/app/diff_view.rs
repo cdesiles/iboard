@@ -348,13 +348,14 @@ fn find_bar(ui: &mut egui::Ui, view: &mut DiffView) {
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
         let field = widgets::text_entry(
             ui,
-            egui::TextEdit::singleline(&mut find.text)
-                .id(id)
-                .hint_text(RichText::new("Find in the diff").color(p.ink_faint))
-                .font(egui::FontId::monospace(12.0))
-                .margin(Margin::symmetric(theme::SPACE_3 as i8, 4))
-                .min_size(Vec2::new(0.0, theme::CONTROL_H))
-                .desired_width(320.0),
+            widgets::field_edit(
+                ui,
+                &mut find.text,
+                "Find in the diff",
+                egui::FontId::monospace(12.0),
+            )
+            .id(id)
+            .desired_width(320.0),
         );
         if std::mem::take(&mut find.focus) {
             field.request_focus();

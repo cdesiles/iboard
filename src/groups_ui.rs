@@ -356,12 +356,13 @@ impl Dialog {
                 let width = ui.available_width() - 90.0;
                 let name = widgets::text_entry(
                     ui,
-                    egui::TextEdit::singleline(&mut self.draft.groups[at].name)
-                        .hint_text(RichText::new("Group name").color(p.ink_faint))
-                        .font(theme::ui_strong())
-                        .margin(Margin::symmetric(theme::SPACE_3 as i8, 4))
-                        .min_size(Vec2::new(0.0, theme::CONTROL_H))
-                        .desired_width(width),
+                    widgets::field_edit(
+                        ui,
+                        &mut self.draft.groups[at].name,
+                        "Group name",
+                        theme::ui_strong(),
+                    )
+                    .desired_width(width),
                 );
                 if self.focus_name == Some(at) {
                     name.request_focus();
@@ -459,7 +460,6 @@ impl Dialog {
     /// not in the group yet, in their order, with a filter once there are
     /// more than 8; then the OS picker. It stays open to add more.
     fn add_menu(&mut self, ui: &mut egui::Ui, at: usize, projects: &[PathBuf]) {
-        let p = theme::palette(ui);
         let width = ui.available_width() - 2.0 * theme::SPACE_1;
         let fresh: Vec<&PathBuf> = projects
             .iter()
@@ -477,12 +477,13 @@ impl Dialog {
                     if filterable {
                         let field = widgets::text_entry(
                             ui,
-                            egui::TextEdit::singleline(&mut self.add_filter)
-                                .hint_text(RichText::new("Filter projects").color(p.ink_faint))
-                                .font(theme::ui_body())
-                                .margin(Margin::symmetric(theme::SPACE_3 as i8, 4))
-                                .min_size(Vec2::new(0.0, theme::CONTROL_H))
-                                .desired_width(f32::INFINITY),
+                            widgets::field_edit(
+                                ui,
+                                &mut self.add_filter,
+                                "Filter projects",
+                                theme::ui_body(),
+                            )
+                            .desired_width(f32::INFINITY),
                         );
                         if !field.has_focus() && ui.memory(|m| m.focused().is_none()) {
                             field.request_focus();

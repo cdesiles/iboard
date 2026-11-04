@@ -280,7 +280,6 @@ impl Menu {
         list_max: f32,
         action: &mut Option<Action>,
     ) -> f32 {
-        let p = theme::palette(ui);
         let filtering = !self.filter.is_empty();
         let mut items = self.items(entries);
         let groups_shown = !filtering && !entries.groups.is_empty();
@@ -324,12 +323,8 @@ impl Menu {
             if entries.projects.len() >= FILTER_FROM || self.typed || filtering {
                 let field = widgets::text_entry(
                     ui,
-                    egui::TextEdit::singleline(&mut self.filter)
+                    widgets::field_edit(ui, &mut self.filter, "Filter projects", theme::ui_body())
                         .id(field_id())
-                        .hint_text(RichText::new("Filter projects").color(p.ink_faint))
-                        .font(theme::ui_body())
-                        .margin(Margin::symmetric(theme::SPACE_3 as i8, 4))
-                        .min_size(Vec2::new(0.0, theme::CONTROL_H))
                         .desired_width(f32::INFINITY),
                 );
                 if std::mem::take(&mut self.focus_field) {
