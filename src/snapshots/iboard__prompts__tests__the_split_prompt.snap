@@ -1,0 +1,12 @@
+---
+source: src/prompts.rs
+expression: "split_prompt(ISSUE, \"The board and the reader each need it; cut per screen.\",\n&[])"
+---
+You split a software issue that is too big for one sitting into smaller issues. A review said about its size: The board and the reader each need it; cut per screen.
+
+Write 2 to 6 issues, in the order they should be done. Each one must be finishable and committable on its own, and together they must cover the whole original. Keep the original's [labels] in each title. Answer with nothing but the issues, each one starting with a line `=== TICKET ===`, then a `# [kind] Title` line, then its body in markdown, 3 to 15 lines.
+
+---
+# Taller header
+
+The header should be 48pt.

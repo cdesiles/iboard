@@ -1,0 +1,30 @@
+---
+source: src/prompts.rs
+expression: "component_prompt(&tiny_system(scratch.path()), \"Toast\", \"Controls\",\n\"Transient confirmation.\", \"light\",)"
+---
+You write one component for a design system. Produce a single self-contained HTML fragment for its preview, using only the tokens and the classes of the bundle below. No <script>. No raw hex outside the token block. Return only the fragment.
+
+Component: Toast
+Group: Controls
+Intent: Transient confirmation.
+
+## Active design system — Tiny
+
+Treat this as authoritative for colour, typography, spacing and components. Do not invent tokens. The brief is prose; the token block is the binding contract.
+
+### Brief
+
+Quiet, dense, keyboard first.
+
+### Token contract — paste the `:root` block verbatim
+
+```css
+:root {
+  --bg: #ffffff;
+  --font-sans: -apple-system;
+}
+```
+
+### Components
+
+- `Button` — The one action of a row.

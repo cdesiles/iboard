@@ -410,6 +410,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_agent_prompt() {
+        insta::assert_snapshot!(agent_prompt(
+            "The header should be 48pt: touch users miss its buttons."
+        ));
+    }
+
+    #[test]
     fn titles_are_cleaned_to_one_short_line() {
         assert_eq!(
             clean("Title: \"Fix the login redirect.\"\n\nBecause…").unwrap(),

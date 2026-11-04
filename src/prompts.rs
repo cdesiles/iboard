@@ -467,12 +467,45 @@ mod tests {
         DesignSystem::load(&dir).expect("load")
     }
 
+    /// A tiny system, so a snapshot does not change with the repo's own.
+    fn tiny_system(dir: &Path) -> DesignSystem {
+        std::fs::create_dir_all(dir.join("components/Button")).unwrap();
+        std::fs::write(dir.join("design-system.json"), r#"{ "title": "Tiny" }"#).unwrap();
+        std::fs::write(
+            dir.join("tokens.json"),
+            r##"{
+                "color": { "tokens": [ {"name":"bg","value":{"light":"#ffffff","dark":"#000000"}} ] },
+                "type": { "families": {"sans":"-apple-system"} }
+            }"##,
+        )
+        .unwrap();
+        std::fs::write(dir.join("README.md"), "Quiet, dense, keyboard first.\n").unwrap();
+        std::fs::write(
+            dir.join("components/Button/README.md"),
+            "# Button\n\nThe one action of a row.\n",
+        )
+        .unwrap();
+        DesignSystem::load(dir).expect("load")
+    }
+
     #[test]
     fn design_context_carries_tokens_and_components() {
         let context = design_context(&repo(), "light");
         assert!(context.contains("Active design system"));
         assert!(context.contains("--bg: #f4f5f7;"));
         assert!(context.contains("`Button`"));
+    }
+
+    #[test]
+    fn the_component_prompt() {
+        let scratch = tempfile::tempdir().unwrap();
+        insta::assert_snapshot!(component_prompt(
+            &tiny_system(scratch.path()),
+            "Toast",
+            "Controls",
+            "Transient confirmation.",
+            "light",
+        ));
     }
 
     #[test]
@@ -536,6 +569,15 @@ mod tests {
         insta::assert_snapshot!(build_prompt(
             "issues/doing/001-play.md",
             "# [feat] Play\n\nStart the ready issues."
+        ));
+    }
+
+    #[test]
+    fn the_split_prompt() {
+        insta::assert_snapshot!(split_prompt(
+            ISSUE,
+            "The board and the reader each need it; cut per screen.",
+            &[]
         ));
     }
 

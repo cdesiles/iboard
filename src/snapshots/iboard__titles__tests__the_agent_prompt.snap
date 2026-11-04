@@ -1,0 +1,8 @@
+---
+source: src/titles.rs
+expression: "agent_prompt(\"The header should be 48pt: touch users miss its buttons.\")"
+---
+Write the title of this issue for a developer's issue tracker: what should be done or what is wrong, in at most 10 words, in the same language as the description. Keep the meaning; do not add facts. Answer with the title only: no quotes, no ticket number, no final period.
+
+Description:
+The header should be 48pt: touch users miss its buttons.
