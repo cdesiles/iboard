@@ -19,6 +19,7 @@ use egui::{Align2, Color32, CornerRadius, Rect, Stroke, StrokeKind, pos2};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 use crate::design::{self, Asset, Component, DesignFile, DesignSystem, Token};
+use crate::format;
 use crate::job::{self, Job};
 
 use crate::theme;
@@ -425,7 +426,7 @@ impl Panel {
 
     fn component_rows(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
         let p = theme::palette(ui);
-        let list = ordered_components(system, self.search.trim());
+        let list = system.components_by_name(self.search.trim());
 
         if list.is_empty() {
             ui.label(
@@ -1138,7 +1139,7 @@ fn assets(ui: &mut egui::Ui, assets: &[Asset]) {
             }
             ui.label(egui::RichText::new(&asset.name).color(p.ink).size(12.0));
             if asset.bytes > 0 {
-                muted(ui, &human_bytes(asset.bytes));
+                muted(ui, &format::bytes(asset.bytes));
             }
         });
     }
@@ -1155,7 +1156,7 @@ fn files(ui: &mut egui::Ui, files: &[DesignFile]) {
                     .font(theme::meta())
                     .color(p.ink),
             );
-            muted(ui, &human_bytes(file.bytes));
+            muted(ui, &format::bytes(file.bytes));
         });
     }
 }
@@ -1272,29 +1273,6 @@ fn is_image(path: &Path) -> bool {
         path.extension().and_then(|ext| ext.to_str()).map(str::to_lowercase),
         Some(ext) if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp")
     )
-}
-
-fn human_bytes(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.0} kB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    }
-}
-
-/// The components the rail lists, narrowed to those matching `query`, in the
-/// alphabetical order Components has in Claude Design.
-fn ordered_components<'a>(system: &'a DesignSystem, query: &str) -> Vec<&'a Component> {
-    let query = query.trim().to_lowercase();
-    let mut list: Vec<&Component> = system
-        .components
-        .iter()
-        .filter(|c| query.is_empty() || c.name.to_lowercase().contains(&query))
-        .collect();
-    list.sort_by_key(|c| c.name.to_lowercase());
-    list
 }
 
 /// Search every section for entries whose name matches `query`.

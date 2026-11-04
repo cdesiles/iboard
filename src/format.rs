@@ -52,6 +52,17 @@ pub fn thousands(n: usize) -> String {
     out
 }
 
+/// A file size: `512 B`, `12 kB`, `3.4 MB`.
+pub fn bytes(n: u64) -> String {
+    if n < 1024 {
+        format!("{n} B")
+    } else if n < 1024 * 1024 {
+        format!("{:.0} kB", n as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", n as f64 / (1024.0 * 1024.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

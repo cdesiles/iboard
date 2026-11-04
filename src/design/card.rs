@@ -20,6 +20,19 @@ impl DesignSystem {
             })
             .collect()
     }
+
+    /// The components whose name contains `query`, all of them when it is
+    /// empty, in the alphabetical order Components has in Claude Design.
+    pub fn components_by_name(&self, query: &str) -> Vec<&Component> {
+        let query = query.trim().to_lowercase();
+        let mut list: Vec<&Component> = self
+            .components
+            .iter()
+            .filter(|c| query.is_empty() || c.name.to_lowercase().contains(&query))
+            .collect();
+        list.sort_by_key(|c| c.name.to_lowercase());
+        list
+    }
 }
 
 /// The `Group:` a component belongs to: the preview's `@dsCard` group first,

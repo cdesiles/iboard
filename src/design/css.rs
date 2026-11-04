@@ -117,9 +117,7 @@ pub fn preview_html(
 
     let mut style = String::from("<style>\n");
     style.push_str(&tokens_css(system, theme));
-    if let Ok(bundle) = std::fs::read_to_string(system.root.join("components").join("bundle.css")) {
-        style.push_str(&strip_at_imports(&bundle));
-    }
+    style.push_str(&bundle_css(system));
     style.push_str("</style>\n");
 
     Ok(splice(&mut fragment, &style))
@@ -138,8 +136,17 @@ fn splice(fragment: &mut String, style: &str) -> String {
     fragment.clone()
 }
 
-/// Drop `@import` lines. The bundle imports Google Fonts, which a snapshot
-/// over a local file cannot reach; the family stacks fall back to system faces.
+/// The bundle's stylesheet, `components/bundle.css`, without its `@import`
+/// lines; empty when the system ships none.
+pub fn bundle_css(system: &DesignSystem) -> String {
+    std::fs::read_to_string(system.root.join("components").join("bundle.css"))
+        .map(|bundle| strip_at_imports(&bundle))
+        .unwrap_or_default()
+}
+
+/// Drop `@import` lines. The bundle imports Google Fonts, which neither a
+/// snapshot over a local file nor the self-contained catalog can reach; the
+/// family stacks fall back to system faces.
 fn strip_at_imports(css: &str) -> String {
     let mut out = String::with_capacity(css.len());
     for line in css.lines() {

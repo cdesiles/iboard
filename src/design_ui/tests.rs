@@ -118,7 +118,8 @@ fn opening_components_picks_one_and_back_leaves_the_pane() {
 fn components_are_listed_alphabetically() {
     let system = repo();
     let names = |query: &str| {
-        ordered_components(&system, query)
+        system
+            .components_by_name(query)
             .iter()
             .map(|c| c.name.as_str())
             .collect::<Vec<_>>()

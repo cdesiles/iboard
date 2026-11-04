@@ -59,7 +59,8 @@ fn the_catalog_uses_the_declared_group_and_subtitle() {
 #[test]
 fn the_component_rail_is_alphabetical_and_drills_in() {
     let system = repo();
-    let names: Vec<String> = ordered_components(&system)
+    let names: Vec<String> = system
+        .components_by_name("")
         .iter()
         .map(|component| component.name.clone())
         .collect();

@@ -15,6 +15,7 @@ use std::process::Command;
 
 use super::fonts::{self, FontFace};
 use super::{Component, DesignSystem, css};
+use crate::format;
 
 /// The catalog's categories, in Claude Design's order: `(id, label, icon)`,
 /// the icon being the inner SVG of a 24-unit line pictogram.
@@ -90,9 +91,7 @@ fn html(system: &DesignSystem, theme: &str) -> Result<String, String> {
     if has_dark {
         style.push_str(&css::tokens_block(system, "dark", "[data-theme=\"dark\"]"));
     }
-    if let Ok(bundle) = std::fs::read_to_string(system.root.join("components").join("bundle.css")) {
-        style.push_str(&strip_at_imports(&bundle));
-    }
+    style.push_str(&css::bundle_css(system));
     style.push_str(CATALOG_CSS);
 
     let toggle = if has_dark {
@@ -166,7 +165,7 @@ fn sidebar(system: &DesignSystem, toggle: &str) -> String {
         "<button type=\"button\" class=\"ds-back\" data-back>\
          <span class=\"ds-chevron\">\u{2039}</span>Components</button>\n",
     );
-    for component in ordered_components(system) {
+    for component in system.components_by_name("") {
         let search = format!(
             "{} {} {}",
             component.name,
@@ -263,7 +262,7 @@ fn files_summary(system: &DesignSystem) -> String {
             "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>\
              <span class=\"ds-val\">{count} files · {}</span></div>\n",
             escape(if folder == "." { "./" } else { folder }),
-            human_bytes(bytes),
+            format::bytes(bytes),
         ));
     }
     out.push_str(&cta("files", "Browse files"));
@@ -542,7 +541,7 @@ fn components(system: &DesignSystem) -> String {
         "Components",
         &format!("{} components", system.components.len()),
     );
-    for component in ordered_components(system) {
+    for component in system.components_by_name("") {
         out.push_str(&section(component, &format!("c-{}", slug(&component.name))));
     }
     out
@@ -561,7 +560,10 @@ fn assets(system: &DesignSystem) -> String {
             group = asset.group.clone();
         }
         let size = if asset.bytes > 0 {
-            format!("<span class=\"ds-val\">{}</span>", human_bytes(asset.bytes))
+            format!(
+                "<span class=\"ds-val\">{}</span>",
+                format::bytes(asset.bytes)
+            )
         } else {
             String::new()
         };
@@ -581,17 +583,10 @@ fn files(system: &DesignSystem) -> String {
             "<div class=\"ds-row\"><span class=\"ds-name\">{}</span>\
              <span class=\"ds-val\">{}</span></div>\n",
             escape(&file.rel),
-            human_bytes(file.bytes),
+            format::bytes(file.bytes),
         ));
     }
     out
-}
-
-/// Every component by name, the order the rail and the pane list them in.
-fn ordered_components(system: &DesignSystem) -> Vec<&Component> {
-    let mut list: Vec<&Component> = system.components.iter().collect();
-    list.sort_by_key(|component| component.name.to_lowercase());
-    list
 }
 
 /// One component: its title, subtitle and live fragment in a bordered stage.
@@ -646,16 +641,6 @@ fn slug(name: &str) -> String {
 /// A number with an optional `px` suffix (`"4px"`, `"0"`, `"16"`).
 fn parse_px(value: &str) -> Option<f32> {
     value.trim().trim_end_matches("px").trim().parse().ok()
-}
-
-fn human_bytes(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.0} kB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    }
 }
 
 /// A small markdown reader for the Overview brief: headings, lists, paragraphs
@@ -872,20 +857,6 @@ fn open_in_browser(html: &Path) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|err| format!("Couldn't open {}: {err}", html.display()))
-}
-
-/// Drop `@import` lines: the catalog is self-contained, so the family stacks
-/// fall back to system faces rather than reaching for Google Fonts.
-fn strip_at_imports(css: &str) -> String {
-    let mut out = String::with_capacity(css.len());
-    for line in css.lines() {
-        if line.trim_start().starts_with("@import") {
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-    out
 }
 
 fn escape(text: &str) -> String {
