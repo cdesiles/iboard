@@ -187,23 +187,31 @@ pub fn normalize(name: &str) -> Option<String> {
 /// and `[Bug][UI] T` both give `bug` and `ui`. Brackets later in the title, an
 /// empty `[]` (dropped) and a markdown link (`[text](url)`) end the run.
 pub fn split_leading_labels(heading: &str) -> (Vec<String>, String) {
+    let (groups, tail) = bracket_groups(heading);
     let mut labels: Vec<String> = Vec::new();
-    let mut rest = heading.trim_start();
-    while let Some(inner) = rest.strip_prefix('[')
-        && let Some(end) = inner.find(']')
-    {
-        let after = &inner[end + 1..];
-        if after.starts_with('(') {
-            break;
-        }
-        if let Some(name) = normalize(&inner[..end])
+    for group in groups {
+        if let Some(name) = normalize(group)
             && !labels.contains(&name)
         {
             labels.push(name);
         }
-        rest = after.trim_start();
     }
-    (labels, rest.trim().to_string())
+    (labels, tail.trim().to_string())
+}
+
+/// The leading `[…]` groups of a heading, as written, and the text after
+/// them. A markdown link (`[text](url)`) ends the run.
+fn bracket_groups(heading: &str) -> (Vec<&str>, &str) {
+    let mut groups = Vec::new();
+    let mut tail = heading.trim_start();
+    while let Some(inner) = tail.strip_prefix('[')
+        && let Some(close) = inner.find(']')
+        && !inner[close + 1..].starts_with('(')
+    {
+        groups.push(&inner[..close]);
+        tail = inner[close + 1..].trim_start();
+    }
+    (groups, tail)
 }
 
 /// The `labels:` list of a markdown file's front matter, normalized: either
@@ -237,11 +245,7 @@ pub fn front_matter_labels(markdown: &str) -> Vec<String> {
             if value.is_empty() {
                 in_list = true;
             } else {
-                for item in value
-                    .trim_start_matches('[')
-                    .trim_end_matches(']')
-                    .split(',')
-                {
+                for item in inline_items(value) {
                     push(item);
                 }
             }
@@ -270,55 +274,54 @@ fn add_label(markdown: &str, label: &str) -> Result<Option<String>, String> {
     }
     let mut out: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
     if let Some(at) = front_matter_list(&lines) {
-        match at {
-            List::Inline(i) => {
-                let (body, end) = split_eol(lines[i]);
-                let (key, value) = body.split_once("labels:").unwrap_or((body, ""));
-                let items = value
-                    .trim()
-                    .trim_start_matches('[')
-                    .trim_end_matches(']')
-                    .trim();
-                let items = if items.is_empty() {
-                    label.to_string()
-                } else {
-                    format!("{items}, {label}")
-                };
-                out[i] = format!("{key}labels: [{items}]{end}");
-            }
-            List::Block { last, indent } => {
-                let (_, end) = split_eol(lines[last]);
-                let end = if end.is_empty() { "\n" } else { end };
-                if !out[last].ends_with('\n') {
-                    out[last].push('\n');
-                }
-                out.insert(last + 1, format!("{indent}- {label}{end}"));
-            }
-        }
-        return Ok(Some(out.concat()));
-    }
-    let Some(i) = h1(&lines) else {
+        add_to_list(&lines, &mut out, at, label);
+    } else if let Some(i) = h1(&lines) {
+        out[i] = add_to_heading(lines[i], label);
+    } else {
         return Err("it has no `# ` title line".to_string());
-    };
-    let (body, end) = split_eol(lines[i]);
-    let indent = &body[..body.len() - body.trim_start().len()];
-    let rest = heading(lines[i]);
-    // Skip the leading bracket groups exactly as `split_leading_labels` reads them.
-    let mut tail = rest.trim_start();
-    while let Some(inner) = tail.strip_prefix('[')
-        && let Some(close) = inner.find(']')
-        && !inner[close + 1..].starts_with('(')
-    {
-        tail = inner[close + 1..].trim_start();
     }
+    Ok(Some(out.concat()))
+}
+
+/// Adds `label` to the front matter's `labels:` list, its items kept as
+/// written: last in an inline list, on a new line after a block list's items.
+fn add_to_list(lines: &[&str], out: &mut Vec<String>, at: List, label: &str) {
+    match at {
+        List::Inline(i) => {
+            let (body, end) = split_eol(lines[i]);
+            let (key, value) = body.split_once("labels:").unwrap_or((body, ""));
+            let items = inline_list(value).trim();
+            let items = if items.is_empty() {
+                label.to_string()
+            } else {
+                format!("{items}, {label}")
+            };
+            out[i] = format!("{key}labels: [{items}]{end}");
+        }
+        List::Block { last, indent } => {
+            let (_, end) = split_eol(lines[last]);
+            let end = if end.is_empty() { "\n" } else { end };
+            if !out[last].ends_with('\n') {
+                out[last].push('\n');
+            }
+            out.insert(last + 1, format!("{indent}- {label}{end}"));
+        }
+    }
+}
+
+/// A `# ` title line with `label` added after its leading `[label]` groups.
+fn add_to_heading(line: &str, label: &str) -> String {
+    let (body, end) = split_eol(line);
+    let indent = &body[..body.len() - body.trim_start().len()];
+    let rest = heading(line);
+    let (_, tail) = bracket_groups(rest);
     let groups = rest[..rest.len() - tail.len()].trim_end();
     let line = if groups.is_empty() {
         format!("{indent}# [{label}] {tail}")
     } else {
         format!("{indent}# {groups} [{label}] {tail}")
     };
-    out[i] = format!("{}{end}", line.trim_end());
-    Ok(Some(out.concat()))
+    format!("{}{end}", line.trim_end())
 }
 
 /// Adds `label` to the issue at `path`, re-reading it first so an edit made
@@ -333,18 +336,25 @@ pub fn add_label_to_file(path: &Path, label: &str) -> Result<bool, String> {
 fn remove_label(markdown: &str, label: &str) -> Option<String> {
     let lines: Vec<&str> = markdown.split_inclusive('\n').collect();
     let mut out: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
-    let mut remove_lines: Vec<usize> = Vec::new();
-    let mut changed = false;
+    let mut changed = remove_from_list(&lines, &mut out, label);
+    if let Some(i) = h1(&lines)
+        && let Some(line) = remove_from_heading(lines[i], label)
+    {
+        out[i] = line;
+        changed = true;
+    }
+    changed.then(|| out.concat())
+}
 
-    match front_matter_list(&lines) {
+/// Takes `label` off the front matter's `labels:` list: rewrites an inline
+/// list with its items normalized, empties a block list's item lines. Whether
+/// the list had it.
+fn remove_from_list(lines: &[&str], out: &mut [String], label: &str) -> bool {
+    match front_matter_list(lines) {
         Some(List::Inline(i)) => {
             let (body, end) = split_eol(lines[i]);
             let (key, value) = body.split_once("labels:").unwrap_or((body, ""));
-            let items: Vec<String> = value
-                .trim()
-                .trim_start_matches('[')
-                .trim_end_matches(']')
-                .split(',')
+            let items: Vec<String> = inline_items(value)
                 .filter_map(|raw| normalize(raw.trim().trim_matches(['"', '\''])))
                 .collect();
             let kept: Vec<&str> = items
@@ -352,64 +362,51 @@ fn remove_label(markdown: &str, label: &str) -> Option<String> {
                 .map(String::as_str)
                 .filter(|n| *n != label)
                 .collect();
-            if kept.len() != items.len() {
-                changed = true;
-                out[i] = format!("{key}labels: [{}]{end}", kept.join(", "));
+            if kept.len() == items.len() {
+                return false;
             }
+            out[i] = format!("{key}labels: [{}]{end}", kept.join(", "));
+            true
         }
         Some(List::Block { last, .. }) => {
             let key = (1..=last)
                 .find(|&j| lines[j].trim().starts_with("labels:"))
                 .unwrap_or(last);
+            let mut changed = false;
             for (j, line) in lines.iter().enumerate().take(last + 1).skip(key + 1) {
                 let item = line.trim().strip_prefix("- ").unwrap_or("");
                 if normalize(item.trim_matches(['"', '\''])).as_deref() == Some(label) {
-                    remove_lines.push(j);
+                    out[j].clear();
                     changed = true;
                 }
             }
+            changed
         }
-        None => {}
+        None => false,
     }
+}
 
-    if let Some(i) = h1(&lines) {
-        let (body, end) = split_eol(lines[i]);
-        let indent = &body[..body.len() - body.trim_start().len()];
-        let rest = heading(lines[i]);
-        // Keep each group's original text; only the removed one goes.
-        let mut groups: Vec<String> = Vec::new();
-        let mut tail = rest.trim_start();
-        while let Some(inner) = tail.strip_prefix('[')
-            && let Some(close) = inner.find(']')
-            && !inner[close + 1..].starts_with('(')
-        {
-            groups.push(inner[..close].to_string());
-            tail = inner[close + 1..].trim_start();
-        }
-        let is_label = |group: &String| normalize(group).as_deref() == Some(label);
-        if groups.iter().any(is_label) {
-            changed = true;
-            let kept: Vec<String> = groups
-                .into_iter()
-                .filter(|group| !is_label(group))
-                .map(|group| format!("[{group}]"))
-                .collect();
-            let prefix = if kept.is_empty() {
-                String::new()
-            } else {
-                format!("{} ", kept.join(" "))
-            };
-            out[i] = format!("{indent}# {prefix}{}{end}", tail.trim_end());
-        }
-    }
-
-    if !changed {
+/// A `# ` title line without `label`, its other leading `[label]` groups kept
+/// as written. `None` when the heading does not carry it.
+fn remove_from_heading(line: &str, label: &str) -> Option<String> {
+    let (body, end) = split_eol(line);
+    let indent = &body[..body.len() - body.trim_start().len()];
+    let (groups, tail) = bracket_groups(heading(line));
+    let is_label = |group: &&str| normalize(group).as_deref() == Some(label);
+    if !groups.iter().any(is_label) {
         return None;
     }
-    for index in remove_lines.into_iter().rev() {
-        out.remove(index);
-    }
-    Some(out.concat())
+    let kept: Vec<String> = groups
+        .into_iter()
+        .filter(|group| !is_label(group))
+        .map(|group| format!("[{group}]"))
+        .collect();
+    let prefix = if kept.is_empty() {
+        String::new()
+    } else {
+        format!("{} ", kept.join(" "))
+    };
+    Some(format!("{indent}# {prefix}{}{end}", tail.trim_end()))
 }
 
 /// Removes `label` from the issue at `path`, re-reading it first so an edit
@@ -475,6 +472,16 @@ fn front_matter_list(lines: &[&str]) -> Option<List> {
         }
     }
     None
+}
+
+/// What an inline `[a, b]` list holds between its brackets, as written.
+fn inline_list(value: &str) -> &str {
+    value.trim().trim_start_matches('[').trim_end_matches(']')
+}
+
+/// The items of an inline `[a, b]` list, as written.
+fn inline_items(value: &str) -> impl Iterator<Item = &str> {
+    inline_list(value).split(',')
 }
 
 /// The index of the title line, outside the front matter and code.
