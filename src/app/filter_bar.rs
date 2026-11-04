@@ -2,6 +2,18 @@
 
 use super::*;
 
+/// The filter's width at rest, and while in use or filtering.
+const FILTER_REST: f32 = 220.0;
+const FILTER_OPEN: f32 = 480.0;
+/// How long the filter takes to widen or shrink.
+const FILTER_GROW_SECS: f32 = 0.12;
+/// Room the breadcrumb keeps when the filter widens on a narrow window.
+const CRUMB_KEEP: f32 = 160.0;
+/// Gap between the filter's icon, tokens, text and chips.
+const FILTER_GAP: f32 = 6.0;
+/// Narrowest the filter text may get before the chips hide.
+const FILTER_TEXT_MIN: f32 = 48.0;
+
 /// The filter field's state: the filter itself, and how the field is being
 /// used.
 #[derive(Default)]

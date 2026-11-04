@@ -1,6 +1,7 @@
 //! The AI review's tests: running, keeping and applying it.
 
 use super::*;
+use crate::app::reader::REVIEW_PANEL_WIDTH;
 use crate::app::review::PLAN_NOTE;
 use crate::app::split::Split;
 

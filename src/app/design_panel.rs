@@ -2,6 +2,12 @@
 
 use super::*;
 
+/// A component whose preview an agent is drafting.
+pub(super) struct DraftJob {
+    name: String,
+    job: Job<Result<String, String>>,
+}
+
 impl IboardApp {
     /// Opens the Design panel on a fresh load of the project's design system.
     /// The header's Design button: the live catalog, as `idesign` opens it,

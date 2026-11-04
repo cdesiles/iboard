@@ -1,6 +1,75 @@
 //! An issue's card on the board.
 
+use super::dock::IssueDrag;
+use super::review::ReviewPill;
 use super::*;
+
+/// An issue action available from a card or the detail header.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(super) enum CardAction {
+    /// Open the issue in the reader, from its Expand action.
+    Open,
+    /// A plain click: the card becomes the only one selected.
+    Select,
+    /// Shift-click: add the issue to the multi-selection, or take it out.
+    Pick,
+    /// Delete the issue's file.
+    Delete,
+    /// Move a done issue to `.archive`.
+    Archive,
+    /// Show a done issue's diff: every commit that closed it.
+    Diff,
+    /// Open a done issue with the build agent's log beside it.
+    AgentLog,
+    /// Add the card's label to the filter.
+    FilterLabel(String),
+    /// Run the AI review (selected Todo card).
+    Review,
+    /// Reopen the last review, from the card's verdict pill.
+    ShowReview,
+    /// Open (or close) the LabelPicker on this card.
+    AddLabel,
+    /// Stop the agent that works on the card.
+    StopBuild,
+    /// Hand the issue to the build agent again, from scratch.
+    RetryBuild,
+}
+
+/// Where a card stands with the AI build.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum CardBuild {
+    /// The build agent works on it, since then.
+    Running(Instant),
+    /// It waits in Doing with no build running: it can be built again.
+    Retry,
+}
+
+/// What a card shows beyond its file: the last review's verdict pill, and
+/// whether the selected card offers Review.
+#[derive(Clone, Copy, Default)]
+pub(super) struct CardExtras {
+    /// The review running or ready, else the last verdict.
+    pub(super) review_pill: Option<ReviewPill>,
+    pub(super) review_button: bool,
+    /// The hovered card offers Expand: every card but the picked ones that
+    /// do not have focus.
+    pub(super) expand: bool,
+    pub(super) build: Option<CardBuild>,
+    /// Offers Add label: Doing and Done keep the labels they have.
+    pub(super) labelling: bool,
+}
+
+/// How a card stands out from the others.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CardLook {
+    Plain,
+    /// Just created by the composer: `accent-soft` for a moment.
+    Fresh,
+    /// Selected: `accent` edge on `accent-soft`; `scroll` brings it into view.
+    Selected {
+        scroll: bool,
+    },
+}
 
 /// Draws one issue card. A click selects it, a shift-click picks it into the
 /// multi-selection, its Expand action or a double click reads it; dragging the card carries it to another column, with a
@@ -258,6 +327,13 @@ fn tilt_layer(ctx: &egui::Context, layer: egui::LayerId, origin: Pos2) {
             });
         }
     });
+}
+
+/// What `card_body` drew: the action a child button asked for, and the rects
+/// those buttons cover.
+pub(super) struct CardBody {
+    action: Option<CardAction>,
+    action_rects: Vec<Rect>,
 }
 
 /// The visual body of a card, shared by the card in the board and the ghost

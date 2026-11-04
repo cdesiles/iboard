@@ -9,6 +9,9 @@ use iboard::markdown;
 /// The narrowest a pane beside the Reader leaves it (`column-min`).
 const PANE_MIN: f32 = 280.0;
 
+/// Width of the AI review panel beside the reader or editor page.
+pub(super) const REVIEW_PANEL_WIDTH: f32 = 360.0;
+
 /// The reader's own state.
 pub(super) struct Reader {
     pub(super) cache: CommonMarkCache,
@@ -542,6 +545,15 @@ pub(super) fn page_column<R>(
     result
 }
 
+/// Height of a ghost tile in the "Not written yet" block.
+const GHOST_TILE_H: f32 = 72.0;
+
+/// What the "Not written yet" block asked for.
+pub(super) enum NotWritten {
+    Section(String),
+    Review,
+}
+
 /// The "Not written yet" block under the reader sheet: its own `surface`
 /// card. With nothing written, a head row (label, Draft with Review) over a
 /// grid of ghost tiles; once some sections exist, one line of chips.
@@ -678,6 +690,18 @@ pub(super) fn page<R>(
                 add_contents(ui)
             })
     })
+}
+
+/// What the reader sheet's head strip shows.
+#[derive(Clone, Copy)]
+pub(super) struct SheetHead<'a> {
+    column: &'a str,
+    status: Color32,
+    path: &'a str,
+    modified: Option<std::time::SystemTime>,
+    /// `(ticked, total)` checkboxes; with none, the word count shows instead.
+    checklist: (usize, usize),
+    words: usize,
 }
 
 /// The sheet's `meta` head: the column as a status mark and the file path on

@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// The Move to… menu: column names only.
+const MOVE_MENU_WIDTH: f32 = 180.0;
+
 impl IboardApp {
     /// The 40pt top bar: breadcrumb on the left, the screen's controls on the
     /// right with its main action rightmost. On macOS it is also the window's

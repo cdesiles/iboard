@@ -2,6 +2,7 @@
 //! each moved to the next column while an agent works on it. Doing's header
 //! sets how many agents work at once.
 
+use super::card::CardBuild;
 use super::*;
 use crate::build_log;
 use std::collections::HashSet;

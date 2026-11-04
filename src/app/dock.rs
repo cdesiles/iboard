@@ -2,6 +2,28 @@
 
 use super::*;
 
+/// An issue being dragged across the board. The payload is the issue's file,
+/// which a drop moves into the target column's directory, or hands to one of
+/// the DropZones (archive, delete).
+#[derive(Clone)]
+pub(super) struct IssueDrag {
+    pub(super) path: PathBuf,
+    /// A Done issue: the Archive zone accepts it.
+    pub(super) archivable: bool,
+}
+
+/// What a drop on the DropZones dock asked for.
+enum DockDrop {
+    Archive(PathBuf),
+    Delete(PathBuf),
+}
+
+/// The DropZones dock: 56pt zones with 12pt padding and a 1pt rule above.
+/// A Done card gets Archive alone, any other Delete alone: either spans it.
+pub(super) const DOCK_H: f32 = 56.0 + 2.0 * 12.0 + 1.0;
+/// How long the dock takes to slide in or out.
+const DOCK_SLIDE: f32 = 0.14;
+
 impl IboardApp {
     /// The DropZones dock: while a card is dragged, Delete (or, for Done
     /// cards, Archive) slides up over the bottom of the card's column, above
@@ -72,6 +94,15 @@ impl IboardApp {
             None => {}
         }
     }
+}
+
+/// One of the DropZones in the dock.
+#[derive(Clone, Copy)]
+pub(super) enum DropZone {
+    /// Moves the issue to `.archive/`. Only shown while a Done card is dragged.
+    Archive,
+    /// Asks to confirm, then deletes.
+    Delete,
 }
 
 /// Draws a drop zone and returns the dragged issue if it was dropped here:

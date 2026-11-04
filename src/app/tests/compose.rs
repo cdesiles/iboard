@@ -2,6 +2,7 @@
 //! ticket just written.
 
 use super::*;
+use crate::app::dock::IssueDrag;
 
 /// Bug: a new ticket is renumbered to position 1 a moment after it shows,
 /// so a quick click on it, or on its Add label action, held the old name:

@@ -1,10 +1,16 @@
 //! The board: its columns of cards.
 
+use super::build::{Builds, card_build};
+use super::card::{CardAction, CardExtras, CardLook};
+use super::dock::{DOCK_H, IssueDrag};
 use super::*;
 
 /// The start of the gutter after a column, where its thumb floats clear of
 /// the cards.
 const THUMB_LANE: f32 = theme::SCROLL_HIT;
+
+/// How long an issue created from the composer keeps its `accent-soft` fill.
+const NEW_CARD_FLASH: Duration = Duration::from_secs(2);
 
 impl IboardApp {
     pub(super) fn board_ui(&mut self, ui: &mut egui::Ui) {
@@ -129,6 +135,36 @@ fn column_title(ui: &mut egui::Ui, name: &str) {
             .extra_letter_spacing(theme::LABEL_TRACKING)
             .color(p.ink),
     );
+}
+
+/// Everything `column_ui` needs to know about one column.
+pub(super) struct ColumnView<'a> {
+    column: &'a Column,
+    index: usize,
+    filter: &'a Filter,
+    width: f32,
+    height: f32,
+    /// An issue just created by the composer, still highlighted.
+    new_card: Option<&'a Path>,
+    /// The card selected with the arrow keys or by opening it.
+    selected: Option<&'a Path>,
+    /// Scroll the selected card into view this frame.
+    scroll_to_selected: bool,
+    /// The multi-selection.
+    picked: &'a [PathBuf],
+    root: &'a Path,
+    /// The board, which knows each card's project.
+    board: &'a Board,
+    /// NewIssueModal holds parked notes: Todo's `+` shows a dot.
+    parked: bool,
+    /// The label colours, for the chip on each card.
+    labels: &'a Labels,
+    /// The cards' review pills.
+    reviews: review::CardReviews<'a>,
+    /// An agent is set up, so the selected Todo card offers Review.
+    can_review: bool,
+    /// The issues the build agents work on, and how many may.
+    builds: Builds<'a>,
 }
 
 pub(super) fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {

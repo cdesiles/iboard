@@ -1,5 +1,6 @@
 //! The status bar, and the strip naming what failed.
 
+use super::dock::IssueDrag;
 use super::*;
 
 impl IboardApp {

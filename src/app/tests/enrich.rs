@@ -1,6 +1,6 @@
 //! Draft design's tests: the artifact, its agent, and where it is offered.
 
-use super::super::enrich::enrichment_dir;
+use super::super::enrich::{EnrichStatus, enrichment_dir};
 use super::*;
 
 #[test]

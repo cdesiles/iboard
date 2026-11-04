@@ -2,6 +2,23 @@
 
 use super::*;
 
+/// The newest commit naming one issue's file, for the board it was looked up
+/// on.
+pub(super) struct CommitHash {
+    path: PathBuf,
+    generation: u64,
+    lookup: Option<Job<Option<String>>>,
+    hash: Option<String>,
+}
+
+/// The commits popup: the hashes whose message names a ticket's file, read
+/// from git when its button is pressed.
+pub(super) struct CommitsPanel {
+    pub(super) path: PathBuf,
+    title: String,
+    pub(super) list: Vec<commits::Commit>,
+}
+
 impl IboardApp {
     /// ConfirmDialog for a delete, centred over a scrim: `↩` (or the focused
     /// Delete button) confirms; `esc`, Cancel or a click on the scrim cancels.

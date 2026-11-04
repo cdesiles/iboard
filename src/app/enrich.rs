@@ -2,6 +2,38 @@
 
 use super::*;
 
+/// A UX enrichment of one issue: the agent's mockup, its preview, and the
+/// refinement the user is typing.
+pub(super) struct Enrichment {
+    pub(super) path: PathBuf,
+    /// The drafted artifact HTML, once the agent answered.
+    html: Option<String>,
+    /// The rendered preview PNG, when the renderer could make one.
+    png: Option<PathBuf>,
+    pub(super) status: EnrichStatus,
+    /// The refinement instruction being typed.
+    refine: String,
+    /// The decoded preview, loaded once per render.
+    texture: Option<egui::TextureHandle>,
+    /// A short note under the artifact (where it was saved, a render warning).
+    note: Option<String>,
+}
+
+pub(super) enum EnrichStatus {
+    /// The agent is writing the mockup.
+    Running(Job<Result<String, String>>),
+    /// The mockup is in; the renderer is turning it into a PNG.
+    Rendering(Job<Result<PathBuf, String>>),
+    Done,
+    Failed(String),
+}
+
+/// One finished background step of an enrichment.
+enum EnrichOutcome {
+    Agent(Result<String, String>),
+    Png(Result<PathBuf, String>),
+}
+
 impl IboardApp {
     /// Start a UX enrichment: an agent drafts a static mockup of the issue,
     /// binding to the project's design system when there is one.

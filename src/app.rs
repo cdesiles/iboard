@@ -78,15 +78,17 @@ mod windows;
 
 use all::Source;
 use board::*;
-use build::{Builds, card_build};
 use card::*;
+use design_panel::DraftJob;
+use enrich::Enrichment;
 use filter_bar::*;
 use intent::Intent;
 use labelling::*;
 use new_issue_ui::*;
 pub use quitting::on_signals;
 use reader::*;
-use review::{PastReview, ReviewPill, ReviewState};
+use review::{PastReview, ReviewState};
+use windows::{CommitHash, CommitsPanel};
 
 #[cfg(target_os = "macos")]
 const ABOUT: &str = "**iboard** is an opinionated issue tracker that lives entirely as Markdown \
@@ -97,9 +99,6 @@ const RESCAN_EVERY: Duration = Duration::from_secs(2);
 
 /// How long after the last keystroke an edit is written to disk.
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(800);
-
-/// How long an issue created from the composer keeps its `accent-soft` fill.
-const NEW_CARD_FLASH: Duration = Duration::from_secs(2);
 
 /// How long the composer waits for a title before the user types one.
 const NAMING_BUDGET: Duration = Duration::from_secs(3);
@@ -114,81 +113,9 @@ pub const UNIFIED_TITLEBAR: bool = cfg!(target_os = "macos");
 /// Room the macOS traffic lights take at the left of the header bar.
 const TRAFFIC_LIGHTS_WIDTH: i8 = 80;
 
-/// The filter's width at rest, and while in use or filtering.
-const FILTER_REST: f32 = 220.0;
-const FILTER_OPEN: f32 = 480.0;
-/// How long the filter takes to widen or shrink.
-const FILTER_GROW_SECS: f32 = 0.12;
-/// Room the breadcrumb keeps when the filter widens on a narrow window.
-const CRUMB_KEEP: f32 = 160.0;
-/// Gap between the filter's icon, tokens, text and chips.
-const FILTER_GAP: f32 = 6.0;
-/// Narrowest the filter text may get before the chips hide.
-const FILTER_TEXT_MIN: f32 = 48.0;
 /// Directory done issues are archived into, under the issues root. It starts
 /// with a dot, so discovery never reads it back.
 const ARCHIVE_DIR: &str = ".archive";
-
-/// The Move to… menu: column names only.
-const MOVE_MENU_WIDTH: f32 = 180.0;
-
-/// Width of the AI review panel beside the reader or editor page.
-const REVIEW_PANEL_WIDTH: f32 = 360.0;
-
-/// An issue action available from a card or the detail header.
-#[derive(Clone, PartialEq, Eq, Debug)]
-enum CardAction {
-    /// Open the issue in the reader, from its Expand action.
-    Open,
-    /// A plain click: the card becomes the only one selected.
-    Select,
-    /// Shift-click: add the issue to the multi-selection, or take it out.
-    Pick,
-    /// Delete the issue's file.
-    Delete,
-    /// Move a done issue to `.archive`.
-    Archive,
-    /// Show a done issue's diff: every commit that closed it.
-    Diff,
-    /// Open a done issue with the build agent's log beside it.
-    AgentLog,
-    /// Add the card's label to the filter.
-    FilterLabel(String),
-    /// Run the AI review (selected Todo card).
-    Review,
-    /// Reopen the last review, from the card's verdict pill.
-    ShowReview,
-    /// Open (or close) the LabelPicker on this card.
-    AddLabel,
-    /// Stop the agent that works on the card.
-    StopBuild,
-    /// Hand the issue to the build agent again, from scratch.
-    RetryBuild,
-}
-
-/// Where a card stands with the AI build.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum CardBuild {
-    /// The build agent works on it, since then.
-    Running(Instant),
-    /// It waits in Doing with no build running: it can be built again.
-    Retry,
-}
-
-/// What a card shows beyond its file: the last review's verdict pill, and
-/// whether the selected card offers Review.
-#[derive(Clone, Copy, Default)]
-struct CardExtras {
-    /// The review running or ready, else the last verdict.
-    review_pill: Option<ReviewPill>,
-    review_button: bool,
-    /// The hovered card offers Expand: every card but the picked ones that
-    /// do not have focus.
-    expand: bool,
-    build: Option<CardBuild>,
-    /// Offers Add label: Doing and Done keep the labels they have.
-    labelling: bool,
-}
 
 /// A destructive action waiting for confirmation.
 #[derive(Clone)]
@@ -234,48 +161,10 @@ enum LeaveChoice {
     KeepEditing,
 }
 
-/// An issue being dragged across the board. The payload is the issue's file,
-/// which a drop moves into the target column's directory, or hands to one of
-/// the DropZones (archive, delete).
-#[derive(Clone)]
-struct IssueDrag {
-    path: PathBuf,
-    /// A Done issue: the Archive zone accepts it.
-    archivable: bool,
-}
-
-/// What a drop on the DropZones dock asked for.
-enum DockDrop {
-    Archive(PathBuf),
-    Delete(PathBuf),
-}
-
-/// The DropZones dock: 56pt zones with 12pt padding and a 1pt rule above.
-/// A Done card gets Archive alone, any other Delete alone: either spans it.
-const DOCK_H: f32 = 56.0 + 2.0 * 12.0 + 1.0;
-/// How long the dock takes to slide in or out.
-const DOCK_SLIDE: f32 = 0.14;
 /// How long a status bar notice ("Archived …") stays up.
 const NOTICE_FOR: Duration = Duration::from_secs(4);
 /// How long `⌘Z` can bring back an issue deleted without asking.
 const UNDO_FOR: Duration = Duration::from_secs(10);
-
-/// The newest commit naming one issue's file, for the board it was looked up
-/// on.
-struct CommitHash {
-    path: PathBuf,
-    generation: u64,
-    lookup: Option<Job<Option<String>>>,
-    hash: Option<String>,
-}
-
-/// The commits popup: the hashes whose message names a ticket's file, read
-/// from git when its button is pressed.
-struct CommitsPanel {
-    path: PathBuf,
-    title: String,
-    list: Vec<commits::Commit>,
-}
 
 /// An issue deleted without asking, kept so `⌘Z` can put it back.
 /// What `⌘Z` on the board can still take back.
@@ -665,44 +554,6 @@ impl Default for Session {
     }
 }
 
-/// A component whose preview an agent is drafting.
-struct DraftJob {
-    name: String,
-    job: Job<Result<String, String>>,
-}
-
-/// A UX enrichment of one issue: the agent's mockup, its preview, and the
-/// refinement the user is typing.
-struct Enrichment {
-    path: PathBuf,
-    /// The drafted artifact HTML, once the agent answered.
-    html: Option<String>,
-    /// The rendered preview PNG, when the renderer could make one.
-    png: Option<PathBuf>,
-    status: EnrichStatus,
-    /// The refinement instruction being typed.
-    refine: String,
-    /// The decoded preview, loaded once per render.
-    texture: Option<egui::TextureHandle>,
-    /// A short note under the artifact (where it was saved, a render warning).
-    note: Option<String>,
-}
-
-enum EnrichStatus {
-    /// The agent is writing the mockup.
-    Running(Job<Result<String, String>>),
-    /// The mockup is in; the renderer is turning it into a PNG.
-    Rendering(Job<Result<PathBuf, String>>),
-    Done,
-    Failed(String),
-}
-
-/// One finished background step of an enrichment.
-enum EnrichOutcome {
-    Agent(Result<String, String>),
-    Png(Result<PathBuf, String>),
-}
-
 impl IboardApp {
     /// `window_title` names the window in Mission Control and the Window menu;
     /// see `main.rs` for why it is set here rather than at startup.
@@ -1049,85 +900,6 @@ impl eframe::App for IboardApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
     }
-}
-
-/// Everything `column_ui` needs to know about one column.
-struct ColumnView<'a> {
-    column: &'a Column,
-    index: usize,
-    filter: &'a Filter,
-    width: f32,
-    height: f32,
-    /// An issue just created by the composer, still highlighted.
-    new_card: Option<&'a Path>,
-    /// The card selected with the arrow keys or by opening it.
-    selected: Option<&'a Path>,
-    /// Scroll the selected card into view this frame.
-    scroll_to_selected: bool,
-    /// The multi-selection.
-    picked: &'a [PathBuf],
-    root: &'a Path,
-    /// The board, which knows each card's project.
-    board: &'a Board,
-    /// NewIssueModal holds parked notes: Todo's `+` shows a dot.
-    parked: bool,
-    /// The label colours, for the chip on each card.
-    labels: &'a Labels,
-    /// The cards' review pills.
-    reviews: review::CardReviews<'a>,
-    /// An agent is set up, so the selected Todo card offers Review.
-    can_review: bool,
-    /// The issues the build agents work on, and how many may.
-    builds: Builds<'a>,
-}
-
-/// One of the DropZones in the dock.
-#[derive(Clone, Copy)]
-enum DropZone {
-    /// Moves the issue to `.archive/`. Only shown while a Done card is dragged.
-    Archive,
-    /// Asks to confirm, then deletes.
-    Delete,
-}
-
-/// How a card stands out from the others.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CardLook {
-    Plain,
-    /// Just created by the composer: `accent-soft` for a moment.
-    Fresh,
-    /// Selected: `accent` edge on `accent-soft`; `scroll` brings it into view.
-    Selected {
-        scroll: bool,
-    },
-}
-
-/// What `card_body` drew: the action a child button asked for, and the rects
-/// those buttons cover.
-struct CardBody {
-    action: Option<CardAction>,
-    action_rects: Vec<Rect>,
-}
-
-/// Height of a ghost tile in the "Not written yet" block.
-const GHOST_TILE_H: f32 = 72.0;
-
-/// What the "Not written yet" block asked for.
-enum NotWritten {
-    Section(String),
-    Review,
-}
-
-/// What the reader sheet's head strip shows.
-#[derive(Clone, Copy)]
-struct SheetHead<'a> {
-    column: &'a str,
-    status: Color32,
-    path: &'a str,
-    modified: Option<std::time::SystemTime>,
-    /// `(ticked, total)` checkboxes; with none, the word count shows instead.
-    checklist: (usize, usize),
-    words: usize,
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! What the views ask of the app: one [`Intent`] per user action, applied in
 //! one place once the frame's drawing is done.
 
+use super::card::CardAction;
 use super::*;
 
 /// One thing a view asked for.

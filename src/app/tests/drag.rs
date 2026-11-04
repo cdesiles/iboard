@@ -1,6 +1,7 @@
 //! Dragging cards: between columns, within one, and onto the DropZones.
 
 use super::*;
+use crate::app::dock::IssueDrag;
 
 /// Simulates a real pointer drag from a `todo/` card onto the `doing/`
 /// column, so the drag-source/drop-zone wiring is exercised, not just the

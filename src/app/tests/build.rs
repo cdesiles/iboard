@@ -1,6 +1,8 @@
 //! The AI build's tests: Ready's Play, its queue, stopping and failing it.
 
 use super::*;
+use crate::app::build::{self, Builds};
+use crate::app::card::CardBuild;
 use crate::build_log::{self, Entry};
 
 /// A board with `ready/001-a.md` and `ready/002-b.md`, and an empty Todo,
