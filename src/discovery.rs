@@ -93,17 +93,35 @@ impl Board {
         project_name(self.title.as_deref(), &self.project_dir)
     }
 
-    /// An empty board, used when a scan fails so the UI can still render.
-    pub fn empty(located: &Located) -> Self {
+    /// A board with no columns yet.
+    pub fn new(
+        project_dir: &Path,
+        root: &Path,
+        title: Option<String>,
+        reader_sections: Vec<String>,
+    ) -> Self {
         Self {
-            project_dir: located.project_dir.clone(),
-            root: located.root.clone(),
-            title: located.config.as_ref().and_then(|c| c.title.clone()),
-            reader_sections: reader_sections(located.config.as_ref()),
+            project_dir: project_dir.to_path_buf(),
+            root: root.to_path_buf(),
+            title,
+            reader_sections,
             columns: Vec::new(),
             warnings: Vec::new(),
             repos: Vec::new(),
         }
+    }
+
+    /// An empty board: what [`build`] fills, and what the UI renders when a
+    /// scan fails.
+    pub fn empty(located: &Located) -> Self {
+        let config = located.config.as_ref();
+        let title = config.and_then(|c| c.title.clone());
+        Self::new(
+            &located.project_dir,
+            &located.root,
+            title,
+            reader_sections(config),
+        )
     }
 
     pub fn find(&self, path: &Path) -> Option<&Issue> {
@@ -208,24 +226,32 @@ pub fn locate(start: &Path) -> Result<Located, String> {
     } else {
         start
     };
-    let origin = start.to_path_buf();
-    let mut dir = origin.clone();
+    match find_project(start) {
+        Some(located) if located.config.is_some() && !located.root.is_dir() => Err(format!(
+            "config {} points to `{}`, which is not a directory",
+            located.project_dir.join("iboard.toml").display(),
+            located.root.display()
+        )),
+        Some(located) => Ok(located),
+        None => Err(format!(
+            "no `issues/` directory found from `{}` (and no parent contains one)",
+            start.display()
+        )),
+    }
+}
 
-    loop {
-        if let Some(loaded) = crate::config::load(&dir) {
+/// The project found walking up from `start`: the first folder with an
+/// `iboard.toml` (whose root may be missing) or an `issues/` inside, or that
+/// is an `issues/` itself.
+fn find_project(start: &Path) -> Option<Located> {
+    start.ancestors().find_map(|dir| {
+        if let Some(loaded) = crate::config::load(dir) {
             let root = match loaded.config.root.as_deref() {
                 Some(relative) => dir.join(relative),
                 None => dir.join("issues"),
             };
-            if !root.is_dir() {
-                return Err(format!(
-                    "config {} points to `{}`, which is not a directory",
-                    loaded.path.display(),
-                    root.display()
-                ));
-            }
-            return Ok(Located {
-                project_dir: dir,
+            return Some(Located {
+                project_dir: dir.to_path_buf(),
                 root,
                 config: Some(loaded.config),
             });
@@ -233,32 +259,23 @@ pub fn locate(start: &Path) -> Result<Located, String> {
 
         let candidate = dir.join("issues");
         if candidate.is_dir() {
-            return Ok(Located {
-                project_dir: dir,
+            return Some(Located {
+                project_dir: dir.to_path_buf(),
                 root: candidate,
                 config: None,
             });
         }
 
         if dir.file_name().and_then(|n| n.to_str()) == Some("issues") && dir.is_dir() {
-            let project_dir = dir.parent().unwrap_or(&dir).to_path_buf();
-            return Ok(Located {
+            let project_dir = dir.parent().unwrap_or(dir).to_path_buf();
+            return Some(Located {
                 project_dir,
-                root: dir,
+                root: dir.to_path_buf(),
                 config: None,
             });
         }
-
-        match dir.parent() {
-            Some(parent) if parent != dir => dir = parent.to_path_buf(),
-            _ => {
-                return Err(format!(
-                    "no `issues/` directory found from `{}` (and no parent contains one)",
-                    origin.display()
-                ));
-            }
-        }
-    }
+        None
+    })
 }
 
 /// The columns a fresh project is created with: `todo → ready → doing → done`.
@@ -272,63 +289,23 @@ pub const INIT_COLUMNS: [&str; 4] = ["todo", "ready", "doing", "done"];
 /// running it again is safe.
 pub fn init(start: &Path) -> Result<Located, String> {
     let start = if start.is_file() {
-        start.parent().unwrap_or(start).to_path_buf()
+        start.parent().unwrap_or(start)
     } else {
-        start.to_path_buf()
+        start
     };
-
-    if start.is_dir() {
-        let mut dir = start.clone();
-        loop {
-            if let Some(loaded) = crate::config::load(&dir) {
-                let root = match loaded.config.root.as_deref() {
-                    Some(relative) => dir.join(relative),
-                    None => dir.join("issues"),
-                };
-                create_columns(&root)?;
-                return Ok(Located {
-                    project_dir: dir,
-                    root,
-                    config: Some(loaded.config),
-                });
-            }
-
-            let candidate = dir.join("issues");
-            if candidate.is_dir() {
-                create_columns(&candidate)?;
-                return Ok(Located {
-                    project_dir: dir,
-                    root: candidate,
-                    config: None,
-                });
-            }
-
-            if dir.file_name().and_then(|n| n.to_str()) == Some("issues") {
-                let root = dir.clone();
-                create_columns(&root)?;
-                return Ok(Located {
-                    project_dir: dir.parent().unwrap_or(&dir).to_path_buf(),
-                    root,
-                    config: None,
-                });
-            }
-
-            match dir.parent() {
-                Some(parent) if parent != dir => dir = parent.to_path_buf(),
-                _ => break,
-            }
-        }
-    }
-
+    let found = if start.is_dir() {
+        find_project(start)
+    } else {
+        None
+    };
     // Nothing to join: start a brand new project here.
-    let project_dir = start;
-    let root = project_dir.join("issues");
-    create_columns(&root)?;
-    Ok(Located {
-        project_dir,
-        root,
+    let located = found.unwrap_or_else(|| Located {
+        project_dir: start.to_path_buf(),
+        root: start.join("issues"),
         config: None,
-    })
+    });
+    create_columns(&located.root)?;
+    Ok(located)
 }
 
 /// Creates the issues root and one directory per standard column. Each column
@@ -378,8 +355,26 @@ pub fn build(located: &Located) -> Result<Board, String> {
     let root = &located.root;
     let config = located.config.as_ref();
     let mut warnings = Vec::new();
+    let dirs = column_dirs(root, config, &mut warnings)?;
+    let mut columns = Vec::new();
+    columns.extend(root_column(root, config, &dirs, &mut warnings));
+    for dir in &dirs {
+        columns.push(folder_column(root, dir, &mut warnings));
+    }
+    Ok(Board {
+        columns,
+        warnings,
+        ..Board::empty(located)
+    })
+}
 
-    // 1. Establish the ordered list of sub-directory columns.
+/// The ordered sub-directory columns: the configured ones, else the known
+/// columns and the folders holding markdown.
+fn column_dirs(
+    root: &Path,
+    config: Option<&Config>,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<PathBuf>, String> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(columns) = config.and_then(|c| c.columns.as_ref()) {
         for name in columns {
@@ -413,59 +408,57 @@ pub fn build(located: &Located) -> Result<Board, String> {
         });
         dirs = subs;
     }
+    Ok(dirs)
+}
 
-    // 2. Files sitting directly in the issues root form the first column.
-    let mut columns = Vec::new();
-    let root_files = collect_markdown(root, &mut warnings);
-    if !root_files.is_empty() {
-        let has_todo_dir = dirs.iter().any(|dir| column_rank(dir) == 1);
-        let name = config
-            .and_then(|c| c.root_column_name.clone())
-            .unwrap_or_else(|| {
-                if has_todo_dir {
-                    "Backlog".to_string()
-                } else {
-                    "Todo".to_string()
-                }
-            });
-        columns.push(Column {
-            name,
-            dir: root.clone(),
-            issues: load_issues(root_files, &mut warnings),
-        });
+/// Files sitting directly in the issues root form the first column.
+fn root_column(
+    root: &Path,
+    config: Option<&Config>,
+    dirs: &[PathBuf],
+    warnings: &mut Vec<String>,
+) -> Option<Column> {
+    let root_files = collect_markdown(root, warnings);
+    if root_files.is_empty() {
+        return None;
     }
-
-    // 3. One column per sub-directory.
-    for dir in &dirs {
-        let files = collect_markdown(dir, &mut warnings);
-        let mut issues = load_issues(files, &mut warnings);
-        match canonical_name(dir) {
-            Some("Done") => {
-                sort_recent_first(dir, &mut issues, true);
-                for issue in &mut issues {
-                    let log = build_log::load(&build_log::path(root, &issue.path));
-                    issue.built_in = log.as_deref().and_then(build_log::took);
-                }
+    let has_todo_dir = dirs.iter().any(|dir| column_rank(dir) == 1);
+    let name = config
+        .and_then(|c| c.root_column_name.clone())
+        .unwrap_or_else(|| {
+            if has_todo_dir {
+                "Backlog".to_string()
+            } else {
+                "Todo".to_string()
             }
-            Some("Doing") => sort_recent_first(dir, &mut issues, false),
-            _ => {}
-        }
-        columns.push(Column {
-            name: display_name(dir),
-            dir: dir.clone(),
-            issues,
         });
-    }
-
-    Ok(Board {
-        project_dir: located.project_dir.clone(),
-        root: root.clone(),
-        title: config.and_then(|c| c.title.clone()),
-        reader_sections: reader_sections(config),
-        columns,
-        warnings,
-        repos: Vec::new(),
+    Some(Column {
+        name,
+        dir: root.to_path_buf(),
+        issues: load_issues(root_files, warnings),
     })
+}
+
+/// The column of the sub-directory `dir`.
+fn folder_column(root: &Path, dir: &Path, warnings: &mut Vec<String>) -> Column {
+    let files = collect_markdown(dir, warnings);
+    let mut issues = load_issues(files, warnings);
+    match canonical_name(dir) {
+        Some("Done") => {
+            sort_recent_first(dir, &mut issues, true);
+            for issue in &mut issues {
+                let log = build_log::load(&build_log::path(root, &issue.path));
+                issue.built_in = log.as_deref().and_then(build_log::took);
+            }
+        }
+        Some("Doing") => sort_recent_first(dir, &mut issues, false),
+        _ => {}
+    }
+    Column {
+        name: display_name(dir),
+        dir: dir.to_path_buf(),
+        issues,
+    }
 }
 
 /// The configured reader sections, or the standard four.

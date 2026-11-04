@@ -118,15 +118,12 @@ pub fn file_stem(group: &str) -> String {
 /// `virtual_root`, Todo and Ready interleaved as `order` says. A project that
 /// cannot be read is left out, with a warning.
 pub fn build(group: &Group, virtual_root: &Path, order: &Order) -> Board {
-    let mut board = Board {
-        project_dir: virtual_root.to_path_buf(),
-        root: virtual_root.to_path_buf(),
-        title: Some(group.name.clone()),
-        reader_sections: discovery::reader_sections(None),
-        columns: Vec::new(),
-        warnings: Vec::new(),
-        repos: Vec::new(),
-    };
+    let mut board = Board::new(
+        virtual_root,
+        virtual_root,
+        Some(group.name.clone()),
+        discovery::reader_sections(None),
+    );
     for dir in &group.repos {
         match open(dir) {
             Ok(project) if board.repos.iter().any(|r| r.root == project.root) => {}
