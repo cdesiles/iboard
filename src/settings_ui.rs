@@ -82,9 +82,7 @@ pub struct Dialog {
     /// rewrites the issues that carry them on Save.
     pub renames: Vec<(String, String)>,
     /// The row whose name is being edited, if any.
-    renaming: Option<usize>,
-    rename_text: String,
-    rename_focus: bool,
+    rename: Option<labels::Rename>,
     new_label: String,
     new_hex: String,
     label_error: Option<String>,
@@ -125,9 +123,7 @@ impl Dialog {
             label_rows: Vec::new(),
             labels_seen: false,
             renames: Vec::new(),
-            renaming: None,
-            rename_text: String::new(),
-            rename_focus: false,
+            rename: None,
             new_label: String::new(),
             new_hex: String::new(),
             label_error: None,
