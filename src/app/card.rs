@@ -102,6 +102,11 @@ pub(super) fn issue_card(
     let picking = label_picker_open(ui.ctx()).as_deref() == Some(issue.path.as_path());
     let show_actions =
         drag.is_none() && (hovered || picking || matches!(look, CardLook::Selected { .. }));
+    let actions = if show_actions {
+        Actions::Shown
+    } else {
+        Actions::Hidden
+    };
 
     let scope = ui.scope_builder(
         egui::UiBuilder::new()
@@ -112,15 +117,7 @@ pub(super) fn issue_card(
             if dragging_self {
                 ui.set_opacity(0.4);
             }
-            card_body(
-                ui,
-                issue,
-                width,
-                look != CardLook::Plain,
-                Some(show_actions),
-                labels,
-                extras,
-            )
+            card_body(ui, issue, width, look, actions, labels, extras)
         },
     );
     let mut body = scope.inner;
@@ -290,7 +287,15 @@ fn drag_ghost(ui: &egui::Ui, issue: &Issue, width: f32, labels: &Labels, at: Pos
                 .shadow(ui.visuals().popup_shadow)
                 .corner_radius(CornerRadius::same(theme::RADIUS_MD))
                 .show(ui, |ui| {
-                    card_body(ui, issue, width, false, None, labels, CardExtras::default())
+                    card_body(
+                        ui,
+                        issue,
+                        width,
+                        CardLook::Plain,
+                        Actions::Ghost,
+                        labels,
+                        CardExtras::default(),
+                    )
                 });
             ui.painter().rect_stroke(
                 lifted.response.rect,
@@ -336,19 +341,29 @@ pub(super) struct CardBody {
     action_rects: Vec<Rect>,
 }
 
+/// What the slot for a card's icon buttons holds.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Actions {
+    /// Nothing: the lifted copy while dragging.
+    Ghost,
+    /// The buttons, invisible and disabled so a click there opens the card;
+    /// on a Done issue the build agent did, how long it took instead.
+    Hidden,
+    Shown,
+}
+
 /// The visual body of a card, shared by the card in the board and the ghost
 /// that follows the pointer while dragging: title, summary clamped to three
-/// lines, file name. A `highlighted` card (new or selected) is `accent-soft`.
-/// The meta row ends with a slot for the delete (and, for Done, archive) icon
-/// buttons; `actions` says whether they show, and `None` (the lifted copy
-/// while dragging) leaves it empty. The slot is always reserved so the file
-/// name and date never move when the buttons appear.
+/// lines, file name. A card that is not `Plain` (new or selected) is
+/// `accent-soft`. The meta row ends with a slot for the icon buttons, filled
+/// as `actions` says. The slot is always reserved so the file name and date
+/// never move when the buttons appear.
 pub(super) fn card_body(
     ui: &mut egui::Ui,
     issue: &Issue,
     width: f32,
-    highlighted: bool,
-    actions: Option<bool>,
+    look: CardLook,
+    actions: Actions,
     labels: &Labels,
     extras: CardExtras,
 ) -> CardBody {
@@ -358,10 +373,10 @@ pub(super) fn card_body(
     // The frame's border is drawn outside the padding, so take it off too.
     let inner = width - f32::from(padding.left) - f32::from(padding.right) - 2.0 * border;
     let shown = Frame::new()
-        .fill(if highlighted {
-            p.accent_soft
-        } else {
+        .fill(if look == CardLook::Plain {
             p.surface
+        } else {
+            p.accent_soft
         })
         .stroke(Stroke::new(border, p.line))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
@@ -467,7 +482,7 @@ fn card_text(ui: &mut egui::Ui, issue: &Issue, inner: f32) {
 fn card_meta(
     ui: &mut egui::Ui,
     issue: &Issue,
-    actions: Option<bool>,
+    actions: Actions,
     extras: &CardExtras,
 ) -> (Option<CardAction>, Vec<Rect>) {
     let p = theme::palette(ui);
@@ -482,17 +497,16 @@ fn card_meta(
     ui.allocate_ui_with_layout(slot, Layout::right_to_left(Align::Center), |ui| {
         ui.set_min_size(slot);
         ui.spacing_mut().item_spacing.x = theme::SPACE_1;
-        let Some(visible) = actions else {
-            return;
-        };
-        // Hidden actions are also disabled, so a click there opens the card
-        // instead.
-        if !visible {
-            if let Some(took) = issue.built_in {
-                built_in(ui, took);
-                return;
+        match actions {
+            Actions::Ghost => return,
+            Actions::Hidden => {
+                if let Some(took) = issue.built_in {
+                    built_in(ui, took);
+                    return;
+                }
+                ui.set_invisible();
             }
-            ui.set_invisible();
+            Actions::Shown => {}
         }
         card_actions(ui, issue, extras, &mut action, &mut action_rects);
     });
@@ -513,9 +527,7 @@ fn card_meta(
     (action, action_rects)
 }
 
-/// The icon actions, right to left: Delete (Stop on the card being built),
-/// Retry on Doing's cards no agent is on, Review on the selected Todo card and Add label
-/// first of the cluster; or Archive, Diff and Agent log on Done.
+/// Draws the card's buttons. Add label opens the LabelPicker under it.
 fn card_actions(
     ui: &mut egui::Ui,
     issue: &Issue,
@@ -523,100 +535,117 @@ fn card_actions(
     action: &mut Option<CardAction>,
     rects: &mut Vec<Rect>,
 ) {
-    let mut button = |ui: &mut egui::Ui, icon, id: &str, hover: &str, tone, picked| {
-        let response =
-            widgets::icon_button(ui, icon, egui::Id::new((id, &issue.path)), hover, tone);
+    let picking = label_picker_open(ui.ctx()).as_deref() == Some(&issue.path);
+    for button in card_buttons(issue.done_at.is_some(), extras) {
+        let add_label = button.action == CardAction::AddLabel;
+        let tone = if add_label && picking {
+            widgets::Tone::Open
+        } else {
+            button.tone
+        };
+        let id = egui::Id::new((button.id, &issue.path));
+        let response = widgets::icon_button(ui, button.icon, id, button.hover, tone);
         rects.push(response.rect);
-        if response.clicked() {
-            *action = Some(picked);
+        if add_label {
+            set_label_anchor(ui.ctx(), &issue.path, response.rect);
         }
-        response
-    };
-    if issue.done_at.is_some() {
-        button(
-            ui,
-            Icon::Archive,
-            "card_archive",
-            "Archive  A",
-            widgets::Tone::Plain,
-            CardAction::Archive,
-        );
-        button(
-            ui,
-            Icon::Commit,
-            "card_diff",
-            "Show the diff",
-            widgets::Tone::Plain,
-            CardAction::Diff,
-        );
-        button(
-            ui,
-            Icon::Log,
-            "card_agent_log",
-            "Show the agent log",
-            widgets::Tone::Plain,
-            CardAction::AgentLog,
-        );
-        return;
+        if response.clicked() {
+            *action = Some(button.action);
+        }
     }
-    if matches!(extras.build, Some(CardBuild::Running(_))) {
+}
+
+/// One of a card's icon buttons; tests find it by `id` and the issue's path.
+struct CardButton {
+    icon: Icon,
+    id: &'static str,
+    hover: &'static str,
+    tone: widgets::Tone,
+    action: CardAction,
+}
+
+/// The buttons a card offers, right to left: Delete (Stop on the card being
+/// built), Retry on Doing's cards no agent is on, Review on the selected Todo
+/// card and Add label first of the cluster; or Archive, Diff and Agent log on
+/// Done.
+fn card_buttons(done: bool, extras: &CardExtras) -> Vec<CardButton> {
+    let button = |icon, id, hover, tone, action| CardButton {
+        icon,
+        id,
+        hover,
+        tone,
+        action,
+    };
+    if done {
+        return vec![
+            button(
+                Icon::Archive,
+                "card_archive",
+                "Archive  A",
+                widgets::Tone::Plain,
+                CardAction::Archive,
+            ),
+            button(
+                Icon::Commit,
+                "card_diff",
+                "Show the diff",
+                widgets::Tone::Plain,
+                CardAction::Diff,
+            ),
+            button(
+                Icon::Log,
+                "card_agent_log",
+                "Show the agent log",
+                widgets::Tone::Plain,
+                CardAction::AgentLog,
+            ),
+        ];
+    }
+    let mut buttons = vec![if matches!(extras.build, Some(CardBuild::Running(_))) {
         button(
-            ui,
             Icon::Stop,
             "card_stop_build",
             "Stop the AI build",
             widgets::Tone::Plain,
             CardAction::StopBuild,
-        );
+        )
     } else {
         button(
-            ui,
             Icon::Trash,
             "card_delete",
             "Delete  Del",
             widgets::Tone::Danger,
             CardAction::Delete,
-        );
-    }
+        )
+    }];
     if matches!(extras.build, Some(CardBuild::Retry)) {
-        button(
-            ui,
+        buttons.push(button(
             Icon::Refresh,
             "card_retry_build",
             "Retry with AI",
             widgets::Tone::Plain,
             CardAction::RetryBuild,
-        );
+        ));
     }
     if extras.review_button {
-        button(
-            ui,
+        buttons.push(button(
             Icon::Review,
             "card_review",
             "Review  ⌘⇧R",
             widgets::Tone::Review,
             CardAction::Review,
-        );
+        ));
     }
-    if !extras.labelling {
-        return;
+    if extras.labelling {
+        buttons.push(button(
+            Icon::TagPlus,
+            "card_add_label",
+            "Add label  L",
+            widgets::Tone::Plain,
+            CardAction::AddLabel,
+        ));
     }
-    // Add label opens the LabelPicker under it.
-    let picking = label_picker_open(ui.ctx()).as_deref() == Some(&issue.path);
-    let tone = if picking {
-        widgets::Tone::Open
-    } else {
-        widgets::Tone::Plain
-    };
-    let add_label = button(
-        ui,
-        Icon::TagPlus,
-        "card_add_label",
-        "Add label  L",
-        tone,
-        CardAction::AddLabel,
-    );
-    set_label_anchor(ui.ctx(), &issue.path, add_label.rect);
+    buttons
 }
 
 /// How long the build agent has been on the issue, `mm:ss` in `status-doing`.
@@ -661,4 +690,54 @@ fn card_date_label(ui: &mut egui::Ui, issue: &Issue) {
         RichText::new(text).font(theme::meta()).color(p.ink_muted),
     ))
     .on_hover_text(hover);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn offered(done: bool, extras: CardExtras) -> Vec<CardAction> {
+        card_buttons(done, &extras)
+            .into_iter()
+            .map(|button| button.action)
+            .collect()
+    }
+
+    #[test]
+    fn each_card_offers_its_buttons_right_to_left() {
+        let todo = CardExtras {
+            labelling: true,
+            ..CardExtras::default()
+        };
+        assert_eq!(
+            offered(false, todo),
+            [CardAction::Delete, CardAction::AddLabel]
+        );
+        let selected = CardExtras {
+            review_button: true,
+            ..todo
+        };
+        assert_eq!(
+            offered(false, selected),
+            [CardAction::Delete, CardAction::Review, CardAction::AddLabel]
+        );
+        assert_eq!(
+            offered(true, selected),
+            [CardAction::Archive, CardAction::Diff, CardAction::AgentLog],
+            "a Done card offers its own three, whatever else it has"
+        );
+        let building = CardExtras {
+            build: Some(CardBuild::Running(Instant::now())),
+            ..CardExtras::default()
+        };
+        assert_eq!(offered(false, building), [CardAction::StopBuild]);
+        let retry = CardExtras {
+            build: Some(CardBuild::Retry),
+            ..CardExtras::default()
+        };
+        assert_eq!(
+            offered(false, retry),
+            [CardAction::Delete, CardAction::RetryBuild]
+        );
+    }
 }
