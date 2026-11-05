@@ -335,11 +335,9 @@ impl IboardApp {
     /// Takes the agents' answers as they come in and hands the free agents
     /// the next issues; a failure drops the rest of the queue. Called every
     /// frame.
-    pub(super) fn poll_build(&mut self, ctx: &egui::Context) {
+    pub(super) fn poll_build(&mut self) -> Option<Duration> {
         self.watch_ready();
-        let Some(build) = self.session.build.as_mut() else {
-            return;
-        };
+        let build = self.session.build.as_mut()?;
         let mut finished = Vec::new();
         build.runs.retain(|run| match run.answer.answer() {
             Some(result) => {
@@ -349,8 +347,7 @@ impl IboardApp {
             None => true,
         });
         if finished.is_empty() {
-            ctx.request_repaint_after(job::POLL_EVERY);
-            return;
+            return Some(job::POLL_EVERY);
         }
         for (name, result) in finished {
             if let Err(err) = result {
@@ -362,6 +359,7 @@ impl IboardApp {
         }
         self.refresh();
         self.fill_agents();
+        self.session.build.is_some().then_some(job::POLL_EVERY)
     }
 
     /// Where the first issue at work stands in its run: its place, from 1,

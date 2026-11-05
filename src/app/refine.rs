@@ -265,15 +265,13 @@ impl IboardApp {
     }
 
     /// Adopts the challenger's turn once it is in; called every frame.
-    pub(super) fn poll_refinement(&mut self) {
-        let Some(refine) = self.session.refine.as_mut() else {
-            return;
-        };
+    pub(super) fn poll_refinement(&mut self) -> Option<Duration> {
+        let refine = self.session.refine.as_mut()?;
         let Some(NextTurn::Waiting(answer)) = &refine.next else {
-            return;
+            return None;
         };
         let Some(result) = answer.answer() else {
-            return;
+            return Some(job::POLL_EVERY);
         };
         refine.next = None;
         match result {
@@ -285,6 +283,7 @@ impl IboardApp {
             }
             Err(error) => refine.next = Some(NextTurn::Failed(error)),
         }
+        None
     }
 
     /// Stops the challenger's turn (dropping the job stops the agent): the

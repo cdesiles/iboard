@@ -203,11 +203,10 @@ fn drafting(tag: &str, answer: &str) -> (Scratch, PathBuf, IboardApp) {
 fn review_drafts_the_issue_and_add_writes_the_draft() {
     let answer = r#"'{"title":"Export the board as checklists"}' '{"labels":["feat"]}' '{"summary":"One checklist per column."}' '{"section":"Context","text":"People print boards."}'"#;
     let (_dir, todo, mut app) = drafting("compose-draft", answer);
-    let ctx = egui::Context::default();
     app.start_draft();
     assert!(app.session.composer.as_ref().unwrap().drafting.is_some());
     assert!(until(|| {
-        app.poll_draft(&ctx);
+        app.poll_draft();
         app.session.composer.as_ref().unwrap().drafting.is_none()
     }));
     let composer = app.session.composer.as_ref().unwrap();
@@ -232,11 +231,10 @@ fn review_drafts_the_issue_and_add_writes_the_draft() {
 #[test]
 fn undo_draft_goes_back_to_the_notes() {
     let (_dir, todo, mut app) = drafting("compose-undo", r#"'{"title":"Drafted"}'"#);
-    let ctx = egui::Context::default();
     app.session.composer.as_mut().unwrap().title = "Mine".into();
     app.start_draft();
     assert!(until(|| {
-        app.poll_draft(&ctx);
+        app.poll_draft();
         app.session.composer.as_ref().unwrap().drafting.is_none()
     }));
     assert_eq!(app.session.composer.as_ref().unwrap().title, "Drafted");
@@ -255,10 +253,9 @@ fn undo_draft_goes_back_to_the_notes() {
 fn a_failed_draft_keeps_the_notes() {
     let (_dir, _todo, mut app) = drafting("compose-draft-fail", "");
     app.prefs.agent.command = "exit 3 # {prompt}".into();
-    let ctx = egui::Context::default();
     app.start_draft();
     assert!(until(|| {
-        app.poll_draft(&ctx);
+        app.poll_draft();
         app.session.composer.as_ref().unwrap().drafting.is_none()
     }));
     let composer = app.session.composer.as_ref().unwrap();
@@ -297,7 +294,6 @@ fn answer_with(app: &mut IboardApp, answer: Result<String, String>) {
 #[test]
 fn enter_names_the_issue_then_adds_it() {
     let (_dir, todo, mut app) = composer_with_engine("compose-name");
-    let ctx = egui::Context::default();
 
     app.submit_composer(false);
     assert!(app.session.composer.as_ref().unwrap().stage == TitleStage::Naming);
@@ -308,7 +304,7 @@ fn enter_names_the_issue_then_adds_it() {
     );
 
     answer_with(&mut app, Ok("Export the board as checklists".into()));
-    app.poll_naming(&ctx);
+    app.poll_naming();
     let composer = app.session.composer.as_ref().unwrap();
     assert!(
         composer.stage == TitleStage::Inferred,
@@ -329,11 +325,10 @@ fn enter_names_the_issue_then_adds_it() {
 #[test]
 fn a_failed_name_falls_back_to_the_first_line() {
     let (_dir, todo, mut app) = composer_with_engine("compose-fail");
-    let ctx = egui::Context::default();
 
     app.submit_composer(false);
     answer_with(&mut app, Err("model unavailable".into()));
-    app.poll_naming(&ctx);
+    app.poll_naming();
     let composer = app.session.composer.as_ref().unwrap();
     assert!(composer.stage == TitleStage::Failed);
     assert!(
@@ -353,12 +348,11 @@ fn a_failed_name_falls_back_to_the_first_line() {
 #[test]
 fn command_enter_while_naming_writes_once_named() {
     let (_dir, todo, mut app) = composer_with_engine("compose-name-edit");
-    let ctx = egui::Context::default();
 
     app.submit_composer(false);
     app.submit_composer(true);
     answer_with(&mut app, Ok("Export checklists".into()));
-    app.poll_naming(&ctx);
+    app.poll_naming();
     assert!(
         todo.join("export-checklists.md").exists(),
         "⌘↩ never stops on the suggestion"

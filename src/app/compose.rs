@@ -354,26 +354,18 @@ impl IboardApp {
 
     /// Adopts the engine's title when it lands, or gives up after
     /// [`NAMING_BUDGET`] and lets the user type it.
-    pub(super) fn poll_naming(&mut self, ctx: &egui::Context) {
-        let Some(run) = self
+    pub(super) fn poll_naming(&mut self) -> Option<Duration> {
+        let run = self
             .session
             .composer
             .as_ref()
-            .and_then(|c| c.naming.as_ref())
-        else {
-            return;
-        };
+            .and_then(|c| c.naming.as_ref())?;
         let result = match run.answer.answer() {
             Some(result) => result,
-            None if run.answer.elapsed() < NAMING_BUDGET => {
-                ctx.request_repaint_after(job::POLL_EVERY);
-                return;
-            }
+            None if run.answer.elapsed() < NAMING_BUDGET => return Some(job::POLL_EVERY),
             None => Err("the engine took too long".to_string()),
         };
-        let Some(composer) = self.session.composer.as_mut() else {
-            return;
-        };
+        let composer = self.session.composer.as_mut()?;
         let then_edit = composer.naming.take().is_some_and(|run| run.then_edit);
         let description = composer.description.clone();
         match result {
@@ -394,6 +386,7 @@ impl IboardApp {
                 composer.focus = Some(ComposerField::Title);
             }
         }
+        None
     }
 
     /// `esc`: stops Review and keeps what arrived; while naming, stops and
@@ -485,13 +478,9 @@ impl IboardApp {
 
     /// Fills the draft with what the agent wrote so far, and adopts its
     /// answer once it is in.
-    pub(super) fn poll_draft(&mut self, ctx: &egui::Context) {
-        let Some(composer) = self.session.composer.as_mut() else {
-            return;
-        };
-        let Some(run) = composer.drafting.as_ref() else {
-            return;
-        };
+    pub(super) fn poll_draft(&mut self) -> Option<Duration> {
+        let composer = self.session.composer.as_mut()?;
+        let run = composer.drafting.as_ref()?;
         let answer = run.job.answer();
         let elapsed = run.job.elapsed();
         let so_far = run
@@ -500,13 +489,11 @@ impl IboardApp {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         let agent = run.agent.clone();
-        let Some(drafted) = composer.draft.as_mut() else {
-            return;
-        };
+        let drafted = composer.draft.as_mut()?;
         match answer {
             None => {
                 drafted.draft = new_issue::parse(&so_far, false);
-                ctx.request_repaint_after(Duration::from_millis(50));
+                return Some(Duration::from_millis(50));
             }
             Some(Ok(text)) => {
                 composer.drafting = None;
@@ -522,6 +509,7 @@ impl IboardApp {
                 composer.draft_error = Some(err);
             }
         }
+        None
     }
 
     /// `esc` while drafting: the agent stops, what arrived stays.

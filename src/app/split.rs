@@ -65,15 +65,13 @@ impl IboardApp {
     }
 
     /// Adopts the agent's tickets once they are in; called every frame.
-    pub(super) fn poll_split(&mut self) {
-        let Some(review) = self.session.review.as_mut() else {
-            return;
-        };
+    pub(super) fn poll_split(&mut self) -> Option<Duration> {
+        let review = self.session.review.as_mut()?;
         let Some(Split::Cutting { answer, .. }) = &review.split else {
-            return;
+            return None;
         };
         let Some(result) = answer.answer() else {
-            return;
+            return Some(job::POLL_EVERY);
         };
         let drafts = result.and_then(|answer| {
             agent::parse_split(&answer)
@@ -92,6 +90,7 @@ impl IboardApp {
             ),
             Err(error) => Split::Failed(error),
         });
+        None
     }
 
     /// "Back to review": the findings the split started from.

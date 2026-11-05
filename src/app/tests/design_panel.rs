@@ -152,10 +152,9 @@ fn design_panel_drafts_a_component_with_the_agent() {
     app.session.design = Some(panel);
     assert!(app.session.design_draft.is_some(), "a draft was started");
 
-    let (ctx, _raw) = panel_ctx();
     let preview = dir.join("design/components/Toast/preview.html");
     assert!(until(|| {
-        app.poll_design_draft(&ctx);
+        app.poll_design_draft();
         std::fs::read_to_string(&preview)
             .unwrap_or_default()
             .contains("ib-btn")

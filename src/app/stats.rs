@@ -164,15 +164,11 @@ impl IboardApp {
     }
 
     /// Takes the measures once they are in.
-    pub(super) fn poll_stats(&mut self, ctx: &egui::Context) {
-        let Some(panel) = self.session.stats.as_mut() else {
-            return;
-        };
-        let Some((job, _)) = panel.run.as_ref() else {
-            return;
-        };
+    pub(super) fn poll_stats(&mut self) -> Option<Duration> {
+        let panel = self.session.stats.as_mut()?;
+        let (job, _) = panel.run.as_ref()?;
         match job.answer() {
-            None => ctx.request_repaint_after(job::POLL_EVERY),
+            None => return Some(job::POLL_EVERY),
             Some(Ok(stats)) => {
                 panel.stats = Some(stats);
                 panel.run = None;
@@ -182,6 +178,7 @@ impl IboardApp {
                 panel.run = None;
             }
         }
+        None
     }
 
     /// The panel owns the keyboard while up; the Agenda takes its keys.

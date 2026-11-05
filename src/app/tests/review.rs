@@ -885,7 +885,7 @@ fn cmd_k_asks_the_agent_about_the_open_issue() {
     frame(&ctx, &mut app, press(Key::Enter));
     assert!(app.session.ask_draft.is_none() && app.asking(&file));
     assert!(until(|| {
-        app.poll_asks(&ctx);
+        app.poll_asks();
         !app.asking(&file)
     }));
     let (notice, _) = app.session.notice.clone().expect("the answer shows");
@@ -928,9 +928,8 @@ fn an_ask_follows_its_issue_through_a_renumber() {
     app.place_issue(&issue("003-c.md"), &todo, Some(issue("002-a.md")));
     let a = issue("003-a.md");
     assert!(app.asking(&a), "the ask follows the issue");
-    let ctx = themed_ctx();
     assert!(until(|| {
-        app.poll_asks(&ctx);
+        app.poll_asks();
         !app.asking(&a)
     }));
     assert!(

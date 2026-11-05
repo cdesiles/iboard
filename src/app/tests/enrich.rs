@@ -39,7 +39,7 @@ fn enrichment_drafts_an_artifact_for_an_issue() {
     let (ctx, raw) = panel_ctx();
     let artifact = todo.join("assets/01-demo/ui.html");
     let drafted = until(|| {
-        app.poll_enrichment(&ctx);
+        app.poll_enrichment();
         artifact.is_file()
     });
 

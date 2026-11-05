@@ -1196,19 +1196,19 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
     app.last_refresh = Instant::now() - RESCAN_EVERY;
     // A fast scan may land within the call that started it, so only its
     // outcome is checked.
-    app.background(&ctx);
+    app.rescan(&ctx);
     assert!(until(|| {
-        app.background(&ctx);
+        app.rescan(&ctx);
         app.session.scan.is_none()
     }));
     assert!(app.board.find(&todo.join("b.md")).is_some());
 
     app.last_refresh = Instant::now() - RESCAN_EVERY;
-    app.background(&ctx);
+    app.rescan(&ctx);
     app.refresh();
     let newer = app.board_generation;
     assert!(until(|| {
-        app.background(&ctx);
+        app.rescan(&ctx);
         app.session.scan.is_none()
     }));
     assert_eq!(app.board_generation, newer, "the older scan was dropped");

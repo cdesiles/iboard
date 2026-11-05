@@ -137,9 +137,8 @@ fn play_builds_each_card_in_its_own_project() {
     app.start_build(ready);
     assert!(app_dir.join("issues/doing/a.md").exists());
     assert!(site_dir.join("issues/doing/b.md").exists());
-    let ctx = egui::Context::default();
     assert!(until(|| {
-        app.poll_build(&ctx);
+        app.poll_build();
         app.session.build.is_none()
     }));
     assert!(app_dir.join("built").exists() && site_dir.join("built").exists());

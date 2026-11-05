@@ -141,18 +141,9 @@ impl IboardApp {
     /// Adopts the answers that are in, kept beside their issue and marked
     /// ready; a failure goes to the status strip and leaves the last review
     /// alone. Called every frame.
-    pub(super) fn poll_review(&mut self) {
-        let landed: Vec<(PathBuf, Result<agent::Reviewed, String>)> = self
-            .session
-            .review_runs
-            .running
-            .iter_mut()
-            .filter_map(|(path, run)| Some((path.clone(), run.answer.answer()?)))
-            .collect();
-        for (path, result) in landed {
-            let Some(run) = self.session.review_runs.running.remove(&path) else {
-                continue;
-            };
+    pub(super) fn poll_review(&mut self) -> Option<Duration> {
+        let landed = job::take_landed(&mut self.session.review_runs.running, |run| &run.answer);
+        for (path, run, result) in landed {
             let reviewed = match result {
                 Ok(reviewed) => reviewed,
                 Err(error) => {
@@ -186,6 +177,10 @@ impl IboardApp {
                 self.reveal_review(&path);
             }
         }
+        self.session
+            .review_runs
+            .any_running()
+            .then_some(job::POLL_EVERY)
     }
 
     /// Whether the review panel shows a proposal `⌘↩` would apply.

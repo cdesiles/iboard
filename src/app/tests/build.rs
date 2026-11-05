@@ -94,7 +94,7 @@ fn play_builds_ready_top_to_bottom_from_the_project() {
     assert_eq!(in_column(&dir, "ready").len(), 1, "the first one moved on");
 
     assert!(until(|| {
-        app.poll_build(&ctx);
+        app.poll_build();
         app.session.build.is_none()
     }));
     assert_eq!(
@@ -110,10 +110,9 @@ fn play_builds_ready_top_to_bottom_from_the_project() {
 #[test]
 fn a_failed_build_stops_the_run() {
     let (dir, mut app) = board("build-fail", "echo broke >&2; exit 3 # {prompt}");
-    let ctx = themed_ctx();
     app.apply(vec![Intent::Build(ready(&app))]);
     assert!(until(|| {
-        app.poll_build(&ctx);
+        app.poll_build();
         app.session.build.is_none()
     }));
     assert!(app.error.as_deref().is_some_and(|e| e.contains("a.md")));
@@ -217,7 +216,7 @@ fn the_agent_log_shows_what_the_build_did_on_the_issue() {
     let taken = app.building_now()[0].0.clone();
     assert!(app.has_agent_log(&taken), "offered while the agent runs");
     assert!(until(|| {
-        app.poll_build(&ctx);
+        app.poll_build();
         app.session.build.is_none()
     }));
     assert!(app.has_agent_log(&taken), "and once it is done");
@@ -269,6 +268,22 @@ fn two_agents_build_two_issues_at_once() {
     assert_eq!(app.building_now().len(), 2);
     assert!(in_column(&dir, "ready").is_empty());
     assert_eq!(in_column(&dir, "doing"), ["a.md", "b.md"]);
+    stop_agents(&mut app, &dir, 2);
+}
+
+/// The frame where one agent lands still wakes up for the one at work.
+#[test]
+fn an_agent_still_at_work_keeps_the_frame_awake() {
+    let (dir, mut app) = board("build-wake", "grep -q A {issue} || sleep 30 # {prompt}");
+    let ctx = themed_ctx();
+    app.apply(vec![Intent::Agents(2), Intent::Build(ready(&app))]);
+    let mut wake = Duration::MAX;
+    assert!(until(|| {
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| app.frame_logic(ui.ctx()));
+        wake = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        app.building_now().len() == 1
+    }));
+    assert!(wake <= job::POLL_EVERY, "it wakes after {wake:?}");
     stop_agents(&mut app, &dir, 2);
 }
 
@@ -334,11 +349,10 @@ fn stopping_one_card_keeps_the_other_agent_at_work() {
 #[test]
 fn while_play_is_pressed_an_issue_dropped_in_ready_is_built() {
     let (dir, mut app) = board("build-watch-drop", "true # {prompt}");
-    let ctx = themed_ctx();
     std::fs::write(dir.join("issues/todo/003-c.md"), "# C\n").unwrap();
     app.apply(vec![Intent::Agents(2), Intent::Build(ready(&app))]);
     assert!(until(|| {
-        app.poll_build(&ctx);
+        app.poll_build();
         app.session.build.is_none()
     }));
     assert!(
@@ -348,7 +362,7 @@ fn while_play_is_pressed_an_issue_dropped_in_ready_is_built() {
 
     let todo = dir.join("issues/todo/003-c.md");
     app.move_issue(&todo, &dir.join("issues/ready")).unwrap();
-    app.poll_build(&ctx);
+    app.poll_build();
     assert_eq!(in_column(&dir, "doing"), ["a.md", "b.md", "c.md"]);
     assert!(in_column(&dir, "ready").is_empty());
     stop_agents(&mut app, &dir, 3);
@@ -372,12 +386,11 @@ fn while_play_is_pressed_ready_is_rescanned_for_other_processes_issues() {
 #[test]
 fn stop_stops_watching_ready() {
     let (dir, mut app) = board("build-watch-stop", "sleep 30 # {prompt}");
-    let ctx = themed_ctx();
     app.apply(vec![Intent::Build(ready(&app)), Intent::StopBuild]);
     assert!(!app.watching_ready());
     std::fs::write(dir.join("issues/ready/003-c.md"), "# C\n").unwrap();
     app.refresh();
-    app.poll_build(&ctx);
+    app.poll_build();
     assert!(app.session.build.is_none());
     assert_eq!(in_column(&dir, "ready"), ["002-b.md", "003-c.md"]);
     stop_agents(&mut app, &dir, 1);
@@ -395,7 +408,7 @@ fn a_queued_issue_keeps_its_place_through_a_renumber() {
     let (b, c) = (ready_dir.join("002-b.md"), ready_dir.join("003-c.md"));
     app.place_issue(&b, &ready_dir, Some(c));
     assert_eq!(in_column(&dir, "ready"), ["001-b.md", "002-c.md"]);
-    app.poll_build(&themed_ctx());
+    app.poll_build();
     app.apply(vec![Intent::Agents(2)]);
     app.apply(vec![Intent::StopAgent(dir.join("issues/doing/a.md"))]);
     assert_eq!(app.build_place(), Some((2, 3)), "B is second of three");

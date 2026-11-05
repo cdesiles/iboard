@@ -100,18 +100,8 @@ impl IboardApp {
     /// Takes the asks that are done: the board reads the issue again, the
     /// status bar says what the agent did, and the issue being read opens its
     /// agent log. Called every frame.
-    pub(super) fn poll_asks(&mut self, ctx: &egui::Context) {
-        let done: Vec<(PathBuf, Result<String, String>)> = self
-            .session
-            .asks
-            .iter()
-            .filter_map(|(path, run)| Some((path.clone(), run.answer.answer()?)))
-            .collect();
-        if self.session.asks.len() > done.len() {
-            ctx.request_repaint_after(job::POLL_EVERY);
-        }
-        for (path, result) in done {
-            self.session.asks.remove(&path);
+    pub(super) fn poll_asks(&mut self) -> Option<Duration> {
+        for (path, _, result) in job::take_landed(&mut self.session.asks, |run| &run.answer) {
             self.refresh();
             match result {
                 Ok(answer) => {
@@ -129,6 +119,7 @@ impl IboardApp {
                 self.toggle_agent_log(&path);
             }
         }
+        (!self.session.asks.is_empty()).then_some(job::POLL_EVERY)
     }
 
     /// The dialog's keys while it is up: `⌘↩` sends, `esc` closes.

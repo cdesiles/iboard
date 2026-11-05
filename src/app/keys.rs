@@ -2,7 +2,6 @@
 //! The shortcuts are a keymap: the input and where the keyboard is give a
 //! list of [`Command`]s, applied in order.
 
-use super::split::Split;
 use super::*;
 
 /// How far two fingers swipe right, in points, to go back.
@@ -197,65 +196,80 @@ fn board_keys(input: &egui::InputState, selected: Option<(PathBuf, bool)>) -> Ve
 }
 
 impl IboardApp {
-    /// The work each frame does before drawing: keys and shortcuts, menu
-    /// requests, and what runs in the background. Tests drive it with no
-    /// window.
+    /// The work each frame does before drawing: what runs in the background,
+    /// menu requests, keys and shortcuts, the autosave and the rescan. Tests
+    /// drive it with no window.
     pub(super) fn frame_logic(&mut self, ctx: &egui::Context) {
         // A project switch sets the title; apply it now that we have a context.
         if let Some(title) = self.pending_title.take() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
-        // Adopt an agent's answer as soon as it lands.
-        self.poll_review();
-        self.poll_refinement();
-        self.poll_split();
-        self.poll_naming(ctx);
-        self.poll_draft(ctx);
-        self.poll_design_draft(ctx);
-        self.poll_enrichment(ctx);
-        self.poll_build(ctx);
-        self.poll_asks(ctx);
-        self.poll_stats(ctx);
+        self.poll_jobs(ctx);
         self.window_requests(ctx);
-
         let confirming = self.confirm_keys(ctx);
-        // The settings dialog owns the keyboard while it is up; `⌘,` closes
-        // it as it opened it.
+        if self.settings.is_none() {
+            self.watch_config();
+        }
+        if !self.modal_keys(ctx, confirming) {
+            self.screen_keys(ctx, confirming);
+        }
+        self.autosave();
+        self.rescan(ctx);
+    }
+
+    /// Adopts the background work's answers as soon as they land. Each poll
+    /// says how soon to look again while its work runs: the frame wakes up at
+    /// the soonest.
+    fn poll_jobs(&mut self, ctx: &egui::Context) {
+        let wake = [
+            self.poll_review(),
+            self.poll_refinement(),
+            self.poll_split(),
+            self.poll_naming(),
+            self.poll_draft(),
+            self.poll_design_draft(),
+            self.poll_enrichment(),
+            self.poll_build(),
+            self.poll_asks(),
+            self.poll_stats(),
+        ];
+        if let Some(after) = wake.into_iter().flatten().min() {
+            ctx.request_repaint_after(after);
+        }
+    }
+
+    /// The dialog up owns the keyboard: Settings, which `⌘,` closes as it
+    /// opened it, Groups, the project menu, Project stats, Ask AI or
+    /// NewIssueModal. True when one does.
+    fn modal_keys(&mut self, ctx: &egui::Context, confirming: bool) -> bool {
         if self.settings.is_some() {
             if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma)) {
                 self.settings = None;
             }
-            self.background(ctx);
-            return;
+            return true;
         }
-        self.watch_config();
-        // The groups dialog owns the keyboard while it is up.
         if self.groups_dialog.is_some() {
-            self.background(ctx);
-            return;
+            return true;
         }
         if self.project_menu.is_some() {
             self.project_menu_keys(ctx);
-            self.background(ctx);
-            return;
-        }
-        if self.session.stats.is_some() {
+        } else if self.session.stats.is_some() {
             self.stats_keys(ctx);
-            self.background(ctx);
-            return;
-        }
-        if self.session.ask_draft.is_some() {
+        } else if self.session.ask_draft.is_some() {
             self.ask_keys(ctx);
-            self.background(ctx);
-            return;
-        }
-        // NewIssueModal owns the keyboard while it is up.
-        if self.composer_open() && !confirming {
+        } else if self.composer_open() && !confirming {
             self.new_issue_keys(ctx);
             self.paste_images(ctx);
-            self.background(ctx);
-            return;
+        } else {
+            return false;
         }
+        true
+    }
+
+    /// The keys of the screen on show, while no dialog owns the keyboard:
+    /// `esc`, a paste, the Diff's own keys, the shortcuts, the swipe back and
+    /// the double-click that edits.
+    fn screen_keys(&mut self, ctx: &egui::Context, confirming: bool) {
         if !confirming {
             self.escape_keys(ctx);
             self.paste_images(ctx);
@@ -291,7 +305,6 @@ impl IboardApp {
         {
             self.start_editing(&path);
         }
-        self.background(ctx);
     }
 
     /// A two-finger swipe to the right on the trackpad, as a browser's
@@ -521,10 +534,8 @@ impl IboardApp {
         }
     }
 
-    /// The work each frame does whatever the keyboard said: autosave, the
-    /// periodic refresh, and waking up for a running review.
-    pub(super) fn background(&mut self, ctx: &egui::Context) {
-        // Debounced autosave, while Auto is on.
+    /// Debounced autosave, while Auto is on.
+    fn autosave(&mut self) {
         let due = self.prefs.auto
             && self
                 .session
@@ -534,9 +545,12 @@ impl IboardApp {
         if due {
             self.flush_autosave(false);
         }
+    }
 
-        // Auto, or Play watching Ready, reads the board again every
-        // RESCAN_EVERY, off the UI thread.
+    /// Auto, or Play watching Ready, reads the board again every
+    /// [`RESCAN_EVERY`], off the UI thread, and takes it unless the board
+    /// changed meanwhile.
+    pub(super) fn rescan(&mut self, ctx: &egui::Context) {
         if self.prefs.auto || self.watching_ready() {
             if self.session.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
                 self.last_refresh = Instant::now();
@@ -557,21 +571,6 @@ impl IboardApp {
                 }
                 None => ctx.request_repaint_after(job::POLL_EVERY),
             }
-        }
-        // Poll a running review a few times a second.
-        if self.session.review_runs.any_running()
-            || self
-                .session
-                .review
-                .as_ref()
-                .is_some_and(|review| matches!(review.split, Some(Split::Cutting { .. })))
-            || self
-                .session
-                .refine
-                .as_ref()
-                .is_some_and(refine::Refinement::is_running)
-        {
-            ctx.request_repaint_after(job::POLL_EVERY);
         }
     }
 }

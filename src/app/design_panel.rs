@@ -159,13 +159,10 @@ impl IboardApp {
 
     /// Adopt a drafted component as soon as the agent answers. Runs every frame,
     /// so a draft started before the panel closed still lands.
-    pub(super) fn poll_design_draft(&mut self, ctx: &egui::Context) {
-        let Some(draft) = self.session.design_draft.as_ref() else {
-            return;
-        };
+    pub(super) fn poll_design_draft(&mut self) -> Option<Duration> {
+        let draft = self.session.design_draft.as_ref()?;
         let Some(result) = draft.job.answer() else {
-            ctx.request_repaint_after(job::POLL_EVERY);
-            return;
+            return Some(job::POLL_EVERY);
         };
         let name = draft.name.clone();
         self.session.design_draft = None;
@@ -185,6 +182,7 @@ impl IboardApp {
             panel.forget_preview(&name);
             panel.status = Some(message);
         }
+        None
     }
 
     /// Write a drafted fragment into the component and reload the system.

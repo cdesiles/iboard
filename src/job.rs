@@ -5,6 +5,8 @@
 //! Dropping a job tells its work to stop, so a closed window or a replaced run
 //! never leaves an agent working in the background.
 
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
@@ -111,6 +113,24 @@ impl<T> Drop for Job<T> {
     }
 }
 
+/// Takes the runs whose job answered out of `runs`, each with its answer.
+pub fn take_landed<K: Clone + Eq + Hash, R, T>(
+    runs: &mut HashMap<K, R>,
+    job: impl Fn(&R) -> &Job<Result<T, String>>,
+) -> Vec<(K, R, Result<T, String>)> {
+    let landed: Vec<(K, Result<T, String>)> = runs
+        .iter()
+        .filter_map(|(key, run)| Some((key.clone(), job(run).answer()?)))
+        .collect();
+    landed
+        .into_iter()
+        .filter_map(|(key, answer)| {
+            let run = runs.remove(&key)?;
+            Some((key, run, answer))
+        })
+        .collect()
+}
+
 /// Polls `done` until it holds, for as long as a loaded machine may need.
 #[cfg(test)]
 #[must_use]
@@ -150,6 +170,22 @@ mod tests {
         assert!(matches!(job.poll(), Poll::Waiting));
         drop(job);
         assert!(eventually(|| stopped.load(Ordering::Relaxed)));
+    }
+
+    #[test]
+    fn only_the_runs_that_answered_are_taken() {
+        let busy = Job::spawn(|cancel| {
+            while !cancel.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Ok(0)
+        });
+        let mut runs: HashMap<&str, Job<Result<i32, String>>> =
+            HashMap::from([("done", Job::done(Ok(1))), ("busy", busy)]);
+        let landed = take_landed(&mut runs, |job| job);
+        let answers: Vec<_> = landed.into_iter().map(|(key, _, got)| (key, got)).collect();
+        assert_eq!(answers, [("done", Ok(1))]);
+        assert_eq!(runs.keys().collect::<Vec<_>>(), [&"busy"]);
     }
 
     #[test]

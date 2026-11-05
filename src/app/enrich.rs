@@ -111,18 +111,15 @@ impl IboardApp {
     }
 
     /// Adopt the agent's mockup, then its render, as they land.
-    pub(super) fn poll_enrichment(&mut self, ctx: &egui::Context) {
-        let Some(enrichment) = self.session.enrichment.as_mut() else {
-            return;
-        };
+    pub(super) fn poll_enrichment(&mut self) -> Option<Duration> {
+        let enrichment = self.session.enrichment.as_mut()?;
         let outcome = match &enrichment.status {
             EnrichStatus::Running(drafting) => drafting.answer().map(EnrichOutcome::Agent),
             EnrichStatus::Rendering(rendering) => rendering.answer().map(EnrichOutcome::Png),
-            EnrichStatus::Done | EnrichStatus::Failed(_) => return,
+            EnrichStatus::Done | EnrichStatus::Failed(_) => return None,
         };
         let Some(outcome) = outcome else {
-            ctx.request_repaint_after(job::POLL_EVERY);
-            return;
+            return Some(job::POLL_EVERY);
         };
 
         match outcome {
@@ -131,7 +128,7 @@ impl IboardApp {
                 if !html.contains('<') {
                     enrichment.status =
                         EnrichStatus::Failed("the agent returned no HTML".to_string());
-                    return;
+                    return None;
                 }
                 match write_enrichment_artifact(&enrichment.path, &html) {
                     Ok(file) => {
@@ -159,6 +156,7 @@ impl IboardApp {
                 enrichment.status = EnrichStatus::Done;
             }
         }
+        matches!(enrichment.status, EnrichStatus::Rendering(_)).then_some(job::POLL_EVERY)
     }
 
     /// The enrichment window: the loader, the rendered mockup, and the refine
