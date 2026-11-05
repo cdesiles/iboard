@@ -14,7 +14,8 @@ use super::{
 /// the cards.
 const THUMB_LANE: f32 = theme::SCROLL_HIT;
 
-/// How long an issue created from the composer keeps its `accent-soft` fill.
+/// How long an issue created from the composer takes to fade from
+/// `accent-soft` to `surface`.
 const NEW_CARD_FLASH: Duration = Duration::from_secs(2);
 
 impl IboardApp {
@@ -40,8 +41,9 @@ impl IboardApp {
         let height = (ui.available_height() - 2.0 * gutter).max(120.0);
         let new_card = self.flashing_card();
         if new_card.is_some() {
-            ui.ctx().request_repaint_after(Duration::from_millis(200));
+            ui.ctx().request_repaint();
         }
+        let fades = !theme::reduced_motion(ui.ctx());
         let selected = self.session.selected.clone();
         let scroll_to_selected = std::mem::take(&mut self.session.scroll_to_selected);
         let running = self.building_now();
@@ -75,7 +77,9 @@ impl IboardApp {
                             filter: &self.filter_bar.filter,
                             width,
                             height,
-                            new_card: new_card.as_deref(),
+                            new_card: new_card.as_ref().map(|(path, left)| {
+                                (path.as_path(), if fades { *left } else { 1.0 })
+                            }),
                             selected: selected.as_deref(),
                             scroll_to_selected,
                             picked: &self.session.picked,
@@ -109,13 +113,17 @@ impl IboardApp {
         self.apply(intents);
     }
 
-    /// The issue the composer just wrote, while its card is still highlighted.
-    pub(super) fn flashing_card(&self) -> Option<PathBuf> {
+    /// The issue the composer just wrote, while its card still fades, and
+    /// how much of the highlight is left, from 1 to 0.
+    pub(super) fn flashing_card(&self) -> Option<(PathBuf, f32)> {
         self.session
             .new_card
             .as_ref()
             .filter(|(_, at)| at.elapsed() < NEW_CARD_FLASH)
-            .map(|(path, _)| path.clone())
+            .map(|(path, at)| {
+                let gone = at.elapsed().as_secs_f32() / NEW_CARD_FLASH.as_secs_f32();
+                (path.clone(), 1.0 - gone)
+            })
     }
 }
 
@@ -147,8 +155,9 @@ struct ColumnView<'a> {
     filter: &'a Filter,
     width: f32,
     height: f32,
-    /// An issue just created by the composer, still highlighted.
-    new_card: Option<&'a Path>,
+    /// An issue just created by the composer, and how much of its highlight
+    /// is left.
+    new_card: Option<(&'a Path, f32)>,
     /// The card selected with the arrow keys or by opening it.
     selected: Option<&'a Path>,
     /// Scroll the selected card into view this frame.
@@ -227,8 +236,9 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
                         if egui::DragAndDrop::has_payload_of_type::<IssueDrag>(ui.ctx()) {
                             ui.add_space(DOCK_H);
                         }
-                        if drop_response.dnd_hover_payload::<IssueDrag>().is_some()
-                            || drop_response.dnd_release_payload::<IssueDrag>().is_some()
+                        if discovery::is_orderable_column(&column.dir)
+                            && (drop_response.dnd_hover_payload::<IssueDrag>().is_some()
+                                || drop_response.dnd_release_payload::<IssueDrag>().is_some())
                         {
                             anchor = drop_line(ui, &cards);
                         }
@@ -476,8 +486,11 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
         }
     } else if view.picked.contains(&issue.path) {
         CardLook::Selected { scroll: false }
-    } else if view.new_card == Some(issue.path.as_path()) {
-        CardLook::Fresh
+    } else if let Some((_, left)) = view
+        .new_card
+        .filter(|(path, _)| *path == issue.path.as_path())
+    {
+        CardLook::Fresh { left }
     } else {
         CardLook::Plain
     };
@@ -489,6 +502,7 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
         expand: view.picked.is_empty() || view.selected == Some(issue.path.as_path()),
         build: card_build(view.column, issue, view.builds),
         labelling: discovery::is_editable_column(&view.column.dir),
+        active_labels: &view.filter.tokens,
     };
     issue_card(ui, issue, view.width, look, view.labels, extras)
 }

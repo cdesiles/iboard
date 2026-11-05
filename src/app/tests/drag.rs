@@ -362,3 +362,88 @@ fn the_dragged_card_is_tilted() {
     let top = vertices.iter().min_by(|a, b| a.y.total_cmp(&b.y)).unwrap();
     assert!(top.x > center.x, "the top-right corner rises");
 }
+
+/// A board with a card in `todo/`, `ready/` and `doing/`, its Todo card
+/// lifted, the dock all the way in.
+fn lifted_card() -> (Scratch, IboardApp, egui::Context) {
+    let dir = scratch_dir("lifted");
+    for column in ["todo", "ready", "doing"] {
+        let folder = dir.join("issues").join(column);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(format!("{column}.md")), "# Demo\n").unwrap();
+    }
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let start = card_centre(&ctx, &dir, "todo");
+    draw(&ctx, &mut app, vec![moved(start)]);
+    draw(&ctx, &mut app, vec![moved(start), button(start, true)]);
+    let carried = start + egui::vec2(30.0, 30.0);
+    for _ in 0..20 {
+        draw(&ctx, &mut app, vec![moved(carried)]);
+    }
+    assert!(egui::DragAndDrop::has_payload_of_type::<IssueDrag>(&ctx));
+    (dir, app, ctx)
+}
+
+fn card_centre(ctx: &egui::Context, dir: &Path, column: &str) -> egui::Pos2 {
+    let file = dir.join("issues").join(column).join(format!("{column}.md"));
+    ctx.read_response(egui::Id::new(("issue_card", &file)))
+        .expect("the card is drawn")
+        .rect
+        .center()
+}
+
+#[test]
+fn the_drop_line_shows_only_where_position_counts() {
+    let (dir, mut app, ctx) = lifted_card();
+    let mut lines_over = |column: &str| {
+        let over = card_centre(&ctx, &dir, column);
+        draw(&ctx, &mut app, vec![moved(over)]);
+        let (p, shapes) = painted(&ctx, &mut app, vec![moved(over)]);
+        shapes
+            .iter()
+            .filter(|shape| {
+                matches!(shape, egui::Shape::LineSegment { stroke, .. } if stroke.color == p.accent)
+            })
+            .count()
+    };
+    assert_eq!(lines_over("ready"), 1);
+    assert_eq!(lines_over("doing"), 0);
+}
+
+#[test]
+fn the_dock_keeps_12pt_of_padding_in_the_dragged_cards_column() {
+    let (_dir, _app, ctx) = lifted_card();
+    let column = ctx
+        .read_response(egui::Id::new(("column_drop", 0)))
+        .unwrap()
+        .rect;
+    let zone = ctx
+        .read_response(egui::Id::new("drop_zone_delete"))
+        .expect("the dock shows while dragging")
+        .rect;
+    assert_eq!(zone.min.x - column.min.x, theme::SPACE_4);
+    assert_eq!(column.max.x - zone.max.x, theme::SPACE_4);
+    assert_eq!(zone.height(), 56.0);
+}
+
+#[test]
+fn a_drag_starts_once_the_pointer_moved_4pt() {
+    let dir = scratch_dir("drag-start");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::write(todo.join("todo.md"), "# Demo\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let start = card_centre(&ctx, &dir, "todo");
+    draw(&ctx, &mut app, vec![moved(start)]);
+    draw(&ctx, &mut app, vec![moved(start), button(start, true)]);
+    draw(&ctx, &mut app, vec![moved(start + egui::vec2(3.5, 0.0))]);
+    assert!(!egui::DragAndDrop::has_any_payload(&ctx));
+    let past = start + egui::vec2(theme::DRAG_START + 0.5, 0.0);
+    draw(&ctx, &mut app, vec![moved(past)]);
+    draw(&ctx, &mut app, vec![moved(past)]);
+    assert!(egui::DragAndDrop::has_payload_of_type::<IssueDrag>(&ctx));
+}

@@ -47,11 +47,11 @@ impl IboardApp {
         let p = theme::palette(ui);
         let area = ui.max_rect();
         let top = area.max.y - DOCK_H * shown;
-        let (x, margin) = match self.dock_span {
+        let x = match self.dock_span {
             Some(span) if span.intersection(area.x_range()).span() > 0.0 => {
-                (span.intersection(area.x_range()), 0.0)
+                span.intersection(area.x_range())
             }
-            _ => (area.x_range(), theme::SPACE_5),
+            _ => area.x_range(),
         };
         let dock = Rect::from_x_y_ranges(x, egui::Rangef::new(top, top + DOCK_H));
         let archivable = self.dock_archivable;
@@ -71,8 +71,8 @@ impl IboardApp {
                 ui.interact(dock, egui::Id::new("drop_dock_band"), Sense::hover());
 
                 let inner = Rect::from_min_max(
-                    dock.min + Vec2::new(margin, 1.0 + theme::SPACE_4),
-                    dock.max - Vec2::new(margin, theme::SPACE_4),
+                    dock.min + Vec2::new(theme::SPACE_4, 1.0 + theme::SPACE_4),
+                    dock.max - Vec2::splat(theme::SPACE_4),
                 );
                 // Done cards are archived, never deleted; the others are
                 // deleted, never archived.

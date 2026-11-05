@@ -51,7 +51,7 @@ pub(super) enum CardBuild {
 /// What a card shows beyond its file: the last review's verdict pill, and
 /// whether the selected card offers Review.
 #[derive(Clone, Copy, Default)]
-pub(super) struct CardExtras {
+pub(super) struct CardExtras<'a> {
     /// The review running or ready, else the last verdict.
     pub(super) review_pill: Option<ReviewPill>,
     pub(super) review_button: bool,
@@ -61,14 +61,19 @@ pub(super) struct CardExtras {
     pub(super) build: Option<CardBuild>,
     /// Offers Add label: Doing and Done keep the labels they have.
     pub(super) labelling: bool,
+    /// The labels the board is filtered by: they show as active.
+    pub(super) active_labels: &'a [String],
 }
 
 /// How a card stands out from the others.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq)]
 pub(super) enum CardLook {
     Plain,
-    /// Just created by the composer: `accent-soft` for a moment.
-    Fresh,
+    /// Just created by the composer: `accent-soft` fading to `surface`, with
+    /// `left` of it still there, from 1 to 0.
+    Fresh {
+        left: f32,
+    },
     /// Selected: `accent` edge on `accent-soft`; `scroll` brings it into view.
     Selected {
         scroll: bool,
@@ -199,13 +204,11 @@ fn expand_action(
         ),
         Vec2::splat(widgets::CARD_ACTION),
     );
-    let fill = if look == CardLook::Plain {
-        p.surface
-    } else {
-        p.accent_soft
-    };
-    ui.painter()
-        .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), fill);
+    ui.painter().rect_filled(
+        rect,
+        CornerRadius::same(theme::RADIUS_SM),
+        card_fill(p, look),
+    );
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     let expand = widgets::icon_button(
         &mut child,
@@ -248,6 +251,16 @@ fn at_work(ui: &egui::Ui, card: Rect, since: Instant) {
         painter.rect_filled(light, CornerRadius::same(1), p.status_doing);
     }
     ui.ctx().request_repaint();
+}
+
+/// A card's ground: `surface`, `accent-soft` when selected, and between the
+/// two while a new card fades.
+fn card_fill(p: &theme::Palette, look: CardLook) -> Color32 {
+    match look {
+        CardLook::Plain => p.surface,
+        CardLook::Fresh { left } => p.surface.lerp_to_gamma(p.accent_soft, left),
+        CardLook::Selected { .. } => p.accent_soft,
+    }
 }
 
 /// The card's edge: 2pt `accent` when selected (scrolled into view when
@@ -358,8 +371,7 @@ enum Actions {
 
 /// The visual body of a card, shared by the card in the board and the ghost
 /// that follows the pointer while dragging: title, summary clamped to three
-/// lines, file name. A card that is not `Plain` (new or selected) is
-/// `accent-soft`. The meta row ends with a slot for the icon buttons, filled
+/// lines, file name. The meta row ends with a slot for the icon buttons, filled
 /// as `actions` says. The slot is always reserved so the file name and date
 /// never move when the buttons appear.
 fn card_body(
@@ -377,11 +389,7 @@ fn card_body(
     // The frame's border is drawn outside the padding, so take it off too.
     let inner = width - 2.0 * padding.x - 2.0 * border;
     let shown = Frame::new()
-        .fill(if look == CardLook::Plain {
-            p.surface
-        } else {
-            p.accent_soft
-        })
+        .fill(card_fill(p, look))
         .stroke(Stroke::new(border, p.line))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .inner_margin(padding)
@@ -442,7 +450,8 @@ fn card_labels(
                 continue;
             }
             let shown = label.strip_prefix("repo:").unwrap_or(label);
-            let pill = widgets::label_pill(ui, shown, labels.color(label))
+            let active = extras.active_labels.contains(label);
+            let pill = widgets::label_pill_lit(ui, shown, labels.color(label), active)
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(format!("Filter by {label}"));
             clicks.push((label.clone(), pill.rect, pill.clicked()));
@@ -551,7 +560,7 @@ fn card_actions(
         let response = widgets::icon_button(ui, button.icon, id, button.hover, tone);
         rects.push(response.rect);
         if add_label {
-            set_label_anchor(ui.ctx(), &issue.path, response.rect);
+            set_label_anchor(ui, &issue.path, response.rect);
         }
         if response.clicked() {
             *action = Some(button.action);
@@ -743,5 +752,14 @@ mod tests {
             offered(false, retry),
             [CardAction::Delete, CardAction::RetryBuild]
         );
+    }
+
+    #[test]
+    fn a_new_card_fades_from_accent_soft_to_surface() {
+        let p = &theme::LIGHT;
+        assert_eq!(card_fill(p, CardLook::Fresh { left: 1.0 }), p.accent_soft);
+        assert_eq!(card_fill(p, CardLook::Fresh { left: 0.0 }), p.surface);
+        let halfway = card_fill(p, CardLook::Fresh { left: 0.5 });
+        assert!(halfway != p.accent_soft && halfway != p.surface);
     }
 }

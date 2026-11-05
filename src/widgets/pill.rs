@@ -40,8 +40,43 @@ pub fn pill(ui: &mut Ui, text: &str, color: Color32) -> Response {
 /// a `None` colour (an unknown label) is neutral: `surface-sunken` on
 /// `ink-muted`, so the chip is legible in both themes.
 pub fn label_pill(ui: &mut Ui, name: &str, color: Option<Rgb>) -> Response {
+    label_pill_lit(ui, name, color, false)
+}
+
+/// A [`label_pill`] that may be the active filter: then, and under the
+/// pointer, `accent` text and edge on `accent-soft`.
+pub fn label_pill_lit(ui: &mut Ui, name: &str, color: Option<Rgb>, active: bool) -> Response {
     let p = theme::palette(ui);
     let name = name.to_lowercase();
+    let font = FontId::new(11.0, theme::ui_button().family);
+    let width = galley(ui, &name, font.clone(), p.ink).size().x;
+    let size = Vec2::new(7.0 + width + 7.0, 18.0);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
+    });
+    if ui.is_rect_visible(rect) {
+        let (fill, edge, ink) = label_look(p, color, active || response.hovered());
+        let text = galley(ui, &name, font, ink);
+        let painter = ui.painter();
+        painter.rect(
+            rect,
+            CornerRadius::same(theme::RADIUS_PILL),
+            fill,
+            edge,
+            StrokeKind::Inside,
+        );
+        let pos = rect.center() - text.size() / 2.0 - Vec2::new(0.0, 1.0);
+        painter.galley(pos, text, ink);
+    }
+    response
+}
+
+/// A label pill's fill, edge and text.
+fn label_look(p: &theme::Palette, color: Option<Rgb>, lit: bool) -> (Color32, Stroke, Color32) {
+    if lit {
+        return (p.accent_soft, Stroke::new(1.0, p.accent), p.accent);
+    }
     let (fill, ink) = match color.map(theme::rgb) {
         Some(color) => {
             let fill = theme::tint(color, p.surface);
@@ -54,19 +89,7 @@ pub fn label_pill(ui: &mut Ui, name: &str, color: Option<Rgb>) -> Response {
         }
         None => (p.surface_sunken, p.ink_muted),
     };
-    let text = galley(ui, &name, FontId::new(11.0, theme::ui_button().family), ink);
-    let size = Vec2::new(7.0 + text.size().x + 7.0, 18.0);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
-    });
-    if ui.is_rect_visible(rect) {
-        let painter = ui.painter();
-        painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_PILL), fill);
-        let pos = rect.center() - text.size() / 2.0 - Vec2::new(0.0, 1.0);
-        painter.galley(pos, text, ink);
-    }
-    response
+    (fill, Stroke::NONE, ink)
 }
 
 /// A picked filter keyword: `accent` on `accent-soft`, with a × that removes

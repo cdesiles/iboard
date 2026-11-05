@@ -49,6 +49,10 @@ impl IboardApp {
             )
             .on_hover_text(self.board.warnings.join("\n"));
         }
+        if let Some(status) = self.build_status() {
+            let text = RichText::new(status).font(theme::meta()).color(p.accent);
+            ui.add(egui::Label::new(text).truncate());
+        }
         hints
     }
 

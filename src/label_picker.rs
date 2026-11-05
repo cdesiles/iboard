@@ -27,7 +27,7 @@ pub struct LabelPicker {
     pub path: PathBuf,
     pub text: String,
     pub note: Note,
-    /// The label just added, and when, for the `status-done` flash.
+    /// The label just added or removed, and when, for the `status-done` flash.
     flash: Option<(String, f64)>,
     /// Put the cursor back in the field on the next frame.
     focus_field: bool,
@@ -121,13 +121,21 @@ pub fn open_path(ctx: &egui::Context) -> Option<PathBuf> {
     ctx.data(|d| d.get_temp::<PathBuf>(open_id()))
 }
 
-/// A trigger records where it is, every frame, so the popup follows it.
-pub fn set_anchor(ctx: &egui::Context, path: &Path, rect: Rect) {
-    ctx.data_mut(|d| d.insert_temp(anchor_id(path), rect));
+/// A trigger records where it is, every frame it can be seen, so the popup
+/// follows it. Drawn scrolled out of its area, it records nothing.
+pub fn set_anchor(ui: &egui::Ui, path: &Path, rect: Rect) {
+    if !ui.clip_rect().intersects(rect) {
+        return;
+    }
+    let frame = ui.ctx().cumulative_frame_nr();
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(anchor_id(path), (rect, frame)));
 }
 
+/// Where the trigger is, when it recorded itself this frame or the last.
 fn anchor(ctx: &egui::Context, path: &Path) -> Option<Rect> {
-    ctx.data(|d| d.get_temp::<Rect>(anchor_id(path)))
+    let (rect, frame) = ctx.data(|d| d.get_temp::<(Rect, u64)>(anchor_id(path)))?;
+    (frame + 1 >= ctx.cumulative_frame_nr()).then_some(rect)
 }
 
 /// Draws the popup. `has` are the issue's labels, `board` every label on the
@@ -308,7 +316,7 @@ fn hint_line(
 }
 
 /// The labels, wrapping, scrolling after five rows. Returns the ids of the
-/// pills that add a label, for [`hand_off`].
+/// pills, for [`hand_off`].
 fn label_list(
     ui: &mut egui::Ui,
     picker: &mut LabelPicker,
@@ -339,6 +347,8 @@ fn label_list(
                         let pill = on_pill(ui, name, flashing)
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .on_hover_text(format!("Remove {name}"));
+                        focus_edge(ui, &pill);
+                        pill_ids.push(pill.id);
                         if pill.clicked() {
                             *outcome = Some(Outcome::Remove((*name).clone()));
                         }
@@ -346,6 +356,14 @@ fn label_list(
                         let pill = widgets::label_pill(ui, name, colors.color(name))
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .on_hover_text(format!("Add {name}"));
+                        if flashing {
+                            ui.painter().rect_stroke(
+                                pill.rect,
+                                CornerRadius::same(theme::RADIUS_PILL),
+                                Stroke::new(1.0, theme::palette(ui).status_done),
+                                StrokeKind::Inside,
+                            );
+                        }
                         focus_edge(ui, &pill);
                         pill_ids.push(pill.id);
                         if pill.clicked() {
@@ -380,7 +398,8 @@ fn hand_off(ui: &egui::Ui, picker: &mut LabelPicker, field: &Response, pill_ids:
                 })
                 .collect()
         });
-        if !text.is_empty() {
+        // `space` toggles the pill: it is not typing.
+        if !text.trim().is_empty() {
             picker.text.push_str(&text);
             picker.focus_field = true;
         }
@@ -412,7 +431,7 @@ fn pressed_outside(ctx: &egui::Context, popup: Rect, trigger: Option<Rect>) -> b
 
 /// A label the issue already has: a `status-done` check, a `line` edge on
 /// `surface`, `ink-muted` text. Clicking it takes the label off the issue.
-/// Just added, its edge flashes `status-done`.
+/// Just added, its edge flashes `status-done`; a label just removed does too.
 fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) -> Response {
     let p = theme::palette(ui);
     let text = ui.painter().layout_no_wrap(
@@ -460,5 +479,40 @@ fn focus_edge(ui: &egui::Ui, response: &Response) {
             Stroke::new(2.0, p.accent),
             StrokeKind::Outside,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_popup_centres_once_its_trigger_scrolled_away_or_went() {
+        let ctx = egui::Context::default();
+        let path = Path::new("todo/a.md");
+        let area = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let seen = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(22.0));
+        let scrolled = seen.translate(Vec2::new(0.0, 500.0));
+        let frame = |trigger: Option<Rect>| {
+            let mut found = None;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.set_clip_rect(area);
+                if let Some(rect) = trigger {
+                    set_anchor(ui, path, rect);
+                }
+                found = anchor(ui.ctx(), path);
+            });
+            output.textures_delta.clear();
+            found
+        };
+        assert_eq!(frame(Some(seen)), Some(seen));
+        assert_eq!(frame(None), Some(seen), "last frame's still counts");
+        assert_eq!(frame(None), None, "its card is gone");
+        assert_eq!(frame(Some(seen)), Some(seen));
+        frame(Some(scrolled));
+        assert_eq!(frame(Some(scrolled)), None, "scrolled away");
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0));
+        let size = Vec2::new(WIDTH, 100.0);
+        assert_eq!(position(None, size, screen), screen.center() - size / 2.0);
     }
 }

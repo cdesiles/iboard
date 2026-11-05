@@ -394,6 +394,9 @@ fn font_definitions() -> FontDefinitions {
 
 /// Applies the tokens to both of egui's themes, and draws in the light one
 /// until [`apply`] says otherwise.
+/// How far the pointer moves with the button down before a press is a drag.
+pub const DRAG_START: f32 = 4.0;
+
 pub fn install(ctx: &egui::Context) {
     ctx.set_fonts(font_definitions());
     for (theme, palette) in [(Theme::Light, &LIGHT), (Theme::Dark, &DARK)] {
@@ -401,6 +404,7 @@ pub fn install(ctx: &egui::Context) {
     }
     apply(ctx, Appearance::default());
     set_reduced_motion(ctx, system_reduces_motion());
+    ctx.options_mut(|options| options.input_options.max_click_dist = DRAG_START);
 }
 
 /// Whether macOS asks for reduced motion (Accessibility › Display).

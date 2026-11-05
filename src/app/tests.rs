@@ -14,6 +14,7 @@ mod groups;
 mod handover;
 mod images;
 mod kit;
+mod labelling;
 mod moves;
 mod panes;
 mod project_menu;
@@ -109,6 +110,27 @@ fn draw(
     events: Vec<egui::Event>,
 ) -> egui::PlatformOutput {
     run(ctx, events, |ui| app.draw(ui))
+}
+
+/// One frame of `app` that only draws, and the shapes it painted.
+fn painted(
+    ctx: &egui::Context,
+    app: &mut IboardApp,
+    events: Vec<egui::Event>,
+) -> (&'static Palette, Vec<egui::Shape>) {
+    let input = egui::RawInput {
+        screen_rect: Some(window()),
+        events,
+        ..Default::default()
+    };
+    let mut palette = None;
+    let mut output = ctx.run_ui(input, |ui| {
+        palette = Some(theme::palette(ui));
+        app.draw(ui);
+    });
+    output.textures_delta.clear();
+    let shapes = output.shapes.into_iter().map(|clipped| clipped.shape);
+    (palette.unwrap(), shapes.collect())
 }
 
 /// One frame of `app` as eframe runs it: its logic, then the drawing.
@@ -404,8 +426,9 @@ fn the_label_picker_adds_labels_from_the_keyboard() {
         "focus stays in the field"
     );
 
-    // The board's labels, most used first, minus the two it has: feature.
+    // The board's labels, most used first: bug, which it has, then feature.
     frame(&ctx, &mut app, vec![key(Key::ArrowDown)]);
+    frame(&ctx, &mut app, vec![key(Key::Tab)]);
     frame(&ctx, &mut app, vec![key(Key::Enter)]);
     frame(&ctx, &mut app, vec![]);
     assert_eq!(

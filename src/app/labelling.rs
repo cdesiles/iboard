@@ -163,6 +163,6 @@ pub(super) fn label_picker_open(ctx: &egui::Context) -> Option<PathBuf> {
 }
 
 /// Where a LabelPicker trigger sits, so the popup opens under it.
-pub(super) fn set_label_anchor(ctx: &egui::Context, path: &Path, rect: Rect) {
-    label_picker::set_anchor(ctx, path, rect);
+pub(super) fn set_label_anchor(ui: &egui::Ui, path: &Path, rect: Rect) {
+    label_picker::set_anchor(ui, path, rect);
 }

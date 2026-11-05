@@ -216,6 +216,7 @@ impl IboardApp {
                 words: sheet::word_count(&text),
             },
             labels: issue.labels.clone(),
+            active_labels: self.filter_bar.filter.tokens.clone(),
             text: &text,
             // Doing and Done tickets open read-only: no click-to-edit affordance.
             editable: self.can_edit(path),
@@ -295,7 +296,7 @@ impl IboardApp {
                     let top = ui.cursor().min.y;
                     let inner_height = layout.sheet_height - 2.0 * theme::SPACE_6 - 2.0;
                     sheet_head(ui, sheet.head);
-                    if let Some(label) = label_row(ui, &sheet.labels, labels) {
+                    if let Some(label) = label_row(ui, sheet, labels) {
                         intents.push(Intent::ShowLabel(label));
                     }
                     let body = ui.vertical(|ui| {
@@ -348,6 +349,8 @@ struct SheetView<'a> {
     path: &'a Path,
     head: SheetHead<'a>,
     labels: Vec<String>,
+    /// The labels the board is filtered by: they show as active.
+    active_labels: Vec<String>,
     /// The issue's text, its title's labels hidden.
     text: &'a str,
     editable: bool,
@@ -458,7 +461,8 @@ impl ReaderLayout {
 
 /// The labels, on their own row between the head and the title. Returns the
 /// one clicked, to filter the board by.
-fn label_row(ui: &mut egui::Ui, names: &[String], labels: &Labels) -> Option<String> {
+fn label_row(ui: &mut egui::Ui, sheet: &SheetView, labels: &Labels) -> Option<String> {
+    let names = &sheet.labels;
     if names.is_empty() {
         return None;
     }
@@ -467,7 +471,8 @@ fn label_row(ui: &mut egui::Ui, names: &[String], labels: &Labels) -> Option<Str
         ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
         for name in names.iter().filter(|name| !name.starts_with("group:")) {
             let shown = name.strip_prefix("repo:").unwrap_or(name);
-            if widgets::label_pill(ui, shown, labels.color(name))
+            let active = sheet.active_labels.contains(name);
+            if widgets::label_pill_lit(ui, shown, labels.color(name), active)
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(format!("Filter by {name}"))
                 .clicked()

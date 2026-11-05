@@ -109,12 +109,7 @@ pub fn confirm(ui: &Ui, ask: &Ask) -> Answer {
     let p = theme::palette(ui);
     let pad = 20.0;
     let mut answer = Answer::Pending;
-    let frame = modal_frame(ui).inner_margin(MarginF32 {
-        left: pad,
-        right: pad,
-        top: pad,
-        bottom: theme::SPACE_5,
-    });
+    let frame = modal_frame(ui).inner_margin(pad);
     let modal = egui::Modal::new(egui::Id::new(ask.id))
         .frame(frame)
         .backdrop_color(p.scrim)

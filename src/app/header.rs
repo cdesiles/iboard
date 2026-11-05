@@ -375,7 +375,7 @@ impl IboardApp {
                 Some("L"),
             )
             .on_hover_text("Add a label to this issue");
-            set_label_anchor(ui.ctx(), &path, add.rect);
+            set_label_anchor(ui, &path, add.rect);
             if add.clicked() {
                 self.toggle_label_picker(path.clone());
             }

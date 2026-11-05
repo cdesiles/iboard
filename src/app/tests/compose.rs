@@ -535,3 +535,18 @@ fn only_the_todo_column_offers_new_issues() {
     assert!(find("Todo").accepts_new_issues());
     assert!(!find("Doing").accepts_new_issues());
 }
+
+#[test]
+fn a_new_cards_highlight_runs_out_over_two_seconds() {
+    let dir = scratch_dir("fresh-fade");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let file = dir.join("issues/todo/fresh.md");
+    let at = |secs| Some((file.clone(), Instant::now() - Duration::from_secs(secs)));
+    app.session.new_card = at(1);
+    let (path, left) = app.flashing_card().unwrap();
+    assert_eq!(path, file);
+    assert!((0.4..=0.5).contains(&left), "{left}");
+    app.session.new_card = at(2);
+    assert!(app.flashing_card().is_none());
+}

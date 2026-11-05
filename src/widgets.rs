@@ -29,7 +29,7 @@ pub use menu::{
     Drag, MENU_ROW_H, MenuOption, RowLook, menu_group, menu_head, menu_note, menu_option, menu_row,
     menu_row_lifted, menu_separator,
 };
-pub use pill::{chip, filter_token, label_pill, pill, tag};
+pub use pill::{chip, filter_token, label_pill, label_pill_lit, pill, tag};
 pub use select::select;
 
 fn galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<Galley> {
@@ -363,6 +363,78 @@ mod tests {
         })
         .textures_delta
         .clear();
+    }
+
+    /// Under the pointer, or as the active filter, a label is `accent` on
+    /// `accent-soft`.
+    #[test]
+    fn a_label_pill_lights_up_when_hovered_or_active() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let frame = |active: bool, events: Vec<egui::Event>| {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0))),
+                events,
+                ..Default::default()
+            };
+            let mut accents = None;
+            let mut pill_rect = Rect::NOTHING;
+            let mut output = ctx.run_ui(raw, |ui| {
+                let p = theme::palette(ui);
+                accents = Some((p.accent_soft, p.accent));
+                pill_rect = label_pill_lit(ui, "bug", None, active).rect;
+            });
+            output.textures_delta.clear();
+            let (fill, edge) = accents.unwrap();
+            let lit = output.shapes.iter().any(|clipped| {
+                matches!(&clipped.shape, egui::Shape::Rect(rect)
+                    if rect.fill == fill && rect.stroke.color == edge)
+            });
+            (lit, pill_rect)
+        };
+        frame(false, vec![]);
+        let (rest, pill) = frame(false, vec![]);
+        assert!(!rest, "at rest");
+        assert!(frame(true, vec![]).0, "active");
+        let over = egui::Event::PointerMoved(pill.center());
+        frame(false, vec![over]);
+        assert!(frame(false, vec![]).0, "hovered");
+    }
+
+    /// ConfirmDialog's padding is 20pt on every side, under the buttons too.
+    #[test]
+    fn the_confirm_dialog_keeps_20pt_under_its_buttons() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut harness = egui_kittest::Harness::new_ui_state(
+            |ui, themed: &mut bool| {
+                if !std::mem::replace(themed, true) {
+                    theme::install(ui.ctx());
+                    return;
+                }
+                confirm(
+                    ui,
+                    &Ask {
+                        id: "ask",
+                        question: "Delete this issue?",
+                        title: "An issue",
+                        detail: "todo/an-issue.md",
+                        consequence: "The file is moved to the macOS Trash.",
+                        confirm: "Delete",
+                    },
+                );
+            },
+            false,
+        );
+        harness.run_steps(3);
+        let modal = harness
+            .ctx
+            .memory(|m| m.area_rect(egui::Id::new("ask")))
+            .expect("the modal is up");
+        let delete = harness.get_by_role_and_label(Role::Button, "Delete").rect();
+        let cancel = harness.get_by_role_and_label(Role::Button, "Cancel").rect();
+        assert_eq!(modal.max.y - delete.max.y, 21.0, "20pt and its 1pt edge");
+        assert_eq!(modal.max.y - cancel.max.y, 21.0);
     }
 
     /// Pills, chips, tags and the select report their role and what they

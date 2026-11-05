@@ -515,3 +515,36 @@ fn a_manual_issue_in_doing_is_never_retried() {
     app.retry_build(manual);
     assert!(app.session.build.is_none());
 }
+
+#[test]
+fn the_status_bar_names_the_issue_at_work_its_place_and_its_step() {
+    let (dir, mut app) = board("build-status", "sleep 30 # {prompt}");
+    assert_eq!(app.build_status(), None);
+    app.apply(vec![Intent::Build(ready(&app))]);
+    let name = file_name(&app.building_now()[0].0);
+    assert_eq!(
+        app.build_status().as_deref(),
+        Some(format!("Building {name} (1/2)").as_str())
+    );
+    app.report_step("Reading src/app.rs…");
+    assert_eq!(
+        app.build_status().as_deref(),
+        Some(format!("Building {name} (1/2) · Reading src/app.rs…").as_str())
+    );
+    stop_agents(&mut app, &dir, 1);
+    assert_eq!(app.build_status(), None);
+}
+
+#[test]
+fn doing_keeps_retry_at_no_agents_and_a_retry_brings_one_back() {
+    let (dir, mut app) = board("build-retry-none", "sleep 30 # {prompt}");
+    let ctx = themed_ctx();
+    app.apply(vec![Intent::Build(ready(&app))]);
+    let taken = app.building_now()[0].0.clone();
+    app.apply(vec![Intent::Agents(0), Intent::Select(taken.clone())]);
+    draw(&ctx, &mut app, vec![]);
+    click(&ctx, &mut app, egui::Id::new(("card_retry_build", &taken)));
+    assert_eq!(app.building_now()[0].0, taken);
+    assert_eq!(app.session.agents, 1);
+    stop_agents(&mut app, &dir, 2);
+}
