@@ -44,41 +44,51 @@ const NUMBERS: [Key; 9] = [
     Key::Num9,
 ];
 
-/// Who said a turn of a refinement.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum Speaker {
-    Challenger,
-    Author,
-}
-
-impl Speaker {
-    fn name(self) -> &'static str {
-        match self {
-            Speaker::Challenger => "Challenger",
-            Speaker::Author => "Author",
-        }
-    }
-}
-
-pub(super) struct Turn {
-    pub(super) by: Speaker,
-    /// The challenger's advice at a glance, above its turn.
-    pub(super) tldr: Option<String>,
-    pub(super) text: String,
-    /// The resolutions the challenger offers, each `title: detail`.
-    pub(super) options: Vec<String>,
-    /// The refined issue the challenger proposed with this turn.
-    pub(super) proposal: Option<String>,
+/// One turn of a refinement: the challenger's, or the author's answer.
+pub(super) enum Turn {
+    Challenger(agent::Challenge),
+    /// The full text of the choice picked, if any, and the author's own words.
+    Author {
+        choice: Option<String>,
+        note: String,
+    },
 }
 
 impl Turn {
-    /// The turn as the agent reads it again.
-    fn said(&self) -> String {
-        match &self.tldr {
-            Some(tldr) => format!("TLDR: {tldr}\n\n{}", self.text),
-            None => self.text.clone(),
+    fn speaker(&self) -> &'static str {
+        match self {
+            Turn::Challenger(_) => "Challenger",
+            Turn::Author { .. } => "Author",
         }
     }
+
+    /// The turn as the agent reads it again.
+    pub(super) fn said(&self) -> String {
+        match self {
+            Turn::Challenger(challenge) => match &challenge.tldr {
+                Some(tldr) => format!("TLDR: {tldr}\n\n{}", challenge.text),
+                None => challenge.text.clone(),
+            },
+            Turn::Author { choice, note } => match (choice, note.as_str()) {
+                (Some(choice), "") => choice.clone(),
+                (Some(choice), note) => format!("{choice}\n\n{note}"),
+                (None, note) => note.to_string(),
+            },
+        }
+    }
+
+    pub(super) fn challenge(&self) -> Option<&agent::Challenge> {
+        match self {
+            Turn::Challenger(challenge) => Some(challenge),
+            Turn::Author { .. } => None,
+        }
+    }
+}
+
+/// The challenger's next turn, until it is in.
+enum NextTurn {
+    Waiting(Job<Result<String, String>>),
+    Failed(String),
 }
 
 /// The refinement of one issue: what was said, and the turn on its way.
@@ -95,15 +105,14 @@ pub(super) struct Refinement {
     cursor: Option<usize>,
     /// On a narrow panel, the reasoning unfolded under the TL;DR.
     reasoning_open: bool,
-    running: Option<(Job<Result<String, String>>, agent::Progress)>,
-    error: Option<String>,
+    next: Option<NextTurn>,
     /// Tucked away to read the page; the conversation goes on behind.
     pub(super) hidden: bool,
 }
 
 impl Refinement {
     pub(super) fn is_running(&self) -> bool {
-        self.running.is_some()
+        matches!(self.next, Some(NextTurn::Waiting(_)))
     }
 
     /// The round on screen: one more than the answers sent, counting the
@@ -112,7 +121,7 @@ impl Refinement {
         let sent = self
             .turns
             .iter()
-            .filter(|turn| turn.by == Speaker::Author)
+            .filter(|turn| matches!(turn, Turn::Author { .. }))
             .count();
         if self.is_running() {
             sent.max(1)
@@ -123,8 +132,8 @@ impl Refinement {
 
     /// The resolutions the challenger's last turn offers, while it waits.
     pub(super) fn options(&self) -> &[String] {
-        match self.turns.last() {
-            Some(turn) if turn.by == Speaker::Challenger && !self.is_running() => &turn.options,
+        match self.turns.last().and_then(Turn::challenge) {
+            Some(challenge) if !self.is_running() => &challenge.options,
             _ => &[],
         }
     }
@@ -134,18 +143,14 @@ impl Refinement {
         self.turns
             .iter()
             .rev()
-            .find_map(|turn| turn.proposal.as_deref())
+            .find_map(|turn| turn.challenge()?.proposal.as_deref())
     }
 
     /// What Send hands the challenger: the choice's full text, then the note.
-    fn answer(&self) -> Option<String> {
-        let note = self.note.trim();
-        match (self.choice.and_then(|at| self.options().get(at)), note) {
-            (Some(choice), "") => Some(choice.clone()),
-            (Some(choice), note) => Some(format!("{choice}\n\n{note}")),
-            (None, "") => None,
-            (None, note) => Some(note.to_string()),
-        }
+    fn answer(&self) -> Option<Turn> {
+        let choice = self.choice.and_then(|at| self.options().get(at)).cloned();
+        let note = self.note.trim().to_string();
+        (choice.is_some() || !note.is_empty()).then_some(Turn::Author { choice, note })
     }
 
     /// Send's label, naming what goes out.
@@ -201,8 +206,7 @@ impl IboardApp {
             choice: None,
             cursor: None,
             reasoning_open: false,
-            running: None,
-            error: None,
+            next: None,
             hidden: false,
         });
         self.ask_challenger();
@@ -228,20 +232,20 @@ impl IboardApp {
         let said: Vec<(&str, String)> = refine
             .turns
             .iter()
-            .map(|turn| (turn.by.name(), turn.said()))
+            .map(|turn| (turn.speaker(), turn.said()))
             .collect();
         let conversation: Vec<prompts::Turn> =
             said.iter().map(|(by, text)| (*by, text.as_str())).collect();
         let prompt = prompts::refine_prompt(&content, &conversation, &notes);
-        refine.error = None;
         let project = Some(self.board.project_of(&path));
-        refine.running = Some(agent::start_review(
+        let (answer, _) = agent::start_review(
             &self.prefs.agent,
             &prompt,
             &path,
             project,
             ReviewMode::Quick,
-        ));
+        );
+        refine.next = Some(NextTurn::Waiting(answer));
     }
 
     /// Sends the picked choice and the note, once the challenger is done
@@ -256,13 +260,7 @@ impl IboardApp {
         refine.note.clear();
         refine.choice = None;
         refine.cursor = None;
-        refine.turns.push(Turn {
-            by: Speaker::Author,
-            tldr: None,
-            text: answer,
-            options: Vec::new(),
-            proposal: None,
-        });
+        refine.turns.push(answer);
         self.ask_challenger();
     }
 
@@ -271,27 +269,21 @@ impl IboardApp {
         let Some(refine) = self.session.refine.as_mut() else {
             return;
         };
-        let Some(result) = refine
-            .running
-            .as_ref()
-            .and_then(|(answer, _)| answer.answer())
-        else {
+        let Some(NextTurn::Waiting(answer)) = &refine.next else {
             return;
         };
-        refine.running = None;
+        let Some(result) = answer.answer() else {
+            return;
+        };
+        refine.next = None;
         match result {
             Ok(raw) => {
-                let challenge = agent::parse_refinement(&raw);
                 refine.reasoning_open = false;
-                refine.turns.push(Turn {
-                    by: Speaker::Challenger,
-                    tldr: challenge.tldr,
-                    text: challenge.text,
-                    options: challenge.options,
-                    proposal: challenge.proposal,
-                });
+                refine
+                    .turns
+                    .push(Turn::Challenger(agent::parse_refinement(&raw)));
             }
-            Err(error) => refine.error = Some(error),
+            Err(error) => refine.next = Some(NextTurn::Failed(error)),
         }
     }
 
@@ -302,22 +294,14 @@ impl IboardApp {
         let Some(refine) = self.session.refine.as_mut() else {
             return;
         };
-        refine.running = None;
-        if refine
+        refine.next = None;
+        if let Some(Turn::Author { choice, note }) = refine
             .turns
-            .last()
-            .is_some_and(|turn| turn.by == Speaker::Author)
-            && let Some(turn) = refine.turns.pop()
+            .pop_if(|turn| matches!(turn, Turn::Author { .. }))
         {
-            let chosen = refine
-                .options()
-                .iter()
-                .position(|option| turn.text.starts_with(option.as_str()));
-            refine.note = match chosen {
-                Some(at) => turn.text[refine.options()[at].len()..].trim().to_string(),
-                None => turn.text,
-            };
-            refine.choice = chosen;
+            refine.choice = choice
+                .and_then(|choice| refine.options().iter().position(|option| *option == choice));
+            refine.note = note;
         }
         if refine.turns.is_empty() {
             self.session.refine = None;
@@ -609,7 +593,8 @@ fn why_pane(
             .turns
             .iter()
             .enumerate()
-            .rfind(|(_, turn)| turn.by == Speaker::Challenger)
+            .rev()
+            .find_map(|(at, turn)| turn.challenge().map(|turn| (at, turn)))
         else {
             return;
         };
@@ -629,7 +614,7 @@ fn why_pane(
                     .color(p.review),
             );
         }
-        if let Some(error) = &refine.error {
+        if let Some(NextTurn::Failed(error)) = &refine.next {
             ui.label(RichText::new(error).color(p.danger));
         }
     });
@@ -639,28 +624,17 @@ fn why_pane(
 /// One receipt per answer already sent: "Round 1 · you chose **Split it**".
 fn rounds(ui: &mut egui::Ui, refine: &Refinement) {
     let p = theme::palette(ui);
-    let answers = refine
-        .turns
-        .iter()
-        .enumerate()
-        .filter(|(_, turn)| turn.by == Speaker::Author);
-    for (round, (at, turn)) in answers.enumerate() {
-        let offered = at
-            .checked_sub(1)
-            .map_or(&[][..], |before| &refine.turns[before].options);
+    let answers = refine.turns.iter().filter_map(|turn| match turn {
+        Turn::Author { choice, note } => Some((choice, note)),
+        Turn::Challenger(_) => None,
+    });
+    for (round, (choice, note)) in answers.enumerate() {
         let round = round + 1;
-        let (verb, said, note) = match offered
-            .iter()
-            .find(|option| turn.text.starts_with(option.as_str()))
-        {
-            Some(option) => (
-                "you chose",
-                agent::choice_parts(option).0.to_string(),
-                turn.text[option.len()..].trim(),
-            ),
+        let (verb, said, note) = match choice {
+            Some(choice) => ("you chose", agent::choice_parts(choice).0, note.as_str()),
             None => (
                 "you answered",
-                format!("“{}”", turn.text.lines().next().unwrap_or_default()),
+                format!("“{}”", note.lines().next().unwrap_or_default()),
                 "",
             ),
         };
@@ -762,8 +736,11 @@ fn pick_pane(
             ui.set_width(ui.available_width());
             ui.set_min_height((min_height - 40.0).max(0.0));
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            if let Some((answer, _)) = &refine.running {
-                let first = !refine.turns.iter().any(|turn| turn.by == Speaker::Author);
+            if let Some(NextTurn::Waiting(answer)) = &refine.next {
+                let first = !refine
+                    .turns
+                    .iter()
+                    .any(|turn| matches!(turn, Turn::Author { .. }));
                 thinking_pick(ui, answer.elapsed(), first);
                 return;
             }
@@ -1031,7 +1008,7 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
         Some("⌘↩"),
         RefineAction::Send,
     );
-    if refine.error.is_some() {
+    if matches!(refine.next, Some(NextTurn::Failed(_))) {
         button(
             ui,
             ButtonKind::Secondary,

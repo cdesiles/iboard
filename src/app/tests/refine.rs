@@ -41,7 +41,10 @@ fn a_conversation_ends_in_a_refined_issue() {
         turns(&app) == 1
     }));
     let refine = app.session.refine.as_mut().unwrap();
-    assert_eq!(refine.turns[0].text, "Who needs it?");
+    assert_eq!(
+        refine.turns[0].challenge().map(|turn| turn.text.as_str()),
+        Some("Who needs it?")
+    );
     assert!(refine.proposal().is_none());
     refine.note = "Touch users miss the buttons.".to_string();
 
@@ -74,27 +77,38 @@ fn a_conversation_ends_in_a_refined_issue() {
     );
 }
 
-/// Stopping a turn gives the author's answer back to edit; `esc` before
-/// the challenger's first word closes the refinement.
+/// Stopping a turn gives the author's answer back to edit, its choice
+/// picked again, and a note that starts like a choice stays a note; `esc`
+/// before the challenger's first word closes the refinement.
 #[test]
 fn stopping_a_turn_gives_the_answer_back() {
     let (_dir, file, mut app) = refining(
         "refine-stop",
-        "grep -q 'Author:' {prompt} && sleep 30; printf 'Why?'",
+        "grep -q 'Author:' {prompt} && sleep 30; \
+         printf 'Why?\\nOPTIONS:\\n- Ask them\\n- Drop it'",
     );
     app.start_refinement(&file);
     assert!(until(|| {
         app.poll_refinement();
         turns(&app) == 1
     }));
-    app.session.refine.as_mut().unwrap().note = "Because.".to_string();
-    app.send_reply();
-    assert!(app.session.refine.as_ref().unwrap().is_running());
-
-    app.stop_refinement();
-    let refine = app.session.refine.as_ref().unwrap();
-    assert!(!refine.is_running());
-    assert_eq!((refine.turns.len(), refine.note.as_str()), (1, "Because."));
+    let mut stopped = |choice, note: &str| {
+        let refine = app.session.refine.as_mut().unwrap();
+        refine.choice = choice;
+        refine.note = note.to_string();
+        app.send_reply();
+        assert!(app.session.refine.as_ref().unwrap().is_running());
+        app.stop_refinement();
+        let refine = app.session.refine.as_ref().unwrap();
+        assert!(!refine.is_running());
+        (refine.turns.len(), refine.choice, refine.note.clone())
+    };
+    assert_eq!(
+        stopped(Some(1), "Because."),
+        (1, Some(1), "Because.".into())
+    );
+    let note = "Drop it, nobody asked.";
+    assert_eq!(stopped(None, note), (1, None, note.into()));
 
     app.session.refine = None;
     app.start_refinement(&file);
@@ -220,7 +234,9 @@ fn a_choice_is_picked_then_sent_with_its_note() {
         app.poll_refinement();
         turns(&app) == 1
     }));
-    let turn = &app.session.refine.as_ref().unwrap().turns[0];
+    let turn = app.session.refine.as_ref().unwrap().turns[0]
+        .challenge()
+        .unwrap();
     assert_eq!(
         (turn.tldr.as_deref(), turn.text.as_str()),
         (Some("Keep it small."), "Who needs it?")
@@ -250,7 +266,7 @@ fn a_choice_is_picked_then_sent_with_its_note() {
     harness.run_steps(2);
     let refine = harness.state().1.session.refine.as_ref().unwrap();
     assert_eq!(
-        refine.turns[1].text,
+        refine.turns[1].said(),
         "Ask them first: talk to touch users.\n\nThis week."
     );
     let app = &mut harness.state_mut().1;
@@ -288,7 +304,7 @@ fn the_note_alone_is_an_answer_and_esc_hides() {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
     harness.run_steps(2);
     let refine = harness.state().1.session.refine.as_ref().unwrap();
-    assert_eq!(refine.turns[1].text, "Nobody.");
+    assert_eq!(refine.turns[1].said(), "Nobody.");
 
     let app = &mut harness.state_mut().1;
     assert!(until(|| {

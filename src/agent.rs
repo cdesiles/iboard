@@ -694,24 +694,22 @@ fn rejects_plan(error: &str) -> bool {
         || (error.contains("agent") && error.contains("not found"))
 }
 
-/// [`review`] on a background thread, with the [`Progress`] its steps land
-/// in. Dropping the job stops the agent.
+/// [`review`] on a background thread. Dropping the job stops the agent.
 pub fn start_plan_review(
     config: &AgentConfig,
     prompt: &str,
     issue: &Path,
     project: Option<&Path>,
     mode: ReviewMode,
-) -> (Job<Result<Reviewed, String>>, Progress) {
+) -> Job<Result<Reviewed, String>> {
     let (config, prompt) = (config.clone(), prompt.to_string());
     let subject = Subject::new(issue, project);
-    let progress = Progress::default();
-    let steps = Arc::clone(&progress);
-    let job = Job::spawn(move |cancel| review(&config, &prompt, &subject, cancel, mode, &steps));
-    (job, progress)
+    let steps = Progress::default();
+    Job::spawn(move |cancel| review(&config, &prompt, &subject, cancel, mode, &steps))
 }
 
-/// [`start_plan_review`] for its answer alone.
+/// [`start_plan_review`] for its answer alone, with the [`Progress`] its
+/// steps land in.
 pub fn start_review(
     config: &AgentConfig,
     prompt: &str,

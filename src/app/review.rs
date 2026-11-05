@@ -26,7 +26,7 @@ impl IboardApp {
             return;
         }
         let project = Some(self.board.project_of(&target.path));
-        let (answer, _) = agent::start_plan_review(
+        let answer = agent::start_plan_review(
             &self.prefs.agent,
             &prompt,
             &target.path,

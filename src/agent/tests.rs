@@ -305,7 +305,7 @@ fn tool(tool: Tool) -> AgentConfig {
 }
 
 fn reviewed(config: &AgentConfig, prompt: &str, mode: ReviewMode) -> Reviewed {
-    let (job, _) = start_plan_review(config, prompt, Path::new("a.md"), None, mode);
+    let job = start_plan_review(config, prompt, Path::new("a.md"), None, mode);
     job.wait().unwrap().unwrap()
 }
 
