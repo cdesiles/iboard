@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
+use egui::epaint::MarginF32;
 use egui::text::{CCursor, CCursorRange, LayoutJob};
 use egui::{
     Align, Color32, CornerRadius, Frame, Key, Layout, Margin, Pos2, Rect, RichText, Sense, Shape,
@@ -105,7 +106,7 @@ const RESCAN_EVERY: Duration = Duration::from_secs(2);
 pub const UNIFIED_TITLEBAR: bool = cfg!(target_os = "macos");
 
 /// Room the macOS traffic lights take at the left of the header bar.
-const TRAFFIC_LIGHTS_WIDTH: i8 = 80;
+const TRAFFIC_LIGHTS_WIDTH: f32 = 80.0;
 
 /// Directory done issues are archived into, under the issues root. It starts
 /// with a dot, so discovery never reads it back.
@@ -649,7 +650,7 @@ impl IboardApp {
     /// Draws the whole window: header bar, the current screen, status bar.
     fn draw(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette(ui);
-        let gutter = theme::SPACE_5 as i8;
+        let gutter = theme::SPACE_5;
         let header_left = if UNIFIED_TITLEBAR {
             TRAFFIC_LIGHTS_WIDTH
         } else {
@@ -658,11 +659,11 @@ impl IboardApp {
         egui::Panel::top("header")
             .exact_size(theme::BAR_H)
             .resizable(false)
-            .frame(Frame::new().fill(p.bg).inner_margin(Margin {
+            .frame(Frame::new().fill(p.bg).inner_margin(MarginF32 {
                 left: header_left,
                 right: gutter,
-                top: 0,
-                bottom: 0,
+                top: 0.0,
+                bottom: 0.0,
             }))
             .show(ui, |ui| self.header_bar(ui));
         egui::Panel::bottom("status")
@@ -671,7 +672,7 @@ impl IboardApp {
             .frame(
                 Frame::new()
                     .fill(p.bg)
-                    .inner_margin(Margin::symmetric(theme::SPACE_5 as i8, 0)),
+                    .inner_margin(Vec2::new(theme::SPACE_5, 0.0)),
             )
             .show(ui, |ui| self.status_bar(ui));
         egui::CentralPanel::default()

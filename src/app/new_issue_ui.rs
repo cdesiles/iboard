@@ -287,7 +287,7 @@ fn notes_pane(ui: &mut egui::Ui, composer: &mut Composer, height: f32) {
     };
     Frame::new()
         .fill(fill)
-        .inner_margin(Margin::same(theme::SPACE_5 as i8))
+        .inner_margin(theme::SPACE_5)
         .show(ui, |ui| {
             ui.set_min_size(Vec2::new(
                 ui.available_width(),
@@ -393,10 +393,7 @@ fn issue_pane(
                     .fill(p.surface)
                     .stroke(Stroke::new(1.0, p.line))
                     .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-                    .inner_margin(Margin::symmetric(
-                        theme::SPACE_7 as i8,
-                        theme::SPACE_6 as i8,
-                    ))
+                    .inner_margin(Vec2::new(theme::SPACE_7, theme::SPACE_6))
                     .show(ui, |ui| {
                         ui.set_width(page_w - 2.0 * theme::SPACE_7);
                         ui.with_layout(Layout::top_down(Align::Min), |ui| {
@@ -552,10 +549,7 @@ fn receipt(ui: &mut egui::Ui, composer: &Composer, actions: &mut Vec<ComposeActi
         Frame::new()
             .fill(fill)
             .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-            .inner_margin(Margin::symmetric(
-                theme::SPACE_3 as i8,
-                theme::SPACE_2 as i8,
-            ))
+            .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_2))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal_wrapped(|ui| {
@@ -909,7 +903,7 @@ fn foot(
 ) {
     let drafting = composer.drafting.is_some();
     Frame::new()
-        .inner_margin(Margin::symmetric(theme::SPACE_5 as i8, 0))
+        .inner_margin(Vec2::new(theme::SPACE_5, 0.0))
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
                 Vec2::new(ui.available_width(), FOOT_H),

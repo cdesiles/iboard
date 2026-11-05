@@ -309,29 +309,27 @@ impl IboardApp {
             ui.ctx().request_repaint_after(job::POLL_EVERY);
         }
         let p = theme::palette(ui);
-        Frame::new()
-            .inner_margin(Margin::same(theme::SPACE_4 as i8))
-            .show(ui, |ui| {
-                if let Some(error) = &view.error {
-                    ui.label(RichText::new(error).color(p.danger));
-                    return;
-                }
-                if view.load.is_some() {
-                    ui.label(RichText::new("Reading the diff…").color(p.ink_muted));
-                    return;
-                }
-                if view.find.is_some() {
-                    find_bar(ui, view);
-                    ui.add_space(theme::SPACE_3);
-                }
-                ui.horizontal_top(|ui| {
-                    file_list(ui, view);
-                    ui.separator();
-                    // A scroll area takes its parent's direction: the rows
-                    // need a vertical one.
-                    ui.vertical(|ui| diff_rows(ui, view));
-                });
+        Frame::new().inner_margin(theme::SPACE_4).show(ui, |ui| {
+            if let Some(error) = &view.error {
+                ui.label(RichText::new(error).color(p.danger));
+                return;
+            }
+            if view.load.is_some() {
+                ui.label(RichText::new("Reading the diff…").color(p.ink_muted));
+                return;
+            }
+            if view.find.is_some() {
+                find_bar(ui, view);
+                ui.add_space(theme::SPACE_3);
+            }
+            ui.horizontal_top(|ui| {
+                file_list(ui, view);
+                ui.separator();
+                // A scroll area takes its parent's direction: the rows
+                // need a vertical one.
+                ui.vertical(|ui| diff_rows(ui, view));
             });
+        });
     }
 }
 

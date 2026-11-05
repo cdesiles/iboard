@@ -368,10 +368,10 @@ pub(super) fn card_body(
     extras: CardExtras,
 ) -> CardBody {
     let p = theme::palette(ui);
-    let padding = Margin::symmetric(theme::SPACE_4 as i8, 10);
+    let padding = Vec2::new(theme::SPACE_4, 10.0);
     let border = 1.0;
     // The frame's border is drawn outside the padding, so take it off too.
-    let inner = width - f32::from(padding.left) - f32::from(padding.right) - 2.0 * border;
+    let inner = width - 2.0 * padding.x - 2.0 * border;
     let shown = Frame::new()
         .fill(if look == CardLook::Plain {
             p.surface

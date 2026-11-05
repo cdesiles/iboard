@@ -63,7 +63,7 @@ pub(super) fn agenda_ui(
         .fill(p.surface)
         .stroke(Stroke::new(1.0, p.line))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-        .inner_margin(Margin::same(theme::SPACE_5 as i8))
+        .inner_margin(theme::SPACE_5)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             let side = ui.available_width() >= SIDE_BY_SIDE;
@@ -174,9 +174,9 @@ fn main(ui: &mut egui::Ui, agenda: &mut Agenda, days: &BTreeMap<NaiveDate, Vec<D
         ui,
         egui::ScrollArea::horizontal()
             .id_salt("agenda-grid")
-            .content_margin(Margin {
-                bottom: theme::SCROLL_CLEAR as i8,
-                ..Margin::ZERO
+            .content_margin(MarginF32 {
+                bottom: theme::SCROLL_CLEAR,
+                ..MarginF32::ZERO
             })
             .stick_to_right(true),
         true,

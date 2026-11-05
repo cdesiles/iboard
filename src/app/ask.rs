@@ -169,7 +169,7 @@ impl IboardApp {
         let width = theme::modal_size(theme::ModalSize::M, ui.ctx().content_rect()).x;
         let pad = 20.0;
         let (mut send, mut cancel) = (false, false);
-        let frame = widgets::modal_frame(ui).inner_margin(Margin::same(pad as i8));
+        let frame = widgets::modal_frame(ui).inner_margin(pad);
         let modal = widgets::modal(ui, "ask-ai", theme::ModalSize::M)
             .frame(frame)
             .show(ui.ctx(), |ui| {

@@ -382,7 +382,7 @@ fn block<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
         .fill(p.surface)
         .stroke(Stroke::new(1.0, p.line))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-        .inner_margin(Margin::symmetric(14, theme::SPACE_4 as i8))
+        .inner_margin(Vec2::new(14.0, theme::SPACE_4))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = theme::SPACE_2 + 2.0;
@@ -465,24 +465,19 @@ fn stats_footer(ui: &mut egui::Ui, stats: Option<&Stats>) {
         .and_then(|s| s.cache.as_ref())
         .map(|file| format!(" Kept in {}.", display_path(file)))
         .unwrap_or_default();
-    Frame::new()
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_5 as i8,
-            theme::SPACE_3 as i8,
-        ))
-        .show(ui, |ui| {
-            ui.add(
-                egui::Label::new(
-                    RichText::new(format!(
-                        "Read from the source at each commit: complexity is McCabe's, \
-                         estimated; test share is test lines over code lines, not run \
-                         coverage; cycle time runs from an issue's first build run or \
-                         commit to the commit that closes it.{kept}"
-                    ))
-                    .font(theme::meta())
-                    .color(p.ink_muted),
-                )
-                .wrap(),
-            );
-        });
+    Frame::new().inner_margin(theme::BAND_PAD).show(ui, |ui| {
+        ui.add(
+            egui::Label::new(
+                RichText::new(format!(
+                    "Read from the source at each commit: complexity is McCabe's, \
+                     estimated; test share is test lines over code lines, not run \
+                     coverage; cycle time runs from an issue's first build run or \
+                     commit to the commit that closes it.{kept}"
+                ))
+                .font(theme::meta())
+                .color(p.ink_muted),
+            )
+            .wrap(),
+        );
+    });
 }

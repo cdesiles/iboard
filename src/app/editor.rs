@@ -365,7 +365,7 @@ fn editor_bar(ui: &mut egui::Ui, editor: &mut EditorState, folder: &str) {
                 .text_color(p.ink)
                 .hint_text("issue.md")
                 .char_limit(files::MAX_FILE_NAME_BYTES)
-                .margin(Margin::symmetric(theme::SPACE_2 as i8, 4))
+                .margin(Vec2::new(theme::SPACE_2, 4.0))
                 .desired_width(240.0),
         );
         if response.changed() {

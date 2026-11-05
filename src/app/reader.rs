@@ -69,12 +69,7 @@ impl IboardApp {
             let panel = egui::Panel::right("review")
                 .exact_size(width)
                 .resizable(false)
-                .frame(Frame::new().fill(p.bg).inner_margin(Margin {
-                    left: gutter as i8,
-                    right: gutter as i8,
-                    top: gutter as i8,
-                    bottom: gutter as i8,
-                }))
+                .frame(Frame::new().fill(p.bg).inner_margin(gutter))
                 .show(ui, |ui| {
                     if reviewed {
                         self.review_panel(ui);
@@ -680,10 +675,7 @@ pub(super) fn page<R>(
             .fill(p.surface)
             .stroke(Stroke::new(1.0, p.line))
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-            .inner_margin(Margin::symmetric(
-                theme::SPACE_7 as i8,
-                theme::SPACE_6 as i8,
-            ))
+            .inner_margin(Vec2::new(theme::SPACE_7, theme::SPACE_6))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 add_contents(ui)

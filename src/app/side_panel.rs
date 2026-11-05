@@ -50,38 +50,33 @@ pub(super) fn head_frame(ui: &egui::Ui) -> Frame {
 /// `detail` (the agent, mode and source).
 fn head(ui: &mut egui::Ui, title: &str, detail: &str) {
     let p = theme::palette(ui);
-    head_frame(ui)
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_4 as i8,
-            theme::SPACE_3 as i8,
-        ))
-        .show(ui, |ui| {
-            // Detail first, so a long title truncates into the
-            // space left instead of widening the panel (which
-            // flickers while the spinner repaints). The row has a
-            // fixed height: a bare right-to-left layout would
-            // stretch to fill the whole panel.
-            ui.allocate_ui_with_layout(
-                Vec2::new(ui.available_width(), theme::CONTROL_H),
-                Layout::right_to_left(Align::Center),
-                |ui| {
-                    let room = ui.available_width();
-                    ui.scope(|ui| {
-                        ui.set_max_width(room * DETAIL_SHARE);
-                        let detail = RichText::new(detail).font(theme::meta()).color(p.review);
-                        ui.add(egui::Label::new(detail).truncate());
-                    });
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(title)
-                                    .font(theme::ui_strong())
-                                    .color(p.review),
-                            )
-                            .truncate(),
-                        );
-                    });
-                },
-            );
-        });
+    head_frame(ui).inner_margin(theme::ROW_PAD).show(ui, |ui| {
+        // Detail first, so a long title truncates into the
+        // space left instead of widening the panel (which
+        // flickers while the spinner repaints). The row has a
+        // fixed height: a bare right-to-left layout would
+        // stretch to fill the whole panel.
+        ui.allocate_ui_with_layout(
+            Vec2::new(ui.available_width(), theme::CONTROL_H),
+            Layout::right_to_left(Align::Center),
+            |ui| {
+                let room = ui.available_width();
+                ui.scope(|ui| {
+                    ui.set_max_width(room * DETAIL_SHARE);
+                    let detail = RichText::new(detail).font(theme::meta()).color(p.review);
+                    ui.add(egui::Label::new(detail).truncate());
+                });
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(title)
+                                .font(theme::ui_strong())
+                                .color(p.review),
+                        )
+                        .truncate(),
+                    );
+                });
+            },
+        );
+    });
 }

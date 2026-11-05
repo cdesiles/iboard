@@ -15,14 +15,12 @@ const NEW_CARD_FLASH: Duration = Duration::from_secs(2);
 impl IboardApp {
     pub(super) fn board_ui(&mut self, ui: &mut egui::Ui) {
         if self.board.columns.is_empty() {
-            Frame::new()
-                .inner_margin(Margin::same(theme::SPACE_5 as i8))
-                .show(ui, |ui| {
-                    ui.label(
-                        RichText::new("No columns found in this board.")
-                            .color(theme::palette(ui).ink_faint),
-                    );
-                });
+            Frame::new().inner_margin(theme::SPACE_5).show(ui, |ui| {
+                ui.label(
+                    RichText::new("No columns found in this board.")
+                        .color(theme::palette(ui).ink_faint),
+                );
+            });
             return;
         }
 
@@ -208,9 +206,9 @@ pub(super) fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
                     ui,
                     egui::ScrollArea::vertical()
                         .id_salt(("column", view.index))
-                        .content_margin(Margin {
-                            right: THUMB_LANE as i8,
-                            ..Margin::ZERO
+                        .content_margin(MarginF32 {
+                            right: THUMB_LANE,
+                            ..MarginF32::ZERO
                         })
                         .auto_shrink([false, false]),
                     true,
@@ -564,7 +562,7 @@ pub(super) fn empty_well(ui: &mut egui::Ui, message: &str, width: f32) {
     let response = Frame::new()
         .fill(p.surface_sunken)
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-        .inner_margin(Margin::same(theme::SPACE_4 as i8))
+        .inner_margin(theme::SPACE_4)
         .show(ui, |ui| {
             ui.set_width(width - 2.0 * theme::SPACE_4);
             ui.vertical_centered(|ui| {

@@ -401,7 +401,7 @@ fn resume_pill(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction> {
         .order(egui::Order::Foreground)
         .show(ui.ctx(), |ui| {
             widgets::popover_frame(ui)
-                .inner_margin(Margin::same(theme::SPACE_2 as i8))
+                .inner_margin(theme::SPACE_2)
                 .show(ui, |ui| {
                     resume = widgets::button(ui, ButtonKind::Review, None, label, None).clicked();
                 });
@@ -504,7 +504,7 @@ fn refine_ui(
 fn refine_head(ui: &mut egui::Ui, shown: &str, agent: &str, round: usize) {
     let p = theme::palette(ui);
     side_panel::head_frame(ui)
-        .inner_margin(Margin::symmetric(theme::SPACE_5 as i8, 6))
+        .inner_margin(Vec2::new(theme::SPACE_5, 6.0))
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
                 Vec2::new(ui.available_width(), theme::CONTROL_H),
@@ -568,9 +568,9 @@ fn why_pane(
     let p = theme::palette(ui);
     let mut unfold = false;
     let margin = if narrow {
-        Margin::symmetric(20, 16)
+        Vec2::new(20.0, 16.0)
     } else {
-        Margin::symmetric(theme::SPACE_6 as i8, 20)
+        Vec2::new(theme::SPACE_6, 20.0)
     };
     Frame::new().inner_margin(margin).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -722,7 +722,7 @@ fn pick_pane(
     let p = theme::palette(ui);
     Frame::new()
         .fill(p.bg)
-        .inner_margin(Margin::symmetric(theme::SPACE_5 as i8, 20))
+        .inner_margin(Vec2::new(theme::SPACE_5, 20.0))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.set_min_height((min_height - 40.0).max(0.0));

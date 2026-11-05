@@ -16,7 +16,7 @@ pub(super) fn watch(ui: &mut egui::Ui, stats: &Stats, limits: &Limits) -> Option
         Frame::new()
             .fill(p.surface_sunken)
             .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-            .inner_margin(Margin::same(theme::SPACE_3 as i8))
+            .inner_margin(theme::SPACE_3)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 if !stats::refactor_due(&signals) {

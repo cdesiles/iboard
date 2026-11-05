@@ -331,32 +331,30 @@ impl IboardApp {
 
         let action = side_panel(ui, &title, &detail, |ui| {
             let mut action = None;
-            Frame::new()
-                .inner_margin(Margin::same(theme::SPACE_4 as i8))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    if plan {
-                        ui.label(
-                            RichText::new(PLAN_NOTE)
-                                .font(theme::meta())
-                                .color(p.ink_muted),
-                        );
-                        ui.add_space(theme::SPACE_2);
-                    }
-                    action = review_body(ui, &mut review);
-                    if matches!(review.split, None | Some(Split::Failed(_))) {
-                        ui.add_space(theme::SPACE_2);
-                        widgets::text_entry(
-                            ui,
-                            egui::TextEdit::singleline(&mut review.follow_up)
-                                .hint_text(
-                                    RichText::new("Ask again: make it smaller…").color(p.ink_faint),
-                                )
-                                .font(theme::ui_body())
-                                .desired_width(f32::INFINITY),
-                        );
-                    }
-                });
+            Frame::new().inner_margin(theme::SPACE_4).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                if plan {
+                    ui.label(
+                        RichText::new(PLAN_NOTE)
+                            .font(theme::meta())
+                            .color(p.ink_muted),
+                    );
+                    ui.add_space(theme::SPACE_2);
+                }
+                action = review_body(ui, &mut review);
+                if matches!(review.split, None | Some(Split::Failed(_))) {
+                    ui.add_space(theme::SPACE_2);
+                    widgets::text_entry(
+                        ui,
+                        egui::TextEdit::singleline(&mut review.follow_up)
+                            .hint_text(
+                                RichText::new("Ask again: make it smaller…").color(p.ink_faint),
+                            )
+                            .font(theme::ui_body())
+                            .desired_width(f32::INFINITY),
+                    );
+                }
+            });
             review_footer(ui, &review).or(action)
         });
 

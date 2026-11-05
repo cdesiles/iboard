@@ -68,11 +68,11 @@ impl IboardApp {
         let (width, pad) = (360.0, 20.0);
         let mut confirmed = false;
         let mut cancelled = false;
-        let frame = widgets::modal_frame(ui).inner_margin(Margin {
-            left: pad as i8,
-            right: pad as i8,
-            top: pad as i8,
-            bottom: theme::SPACE_5 as i8,
+        let frame = widgets::modal_frame(ui).inner_margin(MarginF32 {
+            left: pad,
+            right: pad,
+            top: pad,
+            bottom: theme::SPACE_5,
         });
         let modal = egui::Modal::new(egui::Id::new("confirm-quit"))
             .frame(frame)
@@ -127,11 +127,11 @@ impl IboardApp {
         let pad = 20.0;
         let mut close = false;
         let mut picked = None;
-        let frame = widgets::modal_frame(ui).inner_margin(Margin {
-            left: pad as i8,
-            right: pad as i8,
-            top: pad as i8,
-            bottom: theme::SPACE_5 as i8,
+        let frame = widgets::modal_frame(ui).inner_margin(MarginF32 {
+            left: pad,
+            right: pad,
+            top: pad,
+            bottom: theme::SPACE_5,
         });
         let modal = egui::Modal::new(egui::Id::new("commits"))
             .frame(frame)

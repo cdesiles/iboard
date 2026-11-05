@@ -253,10 +253,7 @@ fn note_card(ui: &mut egui::Ui, comment: &Comment) -> Option<NoteAction> {
     Frame::new()
         .fill(p.review_soft)
         .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_4 as i8,
-            theme::SPACE_3 as i8,
-        ))
+        .inner_margin(theme::ROW_PAD)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(
@@ -289,7 +286,7 @@ fn note_composer(ui: &mut egui::Ui, draft: &mut NoteDraft) -> Option<NoteAction>
         .fill(p.surface)
         .stroke(Stroke::new(1.0, p.review))
         .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-        .inner_margin(Margin::same(theme::SPACE_3 as i8))
+        .inner_margin(theme::SPACE_3)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             let field = widgets::text_entry(
