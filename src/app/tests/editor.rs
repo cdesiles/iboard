@@ -1,4 +1,5 @@
-//! The editor's tests: renaming through the title, leaving, conflicts, saving.
+//! The editor's tests: renaming through the title, leaving, conflicts, saving,
+//! and adding a section from the reader.
 
 use super::*;
 
@@ -234,4 +235,61 @@ fn command_s_saves_the_editor() {
         Some(file.as_path()),
         "like the Save ⌘S button, it shows the saved issue"
     );
+}
+
+#[test]
+fn dirty_tracks_baseline() {
+    let mut editor = EditorState::new(PathBuf::from("t.md"), "hello".to_string());
+    assert!(!editor.is_dirty());
+    editor.text.push_str(" world");
+    assert!(editor.is_dirty());
+    editor.text = "hello".to_string();
+    assert!(!editor.is_dirty());
+}
+
+/// The reader sheet draws ghost blocks for a bare issue and chips for a
+/// partly written one; adding a section opens the editor with the heading
+/// appended, unsaved, and leaves the file alone.
+#[test]
+fn reader_sheet_offers_missing_sections() {
+    let dir = scratch_dir("sheet");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let bare = todo.join("bare.md");
+    let partial = todo.join("partial.md");
+    std::fs::write(&bare, "# Bare\n\nJust an idea.\n").unwrap();
+    std::fs::write(
+        &partial,
+        "# Partial\n\n## Context\n\nWhy.\n\n- [x] a\n- [ ] b\n",
+    )
+    .unwrap();
+
+    let located = discovery::locate(&dir).unwrap();
+    let mut app = IboardApp::from_located(located);
+    let ctx = themed_ctx();
+
+    app.open_issue(bare.clone());
+    draw(&ctx, &mut app, vec![]); // ghost blocks
+    app.open_issue(partial.clone());
+    draw(&ctx, &mut app, vec![]); // "Add a section" chips and checklist progress
+
+    app.add_section(&partial, "Acceptance criteria");
+    assert_eq!(app.session.editing(), Some(partial.as_path()));
+    assert!(
+        app.session.focus_editor,
+        "the caret goes under the new heading"
+    );
+    let editor = app.session.editor.as_ref().unwrap();
+    assert!(
+        editor
+            .text
+            .ends_with("- [ ] b\n\n## Acceptance criteria\n\n- [ ] ")
+    );
+    assert!(editor.is_dirty());
+    assert!(
+        !std::fs::read_to_string(&partial)
+            .unwrap()
+            .contains("Acceptance")
+    );
+    draw(&ctx, &mut app, vec![]);
 }

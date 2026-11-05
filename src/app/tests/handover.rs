@@ -1,5 +1,5 @@
-//! A later `iboard` hands the open window its board: the window shows it,
-//! after the editor's edits, and comes forward.
+//! Opening another project, or a later `iboard` handing the open window its
+//! board: the window shows it, after the editor's edits, and comes forward.
 
 use std::sync::mpsc::{Sender, channel};
 
@@ -89,4 +89,58 @@ fn from_the_editor_the_handover_waits_for_the_edits() {
     app.answer_leave(LeaveChoice::Save);
     assert!(shows(&app, &beta), "saved, then on to beta");
     assert_eq!(std::fs::read_to_string(&a).unwrap(), "# Alpha\n\nmore\n");
+}
+
+#[test]
+fn opening_another_project_rebuilds_the_board_and_remembers_it() {
+    let alpha = scratch_dir("switch-alpha");
+    let beta = scratch_dir("switch-beta");
+    std::fs::create_dir_all(alpha.join("issues/todo")).unwrap();
+    std::fs::write(alpha.join("issues/todo/a.md"), "# Alpha\n").unwrap();
+    std::fs::create_dir_all(beta.join("issues/ready")).unwrap();
+    std::fs::write(beta.join("issues/ready/b.md"), "# Beta\n").unwrap();
+
+    let located = discovery::locate(&alpha).unwrap();
+    let mut app = IboardApp::from_located(located);
+    // What belongs to alpha must not follow the switch.
+    let a = alpha.join("issues/todo/a.md");
+    app.session.undo = Some(Undo::Deleted(vec![Deleted {
+        path: a.clone(),
+        trashed: None,
+        content: Vec::new(),
+        images: None,
+        at: Instant::now(),
+    }]));
+    app.session.notice = Some(("Archived a.md".to_string(), Instant::now()));
+    app.session.pending_front = Some((alpha.join("issues/todo"), a.clone()));
+    app.session.design_error = Some("alpha has no design".to_string());
+
+    app.open_project(beta.to_path_buf());
+
+    assert!(
+        app.session.undo.is_none(),
+        "⌘Z cannot restore into the old project"
+    );
+    assert!(app.session.notice.is_none() && app.session.pending_front.is_none());
+    assert!(app.session.design_error.is_none() && app.session.design_system.is_none());
+    assert!(app.error.is_none());
+    assert_eq!(
+        recents::canonical(&app.board.root),
+        recents::canonical(&beta.join("issues")),
+        "the board now belongs to the target project"
+    );
+    assert!(matches!(app.session.screen, Screen::Board));
+    assert_eq!(app.recents, vec![recents::canonical(&beta)]);
+    assert_eq!(
+        app.pending_title.as_deref(),
+        beta.file_name().and_then(|name| name.to_str()),
+        "the window takes the new project's name"
+    );
+
+    // A folder with no issues directory reports an error and changes nothing.
+    let empty = scratch_dir("switch-empty");
+    let before = app.board.root.clone();
+    app.open_project(empty.to_path_buf());
+    assert!(app.error.is_some());
+    assert_eq!(app.board.root, before);
 }

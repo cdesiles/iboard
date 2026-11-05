@@ -825,3 +825,31 @@ fn an_ask_follows_its_issue_through_a_renumber() {
         "its answer opens the agent log beside it"
     );
 }
+
+/// The panel and the settings window go through a real egui pass, so a
+/// panic or a layout mistake surfaces without a display.
+#[test]
+fn the_review_panel_and_config_window_render() {
+    let (_dir, _file, mut app) = open_issue_with_review("review-render");
+    let ctx = themed_ctx();
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1280.0, 800.0),
+        )),
+        ..Default::default()
+    };
+
+    for _ in 0..2 {
+        ctx.run_ui(input.clone(), |ui| app.draw(ui))
+            .textures_delta
+            .clear();
+    }
+
+    app.open_config();
+    for _ in 0..2 {
+        ctx.run_ui(input.clone(), |ui| app.draw(ui))
+            .textures_delta
+            .clear();
+    }
+}

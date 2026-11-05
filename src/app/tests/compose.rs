@@ -1,5 +1,5 @@
-//! NewIssueModal's tests: typing, naming, drafting, parking, adding, and the
-//! ticket just written.
+//! NewIssueModal's tests: opening it from Todo, typing, naming, drafting,
+//! parking, adding, and the ticket just written.
 
 use super::*;
 use crate::app::compose::{ComposerField, TitleStage};
@@ -435,4 +435,57 @@ fn a_click_on_the_new_ticket_right_after_adding_it_lands() {
         "the click opens its LabelPicker"
     );
     assert_eq!(app.session.selected.as_deref(), Some(fresh.as_path()));
+}
+
+/// Todo's `+` is a column action, shown on hover.
+#[test]
+fn todo_offers_new_issue_on_hover() {
+    let dir = scratch_dir("plus-head");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let index = app
+        .board
+        .columns
+        .iter()
+        .position(|c| c.accepts_new_issues())
+        .unwrap();
+    let plus = egui::Id::new(("new_issue", index));
+
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    assert!(ctx.read_response(plus).is_none(), "hidden at rest");
+    let column = ctx
+        .read_response(egui::Id::new(("column_drop", index)))
+        .unwrap()
+        .rect;
+    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
+    draw(&ctx, &mut app, vec![moved(head)]);
+    let at = ctx.read_response(plus).expect("shown on hover").rect;
+    let at = at.center();
+    draw(&ctx, &mut app, vec![moved(at)]);
+    draw(&ctx, &mut app, vec![button(at, true)]);
+    draw(&ctx, &mut app, vec![button(at, false)]);
+    assert!(app.session.composer.is_some(), "+ opens the composer");
+}
+
+#[test]
+fn only_the_todo_column_offers_new_issues() {
+    let dir = scratch_dir("new-columns");
+    let todo = dir.join("issues/todo");
+    let doing = dir.join("issues/doing");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::create_dir_all(&doing).unwrap();
+
+    let located = discovery::locate(&dir).unwrap();
+    let board = discovery::build(&located).unwrap();
+
+    let find = |name: &str| {
+        board
+            .columns
+            .iter()
+            .find(|column| column.name == name)
+            .unwrap()
+    };
+    assert!(find("Todo").accepts_new_issues());
+    assert!(!find("Doing").accepts_new_issues());
 }

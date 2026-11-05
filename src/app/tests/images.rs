@@ -324,3 +324,42 @@ fn a_missing_image_shows_a_placeholder_and_says_so() {
         "a `image missing: 01.png` b"
     );
 }
+
+#[test]
+fn image_links_resolve_against_the_issue_folder() {
+    let issue = Path::new("/p/issues/todo/01-demo.md");
+    assert_eq!(image_base_uri(issue), "file:///p/issues/todo/");
+}
+
+#[test]
+fn a_ticket_can_show_an_image_from_its_asset_folder() {
+    let dir = scratch_dir("image");
+    let todo = dir.join("issues/todo");
+    let assets = todo.join("assets/01-demo");
+    std::fs::create_dir_all(&assets).unwrap();
+    let png = assets.join("ui.png");
+    image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 40, 40, 255]))
+        .save(&png)
+        .unwrap();
+    let file = todo.join("01-demo.md");
+    std::fs::write(&file, "# Demo\n\n![mockup](assets/01-demo/ui.png)\n").unwrap();
+
+    // The reader renders the markdown's image link without a display.
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_issue(file.clone());
+    let (ctx, raw) = panel_ctx();
+    let mut output = ctx.run_ui(raw, |ui| app.draw(ui));
+    output.textures_delta.clear();
+
+    // And the loader resolves and decodes it.
+    let uri = format!("file://{}", png.display());
+    let decoded = || match ctx.try_load_image(&uri, egui::load::SizeHint::default()) {
+        Ok(egui::load::ImagePoll::Ready { .. }) => true,
+        Ok(egui::load::ImagePoll::Pending { .. }) => false,
+        Err(err) => panic!("decode failed: {err:?}"),
+    };
+    assert!(
+        until(decoded),
+        "the ticket's image decodes through the file loader"
+    );
+}

@@ -1,7 +1,8 @@
-//! The multi-selection: shift-clicks, its clear button, and actions and drags
-//! that carry every picked card.
+//! The selection: a click, the arrows, shift-clicks, its clear button, and
+//! actions and drags that carry every picked card.
 
 use super::*;
+use crate::app::nav::step_selection;
 
 /// A board with `todo/a.md`, `todo/b.md`, `todo/c.md` and an empty `doing/`.
 fn board(tag: &str) -> (Scratch, IboardApp, [PathBuf; 3]) {
@@ -206,4 +207,117 @@ fn a_label_added_on_a_picked_card_goes_on_the_selection() {
         let issue = app.board.find(path).unwrap();
         assert_eq!(issue.labels.contains(&"ux".to_string()), labelled);
     }
+}
+
+/// A press and release without movement is still a click, not a drag.
+#[test]
+fn a_click_selects_a_card_and_expand_opens_it() {
+    let dir = scratch_dir("click");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("01-demo.md");
+    std::fs::write(&file, "# Demo\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let ctx = themed_ctx();
+    let click = |app: &mut IboardApp, at: egui::Pos2| {
+        draw(&ctx, app, vec![moved(at)]);
+        draw(&ctx, app, vec![moved(at), button(at, true)]);
+        draw(&ctx, app, vec![button(at, false)]);
+    };
+
+    draw(&ctx, &mut app, vec![]);
+    let card = ctx
+        .read_response(egui::Id::new(("issue_card", &file)))
+        .unwrap()
+        .rect;
+    click(&mut app, card.center());
+    assert!(matches!(app.session.screen, Screen::Board), "nothing opens");
+    assert_eq!(app.session.selected.as_deref(), Some(file.as_path()));
+
+    let expand = ctx
+        .read_response(egui::Id::new(("card_expand", &file)))
+        .expect("the hovered card offers Expand")
+        .rect;
+    assert!(
+        expand.right() <= card.right() && (expand.top() - card.top()).abs() < 10.0,
+        "Expand sits in the top right corner"
+    );
+    click(&mut app, expand.center());
+    assert!(
+        matches!(app.session.screen, Screen::Detail(path, _) if path == file),
+        "Expand opens the issue"
+    );
+}
+
+fn grid(columns: &[&[&str]]) -> Vec<Vec<PathBuf>> {
+    columns
+        .iter()
+        .map(|paths| paths.iter().map(PathBuf::from).collect())
+        .collect()
+}
+
+#[test]
+fn arrows_step_through_cards_and_skip_empty_columns() {
+    let board = grid(&[&["a1", "a2", "a3"], &[], &["c1"]]);
+    let step = |at, key| step_selection(&board, at, key);
+
+    assert_eq!(step(None, Key::ArrowRight), Some((0, 0)), "first card");
+    assert_eq!(step(Some((0, 0)), Key::ArrowDown), Some((0, 1)));
+    assert_eq!(
+        step(Some((0, 2)), Key::ArrowDown),
+        Some((0, 2)),
+        "stops at the end"
+    );
+    assert_eq!(
+        step(Some((0, 0)), Key::ArrowUp),
+        Some((0, 0)),
+        "stops at the top"
+    );
+    assert_eq!(
+        step(Some((0, 2)), Key::ArrowRight),
+        Some((2, 0)),
+        "skips the empty column and clamps the row"
+    );
+    assert_eq!(step(Some((2, 0)), Key::ArrowLeft), Some((0, 0)));
+    assert_eq!(
+        step(Some((2, 0)), Key::ArrowRight),
+        Some((2, 0)),
+        "last column"
+    );
+    assert_eq!(
+        step_selection(&grid(&[&[], &[]]), None, Key::ArrowDown),
+        None
+    );
+}
+
+#[test]
+fn selection_follows_the_filter_and_survives_opening() {
+    let dir = scratch_dir("select");
+    let todo = dir.join("issues/todo");
+    let doing = dir.join("issues/doing");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::create_dir_all(&doing).unwrap();
+    std::fs::write(todo.join("01-alpha.md"), "# Alpha\n").unwrap();
+    std::fs::write(todo.join("02-beta.md"), "# Beta\n").unwrap();
+    std::fs::write(doing.join("01-gamma.md"), "# Gamma\n").unwrap();
+
+    let located = discovery::locate(&dir).unwrap();
+    let mut app = IboardApp::from_located(located);
+
+    app.move_selection(Key::ArrowDown);
+    assert_eq!(app.session.selected, Some(todo.join("01-alpha.md")));
+    app.move_selection(Key::ArrowDown);
+    app.move_selection(Key::ArrowRight);
+    assert_eq!(app.session.selected, Some(doing.join("01-gamma.md")));
+
+    // Filtered out cards are skipped.
+    app.filter_bar.filter.text = "beta".to_string();
+    app.session.selected = None;
+    app.move_selection(Key::ArrowDown);
+    assert_eq!(app.session.selected, Some(todo.join("02-beta.md")));
+
+    // Back from the reader, the card is still selected.
+    app.open_issue(todo.join("02-beta.md"));
+    app.back_to_board();
+    assert_eq!(app.session.selected, Some(todo.join("02-beta.md")));
 }
