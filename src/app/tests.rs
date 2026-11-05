@@ -14,6 +14,7 @@ mod enrich;
 mod groups;
 mod handover;
 mod images;
+mod kit;
 mod project_menu;
 mod refine;
 mod review;
@@ -21,6 +22,7 @@ mod select;
 mod settings;
 mod stats;
 mod workspace;
+use kit::{Kit, kittest, kittest_with, press, press_nth};
 use review::open_issue_with_review;
 
 /// A context with the design system installed, past the first frame so
@@ -407,20 +409,7 @@ fn a_long_error_can_still_be_dismissed() {
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.error = Some("direnv: error /a/very/long/path/.envrc is blocked. ".repeat(12));
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
     let dismiss = harness.get_by_label("Dismiss").rect();
     assert!(dismiss.max.x <= window().width(), "{dismiss:?}");
     harness.get_by_label("Dismiss").click();
@@ -438,20 +427,7 @@ fn a_missing_issues_directory_is_a_banner_that_creates_it() {
     let empty = scratch_dir("banner-empty");
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_project(empty.to_path_buf());
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
     let create = harness.get_by_label("Create issues/").rect();
     assert!(create.max.y < theme::BAR_H + 60.0, "{create:?}");
     harness.get_by_label("Create issues/").click();

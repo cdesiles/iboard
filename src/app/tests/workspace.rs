@@ -148,20 +148,7 @@ fn play_builds_each_card_in_its_own_project() {
 fn the_header_names_the_group_instead_of_a_path() {
     use egui_kittest::kittest::Queryable;
     let (_scratch, _app_dir, _site_dir, app) = two_projects("all-header");
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let harness = kittest(app);
     harness.get_by_label("Clients");
     harness.get_by_label("group · 2 projects");
     assert!(harness.query_by_label("Stats").is_none(), "no Stats button");

@@ -93,20 +93,7 @@ fn done_issues_offer_no_draft_design() {
 
     let offers_draft = |mut app: IboardApp, path: &Path| {
         app.open_issue(path.to_path_buf());
-        let mut harness = egui_kittest::Harness::builder()
-            .with_size(window().size())
-            .build_ui_state(
-                |ui, (themed, app): &mut (bool, IboardApp)| {
-                    if !*themed {
-                        theme::install(ui.ctx());
-                        *themed = true;
-                        return;
-                    }
-                    app.draw(ui);
-                },
-                (false, app),
-            );
-        harness.run_steps(2);
+        let harness = kittest(app);
         let offered = harness.query_by_label("Draft design").is_some();
         (offered, harness.into_state().1)
     };

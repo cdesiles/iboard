@@ -39,20 +39,7 @@ fn the_stats_panel_measures_the_history_and_walks_the_agenda() {
     let (_dir, located) = project("stats");
     let mut app = IboardApp::from_located(located);
     app.open_stats();
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
+    let mut harness = kittest(app);
     assert!(until(|| {
         harness.run_steps(1);
         !harness
@@ -105,21 +92,8 @@ fn the_measured_stats_screen_stops_repainting() {
     let (_dir, located) = project("stats-idle");
     let mut app = IboardApp::from_located(located);
     app.open_stats();
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    theme::set_reduced_motion(ui.ctx(), false);
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
+    let mut harness = kittest(app);
+    theme::set_reduced_motion(&harness.ctx, false);
     assert!(until(|| {
         harness.run_steps(1);
         !harness
@@ -159,21 +133,7 @@ fn the_stats_panel_explains_a_project_without_history() {
 fn the_stats_button_opens_the_panel() {
     let (_dir, located) = project("stats-button");
     let app = IboardApp::from_located(located);
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
     assert!(harness.state().1.session.stats.is_none());
     harness.get_by_label("Stats").click();
     harness.run_steps(2);

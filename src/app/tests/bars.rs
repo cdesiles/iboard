@@ -10,22 +10,11 @@ type Board = egui_kittest::Harness<'static, (bool, IboardApp)>;
 /// a second per step.
 fn board(dir: &Path) -> Board {
     let app = IboardApp::from_located(discovery::locate(dir).unwrap());
-    let mut harness = egui_kittest::Harness::builder()
+    let builder = egui_kittest::Harness::builder()
         .with_size(window().size())
-        .with_step_dt(0.1)
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    theme::set_reduced_motion(ui.ctx(), true);
-                    *themed = true;
-                    return;
-                }
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+        .with_step_dt(0.1);
+    let harness = kittest_with(app, builder);
+    theme::set_reduced_motion(&harness.ctx, true);
     harness
 }
 

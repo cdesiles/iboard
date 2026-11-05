@@ -29,35 +29,9 @@ fn three_projects(tag: &str) -> (Scratch, PathBuf, Vec<PathBuf>, IboardApp) {
     (parent, config, projects, app)
 }
 
-fn harness(app: IboardApp) -> Menu {
-    let mut harness = Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
-    harness
-}
-
 fn open(harness: &mut Menu) {
     let ctx = harness.ctx.clone();
     harness.state_mut().1.toggle_project_menu(&ctx);
-    harness.run_steps(2);
-}
-
-fn press(harness: &mut Menu, label: &str) {
-    harness.get_by_label(label).hover();
-    harness.run_steps(1);
-    harness.get_by_label(label).click();
     harness.run_steps(2);
 }
 
@@ -73,7 +47,7 @@ fn shown(harness: &Menu, label: &str) -> bool {
 #[test]
 fn the_menu_lists_the_projects_and_its_three_actions() {
     let (_scratch, _config, _projects, app) = three_projects("menu-list");
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     open(&mut harness);
     for label in [
         "alpha",
@@ -94,7 +68,7 @@ fn the_menu_lists_the_projects_and_its_three_actions() {
 #[test]
 fn typing_filters_and_return_opens_the_first_match() {
     let (_scratch, _config, _projects, app) = three_projects("menu-type");
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     open(&mut harness);
     harness.event(Event::Text("ga".into()));
     harness.run_steps(2);
@@ -124,7 +98,7 @@ fn typing_filters_and_return_opens_the_first_match() {
 #[test]
 fn esc_without_a_filter_closes_and_no_match_says_so() {
     let (_scratch, _config, _projects, app) = three_projects("menu-esc");
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     open(&mut harness);
     harness.event(Event::Text("zz".into()));
     harness.run_steps(2);
@@ -140,7 +114,7 @@ fn esc_without_a_filter_closes_and_no_match_says_so() {
 #[test]
 fn reorder_moves_with_the_keys_and_done_saves_the_order() {
     let (_scratch, config, projects, app) = three_projects("menu-reorder");
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     open(&mut harness);
     press(&mut harness, "Reorder");
     assert!(shown(&harness, "Done"));
@@ -179,7 +153,7 @@ fn reorder_moves_with_the_keys_and_done_saves_the_order() {
 #[test]
 fn cancel_puts_the_order_back() {
     let (_scratch, config, projects, app) = three_projects("menu-cancel");
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     open(&mut harness);
     press(&mut harness, "Reorder");
     key(&mut harness, Modifiers::ALT, Key::ArrowDown);
@@ -208,7 +182,7 @@ fn an_added_project_opens_at_the_top_of_the_list() {
     std::fs::create_dir_all(delta.join("issues/todo")).unwrap();
     PICKED.with(|picked| *picked.borrow_mut() = vec![delta.clone()]);
     app.folder_picker = picked;
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     open(&mut harness);
     press(&mut harness, "Add project…");
     let app = &harness.state().1;

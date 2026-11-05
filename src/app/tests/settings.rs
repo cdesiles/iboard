@@ -48,22 +48,7 @@ fn the_settings_dialog_saves_with_command_enter() {
 fn settings_save_by_clicking_its_labelled_button() {
     let (_dir, _file, mut app) = open_issue_with_review("kittest-save");
     app.open_title_settings();
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                // The fonts are registered on the first frame and usable from the next.
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
     assert!(harness.state().1.settings.is_some());
 
     egui_kittest::kittest::Queryable::get_by_label(&harness, "Save").click();
@@ -81,21 +66,7 @@ fn the_theme_is_light_until_settings_picks_dark() {
     let config = dir.join("iboard.toml");
     app.config_file = Some(config.clone());
     app.open_settings(settings_ui::Tab::General);
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
     assert_eq!(harness.ctx.theme(), egui::Theme::Light, "light by default");
 
     harness.get_by_label("Dark").click();
@@ -121,21 +92,7 @@ fn auto_is_on_and_only_settings_turns_it_off() {
     let config = dir.join("iboard.toml");
     app.config_file = Some(config.clone());
     app.session.screen = Screen::Board;
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
     assert!(harness.state().1.prefs.auto, "on by default");
     assert!(harness.query_by_label("Auto").is_none(), "not on the board");
     assert!(harness.query_by_label("Refresh").is_none());
@@ -238,21 +195,7 @@ fn the_review_scope_is_saved_with_the_review_agent() {
     );
     app.config_file = Some(config.clone());
     app.open_config();
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
     harness.get_by_label(ReviewMode::Quick.scope_name());
     harness.get_by_label(ReviewMode::Deep.scope_name()).click();
     harness.run_steps(2);

@@ -36,21 +36,7 @@ fn a_commit_opens_as_a_diff_and_finds_a_term() {
     let mut app = IboardApp::from_located(discovery::locate(&issue).unwrap());
     app.open_issue(issue.clone());
     app.open_commits(&issue);
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
     harness.get_by_label(&format!("Diff of {hash}")).click();
     harness.run_steps(2);
     assert!(matches!(harness.state().1.session.screen, Screen::Diff));

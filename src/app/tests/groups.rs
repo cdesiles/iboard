@@ -2,7 +2,6 @@
 //! the user configuration, and how the board on screen follows.
 
 use super::*;
-use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
 /// Projects `app` and `site`, a folder `bare` without `issues/`, and a user
@@ -34,41 +33,7 @@ fn configured(tag: &str) -> (Scratch, PathBuf, IboardApp) {
     (parent, config, app)
 }
 
-fn harness(app: IboardApp) -> Harness<'static, (bool, IboardApp)> {
-    let mut harness = Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
-    harness
-}
-
-/// Clicks the `nth` widget labelled `label` the way a pointer does: over
-/// it for a frame first, as egui settles hover on the frame before.
-fn press_nth(harness: &mut Harness<'static, (bool, IboardApp)>, label: &str, nth: usize) {
-    harness.get_all_by_label(label).nth(nth).unwrap().hover();
-    harness.run_steps(1);
-    harness.get_all_by_label(label).nth(nth).unwrap().click();
-    harness.run_steps(2);
-}
-
-fn press(harness: &mut Harness<'static, (bool, IboardApp)>, label: &str) {
-    press_nth(harness, label, 0);
-}
-
-fn dialog<'a>(
-    harness: &'a mut Harness<'static, (bool, IboardApp)>,
-) -> &'a mut crate::groups_ui::Dialog {
+fn dialog(harness: &mut Kit) -> &mut crate::groups_ui::Dialog {
     harness.state_mut().1.groups_dialog.as_mut().unwrap()
 }
 
@@ -76,7 +41,7 @@ fn dialog<'a>(
 fn renaming_the_shown_group_saves_and_keeps_it_on_screen() {
     let (_scratch, config, mut app) = configured("groups-rename");
     app.open_groups(false);
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     dialog(&mut harness).draft.groups[0].name = "Customers".into();
     harness.run_steps(1);
     press(&mut harness, "Save");
@@ -96,7 +61,7 @@ fn renaming_the_shown_group_saves_and_keeps_it_on_screen() {
 fn deleting_the_shown_group_asks_then_the_first_left_opens() {
     let (_scratch, config, mut app) = configured("groups-delete");
     app.open_groups(false);
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     press_nth(&mut harness, "Delete group (asks first)", 0);
     harness.get_by_label("Delete this group?");
     press(&mut harness, "Delete group");
@@ -131,7 +96,7 @@ fn projects_come_from_the_recent_ones_or_the_picker_with_an_issues_folder() {
         vec![parent.join("iboard-no-such-project")]
     };
     app.open_groups(false);
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     press_nth(&mut harness, "Add project", 1);
     // The second "site": the first is Clients' project row.
     press_nth(&mut harness, "site", 1);
@@ -155,7 +120,7 @@ fn cancelling_with_changes_asks_first_and_writes_nothing() {
     let (_scratch, config, mut app) = configured("groups-cancel");
     let before = std::fs::read_to_string(&config).unwrap();
     app.open_groups(false);
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     dialog(&mut harness).draft.groups[1].name = "Alone".into();
     harness.key_press(Key::Escape);
     harness.run_steps(2);
@@ -170,7 +135,7 @@ fn cancelling_with_changes_asks_first_and_writes_nothing() {
 fn a_file_changed_meanwhile_is_kept_until_asked() {
     let (_scratch, config, mut app) = configured("groups-conflict");
     app.open_groups(false);
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     let outside = "[ai]\ntool = \"claude\"\n";
     std::fs::write(&config, outside).unwrap();
     dialog(&mut harness).draft.groups[1].name = "Alone".into();
@@ -197,7 +162,7 @@ fn invalid_names_keep_the_dialog_open() {
     let (_scratch, config, mut app) = configured("groups-invalid");
     let before = std::fs::read_to_string(&config).unwrap();
     app.open_groups(true);
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     assert_eq!(dialog(&mut harness).draft.groups.len(), 3, "a new group");
     dialog(&mut harness).draft.groups[2].name = "solo".into();
     harness.key_press_modifiers(egui::Modifiers::COMMAND, Key::Enter);
@@ -223,7 +188,7 @@ fn an_outside_edit_reloads_the_groups() {
 
 /// Writes `text` to the configuration as an editor outside iboard does, then
 /// runs the frame that notices.
-fn edit_outside(harness: &mut Harness<'static, (bool, IboardApp)>, config: &Path, text: &str) {
+fn edit_outside(harness: &mut Kit, config: &Path, text: &str) {
     std::fs::write(config, text).unwrap();
     let app = &mut harness.state_mut().1;
     app.config_stamp = None;
@@ -235,7 +200,7 @@ fn edit_outside(harness: &mut Harness<'static, (bool, IboardApp)>, config: &Path
 fn a_file_saved_mid_edit_keeps_the_board_until_it_reads_again() {
     let (_scratch, config, app) = configured("groups-mid-edit");
     let good = std::fs::read_to_string(&config).unwrap();
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     for broken in [
         "[[workspace.group]]\nname = \n",
         "[[workspace.group]]\nrepos = []\n",
@@ -257,7 +222,7 @@ fn a_file_saved_mid_edit_keeps_the_board_until_it_reads_again() {
 fn reloading_a_file_saved_mid_edit_keeps_the_groups() {
     let (_scratch, config, mut app) = configured("groups-reload-broken");
     app.open_groups(false);
-    let mut harness = harness(app);
+    let mut harness = kittest(app);
     std::fs::write(&config, "[[workspace.group]]\nname = \n").unwrap();
     dialog(&mut harness).draft.groups[1].name = "Alone".into();
     press(&mut harness, "Save");

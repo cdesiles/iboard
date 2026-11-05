@@ -262,21 +262,7 @@ fn a_margin_comment_reaches_the_review() {
         ..AgentConfig::default()
     };
     app.open_issue(file.clone());
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
 
     let buttons: Vec<_> = harness.get_all_by_label("Add a comment").collect();
     assert_eq!(
@@ -417,22 +403,7 @@ fn reviewing(tag: &str, command: &str) -> (Scratch, PathBuf, Drawn) {
         ..AgentConfig::default()
     };
     app.session.selected = Some(file.clone());
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
-    (dir, file, harness)
+    (dir, file, kittest(app))
 }
 
 /// Frames until the review of `file` is no longer running.
@@ -735,20 +706,8 @@ fn a_long_agent_name_keeps_the_review_panel_in_its_place() {
         app.past_reviews.contains_key(&file)
     }));
     app.show_past_review(file);
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(3);
+    let mut harness = kittest(app);
+    harness.run_steps(1);
     let title = harness.get_by_label("Review of migrate.md").rect();
     let panel_left = window().width() - REVIEW_PANEL_WIDTH;
     assert!(

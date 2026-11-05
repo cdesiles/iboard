@@ -204,20 +204,7 @@ fn with_idesign_off_no_path_reaches_the_design_panel() {
     app.prefs.agent.configured = true;
 
     let offers = |app: IboardApp, label: &str| {
-        let mut harness = egui_kittest::Harness::builder()
-            .with_size(window().size())
-            .build_ui_state(
-                |ui, (themed, app): &mut (bool, IboardApp)| {
-                    if !*themed {
-                        theme::install(ui.ctx());
-                        *themed = true;
-                        return;
-                    }
-                    app.draw(ui);
-                },
-                (false, app),
-            );
-        harness.run_steps(2);
+        let harness = kittest(app);
         let offered = harness.query_by_label(label).is_some();
         (offered, harness.into_state().1)
     };

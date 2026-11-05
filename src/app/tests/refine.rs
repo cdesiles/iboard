@@ -172,21 +172,7 @@ fn the_popin_hides_and_comes_back() {
         app.poll_refinement();
         turns(&app) == 1
     }));
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(window().size())
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
+    let mut harness = kittest(app);
     harness.get_by_label("Hide").click();
     harness.run_steps(4);
     assert!(!harness.state().1.refinement_shown());
@@ -198,26 +184,6 @@ fn the_popin_hides_and_comes_back() {
     harness.get_by_label("End refining").click();
     harness.run_steps(2);
     assert!(harness.state().1.session.refine.is_none());
-}
-
-/// The app in a kittest harness of `size`, drawn the way the window is.
-fn harness(app: IboardApp, size: Vec2) -> egui_kittest::Harness<'static, (bool, IboardApp)> {
-    let mut harness = egui_kittest::Harness::builder()
-        .with_size(size)
-        .build_ui_state(
-            |ui, (themed, app): &mut (bool, IboardApp)| {
-                if !*themed {
-                    theme::install(ui.ctx());
-                    *themed = true;
-                    return;
-                }
-                app.frame_logic(ui.ctx());
-                app.draw(ui);
-            },
-            (false, app),
-        );
-    harness.run_steps(2);
-    harness
 }
 
 const CHOICES: &str = "printf 'TLDR: Keep it small.\\n\\nWho needs it?\\nOPTIONS:\\n\
@@ -241,7 +207,7 @@ fn a_choice_is_picked_then_sent_with_its_note() {
         (turn.tldr.as_deref(), turn.text.as_str()),
         (Some("Keep it small."), "Who needs it?")
     );
-    let mut harness = harness(app, window().size());
+    let mut harness = kittest(app);
     let choice = |harness: &egui_kittest::Harness<'_, (bool, IboardApp)>| {
         harness.state().1.session.refine.as_ref().unwrap().choice
     };
@@ -292,7 +258,7 @@ fn the_note_alone_is_an_answer_and_esc_hides() {
         app.poll_refinement();
         turns(&app) == 1
     }));
-    let mut harness = harness(app, window().size());
+    let mut harness = kittest(app);
     harness.get_by_label("Send answer").click();
     harness.run_steps(2);
     assert_eq!(turns(&harness.state().1), 1, "nothing to send");
@@ -331,7 +297,8 @@ fn a_narrow_panel_folds_the_reasoning() {
         app.poll_refinement();
         turns(&app) == 1
     }));
-    let mut harness = harness(app, Vec2::new(760.0, 900.0));
+    let narrow = egui_kittest::Harness::builder().with_size(Vec2::new(760.0, 900.0));
+    let mut harness = kittest_with(app, narrow);
     assert!(harness.query_by_label("Who needs it?").is_none());
     harness
         .get_by_label("Show the reasoning (1 paragraph)")
