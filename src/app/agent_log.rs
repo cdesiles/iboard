@@ -1,7 +1,7 @@
 //! The agent log beside an issue: what the build agent does on it while it
 //! runs, and what it did once it is done.
 
-use super::review::review_head;
+use super::side_panel::side_panel;
 use super::*;
 use crate::build_log::{self, Entry};
 
@@ -97,36 +97,27 @@ impl IboardApp {
             Some(since) => format!("running · {}", stopwatch(since.elapsed())),
             None => "not running".to_string(),
         };
-        Frame::new()
-            .fill(p.surface)
-            .stroke(Stroke::new(1.0, p.line_strong))
-            .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                review_head(
-                    ui,
-                    &format!("Agent log of {}", file_name(&log.path)),
-                    &detail,
-                );
-                theme::scroll_area(
-                    ui,
-                    egui::ScrollArea::vertical()
-                        .id_salt("agent_log")
-                        .content_margin(theme::scroll_margin(theme::SPACE_4, theme::SPACE_4))
-                        .stick_to_bottom(true)
-                        .auto_shrink(false),
-                    true,
-                    |ui| {
-                        if log.text.is_empty() {
-                            ui.label(
-                                RichText::new("The agent has not said anything yet.")
-                                    .color(p.ink_muted),
-                            );
-                        }
-                        log_entries(ui, &log.text, &mut log.cache);
-                    },
-                );
-            });
+        let title = format!("Agent log of {}", file_name(&log.path));
+        side_panel(ui, &title, &detail, |ui| {
+            theme::scroll_area(
+                ui,
+                egui::ScrollArea::vertical()
+                    .id_salt("agent_log")
+                    .content_margin(theme::scroll_margin(theme::SPACE_4, theme::SPACE_4))
+                    .stick_to_bottom(true)
+                    .auto_shrink(false),
+                true,
+                |ui| {
+                    if log.text.is_empty() {
+                        ui.label(
+                            RichText::new("The agent has not said anything yet.")
+                                .color(p.ink_muted),
+                        );
+                    }
+                    log_entries(ui, &log.text, &mut log.cache);
+                },
+            );
+        });
     }
 }
 

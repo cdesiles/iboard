@@ -503,15 +503,7 @@ fn refine_ui(
 /// which truncates first.
 fn refine_head(ui: &mut egui::Ui, shown: &str, agent: &str, round: usize) {
     let p = theme::palette(ui);
-    Frame::new()
-        .fill(p.review_soft)
-        // Flush with the panel's rounded top: see `review_head`.
-        .corner_radius(CornerRadius {
-            nw: theme::RADIUS_MD - 1,
-            ne: theme::RADIUS_MD - 1,
-            sw: 0,
-            se: 0,
-        })
+    side_panel::head_frame(ui)
         .inner_margin(Margin::symmetric(theme::SPACE_5 as i8, 6))
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(

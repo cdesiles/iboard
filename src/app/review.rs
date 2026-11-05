@@ -1,5 +1,6 @@
 //! The AI review: running it, its panel, and applying its proposal.
 
+use super::side_panel::side_panel;
 use super::split::Split;
 use super::*;
 
@@ -319,74 +320,47 @@ impl IboardApp {
     /// proposes; Apply opens the editor, Create writes the tickets.
     pub(super) fn review_panel(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette(ui);
-        let Some(review) = self.session.review.as_ref() else {
+        let Some(mut review) = self.session.review.take() else {
             return;
         };
-        let name = file_name(&review.path);
         let past = &review.review;
         let source = if past.draft { "draft" } else { "file" };
-        let agent = format!("{} · {}", past.agent, past.mode.scope_name());
+        let title = format!("Review of {}", file_name(&review.path));
+        let detail = format!("{} · {} · {source}", past.agent, past.mode.scope_name());
         let plan = past.plan;
-        let mut follow_up = review.follow_up.clone();
-        let mut drafts = match &review.split {
-            Some(Split::Ready(drafts)) => Some(drafts.clone()),
-            _ => None,
-        };
-        let mut action = None;
 
-        Frame::new()
-            .fill(p.surface)
-            .stroke(Stroke::new(1.0, p.line_strong))
-            .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                review_head(
-                    ui,
-                    &format!("Review of {name}"),
-                    &format!("{agent} · {source}"),
-                );
-                Frame::new()
-                    .inner_margin(Margin::same(theme::SPACE_4 as i8))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        if plan {
-                            ui.label(
-                                RichText::new(PLAN_NOTE)
-                                    .font(theme::meta())
-                                    .color(p.ink_muted),
-                            );
-                            ui.add_space(theme::SPACE_2);
-                        }
-                        action = review_body(ui, review, drafts.as_deref_mut());
-                        if matches!(review.split, None | Some(Split::Failed(_))) {
-                            ui.add_space(theme::SPACE_2);
-                            widgets::text_entry(
-                                ui,
-                                egui::TextEdit::singleline(&mut follow_up)
-                                    .hint_text(
-                                        RichText::new("Ask again: make it smaller…")
-                                            .color(p.ink_faint),
-                                    )
-                                    .font(theme::ui_body())
-                                    .desired_width(f32::INFINITY),
-                            );
-                        }
-                    });
-                let kept = drafts
-                    .iter()
-                    .flatten()
-                    .filter(|draft| draft.include)
-                    .count();
-                let asked = !follow_up.trim().is_empty();
-                action = review_footer(ui, review, asked, kept).or(action.take());
-            });
+        let action = side_panel(ui, &title, &detail, |ui| {
+            let mut action = None;
+            Frame::new()
+                .inner_margin(Margin::same(theme::SPACE_4 as i8))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    if plan {
+                        ui.label(
+                            RichText::new(PLAN_NOTE)
+                                .font(theme::meta())
+                                .color(p.ink_muted),
+                        );
+                        ui.add_space(theme::SPACE_2);
+                    }
+                    action = review_body(ui, &mut review);
+                    if matches!(review.split, None | Some(Split::Failed(_))) {
+                        ui.add_space(theme::SPACE_2);
+                        widgets::text_entry(
+                            ui,
+                            egui::TextEdit::singleline(&mut review.follow_up)
+                                .hint_text(
+                                    RichText::new("Ask again: make it smaller…").color(p.ink_faint),
+                                )
+                                .font(theme::ui_body())
+                                .desired_width(f32::INFINITY),
+                        );
+                    }
+                });
+            review_footer(ui, &review).or(action)
+        });
 
-        if let Some(review) = self.session.review.as_mut() {
-            review.follow_up = follow_up;
-            if let (Some(drafts), Some(Split::Ready(kept))) = (drafts, &mut review.split) {
-                *kept = drafts;
-            }
-        }
+        self.session.review = Some(review);
         self.apply_panel_action(action);
     }
 
@@ -691,62 +665,6 @@ fn review_menu(
         .and_then(|inner| inner.inner)
 }
 
-/// How much of the review head the agent, mode and source may take; they
-/// truncate past it, so the panel never widens under the issue.
-const DETAIL_SHARE: f32 = 0.6;
-
-/// The panel's `review-soft` head: "Review of x.md", and the agent, mode and
-/// source on the right.
-pub(super) fn review_head(ui: &mut egui::Ui, title: &str, detail: &str) {
-    let p = theme::palette(ui);
-    Frame::new()
-        .fill(p.review_soft)
-        // The header is flush with the panel's top edge, so its
-        // fill has to round the top corners itself: egui frames
-        // don't clip children, and a square fill would paint over
-        // the panel's rounded corners and their border. One less
-        // than RADIUS_MD matches the inside of the 1pt border.
-        .corner_radius(CornerRadius {
-            nw: theme::RADIUS_MD - 1,
-            ne: theme::RADIUS_MD - 1,
-            sw: 0,
-            se: 0,
-        })
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_4 as i8,
-            theme::SPACE_3 as i8,
-        ))
-        .show(ui, |ui| {
-            // Agent first, so a long file name truncates into the
-            // space left instead of widening the panel (which
-            // flickers while the spinner repaints). The row has a
-            // fixed height: a bare right-to-left layout would
-            // stretch to fill the whole panel.
-            ui.allocate_ui_with_layout(
-                Vec2::new(ui.available_width(), theme::CONTROL_H),
-                Layout::right_to_left(Align::Center),
-                |ui| {
-                    let room = ui.available_width();
-                    ui.scope(|ui| {
-                        ui.set_max_width(room * DETAIL_SHARE);
-                        let detail = RichText::new(detail).font(theme::meta()).color(p.review);
-                        ui.add(egui::Label::new(detail).truncate());
-                    });
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(title)
-                                    .font(theme::ui_strong())
-                                    .color(p.review),
-                            )
-                            .truncate(),
-                        );
-                    });
-                },
-            );
-        });
-}
-
 /// What a click in the review panel asks for.
 enum PanelAction {
     Apply,
@@ -761,22 +679,18 @@ enum PanelAction {
 
 /// The panel's body: the run in progress, the error, the three findings
 /// (Size offering a split when it is not a Pass), or the split's tickets.
-fn review_body(
-    ui: &mut egui::Ui,
-    review: &ReviewState,
-    drafts: Option<&mut [split::SplitDraft]>,
-) -> Option<PanelAction> {
+fn review_body(ui: &mut egui::Ui, review: &mut ReviewState) -> Option<PanelAction> {
     let p = theme::palette(ui);
     let mut action = None;
-    match (&review.split, &review.review.report) {
+    match (&mut review.split, &review.review.report) {
         (Some(Split::Cutting { answer, progress }), _) => {
             let step = agent::step(progress).or(Some("The agent is cutting the issue…".into()));
             running_line(ui, answer.elapsed(), step);
         }
         (Some(Split::Failed(error)), _) => {
-            ui.label(RichText::new(error).color(p.danger));
+            ui.label(RichText::new(error.as_str()).color(p.danger));
         }
-        (Some(Split::Ready(_)), _) => split::drafts_ui(ui, drafts.unwrap_or_default()),
+        (Some(Split::Ready(drafts)), _) => split::drafts_ui(ui, drafts),
         (None, None) => {
             ui.label(RichText::new(&review.review.raw).color(p.ink_muted));
         }
@@ -811,12 +725,7 @@ fn review_body(
 }
 
 /// The panel's buttons, right to left: the main action first.
-fn review_footer(
-    ui: &mut egui::Ui,
-    review: &ReviewState,
-    asked: bool,
-    kept: usize,
-) -> Option<PanelAction> {
+fn review_footer(ui: &mut egui::Ui, review: &ReviewState) -> Option<PanelAction> {
     let mut action = None;
     widgets::footer_bar(ui, theme::SPACE_4, |ui| match &review.split {
         Some(Split::Cutting { .. }) => {
@@ -829,7 +738,8 @@ fn review_footer(
                 PanelAction::Cancel,
             );
         }
-        Some(Split::Ready(_)) => {
+        Some(Split::Ready(drafts)) => {
+            let kept = drafts.iter().filter(|draft| draft.include).count();
             let create = format!("Create {kept} tickets");
             let kind = if kept > 0 {
                 ButtonKind::Primary
@@ -882,7 +792,7 @@ fn review_footer(
                     PanelAction::Retry,
                 );
             }
-            if asked {
+            if !review.follow_up.trim().is_empty() {
                 widgets::action_button(
                     ui,
                     &mut action,

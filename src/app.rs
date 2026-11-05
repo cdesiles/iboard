@@ -70,6 +70,7 @@ mod quitting;
 mod reader;
 mod refine;
 mod review;
+mod side_panel;
 mod split;
 mod stats;
 mod status;
