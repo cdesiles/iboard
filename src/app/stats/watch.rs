@@ -3,65 +3,83 @@
 
 use iboard::stats::{self, Limits, Signal, Stats};
 
+use super::blocks::{Blocks, Part, block_head, framed, list_rows};
 use super::{
-    ButtonKind, CornerRadius, Frame, Icon, RichText, Sense, StatsAsk, Vec2, block, block_label,
+    ButtonKind, CornerRadius, Duration, Frame, Icon, RichText, Sense, StatsAsk, TRENDS_H, Vec2,
     theme, widgets,
 };
 
+const NAME: &str = "Refactor watch";
+
+/// The Refactor watch block, on its own job.
+pub(super) fn watch(ui: &mut egui::Ui, blocks: &mut Blocks, limits: &Limits) -> Option<StatsAsk> {
+    framed(
+        ui,
+        blocks,
+        (Part::Watch, NAME, TRENDS_H),
+        list_rows,
+        |ui, stats, clock| verdict(ui, stats, limits, clock),
+    )
+    .flatten()
+}
+
 /// The verdict, the four signals behind it, and the draft it offers.
-pub(super) fn watch(ui: &mut egui::Ui, stats: &Stats, limits: &Limits) -> Option<StatsAsk> {
+fn verdict(
+    ui: &mut egui::Ui,
+    stats: &Stats,
+    limits: &Limits,
+    clock: Option<Duration>,
+) -> Option<StatsAsk> {
     let signals = stats::signals(stats, limits);
     let on = signals.iter().filter(|s| s.on).count();
-    block(ui, |ui| {
-        let p = theme::palette(ui);
-        block_label(ui, "Refactor watch");
-        let mut ask = None;
-        Frame::new()
-            .fill(p.surface_sunken)
-            .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-            .inner_margin(theme::SPACE_3)
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                if !stats::refactor_due(&signals) {
-                    ui.label(
-                        RichText::new("No refactor needed now")
-                            .font(theme::ui_strong())
-                            .color(p.ink),
-                    );
-                    return;
-                }
+    let p = theme::palette(ui);
+    block_head(ui, NAME, clock);
+    let mut ask = None;
+    Frame::new()
+        .fill(p.surface_sunken)
+        .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+        .inner_margin(theme::SPACE_3)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if !stats::refactor_due(&signals) {
                 ui.label(
-                    RichText::new("Time to plan a refactor.")
+                    RichText::new("No refactor needed now")
                         .font(theme::ui_strong())
                         .color(p.ink),
                 );
-                let files = stats::culprits(&stats.files).len();
-                ui.label(
-                    RichText::new(format!(
-                        "{on} of {} signals are on, mostly from {files} files.",
-                        signals.len()
-                    ))
-                    .font(theme::ui_small())
+                return;
+            }
+            ui.label(
+                RichText::new("Time to plan a refactor.")
+                    .font(theme::ui_strong())
                     .color(p.ink),
-                );
-                if widgets::button(
-                    ui,
-                    ButtonKind::Primary,
-                    None,
-                    "Draft a refactor issue",
-                    None,
-                )
-                .clicked()
-                {
-                    let (title, body) = stats::refactor_draft(stats, &signals);
-                    ask = Some(StatsAsk::DraftRefactor(title, body));
-                }
-            });
-        for signal in &signals {
-            signal_row(ui, signal);
-        }
-        ask
-    })
+            );
+            let files = stats::culprits(&stats.files).len();
+            ui.label(
+                RichText::new(format!(
+                    "{on} of {} signals are on, mostly from {files} files.",
+                    signals.len()
+                ))
+                .font(theme::ui_small())
+                .color(p.ink),
+            );
+            if widgets::button(
+                ui,
+                ButtonKind::Primary,
+                None,
+                "Draft a refactor issue",
+                None,
+            )
+            .clicked()
+            {
+                let (title, body) = stats::refactor_draft(stats, &signals);
+                ask = Some(StatsAsk::DraftRefactor(title, body));
+            }
+        });
+    for signal in &signals {
+        signal_row(ui, signal);
+    }
+    ask
 }
 
 fn signal_row(ui: &mut egui::Ui, signal: &Signal) {

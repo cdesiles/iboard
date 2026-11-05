@@ -3,7 +3,11 @@
 
 use iboard::stats::{self, Snapshot, Stats};
 
-use super::{Color32, Measure, RichText, block, block_label, theme, thousands};
+use super::blocks::{Blocks, Part, block_head, framed, tile_bars};
+use super::{Color32, Measure, RichText, theme, thousands};
+
+/// A tile's height inside its frame, so nothing moves as it fills.
+const TILE_H: f32 = 104.0;
 
 /// Which way a measure going up goes.
 #[derive(Clone, Copy)]
@@ -13,72 +17,96 @@ enum Up {
     Neutral,
 }
 
-/// The four figures at the page's newest commit, each with its change since
-/// the page's oldest.
-pub(super) fn tiles(ui: &mut egui::Ui, stats: &Stats) {
+/// One figure, with its change since the page's oldest commit.
+struct Figure {
+    value: String,
+    detail: String,
+    change: Option<(String, Up, bool)>,
+}
+
+fn figure(stats: &Stats, measure: Measure) -> Figure {
+    if measure == Measure::Cycle {
+        let cycles = &stats.cycles;
+        let (value, detail) = match (cycles.percentile(0.5), cycles.percentile(0.85)) {
+            (Some(median), Some(p85)) => (
+                stats::span(median),
+                format!("p85 {} · {} issues", stats::span(p85), cycles.cycles.len()),
+            ),
+            _ => ("–".to_string(), "no issue closed on this page".to_string()),
+        };
+        return Figure {
+            value,
+            detail,
+            change: None,
+        };
+    }
     let (Some(base), Some(now)) = (stats.snapshots.first(), stats.snapshots.last()) else {
-        return;
+        return Figure {
+            value: "–".to_string(),
+            detail: String::new(),
+            change: None,
+        };
     };
-    let since = format!("since {}", base.short);
-    let cycles = &stats.cycles;
-    let cycle = match (cycles.percentile(0.5), cycles.percentile(0.85)) {
-        (Some(median), Some(p85)) => (
-            stats::span(median),
-            format!("p85 {} · {} issues", stats::span(p85), cycles.cycles.len()),
-            None,
-        ),
-        _ => (
-            "–".to_string(),
-            "no issue closed on this page".to_string(),
-            None,
-        ),
-    };
-    let complexity = (
-        Measure::Complexity.show(now.complexity_per_kloc()),
-        "per 1,000 code lines".to_string(),
-        delta(
-            now.complexity_per_kloc() - base.complexity_per_kloc(),
-            0,
-            Up::Worse,
-        ),
+    match measure {
+        Measure::Complexity => Figure {
+            value: measure.show(now.complexity_per_kloc()),
+            detail: "per 1,000 code lines".to_string(),
+            change: delta(
+                now.complexity_per_kloc() - base.complexity_per_kloc(),
+                0,
+                Up::Worse,
+            ),
+        },
+        Measure::Tests => Figure {
+            value: measure.show(now.test_share() * 100.0),
+            detail: format!("{} tests · test lines, not coverage", thousands(now.tests)),
+            change: delta(
+                (now.test_share() - base.test_share()) * 100.0,
+                1,
+                Up::Better,
+            ),
+        },
+        Measure::Code | Measure::Cycle => Figure {
+            value: thousands(now.code),
+            detail: languages(now),
+            change: delta(now.code as f32 - base.code as f32, 0, Up::Neutral),
+        },
+    }
+}
+
+/// One figure at the page's newest commit, on its own job.
+pub(super) fn tile(ui: &mut egui::Ui, blocks: &mut Blocks, measure: Measure) {
+    let part = Part::Tile(measure);
+    framed(
+        ui,
+        blocks,
+        (part, measure.name(), TILE_H),
+        tile_bars,
+        |ui, stats, clock| {
+            let p = theme::palette(ui);
+            let shown = figure(stats, measure);
+            let since = stats
+                .snapshots
+                .first()
+                .map_or(String::new(), |base| format!("since {}", base.short));
+            block_head(ui, measure.name(), clock);
+            ui.label(
+                RichText::new(shown.value)
+                    .font(egui::FontId::new(24.0, theme::ui_title().family))
+                    .color(p.ink),
+            );
+            let (text, color) = change_line(ui, shown.change, &since);
+            ui.label(RichText::new(text).font(theme::meta()).color(color));
+            ui.add(
+                egui::Label::new(
+                    RichText::new(shown.detail)
+                        .font(theme::meta())
+                        .color(p.ink_muted),
+                )
+                .truncate(),
+            );
+        },
     );
-    let tests = (
-        Measure::Tests.show(now.test_share() * 100.0),
-        format!("{} tests · test lines, not coverage", thousands(now.tests)),
-        delta(
-            (now.test_share() - base.test_share()) * 100.0,
-            1,
-            Up::Better,
-        ),
-    );
-    let code = (
-        thousands(now.code),
-        languages(now),
-        delta(now.code as f32 - base.code as f32, 0, Up::Neutral),
-    );
-    ui.columns(Measure::ALL.len(), |columns| {
-        for ((ui, measure), (value, detail, change)) in columns
-            .iter_mut()
-            .zip(Measure::ALL)
-            .zip([cycle, complexity, tests, code])
-        {
-            block(ui, |ui| {
-                let p = theme::palette(ui);
-                block_label(ui, measure.name());
-                ui.label(
-                    RichText::new(value)
-                        .font(egui::FontId::new(24.0, theme::ui_title().family))
-                        .color(p.ink),
-                );
-                let (text, color) = change_line(ui, change, &since);
-                ui.label(RichText::new(text).font(theme::meta()).color(color));
-                ui.add(
-                    egui::Label::new(RichText::new(detail).font(theme::meta()).color(p.ink_muted))
-                        .truncate(),
-                );
-            });
-        }
-    });
 }
 
 /// The two main languages' shares of the code.

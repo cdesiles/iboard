@@ -7,9 +7,10 @@ use std::collections::BTreeMap;
 use chrono::{Datelike, Duration as Days, NaiveDate};
 use iboard::agenda::{Agenda, DayCommit, Range, Week, commits_on, day_label, streak};
 
+use super::stats::blocks::{clock_note, failure};
 use super::{
-    Align, ButtonKind, Color32, CornerRadius, Frame, IboardApp, Key, Layout, MarginF32, Pos2, Rect,
-    RichText, Sense, Shape, Stroke, StrokeKind, Vec2, theme, widgets,
+    Align, ButtonKind, Color32, CornerRadius, Duration, Frame, IboardApp, Key, Layout, MarginF32,
+    Pos2, Rect, RichText, Sense, Shape, Stroke, StrokeKind, Vec2, theme, widgets,
 };
 
 /// A day's square, and the gap between squares.
@@ -26,6 +27,18 @@ const DAY_PANEL_W: f32 = 260.0;
 const SIDE_BY_SIDE: f32 = 640.0;
 /// The commits listed for a day before "N more".
 const DAY_COMMITS: usize = 8;
+/// The block's height inside its frame, so a failure keeps its size.
+const AGENDA_H: f32 = 300.0;
+
+/// What the Agenda has to show.
+pub(super) enum Show<'a> {
+    /// No days yet; `pulse` once the placeholder may show.
+    Waiting {
+        pulse: bool,
+    },
+    Failed(&'a str),
+    Days(&'a BTreeMap<NaiveDate, Vec<DayCommit>>),
+}
 
 impl IboardApp {
     /// Arrows move the selected day, `[` and `]` a week, `1`–`4` pick a range.
@@ -55,13 +68,16 @@ impl IboardApp {
     }
 }
 
-/// The Agenda: its head, the grid and its legend, and the selected day.
+/// The Agenda: its head, the grid and its legend, and the selected day. True
+/// when Retry was pressed.
 pub(super) fn agenda_ui(
     ui: &mut egui::Ui,
     agenda: &mut Agenda,
-    days: Option<&BTreeMap<NaiveDate, Vec<DayCommit>>>,
-) {
+    show: Show,
+    clock: Option<Duration>,
+) -> bool {
     let p = theme::palette(ui);
+    let mut retry = false;
     Frame::new()
         .fill(p.surface)
         .stroke(Stroke::new(1.0, p.line))
@@ -69,12 +85,21 @@ pub(super) fn agenda_ui(
         .inner_margin(theme::SPACE_5)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            ui.set_min_height(AGENDA_H);
             let side = ui.available_width() >= SIDE_BY_SIDE;
-            let Some(days) = days else {
-                head(ui, agenda);
-                summary(ui, "Reading git history…");
-                grid(ui, agenda, &BTreeMap::new(), None);
-                return;
+            let days = match show {
+                Show::Waiting { pulse } => {
+                    head(ui, agenda, clock);
+                    summary(ui, "Reading git history…");
+                    grid(ui, agenda, &BTreeMap::new(), None, pulse);
+                    return;
+                }
+                Show::Failed(error) => {
+                    head(ui, agenda, None);
+                    retry = failure(ui, "git history", error);
+                    return;
+                }
+                Show::Days(days) => days,
             };
             if side {
                 ui.horizontal_top(|ui| {
@@ -82,22 +107,23 @@ pub(super) fn agenda_ui(
                     ui.allocate_ui_with_layout(
                         Vec2::new(main_w, 0.0),
                         Layout::top_down(Align::Min),
-                        |ui| main(ui, agenda, days),
+                        |ui| main(ui, agenda, days, clock),
                     );
                     ui.add_space(theme::SPACE_5);
                     ui.vertical(|ui| day_panel(ui, agenda.selected, days));
                 });
             } else {
-                main(ui, agenda, days);
+                main(ui, agenda, days, clock);
                 ui.add_space(theme::SPACE_4);
                 widgets::rule(ui);
                 ui.add_space(theme::SPACE_4);
                 day_panel(ui, agenda.selected, days);
             }
         });
+    retry
 }
 
-fn head(ui: &mut egui::Ui, agenda: &mut Agenda) {
+fn head(ui: &mut egui::Ui, agenda: &mut Agenda, clock: Option<Duration>) {
     let p = theme::palette(ui);
     ui.horizontal(|ui| {
         ui.label(RichText::new("Agenda").font(theme::ui_title()).color(p.ink));
@@ -107,6 +133,7 @@ fn head(ui: &mut egui::Ui, agenda: &mut Agenda) {
             if let Some(range) = widgets::segmented(ui, agenda.range, &options) {
                 agenda.set_range(range);
             }
+            clock_note(ui, clock);
         });
     });
 }
@@ -116,10 +143,15 @@ fn summary(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text).font(theme::meta()).color(p.ink_muted));
 }
 
-fn main(ui: &mut egui::Ui, agenda: &mut Agenda, days: &BTreeMap<NaiveDate, Vec<DayCommit>>) {
+fn main(
+    ui: &mut egui::Ui,
+    agenda: &mut Agenda,
+    days: &BTreeMap<NaiveDate, Vec<DayCommit>>,
+    clock: Option<Duration>,
+) {
     let p = theme::palette(ui);
     ui.spacing_mut().item_spacing.y = theme::SPACE_4;
-    head(ui, agenda);
+    head(ui, agenda, clock);
     let shown: Vec<(&NaiveDate, usize)> = days
         .range(agenda.first_day()..)
         .map(|(day, commits)| (day, commits.len()))
@@ -183,17 +215,19 @@ fn main(ui: &mut egui::Ui, agenda: &mut Agenda, days: &BTreeMap<NaiveDate, Vec<D
             })
             .stick_to_right(true),
         true,
-        |ui| grid(ui, agenda, days, Some((&weeks, step))),
+        |ui| grid(ui, agenda, days, Some((&weeks, step)), false),
     );
     legend(ui, step);
 }
 
-/// The heatmap; `None` while loading draws the grid with pulsing days.
+/// The heatmap; `None` while loading draws the grid, its days pulsing from
+/// `pulse` on.
 fn grid(
     ui: &mut egui::Ui,
     agenda: &mut Agenda,
     days: &BTreeMap<NaiveDate, Vec<DayCommit>>,
     shape: Option<(&[Week], usize)>,
+    pulse: bool,
 ) {
     let p = theme::palette(ui);
     let loading: Vec<Week>;
@@ -227,20 +261,18 @@ fn grid(
             p.ink_muted,
         );
     }
-    let placeholder = shape.is_none().then(|| theme::skeleton_fill(ui.ctx(), p));
+    let placeholder = shape.is_none().then(|| {
+        if pulse {
+            theme::skeleton_fill(ui.ctx(), p)
+        } else {
+            p.surface
+        }
+    });
     let mut x = rect.left() + WEEKDAYS_W;
     let mut month = None;
     for week in weeks {
         let Week::Days(start) = *week else {
-            let top = rect.top() + MONTHS_H + GAP;
-            let fold = Rect::from_min_size(Pos2::new(x, top), Vec2::new(FOLD_W, 7.0 * DAY));
-            let dash = Stroke::new(1.0, p.line_strong);
-            painter.extend(Shape::dashed_line(
-                &[fold.center_top(), fold.center_bottom()],
-                dash,
-                3.0,
-                3.0,
-            ));
+            fold_mark(&painter, p, x, rect.top() + MONTHS_H + GAP);
             x += FOLD_W + GAP;
             continue;
         };
@@ -305,6 +337,17 @@ fn grid(
         }
         x += DAY + GAP;
     }
+}
+
+/// The dashed line of a fold of empty weeks, from `top`.
+fn fold_mark(painter: &egui::Painter, p: &theme::Palette, x: f32, top: f32) {
+    let fold = Rect::from_min_size(Pos2::new(x, top), Vec2::new(FOLD_W, 7.0 * DAY));
+    painter.extend(Shape::dashed_line(
+        &[fold.center_top(), fold.center_bottom()],
+        Stroke::new(1.0, p.line_strong),
+        3.0,
+        3.0,
+    ));
 }
 
 /// What each shade stands for, in commits, and the today mark.

@@ -6,23 +6,25 @@
 use std::sync::Arc;
 
 use iboard::agenda::{Agenda, Range};
-use iboard::format::{display_path, stopwatch, thousands};
-use iboard::stats::{self, Limits, Progress, Snapshot, Stats};
+use iboard::format::{display_path, thousands};
+use iboard::stats::{self, Limits, Measures, Snapshot, Source, Stats};
 
 use super::agenda;
 use super::compose::{Composer, TitleStage};
 use super::{
     Align, ButtonKind, Color32, CornerRadius, Duration, Frame, IboardApp, Icon, Instant, Job, Key,
-    Layout, Path, Pos2, Rect, RichText, Sense, Shape, Stroke, Vec2, job, theme, widgets,
+    Layout, Pos2, Rect, RichText, Sense, Shape, Stroke, Vec2, job, theme, widgets,
 };
 
+pub(super) mod blocks;
 mod files;
 mod tiles;
 mod trends;
 mod watch;
 
+use blocks::{Blocks, Part, Phase};
 use files::files_table;
-use tiles::tiles;
+use tiles::tile;
 use trends::trends;
 use watch::watch;
 
@@ -31,12 +33,12 @@ const TREND_H: f32 = 64.0;
 const TREND_LABEL_W: f32 = 150.0;
 /// Narrower than this, the Refactor watch goes under the trends.
 const SIDE_BY_SIDE: f32 = 760.0;
-/// The Thinking mark and clock wait this long.
-const CLOCK_AFTER: Duration = Duration::from_secs(2);
+/// The Trends and Refactor watch blocks' height, so neither moves as it fills.
+const TRENDS_H: f32 = 400.0;
 
 /// One of the four measures, as a tile and as a trend.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Measure {
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(super) enum Measure {
     Cycle,
     Complexity,
     Tests,
@@ -44,7 +46,7 @@ enum Measure {
 }
 
 impl Measure {
-    const ALL: [Measure; 4] = [
+    pub(super) const ALL: [Measure; 4] = [
         Measure::Cycle,
         Measure::Complexity,
         Measure::Tests,
@@ -95,15 +97,10 @@ impl FileSort {
     ];
 }
 
-/// The measuring under way, and how far it got.
-type StatsRun = (Job<Result<Stats, String>>, Arc<Progress>);
-
-/// The stats panel: a page of history being measured, or measured.
+/// The stats panel: a page of history, each block reading it on its own.
 pub(super) struct StatsPanel {
     page: usize,
-    run: Option<StatsRun>,
-    stats: Option<Stats>,
-    error: Option<String>,
+    pub(super) blocks: Blocks,
     /// The commit under the trends' shared crosshair, an index into the
     /// snapshots.
     pub(super) hovered: Option<usize>,
@@ -113,17 +110,10 @@ pub(super) struct StatsPanel {
 }
 
 impl StatsPanel {
-    fn new(dir: &Path, root: &Path, page: usize, range: Range) -> Self {
-        let progress = Arc::new(Progress::default());
-        let shared = Arc::clone(&progress);
-        let dir = dir.to_path_buf();
-        let root = root.to_path_buf();
-        let job = Job::spawn(move |cancel| stats::collect(&dir, &root, page, &shared, cancel));
+    fn new(source: Source, page: usize, range: Range) -> Self {
         Self {
             page,
-            run: Some((job, progress)),
-            stats: None,
-            error: None,
+            blocks: Blocks::new(source),
             hovered: None,
             sort: FileSort::Lines,
             all_files: false,
@@ -131,12 +121,22 @@ impl StatsPanel {
         }
     }
 
-    pub(super) fn is_loading(&self) -> bool {
-        self.run.is_some()
+    /// Reads every block started so far again; old numbers stay, dimmed.
+    pub(super) fn refresh(&mut self) {
+        let source = self.blocks.source().at_page(self.page);
+        self.blocks.refresh(source);
     }
 
+    pub(super) fn is_loading(&self) -> bool {
+        self.blocks.is_loading()
+    }
+
+    /// The commits as the Lines of code trend measured them.
+    #[cfg(test)]
     pub(super) fn snapshots(&self) -> &[Snapshot] {
-        self.stats.as_ref().map_or(&[], |s| &s.snapshots)
+        self.blocks
+            .loaded(Part::Trend(Measure::Code))
+            .map_or(&[], |s| &s.snapshots)
     }
 }
 
@@ -144,6 +144,7 @@ impl StatsPanel {
 enum StatsAsk {
     Close,
     Page(usize),
+    Refresh,
     DraftRefactor(String, String),
 }
 
@@ -157,40 +158,33 @@ impl IboardApp {
             return;
         }
         if self.session.stats.is_none() {
-            self.session.stats = Some(StatsPanel::new(
-                &self.located.project_dir,
-                &self.located.root,
-                0,
-                self.session.agenda_range,
-            ));
+            let dir = &self.located.project_dir;
+            let measures = Arc::new(Measures::new(dir));
+            let source = Source::new(dir, &self.located.root, 0, measures);
+            self.session.stats = Some(StatsPanel::new(source, 0, self.session.agenda_range));
         }
     }
 
-    /// Takes the measures once they are in.
+    /// Takes each block's data once it is in.
     pub(super) fn poll_stats(&mut self) -> Option<Duration> {
         let panel = self.session.stats.as_mut()?;
-        let (job, _) = panel.run.as_ref()?;
-        match job.answer() {
-            None => return Some(job::POLL_EVERY),
-            Some(Ok(stats)) => {
-                panel.stats = Some(stats);
-                panel.run = None;
-            }
-            Some(Err(err)) => {
-                panel.error = Some(err);
-                panel.run = None;
-            }
-        }
-        None
+        panel.blocks.poll().then_some(job::POLL_EVERY)
     }
 
-    /// The panel owns the keyboard while up; the Agenda takes its keys.
+    /// The panel owns the keyboard while up: `⌘R` refreshes it and the Agenda
+    /// takes its keys once it has days.
     pub(super) fn stats_keys(&mut self, ctx: &egui::Context) {
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
             self.session.stats = None;
             return;
         }
-        if self.session.stats.as_ref().is_some_and(|p| !p.is_loading()) {
+        let Some(panel) = self.session.stats.as_mut() else {
+            return;
+        };
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::R)) {
+            panel.refresh();
+        }
+        if panel.blocks.loaded(Part::Agenda).is_some() {
             self.agenda_keys(ctx);
         }
     }
@@ -204,13 +198,11 @@ impl IboardApp {
         let p = theme::palette(ui);
         let mut ask = None;
         ui.style_mut().interaction.selectable_labels = false;
-        let mut page = None;
-        if widgets::modal_header(ui, "Project stats", |ui| page = header(ui, panel)) {
+        let mut asked = None;
+        if widgets::modal_header(ui, "Project stats", |ui| asked = header(ui, panel)) {
             ask = Some(StatsAsk::Close);
         }
-        if let Some(page) = page {
-            ask = Some(StatsAsk::Page(page));
-        }
+        ask = asked.or(ask);
         widgets::rule(ui);
         egui::Panel::bottom("stats-footer")
             .resizable(false)
@@ -218,7 +210,7 @@ impl IboardApp {
             .frame(Frame::new().fill(p.bg))
             .show(ui, |ui| {
                 widgets::rule(ui);
-                stats_footer(ui, panel.stats.as_ref());
+                stats_footer(ui, panel.blocks.loaded(Part::Head));
             });
         egui::CentralPanel::default()
             .frame(Frame::new().fill(p.bg))
@@ -241,9 +233,10 @@ impl IboardApp {
         match ask {
             Some(StatsAsk::Close) => self.session.stats = None,
             Some(StatsAsk::Page(page)) => {
-                let (project, root) = (&self.located.project_dir, &self.located.root);
-                self.session.stats = Some(StatsPanel::new(project, root, page, range));
+                let source = panel.blocks.source().at_page(page);
+                *panel = StatsPanel::new(source, page, range);
             }
+            Some(StatsAsk::Refresh) => panel.refresh(),
             Some(StatsAsk::DraftRefactor(title, description)) => {
                 self.session.stats = None;
                 self.draft_refactor(title, description);
@@ -265,116 +258,121 @@ impl IboardApp {
     }
 }
 
-/// The page shown and its neighbours, or the reading under way; returns the
-/// page asked for.
-fn header(ui: &mut egui::Ui, panel: &StatsPanel) -> Option<usize> {
+/// The page shown, the reading under way, the page's neighbours and Refresh;
+/// returns what was asked for.
+fn header(ui: &mut egui::Ui, panel: &StatsPanel) -> Option<StatsAsk> {
     let p = theme::palette(ui);
-    if let Some((job, progress)) = &panel.run {
-        let (done, total) = progress.get();
-        let text = if total == 0 {
-            "Listing commits…".to_string()
-        } else {
-            format!("Reading commit {}/{total}…", (done + 1).min(total))
-        };
-        ui.label(RichText::new(text).font(theme::meta()).color(p.ink_muted));
-        if job.elapsed() >= CLOCK_AFTER {
-            let (rect, _) = ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
-            theme::paint_icon(ui.painter(), Icon::Thinking, rect, p.ink);
-            ui.label(
-                RichText::new(stopwatch(job.elapsed()))
-                    .font(theme::meta())
-                    .color(p.ink_muted),
-            );
-        }
-        return None;
-    }
+    let head = panel.blocks.loaded(Part::Head);
+    let (done, total) = panel.blocks.source().progress.get();
     let first = panel.page * stats::PAGE;
-    let text = match panel.snapshots() {
-        [] => format!("from commit {}", first + 1),
-        shown => format!("commits {}–{} before HEAD", first + 1, first + shown.len()),
+    let text = match head {
+        _ if panel.is_loading() && done < total => {
+            format!("Reading commit {}/{total}…", done + 1)
+        }
+        None if panel.is_loading() => "Listing commits…".to_string(),
+        None => format!("from commit {}", first + 1),
+        Some(head) => format!(
+            "commits {}–{} before HEAD",
+            first + 1,
+            first + head.snapshots.len()
+        ),
     };
     ui.label(RichText::new(text).font(theme::meta()).color(p.ink_muted));
-    let mut page = None;
+    let mut ask = None;
     ui.add_enabled_ui(panel.page > 0, |ui| {
         if widgets::button(ui, ButtonKind::Ghost, None, "Newer", None).clicked() {
-            page = Some(panel.page - 1);
+            ask = Some(StatsAsk::Page(panel.page - 1));
         }
     });
-    let older = panel.stats.as_ref().is_some_and(|s| s.older);
-    ui.add_enabled_ui(older, |ui| {
+    ui.add_enabled_ui(head.is_some_and(|s| s.older), |ui| {
         let label = format!("Older {}", stats::PAGE);
         if widgets::button(ui, ButtonKind::Ghost, Some(Icon::Back), &label, None).clicked() {
-            page = Some(panel.page + 1);
+            ask = Some(StatsAsk::Page(panel.page + 1));
         }
     });
-    page
+    let refresh = Some(Icon::Refresh);
+    if widgets::button(ui, ButtonKind::Ghost, refresh, "Refresh", Some("⌘R")).clicked() {
+        ask = Some(StatsAsk::Refresh);
+    }
+    ask
 }
 
-/// The panel's body: tiles, trends and watch, files, Agenda.
+/// The panel's body: tiles, trends and watch, files, Agenda, each on its own.
 fn stats_body(ui: &mut egui::Ui, panel: &mut StatsPanel) -> Option<StatsAsk> {
-    let p = theme::palette(ui);
     ui.spacing_mut().item_spacing.y = theme::SPACE_5;
-    if let Some(error) = &panel.error {
-        ui.label(
-            RichText::new(format!("Couldn't measure this project: {error}"))
-                .font(theme::ui_body())
-                .color(p.danger),
-        );
-        return None;
+    if panel.is_loading() {
+        blocks::announce_loading(ui);
     }
-    let pulse = panel
-        .run
-        .as_ref()
-        .is_none_or(|(job, _)| job.elapsed() >= theme::SKELETON_AFTER);
-    let Some(stats) = panel.stats.as_ref() else {
-        skeleton(ui, pulse);
-        agenda::agenda_ui(ui, &mut panel.agenda, None);
-        return None;
-    };
-    if stats.snapshots.is_empty() {
-        ui.label(RichText::new("No commits on this page.").color(p.ink_muted));
-        return None;
-    }
-    tiles(ui, stats);
+    ui.columns(Measure::ALL.len(), |columns| {
+        for (ui, measure) in columns.iter_mut().zip(Measure::ALL) {
+            tile(ui, &mut panel.blocks, measure);
+        }
+    });
     let limits = Limits::default();
     let mut draft = None;
     let mut hovered = None;
+    let shown = panel.hovered;
     split(
         ui,
-        |ui| hovered = trends(ui, stats, &limits, panel.hovered),
-        |ui| draft = watch(ui, stats, &limits),
+        &mut panel.blocks,
+        |ui, blocks| hovered = trends(ui, blocks, &limits, shown),
+        |ui, blocks| draft = watch(ui, blocks, &limits),
     );
     if hovered != panel.hovered {
         panel.hovered = hovered;
         ui.ctx().request_repaint();
     }
-    files_table(ui, &stats.files, &mut panel.sort, &mut panel.all_files);
-    agenda::agenda_ui(ui, &mut panel.agenda, Some(&stats.agenda));
+    files_table(ui, &mut panel.blocks, &mut panel.sort, &mut panel.all_files);
+    agenda_block(ui, panel);
     draft
 }
 
+/// The Agenda, under its own frame and on its own job.
+fn agenda_block(ui: &mut egui::Ui, panel: &mut StatsPanel) {
+    let phase = panel.blocks.phase(Part::Agenda);
+    let clock = panel.blocks.clock(Part::Agenda);
+    let show = match &phase {
+        Phase::Waiting { pulse } => agenda::Show::Waiting { pulse: *pulse },
+        Phase::Failed(error) => agenda::Show::Failed(error),
+        Phase::Loaded { stats, .. } => agenda::Show::Days(&stats.agenda),
+    };
+    let scope = ui.scope(|ui| {
+        blocks::dim_if_stale(ui, &phase);
+        agenda::agenda_ui(ui, &mut panel.agenda, show, clock)
+    });
+    if scope.inner {
+        panel.blocks.start(Part::Agenda);
+    }
+    panel.blocks.settle(ui, Part::Agenda, &scope.response);
+}
+
 /// Three quarters and one quarter side by side, or one under the other on a
-/// narrow window.
-fn split(ui: &mut egui::Ui, wide: impl FnOnce(&mut egui::Ui), narrow: impl FnOnce(&mut egui::Ui)) {
+/// narrow window, both drawing with `state`.
+fn split<S>(
+    ui: &mut egui::Ui,
+    state: &mut S,
+    wide: impl FnOnce(&mut egui::Ui, &mut S),
+    narrow: impl FnOnce(&mut egui::Ui, &mut S),
+) {
     let width = ui.available_width();
     if width < SIDE_BY_SIDE {
-        wide(ui);
-        narrow(ui);
+        wide(ui, state);
+        narrow(ui, state);
         return;
     }
     let gap = theme::SPACE_4;
     let three = (width - gap) * 0.75;
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
-        for (w, draw) in [
-            (three, Box::new(wide) as Box<dyn FnOnce(&mut egui::Ui)>),
-            (width - gap - three, Box::new(narrow)),
-        ] {
-            ui.allocate_ui_with_layout(Vec2::new(w, 0.0), Layout::top_down(Align::Min), |ui| {
-                ui.set_width(w);
-                draw(ui);
-            });
-        }
+        column(ui, three, |ui| wide(ui, state));
+        column(ui, width - gap - three, |ui| narrow(ui, state));
+    });
+}
+
+fn column(ui: &mut egui::Ui, width: f32, draw: impl FnOnce(&mut egui::Ui)) {
+    ui.allocate_ui_with_layout(Vec2::new(width, 0.0), Layout::top_down(Align::Min), |ui| {
+        ui.set_width(width);
+        draw(ui);
     });
 }
 
@@ -415,51 +413,6 @@ fn placeholder(ui: &mut egui::Ui, share: f32, height: f32, pulse: bool) {
             Sense::hover(),
         );
     }
-}
-
-/// The screen while the history is read: every block at its final size, with
-/// its label, and its data pulsing.
-fn skeleton(ui: &mut egui::Ui, pulse: bool) {
-    ui.columns(Measure::ALL.len(), |columns| {
-        for (ui, measure) in columns.iter_mut().zip(Measure::ALL) {
-            block(ui, |ui| {
-                block_label(ui, measure.name());
-                placeholder(ui, 0.46, 22.0, pulse);
-                placeholder(ui, 0.58, 8.0, pulse);
-            });
-        }
-    });
-    split(
-        ui,
-        |ui| {
-            block(ui, |ui| {
-                block_label(ui, "Trends");
-                for measure in Measure::ALL {
-                    ui.horizontal(|ui| {
-                        ui.allocate_ui(Vec2::new(TREND_LABEL_W, TREND_H), |ui| {
-                            ui.set_width(TREND_LABEL_W);
-                            ui.label(RichText::new(measure.name()).font(theme::ui_small()));
-                        });
-                        placeholder(ui, 1.0, TREND_H, pulse);
-                    });
-                }
-            });
-        },
-        |ui| {
-            block(ui, |ui| {
-                block_label(ui, "Refactor watch");
-                for share in [0.9, 0.7, 0.8, 0.6] {
-                    placeholder(ui, share, 12.0, pulse);
-                }
-            });
-        },
-    );
-    block(ui, |ui| {
-        block_label(ui, "Biggest files");
-        for share in [0.62, 0.44, 0.54, 0.36, 0.48] {
-            placeholder(ui, share, 8.0, pulse);
-        }
-    });
 }
 
 fn stats_footer(ui: &mut egui::Ui, stats: Option<&Stats>) {

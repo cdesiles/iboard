@@ -3,63 +3,84 @@
 
 use iboard::stats::FileStat;
 
+use super::blocks::{Blocks, Part, clock_note, framed, list_rows};
 use super::{
-    Align, ButtonKind, Color32, CornerRadius, FileSort, Icon, Layout, Pos2, Rect, Sense, Vec2,
-    block, block_label, theme, thousands, widgets,
+    Align, ButtonKind, Color32, CornerRadius, Duration, FileSort, Icon, Layout, Pos2, Rect, Sense,
+    Vec2, block_label, theme, thousands, widgets,
 };
 
 /// The files listed before "Show all".
 const FILES_SHOWN: usize = 8;
+/// The block's height: room for those rows and "Show all", so nothing moves
+/// as it fills.
+const FILES_H: f32 = 340.0;
+
+const NAME: &str = "Biggest files";
 
 /// The files at the page's newest commit, biggest first unless sorted
-/// otherwise.
+/// otherwise, on their own job.
 pub(super) fn files_table(
+    ui: &mut egui::Ui,
+    blocks: &mut Blocks,
+    sort: &mut FileSort,
+    all: &mut bool,
+) {
+    framed(
+        ui,
+        blocks,
+        (Part::Files, NAME, FILES_H),
+        list_rows,
+        |ui, stats, clock| table(ui, &stats.files, sort, all, clock),
+    );
+}
+
+fn table(
     ui: &mut egui::Ui,
     files: &[FileStat],
     sort: &mut FileSort,
     all: &mut bool,
+    clock: Option<Duration>,
 ) {
-    block(ui, |ui| {
-        let p = theme::palette(ui);
-        ui.horizontal(|ui| {
-            block_label(ui, "Biggest files");
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let mut options = FileSort::ALL;
-                options.reverse();
-                if let Some(picked) = widgets::segmented(ui, *sort, &options) {
-                    *sort = picked;
-                }
-            });
-        });
-        let mut rows: Vec<&FileStat> = files.iter().collect();
-        match sort {
-            FileSort::Lines => {}
-            FileSort::Complexity => rows.sort_by_key(|f| std::cmp::Reverse(f.complexity)),
-            FileSort::Changes => rows.sort_by_key(|f| std::cmp::Reverse(f.changes)),
-        }
-        let largest = files.first().map_or(1, |f| f.code.max(1));
-        let cells = ["Lines", "Complexity", "Changes", "Hotspot"];
-        file_row(ui, "File", &cells.map(str::to_string), None, p.ink_muted);
-        widgets::rule(ui);
-        let shown = if *all { rows.len() } else { FILES_SHOWN };
-        for f in rows.iter().take(shown) {
-            let hot = if f.is_hotspot() { "hotspot" } else { "–" };
-            let cells = [
-                thousands(f.code),
-                f.complexity.to_string(),
-                f.changes.to_string(),
-                hot.to_string(),
-            ];
-            let bar = f.code as f32 / largest as f32;
-            file_row(ui, &f.path, &cells, Some(bar), p.ink);
-        }
-        if rows.len() > FILES_SHOWN && !*all {
-            let label = format!("Show all {}", rows.len());
-            if widgets::button(ui, ButtonKind::Ghost, None, &label, None).clicked() {
-                *all = true;
+    let p = theme::palette(ui);
+    ui.horizontal(|ui| {
+        block_label(ui, NAME);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let mut options = FileSort::ALL;
+            options.reverse();
+            if let Some(picked) = widgets::segmented(ui, *sort, &options) {
+                *sort = picked;
             }
-        }
+            clock_note(ui, clock);
+        });
     });
+    let mut rows: Vec<&FileStat> = files.iter().collect();
+    match sort {
+        FileSort::Lines => {}
+        FileSort::Complexity => rows.sort_by_key(|f| std::cmp::Reverse(f.complexity)),
+        FileSort::Changes => rows.sort_by_key(|f| std::cmp::Reverse(f.changes)),
+    }
+    let largest = files.first().map_or(1, |f| f.code.max(1));
+    let cells = ["Lines", "Complexity", "Changes", "Hotspot"];
+    file_row(ui, "File", &cells.map(str::to_string), None, p.ink_muted);
+    widgets::rule(ui);
+    let shown = if *all { rows.len() } else { FILES_SHOWN };
+    for f in rows.iter().take(shown) {
+        let hot = if f.is_hotspot() { "hotspot" } else { "–" };
+        let cells = [
+            thousands(f.code),
+            f.complexity.to_string(),
+            f.changes.to_string(),
+            hot.to_string(),
+        ];
+        let bar = f.code as f32 / largest as f32;
+        file_row(ui, &f.path, &cells, Some(bar), p.ink);
+    }
+    if rows.len() > FILES_SHOWN && !*all {
+        let label = format!("Show all {}", rows.len());
+        if widgets::button(ui, ButtonKind::Ghost, None, &label, None).clicked() {
+            *all = true;
+        }
+    }
 }
 
 /// One row of the files table, painted on fixed columns: the path, then its

@@ -3,9 +3,10 @@
 
 use iboard::stats::{Cycles, Limits, Stats};
 
+use super::blocks::{Blocks, Part, Phase, clock_note, dim_if_stale, failed_row};
 use super::{
-    Align, Layout, Measure, Pos2, Rect, RichText, Sense, Shape, Stroke, TREND_H, TREND_LABEL_W,
-    Vec2, block, block_label, theme,
+    Align, Duration, Layout, Measure, Pos2, Rect, RichText, Sense, Shape, Stroke, TREND_H,
+    TREND_LABEL_W, TRENDS_H, Vec2, block, block_label, placeholder, theme,
 };
 
 /// The strip at a chart's right that holds its axis bounds.
@@ -41,50 +42,107 @@ fn series(stats: &Stats, measure: Measure) -> (Vec<Option<f32>>, Option<Vec<Opti
     (median, Some(p85))
 }
 
-/// The four trends on one axis, each on its own scale; returns the commit
-/// under the pointer, shared by every row's crosshair.
+/// The four trends on one axis, each on its own scale and its own job; returns
+/// the commit under the pointer, shared by every row's crosshair.
 pub(super) fn trends(
     ui: &mut egui::Ui,
-    stats: &Stats,
+    blocks: &mut Blocks,
     limits: &Limits,
     hovered: Option<usize>,
 ) -> Option<usize> {
     block(ui, |ui| {
+        ui.set_min_height(TRENDS_H);
         let p = theme::palette(ui);
         ui.horizontal(|ui| {
             block_label(ui, "Trends");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let text = match hovered.and_then(|at| stats.snapshots.get(at)) {
+                let commits = blocks.loaded(Part::Head).map_or(&[][..], |s| &s.snapshots);
+                let text = match hovered.and_then(|at| commits.get(at)) {
                     Some(s) => format!("{} · {}", s.short, s.day()),
-                    None => format!("{} commits, oldest left", stats.snapshots.len()),
+                    None if commits.is_empty() => String::new(),
+                    None => format!("{} commits, oldest left", commits.len()),
                 };
                 ui.label(RichText::new(text).font(theme::meta()).color(p.ink_muted));
             });
         });
         let mut now_hovered = None;
         for measure in Measure::ALL {
-            let (values, extra) = series(stats, measure);
-            ui.horizontal(|ui| {
-                trend_label(ui, measure, &values, hovered);
-                let limit = (measure == Measure::Complexity).then_some(limits.complexity);
-                let chart = Chart {
-                    values: &values,
-                    extra: extra.as_deref(),
-                    limit,
-                    from_zero: measure == Measure::Code,
-                    hovered,
-                };
-                if let Some(at) = chart.show(ui, measure) {
-                    now_hovered = Some(at);
-                }
-            });
+            let row = TrendRow {
+                measure,
+                limits,
+                hovered,
+            };
+            if let Some(at) = row.show(ui, blocks) {
+                now_hovered = Some(at);
+            }
         }
         now_hovered
     })
 }
 
-/// A trend's name, its value at the hovered commit, and its value now.
-fn trend_label(ui: &mut egui::Ui, measure: Measure, values: &[Option<f32>], at: Option<usize>) {
+/// One row of the Trends, a block of its own.
+struct TrendRow<'a> {
+    measure: Measure,
+    limits: &'a Limits,
+    hovered: Option<usize>,
+}
+
+impl TrendRow<'_> {
+    fn show(&self, ui: &mut egui::Ui, blocks: &mut Blocks) -> Option<usize> {
+        let measure = self.measure;
+        let part = Part::Trend(measure);
+        let phase = blocks.phase(part);
+        let clock = blocks.clock(part);
+        let row = ui.horizontal(|ui| {
+            dim_if_stale(ui, &phase);
+            match &phase {
+                Phase::Loaded { stats, .. } => {
+                    let (values, extra) = series(stats, measure);
+                    trend_label(ui, measure, &values, self.hovered, clock);
+                    let limit = (measure == Measure::Complexity).then_some(self.limits.complexity);
+                    let chart = Chart {
+                        values: &values,
+                        extra: extra.as_deref(),
+                        limit,
+                        from_zero: measure == Measure::Code,
+                        hovered: self.hovered,
+                    };
+                    chart.show(ui, measure)
+                }
+                Phase::Waiting { pulse } => {
+                    trend_label(ui, measure, &[], None, clock);
+                    placeholder(ui, 1.0, TREND_H, *pulse);
+                    None
+                }
+                Phase::Failed(error) => {
+                    trend_label(ui, measure, &[], None, None);
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(ui.available_width(), TREND_H),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            ui.set_min_height(TREND_H);
+                            ui.spacing_mut().item_spacing.y = theme::SPACE_1;
+                            failed_row(ui, blocks, part, error);
+                        },
+                    );
+                    None
+                }
+            }
+        });
+        blocks.settle(ui, part, &row.response);
+        row.inner
+    }
+}
+
+/// A trend's name, its value at the hovered commit, and its value now;
+/// nothing but the name and the clock until it has values.
+fn trend_label(
+    ui: &mut egui::Ui,
+    measure: Measure,
+    values: &[Option<f32>],
+    at: Option<usize>,
+    clock: Option<Duration>,
+) {
     let p = theme::palette(ui);
     let now = values.iter().rev().find_map(|v| *v);
     let shown = at.and_then(|at| values.get(at).copied().flatten()).or(now);
@@ -94,11 +152,19 @@ fn trend_label(ui: &mut egui::Ui, measure: Measure, values: &[Option<f32>], at: 
         |ui| {
             ui.set_width(TREND_LABEL_W);
             ui.spacing_mut().item_spacing.y = theme::SPACE_1;
-            ui.label(
-                RichText::new(measure.name())
-                    .font(theme::ui_small())
-                    .color(p.ink),
-            );
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(measure.name())
+                        .font(theme::ui_small())
+                        .color(p.ink),
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    clock_note(ui, clock);
+                });
+            });
+            if values.is_empty() {
+                return;
+            }
             let value = shown.map_or("–".to_string(), |v| measure.show(v));
             ui.label(
                 RichText::new(value)

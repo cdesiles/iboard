@@ -4,13 +4,15 @@
 //! refactor is due.
 //!
 //! Commits are read a page of [`PAGE`] at a time along the first-parent line
-//! of `HEAD`. A commit's measures never change, so each is kept in
+//! of `HEAD`, each block of the screen on its own job through a [`Source`]. A
+//! commit's measures never change, so each is kept in
 //! `.git/iboard/stats.json` and only the commits never seen before are read,
 //! through one `git cat-file --batch`; files unchanged between commits are
 //! measured once per run.
 
 mod cycle;
 mod measure;
+mod source;
 mod watch;
 
 use std::collections::{BTreeMap, HashMap};
@@ -20,12 +22,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
-use crate::agenda::{self, DayCommit};
-use crate::files;
+use crate::agenda::DayCommit;
 use crate::git::{self, Batch};
 use crate::job::Cancel;
 pub use cycle::{Cycle, Cycles, span};
 pub use measure::{FileMetrics, Language, language_of, measure};
+use source::Listed;
+pub use source::{Measures, Need, Source};
 pub use watch::{Limits, Signal, culprits, refactor_draft, refactor_due, signals};
 
 /// How many commits one page of history holds.
@@ -39,8 +42,8 @@ pub const LARGE_FILE: usize = 500;
 pub const HOTSPOT_COMPLEXITY: usize = 60;
 pub const HOTSPOT_CHANGES: usize = 8;
 
-/// Bumped whenever the measures change, so older caches are read again.
-const CACHE_VERSION: u32 = 1;
+/// What a stopped job answers.
+const STOPPED: &str = "stopped";
 
 /// Files bigger than this are generated or data, not code to measure.
 const MAX_BLOB: u64 = 1 << 20;
@@ -150,112 +153,6 @@ pub struct Stats {
     pub cache: Option<PathBuf>,
 }
 
-/// Measures page `page` of the history of the repository holding `dir`,
-/// whose issues are kept under `root`, reading only the commits the cache
-/// lacks. Stops early, with an error, once `cancel` is set; what was read by
-/// then stays cached.
-pub fn collect(
-    dir: &Path,
-    root: &Path,
-    page: usize,
-    progress: &Progress,
-    cancel: &Cancel,
-) -> Result<Stats, String> {
-    let listed = list(dir, page)?;
-    let older = listed.len() > PAGE;
-    let commits = &listed[..listed.len().min(PAGE)];
-    let cache_file = cache_file(dir);
-    let mut cache = cache_file.as_deref().map(Cache::read).unwrap_or_default();
-    let missing: Vec<&Listed> = commits
-        .iter()
-        .filter(|c| !cache.snapshots.contains_key(&c.hash))
-        .collect();
-    progress.total.store(missing.len(), Ordering::Relaxed);
-    if !missing.is_empty() {
-        let mut batch = Batch::open(dir)?;
-        let mut blobs = HashMap::new();
-        for (at, commit) in missing.iter().enumerate() {
-            if cancel.is_cancelled() {
-                break;
-            }
-            let snapshot = measure_commit(dir, &mut batch, &mut blobs, commit)?;
-            cache.snapshots.insert(commit.hash.clone(), snapshot);
-            progress.done.store(at + 1, Ordering::Relaxed);
-            if (at + 1).is_multiple_of(10)
-                && let Some(file) = &cache_file
-            {
-                cache.write(file);
-            }
-        }
-        if let Some(file) = &cache_file {
-            cache.write(file);
-        }
-    }
-    if cancel.is_cancelled() {
-        return Err("stopped".to_string());
-    }
-    let snapshots: Vec<Snapshot> = commits
-        .iter()
-        .rev()
-        .filter_map(|c| cache.snapshots.get(&c.hash).cloned())
-        .collect();
-    let files = match commits.first() {
-        Some(newest) => files_at(dir, &newest.hash)?,
-        None => Vec::new(),
-    };
-    let agenda = agenda::collect(dir)?;
-    let cycles = match commits.first() {
-        Some(newest) => cycle::collect(dir, root, &newest.hash)?,
-        None => Cycles::default(),
-    };
-    Ok(Stats {
-        page,
-        older,
-        snapshots,
-        agenda,
-        files,
-        cycles,
-        cache: cache_file,
-    })
-}
-
-/// A commit as `git log` lists it.
-struct Listed {
-    hash: String,
-    short: String,
-    date: String,
-    subject: String,
-}
-
-/// The commits of `page`, newest first, plus one more when older ones exist.
-fn list(dir: &Path, page: usize) -> Result<Vec<Listed>, String> {
-    let head = git::output(dir, &["rev-parse", "--verify", "--quiet", "HEAD"])
-        .map_err(|_| "This project has no commits yet.".to_string())?;
-    let out = git::output(
-        dir,
-        &[
-            "log",
-            "--first-parent",
-            &format!("--skip={}", page * PAGE),
-            &format!("--max-count={}", PAGE + 1),
-            "--format=%H%x1f%h%x1f%cI%x1f%s",
-            head.trim(),
-        ],
-    )?;
-    Ok(out
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.splitn(4, '\x1f');
-            Some(Listed {
-                hash: fields.next()?.to_string(),
-                short: fields.next()?.to_string(),
-                date: fields.next()?.to_string(),
-                subject: fields.next().unwrap_or_default().to_string(),
-            })
-        })
-        .collect())
-}
-
 /// What a blob measured, per blob, file kind and language.
 type Blobs = HashMap<(String, bool, &'static str), Option<FileMetrics>>;
 
@@ -354,7 +251,7 @@ fn top(items: impl Iterator<Item = (String, usize)>) -> Vec<(String, usize)> {
 
 /// The source files at `newest`, with how many of the page's commits
 /// changed each.
-fn files_at(dir: &Path, newest: &str) -> Result<Vec<FileStat>, String> {
+fn files_at(dir: &Path, newest: &str, cancel: &Cancel) -> Result<Vec<FileStat>, String> {
     let out = git::output(
         dir,
         &[
@@ -374,6 +271,9 @@ fn files_at(dir: &Path, newest: &str) -> Result<Vec<FileStat>, String> {
     let mut batch = Batch::open(dir)?;
     let mut files = Vec::new();
     for entry in entries(&tree) {
+        if cancel.is_cancelled() {
+            return Err(STOPPED.to_string());
+        }
         let Some(bytes) = batch.read(entry.sha)? else {
             continue;
         };
@@ -395,40 +295,27 @@ fn files_at(dir: &Path, newest: &str) -> Result<Vec<FileStat>, String> {
     Ok(files)
 }
 
-/// Where the measures of the repository holding `dir` are kept.
-fn cache_file(dir: &Path) -> Option<PathBuf> {
-    let common = git::output(dir, &["rev-parse", "--git-common-dir"]).ok()?;
-    Some(dir.join(common.trim()).join("iboard").join("stats.json"))
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct Cache {
-    version: u32,
-    snapshots: HashMap<String, Snapshot>,
-}
-
-impl Cache {
-    fn read(file: &Path) -> Self {
-        std::fs::read(file)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Cache>(&bytes).ok())
-            .filter(|cache| cache.version == CACHE_VERSION)
-            .unwrap_or_default()
-    }
-
-    /// Failures are ignored: the measures are read again next time.
-    fn write(&mut self, file: &Path) {
-        self.version = CACHE_VERSION;
-        if let Ok(json) = serde_json::to_vec(self) {
-            let _ = files::write_creating(file, json);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::scratch_git::{git, git_env, git_stdin};
+    use std::sync::Arc;
+
+    const ALL: [Need; 5] = [
+        Need::Commits,
+        Need::Measures,
+        Need::Cycles,
+        Need::Files,
+        Need::Agenda,
+    ];
+
+    fn source(dir: &Path, root: &Path, page: usize) -> Source {
+        Source::new(dir, root, page, Arc::new(Measures::new(dir)))
+    }
+
+    fn collect(dir: &Path, root: &Path, page: usize) -> Result<Stats, String> {
+        source(dir, root, page).read(&ALL, &Cancel::default())
+    }
 
     fn repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -470,9 +357,9 @@ mod tests {
         );
         commit(dir.path(), "tests/t.rs", "#[test]\nfn t() {}\n", "three");
         commit(dir.path(), "README.md", "# Doc\n", "four");
-        let progress = Progress::default();
-        let stats = collect(dir.path(), dir.path(), 0, &progress, &Cancel::default()).unwrap();
-        assert_eq!(progress.get(), (4, 4));
+        let first = source(dir.path(), dir.path(), 0);
+        let stats = first.read(&ALL, &Cancel::default()).unwrap();
+        assert_eq!(first.progress.get(), (4, 4));
         let code: Vec<usize> = stats.snapshots.iter().map(|s| s.code).collect();
         assert_eq!(code, [1, 3, 5, 5]);
         let last = stats.snapshots.last().unwrap();
@@ -488,9 +375,9 @@ mod tests {
         assert!(stats.cache.as_ref().unwrap().is_file());
 
         commit(dir.path(), "src/b.rs", "fn b() {}\n", "five");
-        let progress = Progress::default();
-        let again = collect(dir.path(), dir.path(), 0, &progress, &Cancel::default()).unwrap();
-        assert_eq!(progress.get(), (1, 1), "only the new commit is read");
+        let next = source(dir.path(), dir.path(), 0);
+        let again = next.read(&ALL, &Cancel::default()).unwrap();
+        assert_eq!(next.progress.get(), (1, 1), "only the new commit is read");
         assert_eq!(again.snapshots.len(), 5);
     }
 
@@ -514,14 +401,7 @@ mod tests {
             "2026-10-03T12:30:00+00:00",
             &["commit", "-q", "-m", message],
         );
-        let stats = collect(
-            dir.path(),
-            &issues,
-            0,
-            &Progress::default(),
-            &Cancel::default(),
-        )
-        .unwrap();
+        let stats = collect(dir.path(), &issues, 0).unwrap();
         let cycles: Vec<(&str, i64)> = stats
             .cycles
             .cycles
@@ -542,14 +422,7 @@ mod tests {
         commits.extend([("more", None); PAGE]);
         import(dir.path(), &commits);
         let issues = dir.path().join("issues");
-        let stats = collect(
-            dir.path(),
-            &issues,
-            1,
-            &Progress::default(),
-            &Cancel::default(),
-        )
-        .unwrap();
+        let stats = collect(dir.path(), &issues, 1).unwrap();
         let subjects: Vec<&str> = stats.snapshots.iter().map(|s| s.subject.as_str()).collect();
         assert_eq!(subjects, ["plan", "Do it"]);
         let lib = stats.files.iter().find(|f| f.path == "src/lib.rs").unwrap();
@@ -574,14 +447,7 @@ mod tests {
                 ("two", Some((file, "fn a() {}\nfn b() {}\n"))),
             ],
         );
-        let stats = collect(
-            dir.path(),
-            dir.path(),
-            0,
-            &Progress::default(),
-            &Cancel::default(),
-        )
-        .unwrap();
+        let stats = collect(dir.path(), dir.path(), 0).unwrap();
         let cafe = stats.files.iter().find(|f| f.path == file).unwrap();
         assert_eq!(cafe.changes, 2);
     }
@@ -589,23 +455,54 @@ mod tests {
     #[test]
     fn a_project_without_commits_says_so() {
         let dir = repo();
-        let err = collect(
-            dir.path(),
-            dir.path(),
-            0,
-            &Progress::default(),
-            &Cancel::default(),
-        )
-        .unwrap_err();
+        let err = collect(dir.path(), dir.path(), 0).unwrap_err();
         assert!(err.contains("no commits"), "{err}");
     }
 
     #[test]
-    fn a_cancelled_run_stops() {
+    fn a_cancelled_run_stops_and_the_next_job_finishes_it() {
         let dir = repo();
         commit(dir.path(), "a.rs", "fn a() {}\n", "one");
+        let page = source(dir.path(), dir.path(), 0);
         let cancel = Cancel::default();
         cancel.cancel();
-        assert!(collect(dir.path(), dir.path(), 0, &Progress::default(), &cancel).is_err());
+        assert!(page.read(&ALL, &cancel).is_err());
+        let stats = page.read(&ALL, &Cancel::default()).unwrap();
+        assert_eq!(stats.snapshots.len(), 1);
+    }
+
+    /// Every block's job asks at once; the commits are measured once, and a
+    /// refresh sharing the cache measures none.
+    #[test]
+    fn jobs_share_the_measures() {
+        let dir = repo();
+        commit(dir.path(), "a.rs", "fn a() {}\n", "one");
+        commit(dir.path(), "b.rs", "fn b() {}\n", "two");
+        let page = Arc::new(source(dir.path(), dir.path(), 0));
+        let jobs: Vec<_> = (0..8)
+            .map(|_| {
+                let page = Arc::clone(&page);
+                std::thread::spawn(move || page.read(&[Need::Measures], &Cancel::default()))
+            })
+            .collect();
+        for job in jobs {
+            assert_eq!(job.join().unwrap().unwrap().snapshots.len(), 2);
+        }
+        assert_eq!(page.progress.get(), (2, 2));
+        let refreshed = page.at_page(0);
+        let stats = refreshed.read(&[Need::Measures], &Cancel::default());
+        assert_eq!(stats.unwrap().snapshots.len(), 2);
+        assert_eq!(refreshed.progress.get(), (0, 0));
+    }
+
+    #[test]
+    fn the_listed_commits_come_without_their_measures() {
+        let dir = repo();
+        commit(dir.path(), "a.rs", "fn a() {}\n", "one");
+        let page = source(dir.path(), dir.path(), 0);
+        let stats = page.read(&[Need::Commits], &Cancel::default()).unwrap();
+        assert_eq!(stats.snapshots[0].subject, "one");
+        assert_eq!(stats.snapshots[0].code, 0);
+        assert_eq!(page.progress.get(), (0, 0));
     }
 }
