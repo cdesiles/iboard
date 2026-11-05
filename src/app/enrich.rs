@@ -200,10 +200,12 @@ impl IboardApp {
                     match &enrichment.status {
                         EnrichStatus::Running(_) => {
                             widgets::thinking(ui, 14.0);
+                            widgets::announce(ui, "enrich-status", "Drafting the mockup");
                             ui.label(RichText::new("Drafting the mockup…").color(p.ink_muted));
                         }
                         EnrichStatus::Rendering(_) => {
                             widgets::thinking(ui, 14.0);
+                            widgets::announce(ui, "enrich-status", "Rendering the preview");
                             ui.label(RichText::new("Rendering the preview…").color(p.ink_muted));
                         }
                         EnrichStatus::Failed(error) => {

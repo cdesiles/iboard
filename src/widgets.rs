@@ -8,6 +8,7 @@ use egui::{
     Vec2, WidgetText,
 };
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::theme::{self, Icon};
 
@@ -61,6 +62,35 @@ pub fn thinking(ui: &mut Ui, size: f32) -> Response {
     }
     theme::thinking_mark(ui.painter(), rect, time, p.ink, p.accent);
     response
+}
+
+/// A live region nobody sees: VoiceOver says `text` when it appears and when
+/// it changes, and only then.
+pub fn announce(ui: &Ui, salt: &str, text: &str) {
+    let id = ui.id().with(salt);
+    let response = ui.interact(Rect::ZERO, id, Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, text));
+    ui.ctx().accesskit_node_builder(id, |node| {
+        node.set_live(egui::accesskit::Live::Polite);
+    });
+}
+
+/// What the screen reader hears while an agent works: `status` once, and the
+/// time spent every 10s, not every second.
+pub fn announce_thinking(ui: &Ui, status: &str, elapsed: Duration) {
+    announce(ui, "thinking-status", status);
+    let tens = elapsed.as_secs() / 10 * 10;
+    if tens > 0 {
+        announce(ui, "thinking-elapsed", &format!("{tens} seconds"));
+    }
+}
+
+/// Reports `ui`'s own node (a Modal's dialog, say) as busy while `busy`.
+pub fn mark_busy(ui: &Ui, busy: bool) {
+    if busy {
+        ui.ctx()
+            .accesskit_node_builder(ui.unique_id(), |node| node.set_busy());
+    }
 }
 
 /// One pulsing Skeleton bar, `share` of the line wide.
@@ -407,6 +437,34 @@ mod tests {
         let over = egui::Event::PointerMoved(pill.center());
         frame(false, vec![over]);
         assert!(frame(false, vec![]).0, "hovered");
+    }
+
+    /// The status is said once, the time from 10s and in tens of seconds, so
+    /// the live node only changes every 10s.
+    #[test]
+    fn thinking_announces_its_status_and_every_tenth_second() {
+        use egui::accesskit::Live;
+        use egui_kittest::kittest::{NodeT, Queryable};
+        let mut harness = egui_kittest::Harness::new_ui_state(
+            |ui, seconds: &mut u64| {
+                announce_thinking(ui, "Reading", Duration::from_secs(*seconds));
+            },
+            9,
+        );
+        harness.run();
+        let status = harness.get_by_label("Reading");
+        assert_eq!(status.accesskit_node().live(), Live::Polite);
+        assert!(harness.query_by_label_contains("seconds").is_none());
+
+        for seconds in [10, 19] {
+            *harness.state_mut() = seconds;
+            harness.run();
+            let time = harness.get_by_label("10 seconds");
+            assert_eq!(time.accesskit_node().live(), Live::Polite);
+        }
+        *harness.state_mut() = 20;
+        harness.run();
+        harness.get_by_label("20 seconds");
     }
 
     /// ConfirmDialog's padding is 20pt on every side, under the buttons too.

@@ -560,6 +560,12 @@ fn sheet_head(ui: &mut egui::Ui, composer: &Composer, view: &ComposeView) {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_2;
                 let secs = run.job.elapsed().as_secs();
+                let status = if secs >= STILL_WORKING_AFTER {
+                    "Still working"
+                } else {
+                    "Review is drafting"
+                };
+                widgets::announce_thinking(ui, status, run.job.elapsed());
                 let text = match secs {
                     s if s >= STILL_WORKING_AFTER => format!("Still working · {s}s · esc stops"),
                     s if s >= 2 => format!("Review is drafting · {s}s"),

@@ -2,7 +2,9 @@
 //! `design/components/Thinking`): the pick pane's status line and placeholder
 //! choices, and bars where the reasoning will land.
 
-use super::{CornerRadius, Frame, MEASURE, Margin, RichText, Sense, Stroke, Vec2, theme, widgets};
+use super::{
+    CornerRadius, Frame, MEASURE, Margin, RichText, Sense, Stroke, Turn, Vec2, theme, widgets,
+};
 
 /// Past this many seconds the waiting line says it is slow.
 const SLOW_SECS: u64 = 20;
@@ -18,6 +20,7 @@ fn thinking_line(ui: &mut egui::Ui, elapsed: std::time::Duration, first: bool) {
         (false, true) => "Challenger is reading the issue",
         (false, false) => "Challenger is weighing your answer",
     };
+    widgets::announce_thinking(ui, line, elapsed);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
         widgets::thinking(ui, 28.0);
@@ -39,8 +42,9 @@ fn thinking_line(ui: &mut egui::Ui, elapsed: std::time::Duration, first: bool) {
 
 /// The pick pane while the challenger works: the status line, four
 /// placeholder choices and the note, not yet open.
-pub(super) fn thinking_pick(ui: &mut egui::Ui, elapsed: std::time::Duration, first: bool) {
+pub(super) fn thinking_pick(ui: &mut egui::Ui, elapsed: std::time::Duration, turns: &[Turn]) {
     let p = theme::palette(ui);
+    let first = !turns.iter().any(|turn| matches!(turn, Turn::Author { .. }));
     thinking_line(ui, elapsed, first);
     for key in 1..=4 {
         Frame::new()
@@ -66,11 +70,21 @@ pub(super) fn thinking_pick(ui: &mut egui::Ui, elapsed: std::time::Duration, fir
             });
     }
     ui.add_space(theme::SPACE_2);
-    ui.label(
-        RichText::new("Available once the Challenger answers")
+    ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+    let label = ui.label(
+        RichText::new("Your answer")
             .font(theme::ui_small())
             .color(p.ink_muted),
     );
+    ui.add_enabled(
+        false,
+        egui::TextEdit::multiline(&mut "")
+            .hint_text("Available once the Challenger answers")
+            .font(theme::ui_body())
+            .desired_rows(3)
+            .desired_width(f32::INFINITY),
+    )
+    .labelled_by(label.id);
 }
 
 /// The why pane while the challenger works: bars where the TL;DR and two

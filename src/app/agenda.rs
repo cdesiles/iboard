@@ -287,9 +287,26 @@ fn grid_width(weeks: &[Week]) -> f32 {
             .sum::<f32>()
 }
 
-/// The heatmap; `None` while loading draws the grid, its days pulsing from
-/// `pulse` on.
+/// The heatmap as one `grid` node holding its days, for screen readers.
 fn grid(
+    ui: &mut egui::Ui,
+    agenda: &mut Agenda,
+    days: &BTreeMap<NaiveDate, Vec<DayCommit>>,
+    shape: Option<(&[Week], usize)>,
+    pulse: bool,
+) {
+    ui.scope(|ui| {
+        ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+            node.set_role(egui::accesskit::Role::Grid);
+            node.set_label("Commits per day");
+        });
+        grid_days(ui, agenda, days, shape, pulse);
+    });
+}
+
+/// The heatmap's squares; `None` while loading draws them, pulsing from
+/// `pulse` on.
+fn grid_days(
     ui: &mut egui::Ui,
     agenda: &mut Agenda,
     days: &BTreeMap<NaiveDate, Vec<DayCommit>>,

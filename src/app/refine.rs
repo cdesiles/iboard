@@ -427,6 +427,7 @@ fn refine_ui(
     cache: &mut CommonMarkCache,
 ) -> Option<RefineAction> {
     let keyed = refine_keys(ui, refine);
+    widgets::mark_busy(ui, refine.is_running());
     ui.set_width(size.x);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
     refine_head(ui, shown, &refine.agent, refine.round());
@@ -732,11 +733,7 @@ fn pick_pane(
             ui.set_min_height((min_height - 40.0).max(0.0));
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
             if let Some(NextTurn::Waiting(answer)) = &refine.next {
-                let first = !refine
-                    .turns
-                    .iter()
-                    .any(|turn| matches!(turn, Turn::Author { .. }));
-                thinking_pick(ui, answer.elapsed(), first);
+                thinking_pick(ui, answer.elapsed(), &refine.turns);
                 return;
             }
             let options = refine.options().to_vec();

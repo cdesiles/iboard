@@ -350,11 +350,5 @@ pub(super) fn tile_bars(ui: &mut egui::Ui, pulse: bool) {
 /// Announces the screen's loading once, as one live region for all its
 /// blocks; the placeholders themselves stay silent.
 pub(super) fn announce_loading(ui: &mut egui::Ui) {
-    const TEXT: &str = "Loading stats";
-    let id = ui.id().with("stats-loading");
-    let response = ui.interact(Rect::ZERO, id, Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, TEXT));
-    ui.ctx().accesskit_node_builder(id, |node| {
-        node.set_live(egui::accesskit::Live::Polite);
-    });
+    widgets::announce(ui, "stats-loading", "Loading stats");
 }

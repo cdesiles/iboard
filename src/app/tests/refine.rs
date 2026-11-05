@@ -1,7 +1,7 @@
 //! Refinement's tests: the conversation, stopping a turn, applying the spec.
 
 use super::*;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 
 /// An app reading `todo/01-demo.md`, whose agent is the custom `command`.
 fn refining(tag: &str, command: &str) -> (Scratch, PathBuf, IboardApp) {
@@ -126,6 +126,50 @@ fn a_refinement_and_a_review_replace_each_other() {
     app.prefs.agent.configured = false;
     app.start_refinement(&file);
     assert!(app.settings.is_some() && app.session.refine.is_none());
+}
+
+/// While the challenger works the dialog is busy, the status line is one live
+/// node and the note a disabled field; the answer ends all three.
+#[test]
+fn a_waiting_panel_tells_the_screen_reader() {
+    use egui::accesskit::{Live, Role};
+    let (_dir, file, mut app) = refining("refine-a11y", "sleep 1; printf 'Why?' # {prompt}");
+    app.start_refinement(&file);
+    let mut harness = kit::kittest(app);
+    harness.run_steps(2);
+    let dialog = harness.get_by_role_and_label(Role::Dialog, "Refine");
+    assert!(dialog.accesskit_node().is_busy());
+    let live = harness
+        .get_all_by_label("Challenger is reading the issue")
+        .filter(|node| node.accesskit_node().live() == Live::Polite)
+        .count();
+    assert_eq!(live, 1);
+    let note = harness.get_by_role(Role::MultilineTextInput);
+    assert!(note.accesskit_node().is_disabled());
+
+    let started = std::time::Instant::now();
+    while harness
+        .state()
+        .1
+        .session
+        .refine
+        .as_ref()
+        .unwrap()
+        .is_running()
+    {
+        assert!(started.elapsed().as_secs() < 30, "the answer never landed");
+        harness.run_steps(1);
+    }
+    harness.run_steps(2);
+    let dialog = harness.get_by_role_and_label(Role::Dialog, "Refine");
+    assert!(!dialog.accesskit_node().is_busy());
+    assert!(
+        harness
+            .query_by_label("Challenger is reading the issue")
+            .is_none()
+    );
+    let note = harness.get_by_role(Role::MultilineTextInput);
+    assert!(!note.accesskit_node().is_disabled());
 }
 
 /// On a Todo issue `⌘R` refines and `⌘⇧R` reviews; elsewhere `⌘R`

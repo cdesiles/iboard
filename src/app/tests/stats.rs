@@ -1,7 +1,7 @@
 //! Project stats' tests: measuring the history, its Agenda, each block on its
 //! own, closing the panel.
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use iboard::stats::Stats;
 
 use super::*;
@@ -194,6 +194,21 @@ fn a_slow_block_times_out_alone() {
     assert!(!panel.is_loading());
     assert!(matches!(panel.blocks.phase(part), Phase::Failed(_)));
     harness.get_by_label("Lines of code trend");
+}
+
+/// The Agenda is a `grid` holding its days as buttons.
+#[test]
+fn the_agenda_is_a_grid_of_day_buttons() {
+    use egui::accesskit::Role;
+    let (_dir, located) = project("stats-grid");
+    let mut app = IboardApp::from_located(located);
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+    let grid = harness.get_by_role_and_label(Role::Grid, "Commits per day");
+    let mut days = grid.accesskit_node().children();
+    assert!(days.any(|day| day.role() == Role::Button));
 }
 
 /// Placeholders sit at the blocks' final size: nothing moves as they fill.

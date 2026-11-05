@@ -992,6 +992,7 @@ pub(super) fn running_line(ui: &mut egui::Ui, elapsed: Duration, step: Option<St
     let seconds = elapsed.as_secs();
     let clock = format!("{}:{:02}", seconds / 60, seconds % 60);
     let step = step.unwrap_or_else(|| "The agent is reading the issue…".to_string());
+    widgets::announce_thinking(ui, "The agent is working", elapsed);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
         widgets::thinking(ui, 14.0);
