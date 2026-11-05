@@ -119,7 +119,7 @@ pub(super) fn open_issue_with_review(tag: &str) -> (Scratch, PathBuf, IboardApp)
             stale: false,
         },
         split: None,
-        follow_up: String::new(),
+        follow_up: None,
     });
     (dir, file, app)
 }
@@ -409,6 +409,77 @@ fn a_review_runs_in_the_background() {
     );
 }
 
+/// While a review runs on the issue being read, the panel beside it shows the
+/// time spent and the agent's step, and Cancel stops the run.
+#[test]
+fn the_panel_shows_a_running_review() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, file, mut harness) = reviewing("review-progress", "sleep 30 # {prompt}");
+    harness.state_mut().1.open_issue(file.clone());
+    harness.state_mut().1.start_review(&file, false);
+    harness.run_steps(2);
+    harness.get_by_label("Review of 01-demo.md");
+    harness.get_by_label("The agent is reading the issue…");
+    harness.get_by_label_contains("0:0");
+
+    let runs = &harness.state().1.session.review_runs;
+    *runs.running[&file].progress.lock().unwrap() = Some("Reading src/app.rs…".to_string());
+    harness.run_steps(1);
+    harness.get_by_label("Reading src/app.rs…");
+
+    harness.get_by_label("Cancel").click();
+    harness.run_steps(2);
+    assert!(!harness.state().1.review_is_running(&file));
+    assert!(harness.query_by_label("Review of 01-demo.md").is_none());
+}
+
+/// A title alone gets the sections it misses: no findings, and they apply to
+/// the draft.
+#[test]
+fn a_title_alone_gets_proposed_sections() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, _file, mut harness) = reviewing(
+        "review-title",
+        "printf 'PROPOSAL:\\n# Other\\n\\n## Context\\n\\nWhy print.' # {prompt}",
+    );
+    let file = dir.join("issues/todo/02-other.md");
+    harness.state_mut().1.open_issue(file.clone());
+    harness.state_mut().1.start_review(&file, false);
+    land(&mut harness, &file);
+    harness.run_steps(2);
+    let app = &harness.state().1;
+    assert!(app.proposal_shown());
+    let review = app.session.review.as_ref().unwrap();
+    assert!(review.review.report.as_ref().unwrap().findings.is_empty());
+    harness.get_by_label_contains("only a title");
+    harness.get_by_label_contains("Why print.");
+    assert!(harness.query_by_label("RELEVANCE").is_none());
+}
+
+/// Ask again is a button: a first click opens the field, a second sends what
+/// it holds. The findings read as rows under an uppercase label.
+#[test]
+fn ask_again_opens_its_field_then_sends() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, file, app) = open_issue_with_review("review-ask");
+    let mut harness = kittest(app);
+    harness.run_steps(1);
+    harness.get_by_label("RELEVANCE");
+    harness.get_by_label("Ask again").click();
+    harness.run_steps(2);
+    let app = &mut harness.state_mut().1;
+    assert_eq!(
+        app.session.review.as_ref().unwrap().follow_up.as_deref(),
+        Some("")
+    );
+    app.prefs.agent = fake_agent("sleep 30 # {prompt}");
+    app.session.review.as_mut().unwrap().follow_up = Some("Make it smaller".to_string());
+    harness.run_steps(1);
+    harness.get_by_label("Ask again").click();
+    harness.run_steps(2);
+    assert!(harness.state().1.review_is_running(&file));
+}
+
 /// When the answer lands the card shows it is ready; a click opens the
 /// issue with the review panel.
 #[test]
@@ -636,8 +707,8 @@ fn cmd_u_starts_and_cancels_an_update() {
     assert!(!app.review_is_running(&file));
 }
 
-/// A long agent name truncates in the review head instead of widening the
-/// panel under the issue.
+/// A long agent name wraps in the review head instead of widening the panel
+/// under the issue.
 #[test]
 fn a_long_agent_name_keeps_the_review_panel_in_its_place() {
     use egui_kittest::kittest::Queryable;
@@ -666,6 +737,12 @@ fn a_long_agent_name_keeps_the_review_panel_in_its_place() {
         title.min.x >= panel_left,
         "{title:?} starts left of {panel_left}"
     );
+    let detail = harness.get_by_label_contains("on-and-on").rect();
+    assert!(
+        detail.height() > 2.0 * theme::meta().size,
+        "{detail:?} wraps"
+    );
+    assert!(detail.max.x <= window().width(), "{detail:?} stays inside");
 }
 
 /// A finished update opens its panel on the issue being read, and when the

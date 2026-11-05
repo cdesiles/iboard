@@ -3,9 +3,9 @@
 use super::side_panel::side_panel;
 use super::split::{self, Split};
 use super::{
-    Align, ButtonKind, Color32, Duration, Frame, HashMap, HashSet, IboardApp, Icon, Job, Layout,
-    Palette, Path, PathBuf, Pos2, Report, ReviewMode, RichText, Sense, Vec2, agent, file_name, job,
-    prompts, reviews, theme, widgets,
+    Align, ButtonKind, Color32, CommonMarkCache, CommonMarkViewer, Duration, Frame, HashMap,
+    HashSet, IboardApp, Icon, Job, Layout, Palette, Path, PathBuf, Pos2, Report, ReviewMode,
+    RichText, Sense, Vec2, agent, file_name, job, prompts, reviews, theme, widgets,
 };
 
 impl IboardApp {
@@ -31,7 +31,7 @@ impl IboardApp {
             return;
         }
         let project = Some(self.board.project_of(&target.path));
-        let answer = agent::start_plan_review(
+        let (answer, progress) = agent::start_plan_review(
             &self.prefs.agent,
             &prompt,
             &target.path,
@@ -50,6 +50,7 @@ impl IboardApp {
                 agent: self.prefs.agent.label(),
                 hash: reviews::content_hash(content),
                 answer,
+                progress,
             },
         );
     }
@@ -88,7 +89,7 @@ impl IboardApp {
             draft: review.review.draft,
             mode: review.review.mode,
         };
-        let follow_up = review.follow_up.trim().to_string();
+        let follow_up = review.follow_up.as_deref().unwrap_or("").trim().to_string();
         if follow_up.is_empty() {
             return;
         }
@@ -138,7 +139,7 @@ impl IboardApp {
                 path,
                 review,
                 split: None,
-                follow_up: String::new(),
+                follow_up: None,
             });
         }
     }
@@ -220,32 +221,59 @@ impl IboardApp {
         self.session.review = None;
     }
 
+    /// What the Review button says on `path`: its icon, label, hint and key.
+    fn review_button_look(&self, path: &Path) -> (Icon, &'static str, &'static str, &'static str) {
+        let refine = self.session.refine.as_ref();
+        let hidden = refine.filter(|refine| refine.path == path && refine.hidden);
+        match hidden {
+            _ if self.review_is_running(path) => (
+                Icon::Thinking,
+                "Reviewing…",
+                "The review runs in the background: cancel it (⌘⇧R)",
+                "⌘⇧R",
+            ),
+            Some(refine) if refine.is_running() => (
+                Icon::Thinking,
+                "Refining…",
+                "The challenger is answering: back to the refinement",
+                "⌘R",
+            ),
+            Some(_) => (
+                Icon::Review,
+                "Refinement waiting",
+                "The challenger waits for your answer: back to the refinement",
+                "⌘R",
+            ),
+            None if self.prefs.agent.configured() => (
+                Icon::Review,
+                "Refine",
+                "Refine this issue in a conversation with a challenger",
+                "⌘R",
+            ),
+            None => (
+                Icon::Review,
+                "Refine",
+                "No agent is set up yet: choose one in Settings › AI review (⌘, or the caret)",
+                "⌘R",
+            ),
+        }
+    }
+
     /// The Review split button, rightmost in the Reader and Editor header: the
-    /// main part refines the issue (or cancels a running review), the caret
-    /// opens a menu with the reviews, naming what runs and leading to the AI
-    /// settings.
+    /// main part refines the issue, back to a session hidden there (or cancels
+    /// a running review), the caret opens a menu with the reviews, naming what
+    /// runs and leading to the AI settings.
     pub(super) fn review_button(&mut self, ui: &mut egui::Ui, path: &Path) {
         let running = self.review_is_running(path);
         let configured = self.prefs.agent.configured();
-        let label = if running { "Reviewing…" } else { "Refine" };
-        let hint = if running {
-            "The review runs in the background: cancel it (⌘⇧R)"
-        } else if configured {
-            "Refine this issue in a conversation with a challenger"
-        } else {
-            "No agent is set up yet: choose one in Settings › AI review (⌘, or the caret)"
-        };
+        let (icon, label, hint, key) = self.review_button_look(path);
         let (main, caret) = widgets::split_button(
             ui,
             egui::Id::new("review-button"),
             ButtonKind::Review,
-            Some(if running {
-                Icon::Thinking
-            } else {
-                Icon::Review
-            }),
+            Some(icon),
             label,
-            Some(if running { "⌘⇧R" } else { "⌘R" }),
+            Some(key),
             running || configured,
         );
         if main.on_hover_text(hint).clicked() {
@@ -323,47 +351,62 @@ impl IboardApp {
     /// actions on them, or the tickets of a split. The agent only ever
     /// proposes; Apply opens the editor, Create writes the tickets.
     pub(super) fn review_panel(&mut self, ui: &mut egui::Ui) {
-        let p = theme::palette(ui);
         let Some(mut review) = self.session.review.take() else {
             return;
         };
         let past = &review.review;
-        let source = if past.draft { "draft" } else { "file" };
-        let title = format!("Review of {}", file_name(&review.path));
-        let detail = format!("{} · {} · {source}", past.agent, past.mode.scope_name());
-        let plan = past.plan;
+        let title = review_title(&review.path);
+        let detail = review_detail(&past.agent, past.mode, past.draft);
+        let cache = &mut self.reader.cache;
 
         let action = side_panel(ui, &title, &detail, |ui| {
-            let mut action = None;
-            Frame::new().inner_margin(theme::SPACE_4).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                if plan {
-                    ui.label(
-                        RichText::new(PLAN_NOTE)
-                            .font(theme::meta())
-                            .color(p.ink_muted),
-                    );
-                    ui.add_space(theme::SPACE_2);
-                }
-                action = review_body(ui, &mut review);
-                if matches!(review.split, None | Some(Split::Failed(_))) {
-                    ui.add_space(theme::SPACE_2);
-                    widgets::text_entry(
-                        ui,
-                        egui::TextEdit::singleline(&mut review.follow_up)
-                            .hint_text(
-                                RichText::new("Ask again: make it smaller…").color(p.ink_faint),
-                            )
-                            .font(theme::ui_body())
-                            .desired_width(f32::INFINITY),
-                    );
-                }
-            });
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let room = (ui.available_height() - PANEL_FOOT_H).max(theme::CONTROL_H);
+            let action = theme::scroll_area(
+                ui,
+                egui::ScrollArea::vertical()
+                    .id_salt("review-body")
+                    .max_height(room)
+                    .auto_shrink([false, true]),
+                true,
+                |ui| review_content(ui, &mut review, cache),
+            )
+            .inner;
+            widgets::rule(ui);
             review_footer(ui, &review).or(action)
         });
 
+        if matches!(action, Some(PanelAction::OpenFollowUp)) {
+            review.follow_up = Some(String::new());
+            ui.data_mut(|d| d.insert_temp(follow_up_id(), true));
+        }
         self.session.review = Some(review);
         self.apply_panel_action(action);
+    }
+
+    /// The review panel while the agent works on `path`: the time it has
+    /// taken and the step it is on, and Cancel. The board and the page stay
+    /// usable; the answer takes its place when it lands.
+    pub(super) fn running_review_panel(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let Some(run) = self.session.review_runs.running.get(path) else {
+            return;
+        };
+        let title = review_title(path);
+        let detail = review_detail(&run.agent, run.mode, run.draft);
+        let cancel = side_panel(ui, &title, &detail, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            padded(ui, |ui| {
+                running_line(ui, run.answer.elapsed(), agent::step(&run.progress));
+            });
+            widgets::rule(ui);
+            widgets::footer_bar(ui, theme::SPACE_4, |ui| {
+                widgets::button(ui, ButtonKind::Secondary, None, "Cancel", Some("⌘⇧R")).clicked()
+            })
+            .inner
+        });
+        if cancel {
+            self.cancel_review_run(path);
+        }
     }
 
     fn apply_panel_action(&mut self, action: Option<PanelAction>) {
@@ -380,11 +423,11 @@ impl IboardApp {
                 }
             }
             Some(PanelAction::Again) => self.ask_again(),
+            Some(PanelAction::OpenFollowUp) | None => {}
             Some(PanelAction::Apply) => self.apply_review_proposal(),
             Some(PanelAction::Split) => self.start_split(),
             Some(PanelAction::CreateSplit) => self.create_split(),
             Some(PanelAction::BackToReview) => self.back_to_review(),
-            None => {}
         }
     }
 }
@@ -405,8 +448,8 @@ pub(super) struct ReviewState {
     pub(super) review: PastReview,
     /// The split the findings led to, shown in their place.
     pub(super) split: Option<Split>,
-    /// The "Ask again" follow-up, kept between renders.
-    pub(super) follow_up: String,
+    /// The "Ask again" follow-up, once its button opened the field.
+    pub(super) follow_up: Option<String>,
 }
 
 impl ReviewState {
@@ -424,18 +467,20 @@ impl ReviewState {
 /// whose review landed since it was last shown.
 #[derive(Default)]
 pub(super) struct ReviewRuns {
-    running: HashMap<PathBuf, ReviewRun>,
+    pub(super) running: HashMap<PathBuf, ReviewRun>,
     ready: HashSet<PathBuf>,
 }
 
 /// A review the agent is working on, and what to keep with its answer.
-struct ReviewRun {
+pub(super) struct ReviewRun {
     draft: bool,
     mode: ReviewMode,
     agent: String,
     /// [`reviews::content_hash`] of the text the agent reads.
     hash: String,
     answer: Job<Result<agent::Reviewed, String>>,
+    /// The step the agent is on, for the panel.
+    pub(super) progress: agent::Progress,
 }
 
 impl ReviewRuns {
@@ -667,63 +712,190 @@ fn review_menu(
         .and_then(|inner| inner.inner)
 }
 
+/// The label column of a finding's row, and the height of its first line.
+const AXIS_W: f32 = 76.0;
+const AXIS_H: f32 = 18.0;
+
+/// A row's padding in the panel's body, top and bottom.
+const ROW_PAD_Y: f32 = 10.0;
+
+/// The panel's footer under the body: its bar, and the rule over it.
+const PANEL_FOOT_H: f32 = theme::CONTROL_H + 2.0 * theme::SPACE_3 + 1.0;
+
 /// What a click in the review panel asks for.
 enum PanelAction {
     Apply,
     Cancel,
     Retry,
     Again,
+    OpenFollowUp,
     Dismiss,
     Split,
     CreateSplit,
     BackToReview,
 }
 
-/// The panel's body: the run in progress, the error, the three findings
-/// (Size offering a split when it is not a Pass), or the split's tickets.
-fn review_body(ui: &mut egui::Ui, review: &mut ReviewState) -> Option<PanelAction> {
+/// "Review of x.md": the panel's title, whatever its state.
+fn review_title(path: &Path) -> String {
+    format!("Review of {}", file_name(path))
+}
+
+/// The tool and model, the scope and what the agent read.
+fn review_detail(agent: &str, mode: ReviewMode, draft: bool) -> String {
+    let source = if draft { "draft" } else { "file" };
+    format!("{agent} · {} · {source}", mode.scope_name())
+}
+
+/// A row of the panel's body: 12pt in, 10pt down.
+fn padded(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    Frame::new()
+        .inner_margin(Vec2::new(theme::SPACE_4, ROW_PAD_Y))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+            add(ui);
+        });
+}
+
+fn follow_up_id() -> egui::Id {
+    egui::Id::new("review-follow-up")
+}
+
+/// What scrolls in the panel: the plan note, the body, and the follow-up
+/// once Ask again opened it. Enter sends the follow-up.
+fn review_content(
+    ui: &mut egui::Ui,
+    review: &mut ReviewState,
+    cache: &mut CommonMarkCache,
+) -> Option<PanelAction> {
+    let p = theme::palette(ui);
+    if review.review.plan {
+        padded(ui, |ui| {
+            ui.label(
+                RichText::new(PLAN_NOTE)
+                    .font(theme::meta())
+                    .color(p.ink_muted),
+            );
+        });
+    }
+    let mut action = review_body(ui, review, cache);
+    if !matches!(review.split, None | Some(Split::Failed(_))) {
+        return action;
+    }
+    let Some(follow_up) = review.follow_up.as_mut() else {
+        return action;
+    };
+    widgets::rule(ui);
+    padded(ui, |ui| {
+        let entry = widgets::text_entry(
+            ui,
+            egui::TextEdit::singleline(follow_up)
+                .id(follow_up_id())
+                .hint_text(RichText::new("Make it smaller…").color(p.ink_faint))
+                .font(theme::ui_body())
+                .desired_width(f32::INFINITY),
+        );
+        if ui
+            .data_mut(|d| d.remove_temp::<bool>(follow_up_id()))
+            .is_some()
+        {
+            entry.request_focus();
+        }
+        if entry.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            action = Some(PanelAction::Again);
+        }
+    });
+    action
+}
+
+/// The panel's body: the error, the findings as rows or the sections proposed
+/// for a title, the answer that did not parse, or the split, under way or in
+/// its tickets.
+fn review_body(
+    ui: &mut egui::Ui,
+    review: &mut ReviewState,
+    cache: &mut CommonMarkCache,
+) -> Option<PanelAction> {
     let p = theme::palette(ui);
     let mut action = None;
     match (&mut review.split, &review.review.report) {
-        (Some(Split::Cutting { answer, progress }), _) => {
+        (Some(Split::Cutting { answer, progress }), _) => padded(ui, |ui| {
             let step = agent::step(progress).or(Some("The agent is cutting the issue…".into()));
             running_line(ui, answer.elapsed(), step);
-        }
-        (Some(Split::Failed(error)), _) => {
+        }),
+        (Some(Split::Failed(error)), _) => padded(ui, |ui| {
             ui.label(RichText::new(error.as_str()).color(p.danger));
-        }
-        (Some(Split::Ready(drafts)), _) => split::drafts_ui(ui, drafts),
-        (None, None) => {
+        }),
+        (Some(Split::Ready(drafts)), _) => padded(ui, |ui| split::drafts_ui(ui, drafts)),
+        (None, None) => padded(ui, |ui| {
             ui.label(RichText::new(&review.review.raw).color(p.ink_muted));
-        }
+        }),
+        (None, Some(report)) if report.findings.is_empty() => padded(ui, |ui| {
+            ui.label(
+                RichText::new("This issue is only a title. The sections it is missing:")
+                    .font(theme::ui_small())
+                    .color(p.ink_muted),
+            );
+            let proposal = report.proposal.as_deref().unwrap_or_default();
+            CommonMarkViewer::new().show(ui, cache, proposal);
+        }),
         (None, Some(report)) => {
             for finding in &report.findings {
-                let (label, color) = verdict_look(finding.verdict, p);
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(finding.axis.name())
-                            .font(theme::ui_strong())
-                            .color(p.ink),
-                    );
-                    widgets::pill(ui, label, color);
-                });
-                if !finding.body.is_empty() {
-                    ui.label(RichText::new(&finding.body).color(p.ink_muted));
+                widgets::rule(ui);
+                if finding_row(ui, finding) {
+                    action = Some(PanelAction::Split);
                 }
-                if finding.axis == agent::Axis::Size && finding.verdict != agent::Verdict::Pass {
-                    ui.add_space(theme::SPACE_2);
-                    if widgets::button(ui, ButtonKind::Review, None, "Split into tickets…", None)
-                        .on_hover_text("Ask the agent to cut this issue into smaller ones")
-                        .clicked()
-                    {
-                        action = Some(PanelAction::Split);
-                    }
-                }
-                ui.add_space(theme::SPACE_4);
             }
         }
     }
     action
+}
+
+/// One finding: its axis in the label column; its pill and words beside it,
+/// and a Size that is not a Pass offering a split. Returns whether it was
+/// taken up.
+fn finding_row(ui: &mut egui::Ui, finding: &agent::Finding) -> bool {
+    let p = theme::palette(ui);
+    let (verdict, color) = verdict_look(finding.verdict, p);
+    let splits = finding.axis == agent::Axis::Size && finding.verdict != agent::Verdict::Pass;
+    let mut split = false;
+    padded(ui, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            ui.allocate_ui_with_layout(
+                Vec2::new(AXIS_W, AXIS_H),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.set_min_width(AXIS_W);
+                    ui.label(
+                        RichText::new(finding.axis.name().to_uppercase())
+                            .font(theme::ui_label())
+                            .extra_letter_spacing(theme::LABEL_TRACKING)
+                            .color(p.ink),
+                    );
+                },
+            );
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme::SPACE_1;
+                widgets::pill(ui, verdict, color);
+                if !finding.body.is_empty() {
+                    ui.label(
+                        RichText::new(&finding.body)
+                            .font(theme::ui_small())
+                            .color(p.ink),
+                    );
+                }
+                if splits {
+                    ui.add_space(theme::SPACE_1);
+                    split =
+                        widgets::button(ui, ButtonKind::Review, None, "Split into tickets…", None)
+                            .on_hover_text("Ask the agent to cut this issue into smaller ones")
+                            .clicked();
+                }
+            });
+        });
+    });
+    split
 }
 
 /// The panel's buttons, right to left: the main action first.
@@ -794,16 +966,12 @@ fn review_footer(ui: &mut egui::Ui, review: &ReviewState) -> Option<PanelAction>
                     PanelAction::Retry,
                 );
             }
-            if !review.follow_up.trim().is_empty() {
-                widgets::action_button(
-                    ui,
-                    &mut action,
-                    ButtonKind::Secondary,
-                    "Ask again",
-                    None,
-                    PanelAction::Again,
-                );
-            }
+            let (kind, ask) = match review.follow_up.as_deref().map(str::trim) {
+                None => (ButtonKind::Secondary, PanelAction::OpenFollowUp),
+                Some("") => (ButtonKind::Disabled, PanelAction::Again),
+                Some(_) => (ButtonKind::Secondary, PanelAction::Again),
+            };
+            widgets::action_button(ui, &mut action, kind, "Ask again", None, ask);
             widgets::action_button(
                 ui,
                 &mut action,

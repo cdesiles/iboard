@@ -151,11 +151,19 @@ pub fn parse(text: &str) -> Option<Report> {
     }
     flush(&mut findings, &mut current, &mut body);
 
-    if findings.len() != Axis::ALL.len() {
-        return None;
-    }
     let proposal = proposal_of(&proposal_lines.join("\n"));
-    Some(Report { findings, proposal })
+    let complete = findings.len() == Axis::ALL.len();
+    (complete || (opens_on_proposal(text) && proposal.is_some()))
+        .then_some(Report { findings, proposal })
+}
+
+/// Whether the answer is a proposal alone, as a title-only issue gets: an
+/// agent repeating the prompt, which opens on prose, is not one.
+fn opens_on_proposal(text: &str) -> bool {
+    text.lines()
+        .find(|line| !line.trim().is_empty())
+        .and_then(|line| key_and_rest(line.trim()))
+        .is_some_and(|(key, _)| key == "PROPOSAL")
 }
 
 /// A proposed rewrite, unless it is empty or the word `NONE`.

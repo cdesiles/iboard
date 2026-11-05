@@ -24,6 +24,14 @@ pub fn front_matter(lines: &[&str]) -> Option<Range<usize>> {
     Some(1..end)
 }
 
+/// Whether the issue says nothing past its front matter and its `# ` title.
+pub fn only_a_title(text: &str) -> bool {
+    let lines: Vec<&str> = text.lines().collect();
+    let body = front_matter(&lines).map_or(0, |matter| matter.end + 1);
+    let mut said = lines[body..].iter().filter(|line| !line.trim().is_empty());
+    said.next().is_none_or(|line| line.starts_with("# ")) && said.next().is_none()
+}
+
 /// Whether each line is prose: not the front matter, its delimiters included,
 /// and not a fenced code block (```` ``` ```` or `~~~`), its fences included.
 pub fn prose(lines: &[&str]) -> Vec<bool> {

@@ -74,13 +74,18 @@ impl IboardApp {
             .refine
             .as_ref()
             .is_some_and(|refine| refine.path == path);
+        let reviewing = !reviewed && self.review_is_running(path);
         let logged = self.agent_log_open(path);
         let panes = ui.max_rect();
-        let side = reviewed || logged;
+        let side = reviewed || reviewing || logged;
         let stacked = side && panes.width() < PANE_MIN + REVIEW_PANEL_WIDTH;
         let widest = (panes.width() - PANE_MIN).max(REVIEW_PANEL_WIDTH);
         let range = REVIEW_PANEL_WIDTH..=widest;
-        let split = theme::pane_split_id(if reviewed { "review" } else { "log" });
+        let split = theme::pane_split_id(if reviewed || reviewing {
+            "review"
+        } else {
+            "log"
+        });
         let (issue_rect, side_rect) = if stacked {
             panes.split_top_bottom_at_fraction(0.5)
         } else if side {
@@ -114,6 +119,8 @@ impl IboardApp {
                     ui.set_min_size(ui.available_size());
                     if reviewed {
                         self.review_panel(ui);
+                    } else if reviewing {
+                        self.running_review_panel(ui, path);
                     } else {
                         self.agent_log_panel(ui);
                     }

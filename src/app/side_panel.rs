@@ -1,11 +1,7 @@
 //! The panel beside an issue's page, the review's or the agent log's: one
 //! `surface` card under a `review-soft` head.
 
-use super::{Align, CornerRadius, Frame, Layout, RichText, Stroke, Vec2, theme};
-
-/// How much of the head its detail may take: it truncates past it, so the
-/// panel never widens under the issue.
-const DETAIL_SHARE: f32 = 0.6;
+use super::{CornerRadius, Frame, RichText, Stroke, theme};
 
 /// A `surface` card with a `line-strong` edge and `radius-md` corners: the
 /// head, `title` and `detail`, then `body`.
@@ -46,37 +42,19 @@ pub(super) fn head_frame(ui: &egui::Ui) -> Frame {
         })
 }
 
-/// The panel's head: `title` ("Review of x.md") and, on the right,
-/// `detail` (the agent, mode and source).
+/// The panel's head: `title` ("Review of x.md") over `detail` (the agent, mode
+/// and source). Both wrap, so neither is cut and the panel never widens under
+/// the issue.
 fn head(ui: &mut egui::Ui, title: &str, detail: &str) {
     let p = theme::palette(ui);
     head_frame(ui).inner_margin(theme::ROW_PAD).show(ui, |ui| {
-        // Detail first, so a long title truncates into the
-        // space left instead of widening the panel (which
-        // flickers while the spinner repaints). The row has a
-        // fixed height: a bare right-to-left layout would
-        // stretch to fill the whole panel.
-        ui.allocate_ui_with_layout(
-            Vec2::new(ui.available_width(), theme::CONTROL_H),
-            Layout::right_to_left(Align::Center),
-            |ui| {
-                let room = ui.available_width();
-                ui.scope(|ui| {
-                    ui.set_max_width(room * DETAIL_SHARE);
-                    let detail = RichText::new(detail).font(theme::meta()).color(p.review);
-                    ui.add(egui::Label::new(detail).truncate());
-                });
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(title)
-                                .font(theme::ui_strong())
-                                .color(p.review),
-                        )
-                        .truncate(),
-                    );
-                });
-            },
-        );
+        ui.set_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = theme::SPACE_1;
+        let title = RichText::new(title)
+            .font(theme::ui_strong())
+            .color(p.review);
+        ui.add(egui::Label::new(title).wrap());
+        let detail = RichText::new(detail).font(theme::meta()).color(p.review);
+        ui.add(egui::Label::new(detail).wrap());
     });
 }

@@ -8,6 +8,7 @@
 
 use crate::agent::{Leash, ReviewMode};
 use crate::design::{DesignSystem, css};
+use crate::markdown;
 
 /// The design context: the brief, the token contract and the component
 /// inventory, ready to splice into a prompt or to show as-is.
@@ -68,7 +69,8 @@ pub fn component_prompt(
 /// by design: if that is not enough context, the issue is the problem. It stays
 /// issue-only on purpose, unlike the design-aware prompts below. A Deep review
 /// (Ticket + project context) may check the issue against the repository and
-/// its design system; a Quick one (Ticket only) must not. `notes` are the
+/// its design system; a Quick one (Ticket only) must not. An issue that is only
+/// a title gets the sections it misses instead of findings. `notes` are the
 /// author's comments, each on the passage it quotes.
 pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]) -> String {
     let scope = match mode {
@@ -79,7 +81,35 @@ pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]
              it touches); keep the answer short."
         }
     };
-    let mut prompt = format!(
+    let mut prompt = if markdown::only_a_title(content) {
+        title_prompt(scope, content)
+    } else {
+        findings_prompt(scope, content)
+    };
+    push_notes(&mut prompt, notes);
+    prompt
+}
+
+/// The review of an issue that is only a title: the sections it misses.
+fn title_prompt(scope: &str, content: &str) -> String {
+    format!(
+        "You review software issues before they are implemented. {scope} The issue below \
+         is only a title, so there is nothing to judge yet: propose the sections it is \
+         missing and answer with nothing but this exact format:\n\
+         \n\
+         PROPOSAL:\n\
+         <the whole issue in markdown, its front matter and title as written, then short \
+         ## Context, ## Acceptance criteria, ## Out of scope and ## Open questions sections; \
+         what you cannot know from the title goes under Open questions>\n\
+         \n\
+         ---\n\
+         {content}"
+    )
+}
+
+/// The review of a written issue: its three findings.
+fn findings_prompt(scope: &str, content: &str) -> String {
+    format!(
         "You review software issues before they are implemented. {scope} Judge the \
          issue below on three axes and answer with nothing but this exact format:\n\
          \n\
@@ -98,9 +128,7 @@ pub fn review_prompt(content: &str, mode: ReviewMode, notes: &[(String, String)]
          \n\
          ---\n\
          {content}"
-    );
-    push_notes(&mut prompt, notes);
-    prompt
+    )
 }
 
 /// The instruction for Update with AI: the agent checks, in the issue's
@@ -435,6 +463,11 @@ mod tests {
     #[test]
     fn the_update_prompt() {
         insta::assert_snapshot!(update_prompt(ISSUE, "2026-10-28"));
+    }
+
+    #[test]
+    fn the_review_prompt_of_a_title_alone() {
+        insta::assert_snapshot!(review_prompt("# Print the board\n", ReviewMode::Quick, &[]));
     }
 
     #[test]

@@ -28,6 +28,19 @@ fn verdicts_survive_markdown_and_punctuation() {
 }
 
 #[test]
+fn a_proposal_alone_is_a_report_when_the_answer_opens_on_it() {
+    let report = parse("PROPOSAL:\n# Demo\n\n## Context\n\nWhy.").expect("a report");
+    assert!(report.findings.is_empty());
+    assert_eq!(
+        report.proposal.as_deref(),
+        Some("# Demo\n\n## Context\n\nWhy.")
+    );
+    assert!(parse("PROPOSAL: NONE").is_none());
+    let echoed = crate::prompts::review_prompt("# A title", ReviewMode::Quick, &[]);
+    assert!(parse(&echoed).is_none(), "an agent repeating the prompt");
+}
+
+#[test]
 fn a_line_that_only_looks_like_a_finding_stays_text() {
     let answer = "RELEVANCE: Pass\nSize: the issue is large\nSIZE: Pass\nok\nCLARITY: Pass\nok\nPROPOSAL: NONE";
     let report = parse(answer).expect("a report");
@@ -342,7 +355,7 @@ fn tool(tool: Tool) -> AgentConfig {
 }
 
 fn reviewed(config: &AgentConfig, prompt: &str, mode: ReviewMode) -> Reviewed {
-    let job = start_plan_review(config, prompt, Path::new("a.md"), None, mode);
+    let (job, _) = start_plan_review(config, prompt, Path::new("a.md"), None, mode);
     job.wait().unwrap().unwrap()
 }
 

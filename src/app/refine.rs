@@ -584,6 +584,9 @@ fn why_pane(
             thinking_why(ui);
             return;
         }
+        if let Some(NextTurn::Failed(error)) = &refine.next {
+            ui.label(RichText::new(format!("{}: {error}", refine.agent)).color(p.danger));
+        }
         let Some((at, turn)) = refine
             .turns
             .iter()
@@ -608,9 +611,6 @@ fn why_pane(
                     .font(theme::meta())
                     .color(p.review),
             );
-        }
-        if let Some(NextTurn::Failed(error)) = &refine.next {
-            ui.label(RichText::new(error).color(p.danger));
         }
     });
     unfold

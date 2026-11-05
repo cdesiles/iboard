@@ -1,0 +1,11 @@
+---
+source: src/prompts.rs
+expression: "review_prompt(\"# Print the board\\n\", ReviewMode::Quick, &[])"
+---
+You review software issues before they are implemented. Read only the issue: do not open files or run tools. The issue below is only a title, so there is nothing to judge yet: propose the sections it is missing and answer with nothing but this exact format:
+
+PROPOSAL:
+<the whole issue in markdown, its front matter and title as written, then short ## Context, ## Acceptance criteria, ## Out of scope and ## Open questions sections; what you cannot know from the title goes under Open questions>
+
+---
+# Print the board

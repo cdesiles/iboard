@@ -192,6 +192,47 @@ fn the_popin_hides_and_comes_back() {
     assert!(harness.state().1.session.refine.is_none());
 }
 
+/// A first turn that fails says why, naming the tool, beside its Retry.
+#[test]
+fn a_first_round_failure_says_why() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, file, mut app) = refining("refine-failed", "echo boom >&2; exit 1 # {prompt}");
+    app.start_refinement(&file);
+    assert!(until(|| {
+        app.poll_refinement();
+        !app.session.refine.as_ref().unwrap().is_running()
+    }));
+    let label = app.prefs.agent.label();
+    let mut harness = kittest(app);
+    harness.run_steps(2);
+    harness.get_by_label_contains(&format!("{label}: "));
+    harness.get_by_label_contains("boom");
+    harness.get_by_label("Retry");
+}
+
+/// Hidden, the session shows on the Review button, which brings it back.
+#[test]
+fn the_review_button_shows_a_waiting_refinement() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, file, mut app) = refining("refine-waiting", "printf 'Why?' # {prompt}");
+    app.start_refinement(&file);
+    assert!(until(|| {
+        app.poll_refinement();
+        turns(&app) == 1
+    }));
+    let mut harness = kittest(app);
+    harness.get_by_label("Hide").click();
+    harness.run_steps(4);
+    harness.get_by_label("Refinement waiting").click();
+    harness.run_steps(2);
+    assert!(harness.state().1.refinement_shown());
+
+    harness.get_by_label("End refining").click();
+    harness.run_steps(4);
+    assert!(harness.query_by_label("Refinement waiting").is_none());
+    harness.get_by_label("Refine");
+}
+
 const CHOICES: &str = "printf 'TLDR: Keep it small.\\n\\nWho needs it?\\nOPTIONS:\\n\
     - Ask them first: talk to touch users.\\n- Drop it\\nPROPOSAL: NONE' # {prompt}";
 
