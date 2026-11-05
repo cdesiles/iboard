@@ -1,5 +1,6 @@
 //! The four tiles atop Project stats: each figure at the page's newest
-//! commit, with its change since the page's oldest.
+//! commit, with its change since the page's oldest, or for cycle time from the
+//! page's older half to its newer one.
 
 use iboard::stats::{self, Snapshot, Stats};
 
@@ -17,11 +18,14 @@ enum Up {
     Neutral,
 }
 
-/// One figure, with its change since the page's oldest commit.
+/// One figure, with its change, what that change is against, and what the
+/// tile says without one.
 struct Figure {
     value: String,
     detail: String,
     change: Option<(String, Up, bool)>,
+    since: String,
+    quiet: &'static str,
 }
 
 fn figure(stats: &Stats, measure: Measure) -> Figure {
@@ -34,17 +38,31 @@ fn figure(stats: &Stats, measure: Measure) -> Figure {
             ),
             _ => ("–".to_string(), "no issue closed on this page".to_string()),
         };
+        let drift = stats::cycle_drift(stats);
         return Figure {
             value,
             detail,
-            change: None,
+            change: drift.and_then(cycle_change),
+            since: "on the newer half".to_string(),
+            quiet: if drift.is_some() {
+                "unchanged"
+            } else {
+                "too few issues to compare"
+            },
         };
     }
+    let since = stats
+        .snapshots
+        .first()
+        .map_or(String::new(), |base| format!("since {}", base.short));
+    let quiet = "unchanged";
     let (Some(base), Some(now)) = (stats.snapshots.first(), stats.snapshots.last()) else {
         return Figure {
             value: "–".to_string(),
             detail: String::new(),
             change: None,
+            since,
+            quiet,
         };
     };
     match measure {
@@ -56,6 +74,8 @@ fn figure(stats: &Stats, measure: Measure) -> Figure {
                 0,
                 Up::Worse,
             ),
+            since,
+            quiet,
         },
         Measure::Tests => Figure {
             value: measure.show(now.test_share() * 100.0),
@@ -65,11 +85,15 @@ fn figure(stats: &Stats, measure: Measure) -> Figure {
                 1,
                 Up::Better,
             ),
+            since,
+            quiet,
         },
         Measure::Code | Measure::Cycle => Figure {
             value: thousands(now.code),
             detail: languages(now),
             change: delta(now.code as f32 - base.code as f32, 0, Up::Neutral),
+            since,
+            quiet,
         },
     }
 }
@@ -85,17 +109,13 @@ pub(super) fn tile(ui: &mut egui::Ui, blocks: &mut Blocks, measure: Measure) {
         |ui, stats, clock| {
             let p = theme::palette(ui);
             let shown = figure(stats, measure);
-            let since = stats
-                .snapshots
-                .first()
-                .map_or(String::new(), |base| format!("since {}", base.short));
             block_head(ui, measure.name(), clock);
             ui.label(
                 RichText::new(shown.value)
                     .font(egui::FontId::new(24.0, theme::ui_title().family))
                     .color(p.ink),
             );
-            let (text, color) = change_line(ui, shown.change, &since);
+            let (text, color) = change_line(ui, shown.change, &shown.since, shown.quiet);
             ui.label(RichText::new(text).font(theme::meta()).color(color));
             ui.add(
                 egui::Label::new(
@@ -127,11 +147,22 @@ fn delta(change: f32, decimals: usize, up: Up) -> Option<(String, Up, bool)> {
     (shown != zero && shown != format!("-{}", &zero[1..])).then_some((shown, up, change > 0.0))
 }
 
-/// A tile's change since the page's oldest commit, coloured by how it reads.
+/// How the cycle time moved between the page's halves; slower reads worse.
+fn cycle_change((before, after): (i64, i64)) -> Option<(String, Up, bool)> {
+    let change = after - before;
+    let sign = if change > 0 { '+' } else { '−' };
+    (change != 0).then(|| {
+        let shown = format!("{sign}{}", stats::span(change.abs()));
+        (shown, Up::Worse, change > 0)
+    })
+}
+
+/// A tile's change, coloured by how it reads.
 fn change_line(
     ui: &egui::Ui,
     change: Option<(String, Up, bool)>,
     since: &str,
+    quiet: &str,
 ) -> (String, Color32) {
     let p = theme::palette(ui);
     match change {
@@ -143,6 +174,51 @@ fn change_line(
             };
             (format!("{shown} {since}"), color)
         }
-        None => ("unchanged".to_string(), p.ink_faint),
+        None => (quiet.to_string(), p.ink_faint),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iboard::stats::{Cycle, Cycles};
+
+    fn cycle(short: &str, days: i64) -> Cycle {
+        Cycle {
+            issue: format!("{short}.md"),
+            short: short.into(),
+            seconds: days * 86_400,
+        }
+    }
+
+    fn stats(cycles: Vec<Cycle>) -> Stats {
+        Stats {
+            snapshots: ["a", "b", "c", "d"]
+                .map(|short| Snapshot {
+                    short: short.into(),
+                    ..Snapshot::default()
+                })
+                .to_vec(),
+            cycles: Cycles { cycles, unknown: 0 },
+            ..Stats::default()
+        }
+    }
+
+    #[test]
+    fn the_cycle_tile_compares_the_pages_halves() {
+        let slower = figure(&stats(vec![cycle("a", 1), cycle("d", 4)]), Measure::Cycle);
+        let (shown, _, rose) = slower.change.unwrap();
+        assert_eq!((shown.as_str(), rose), ("+3d 0h", true));
+        assert_eq!(slower.since, "on the newer half");
+
+        let faster = figure(&stats(vec![cycle("a", 4), cycle("d", 1)]), Measure::Cycle);
+        assert_eq!(faster.change.unwrap().0, "−3d 0h");
+
+        let steady = figure(&stats(vec![cycle("a", 2), cycle("d", 2)]), Measure::Cycle);
+        assert!(steady.change.is_none());
+        assert_eq!(steady.quiet, "unchanged");
+
+        let lone = figure(&stats(vec![cycle("d", 2)]), Measure::Cycle);
+        assert_eq!(lone.quiet, "too few issues to compare");
     }
 }

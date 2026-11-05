@@ -29,7 +29,7 @@ pub use cycle::{Cycle, Cycles, span};
 pub use measure::{FileMetrics, Language, language_of, measure};
 use source::Listed;
 pub use source::{Measures, Need, Source};
-pub use watch::{Limits, Signal, culprits, refactor_draft, refactor_due, signals};
+pub use watch::{Limits, Signal, culprits, cycle_drift, refactor_draft, refactor_due, signals};
 
 /// How many commits one page of history holds.
 pub const PAGE: usize = 100;
@@ -413,6 +413,45 @@ mod tests {
     }
 
     #[test]
+    fn a_cycle_runs_from_entering_doing_to_entering_done() {
+        let dir = repo();
+        let issues = dir.path().join("issues");
+        let at = |date: &str, args: &[&str]| {
+            git_env(dir.path(), &[("GIT_COMMITTER_DATE", date)], args);
+        };
+        let step = |date: &str, from: Option<&str>, to: &str, message: &str| {
+            std::fs::create_dir_all(issues.join(to).parent().unwrap()).unwrap();
+            match from {
+                Some(from) => std::fs::rename(issues.join(from), issues.join(to)).unwrap(),
+                None => std::fs::write(issues.join(to), "# A\n").unwrap(),
+            }
+            at(date, &["add", "-A"]);
+            at(date, &["commit", "-q", "-m", message]);
+        };
+        step("2026-09-01T10:00:00+00:00", None, "todo/a.md", "plan");
+        step(
+            "2026-10-01T10:00:00+00:00",
+            Some("todo/a.md"),
+            "doing/a.md",
+            "start",
+        );
+        step(
+            "2026-10-03T10:00:00+00:00",
+            Some("doing/a.md"),
+            "done/a.md",
+            "finish, without naming it",
+        );
+        let stats = collect(dir.path(), &issues, 0).unwrap();
+        let cycles: Vec<(&str, i64)> = stats
+            .cycles
+            .cycles
+            .iter()
+            .map(|c| (c.issue.as_str(), c.seconds))
+            .collect();
+        assert_eq!(cycles, [("a.md", 2 * 86_400)]);
+    }
+
+    #[test]
     fn an_older_page_measures_its_own_commits() {
         let dir = repo();
         let mut commits = vec![
@@ -504,5 +543,15 @@ mod tests {
         assert_eq!(stats.snapshots[0].subject, "one");
         assert_eq!(stats.snapshots[0].code, 0);
         assert_eq!(page.progress.get(), (0, 0));
+
+        commit(dir.path(), "b.rs", "fn b() {}\n", "two");
+        let page = source(dir.path(), dir.path(), 0);
+        let stats = page.read(&[Need::Commits], &Cancel::default()).unwrap();
+        let subjects: Vec<&str> = stats.snapshots.iter().map(|s| s.subject.as_str()).collect();
+        assert_eq!(
+            subjects,
+            ["one", "two"],
+            "oldest first, as measured ones are"
+        );
     }
 }

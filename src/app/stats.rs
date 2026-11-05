@@ -23,13 +23,13 @@ mod trends;
 mod watch;
 
 use blocks::{Blocks, Part, Phase};
-use files::files_table;
+use files::{FileHistory, files_table, history_window};
 use tiles::tile;
 use trends::trends;
 use watch::watch;
 
 /// A trend's chart height, and the width of its name and value beside it.
-const TREND_H: f32 = 64.0;
+const TREND_H: f32 = 68.0;
 const TREND_LABEL_W: f32 = 150.0;
 /// Narrower than this, the Refactor watch goes under the trends.
 const SIDE_BY_SIDE: f32 = 760.0;
@@ -106,6 +106,8 @@ pub(super) struct StatsPanel {
     pub(super) hovered: Option<usize>,
     sort: FileSort,
     all_files: bool,
+    /// The history popup of a row clicked in the files table.
+    pub(super) history: Option<FileHistory>,
     pub(super) agenda: Agenda,
 }
 
@@ -117,6 +119,7 @@ impl StatsPanel {
             hovered: None,
             sort: FileSort::Lines,
             all_files: false,
+            history: None,
             agenda: Agenda::new(range),
         }
     }
@@ -142,7 +145,6 @@ impl StatsPanel {
 
 /// What the panel asked for this frame.
 enum StatsAsk {
-    Close,
     Page(usize),
     Refresh,
     DraftRefactor(String, String),
@@ -168,12 +170,22 @@ impl IboardApp {
     /// Takes each block's data once it is in.
     pub(super) fn poll_stats(&mut self) -> Option<Duration> {
         let panel = self.session.stats.as_mut()?;
-        panel.blocks.poll().then_some(job::POLL_EVERY)
+        let reading = panel.blocks.poll();
+        let history = panel.history.as_mut().is_some_and(FileHistory::poll);
+        (reading || history).then_some(job::POLL_EVERY)
     }
 
     /// The panel owns the keyboard while up: `⌘R` refreshes it and the Agenda
-    /// takes its keys once it has days.
+    /// takes its keys once it has days. A file's history over it takes them all.
     pub(super) fn stats_keys(&mut self, ctx: &egui::Context) {
+        if self
+            .session
+            .stats
+            .as_ref()
+            .is_some_and(|panel| panel.history.is_some())
+        {
+            return;
+        }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
             self.session.stats = None;
             return;
@@ -189,8 +201,35 @@ impl IboardApp {
         }
     }
 
-    /// Project stats in place of the board, under the header bar: its title
-    /// row, the page of commits it reads, and where it is kept.
+    /// The header bar's trail while the stats are up: `project / Stats`, the
+    /// project leading back to the board.
+    pub(super) fn stats_crumbs(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette(ui);
+        ui.spacing_mut().item_spacing.x = theme::SPACE_1;
+        let project = self.board.name();
+        let back = widgets::crumb(ui, &project, theme::ui_body())
+            .on_hover_text("Back to the board (esc)")
+            .clicked();
+        ui.label(RichText::new("/").color(p.ink_faint));
+        ui.label(RichText::new("Stats").font(theme::ui_strong()).color(p.ink));
+        if back {
+            self.session.stats = None;
+        }
+    }
+
+    /// The header bar's controls while the stats are up, right to left.
+    pub(super) fn stats_controls(&mut self, ui: &mut egui::Ui) {
+        let Some(panel) = self.session.stats.as_ref() else {
+            return;
+        };
+        let ask = header(ui, panel);
+        if let Some(ask) = ask {
+            self.stats_ask(ask);
+        }
+    }
+
+    /// Project stats in place of the board, under the header bar: its blocks,
+    /// and where it is kept.
     pub(super) fn stats_screen(&mut self, ui: &mut egui::Ui) {
         let Some(panel) = self.session.stats.as_mut() else {
             return;
@@ -198,11 +237,6 @@ impl IboardApp {
         let p = theme::palette(ui);
         let mut ask = None;
         ui.style_mut().interaction.selectable_labels = false;
-        let mut asked = None;
-        if widgets::modal_header(ui, "Project stats", |ui| asked = header(ui, panel)) {
-            ask = Some(StatsAsk::Close);
-        }
-        ask = asked.or(ask);
         widgets::rule(ui);
         egui::Panel::bottom("stats-footer")
             .resizable(false)
@@ -228,20 +262,34 @@ impl IboardApp {
                     },
                 );
             });
+        if panel
+            .history
+            .as_ref()
+            .is_some_and(|history| history_window(ui, history))
+        {
+            panel.history = None;
+        }
         self.session.agenda_range = panel.agenda.range;
-        let range = panel.agenda.range;
+        if let Some(ask) = ask {
+            self.stats_ask(ask);
+        }
+    }
+
+    fn stats_ask(&mut self, ask: StatsAsk) {
+        let Some(panel) = self.session.stats.as_mut() else {
+            return;
+        };
         match ask {
-            Some(StatsAsk::Close) => self.session.stats = None,
-            Some(StatsAsk::Page(page)) => {
+            StatsAsk::Page(page) => {
+                let range = panel.agenda.range;
                 let source = panel.blocks.source().at_page(page);
                 *panel = StatsPanel::new(source, page, range);
             }
-            Some(StatsAsk::Refresh) => panel.refresh(),
-            Some(StatsAsk::DraftRefactor(title, description)) => {
+            StatsAsk::Refresh => panel.refresh(),
+            StatsAsk::DraftRefactor(title, description) => {
                 self.session.stats = None;
                 self.draft_refactor(title, description);
             }
-            None => {}
         }
     }
 
@@ -257,8 +305,9 @@ impl IboardApp {
     }
 }
 
-/// The page shown, the reading under way, the page's neighbours and Refresh;
-/// returns what was asked for.
+/// Refresh rightmost, the page's neighbours, then the page shown or the
+/// reading under way, in the header bar's right-to-left layout; returns what
+/// was asked for.
 fn header(ui: &mut egui::Ui, panel: &StatsPanel) -> Option<StatsAsk> {
     let p = theme::palette(ui);
     let head = panel.blocks.loaded(Part::Head);
@@ -276,23 +325,23 @@ fn header(ui: &mut egui::Ui, panel: &StatsPanel) -> Option<StatsAsk> {
             first + head.snapshots.len()
         ),
     };
-    ui.label(RichText::new(text).font(theme::meta()).color(p.ink_muted));
     let mut ask = None;
-    ui.add_enabled_ui(panel.page > 0, |ui| {
-        if widgets::button(ui, ButtonKind::Ghost, None, "Newer", None).clicked() {
-            ask = Some(StatsAsk::Page(panel.page - 1));
-        }
-    });
+    let refresh = Some(Icon::Refresh);
+    if widgets::button(ui, ButtonKind::Ghost, refresh, "Refresh", Some("⌘R")).clicked() {
+        ask = Some(StatsAsk::Refresh);
+    }
     ui.add_enabled_ui(head.is_some_and(|s| s.older), |ui| {
         let label = format!("Older {}", stats::PAGE);
         if widgets::button(ui, ButtonKind::Ghost, Some(Icon::Back), &label, None).clicked() {
             ask = Some(StatsAsk::Page(panel.page + 1));
         }
     });
-    let refresh = Some(Icon::Refresh);
-    if widgets::button(ui, ButtonKind::Ghost, refresh, "Refresh", Some("⌘R")).clicked() {
-        ask = Some(StatsAsk::Refresh);
-    }
+    ui.add_enabled_ui(panel.page > 0, |ui| {
+        if widgets::button(ui, ButtonKind::Ghost, None, "Newer", None).clicked() {
+            ask = Some(StatsAsk::Page(panel.page - 1));
+        }
+    });
+    ui.label(RichText::new(text).font(theme::meta()).color(p.ink_muted));
     ask
 }
 
@@ -321,7 +370,9 @@ fn stats_body(ui: &mut egui::Ui, panel: &mut StatsPanel) -> Option<StatsAsk> {
         panel.hovered = hovered;
         ui.ctx().request_repaint();
     }
-    files_table(ui, &mut panel.blocks, &mut panel.sort, &mut panel.all_files);
+    if let Some(path) = files_table(ui, &mut panel.blocks, &mut panel.sort, &mut panel.all_files) {
+        panel.history = Some(FileHistory::open(panel.blocks.source().dir(), path));
+    }
     agenda_block(ui, panel);
     draft
 }
@@ -426,8 +477,9 @@ fn stats_footer(ui: &mut egui::Ui, stats: Option<&Stats>) {
                 RichText::new(format!(
                     "Read from the source at each commit: complexity is McCabe's, \
                      estimated; test share is test lines over code lines, not run \
-                     coverage; cycle time runs from an issue's first build run or \
-                     commit to the commit that closes it.{kept}"
+                     coverage; cycle time runs from an issue entering doing to its \
+                     entering done, or from its first build run or commit to the \
+                     commit that closes it.{kept}"
                 ))
                 .font(theme::meta())
                 .color(p.ink_muted),

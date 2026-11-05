@@ -320,3 +320,75 @@ fn cmd_i_opens_the_stats() {
     assert!(app.session.stats.is_some());
     assert!(measured(&mut app));
 }
+
+/// The screen's head replaces the board's: the crumbs, Refresh, and the
+/// project leading back to the board.
+#[test]
+fn the_stats_head_replaces_the_board_header() {
+    let (_dir, located) = project("stats-head");
+    let mut app = IboardApp::from_located(located);
+    let project = app.board.name();
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(1);
+    harness.get_by_label("Stats");
+    harness.get_by_label("Refresh");
+    assert!(harness.query_by_label("New issue").is_none());
+    harness.get_by_label(&project).click();
+    harness.run_steps(2);
+    assert!(harness.state().1.session.stats.is_none());
+}
+
+/// A column head sorts as the segmented control does.
+#[test]
+fn a_column_head_sorts_the_files() {
+    let (dir, located) = project("stats-sort");
+    std::fs::write(
+        dir.join("src/branchy.rs"),
+        "fn b(x: bool) {\n    if x {}\n    if x {}\n    if x {}\n}\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("src/long.rs"), "const A: u8 = 1;\n".repeat(20)).unwrap();
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "more"]);
+    let mut app = IboardApp::from_located(located);
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(1);
+    let top = |harness: &kit::Kit, path: &str| harness.get_by_label(path).rect().top();
+    assert!(top(&harness, "src/long.rs") < top(&harness, "src/branchy.rs"));
+
+    harness.get_by_label("Sort by Complexity").click();
+    harness.run_steps(2);
+    assert!(top(&harness, "src/branchy.rs") < top(&harness, "src/long.rs"));
+}
+
+/// A click on a row lists the file's commits; `esc` closes the history and
+/// leaves the stats up.
+#[test]
+fn a_file_row_opens_its_history() {
+    let (_dir, located) = project("stats-history");
+    let mut app = IboardApp::from_located(located);
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(1);
+    harness.get_by_label("src/lib.rs").click();
+    harness.run_steps(2);
+    // The Agenda's day lists the same subjects, under the popup.
+    assert!(until(|| {
+        harness.run_steps(1);
+        harness.get_all_by_label("three").count() == 2
+    }));
+    for subject in ["one", "two"] {
+        assert_eq!(harness.get_all_by_label(subject).count(), 2);
+    }
+
+    harness.key_press(Key::Escape);
+    harness.run_steps(2);
+    let panel = harness.state().1.session.stats.as_ref().unwrap();
+    assert!(panel.history.is_none());
+    assert_eq!(harness.get_all_by_label("three").count(), 1);
+}

@@ -76,6 +76,16 @@ fn run(dir: &Path, file_name: &str) -> Vec<Commit> {
         .unwrap_or_default()
 }
 
+/// The commits that changed `path`, newest first and across its renames;
+/// `path` is relative to the top of the repository holding `dir`. An error
+/// when git can't read it.
+pub fn for_path(dir: &Path, path: &str) -> Result<Vec<Commit>, String> {
+    let top = format!(":(top){path}");
+    let args = ["log", "--follow", "--format=%h%x09%cI%x09%s", "--", &top];
+    let log = git::output(dir, &args)?;
+    Ok(log.lines().filter_map(parse_line).collect())
+}
+
 /// A `git log --extended-regexp` pattern for `file_name` as a whole name: a
 /// commit naming `data.md` does not name `a.md`.
 fn whole_name(file_name: &str) -> String {
@@ -119,6 +129,27 @@ mod tests {
         let subjects: Vec<String> = run(dir, "a.md").into_iter().map(|c| c.subject).collect();
 
         assert_eq!(subjects, ["Mine"]);
+    }
+
+    #[test]
+    fn a_path_keeps_its_history_across_a_rename() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        git(dir, &["init", "-q"]);
+        std::fs::create_dir(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/a.rs"), "fn a() {}\n").unwrap();
+        std::fs::write(dir.join("other.rs"), "fn other() {}\n").unwrap();
+        git(dir, &["add", "."]);
+        git(dir, &["commit", "-q", "-m", "first"]);
+        git(dir, &["mv", "src/a.rs", "src/b.rs"]);
+        git(dir, &["commit", "-q", "-m", "renamed"]);
+        std::fs::write(dir.join("other.rs"), "fn changed() {}\n").unwrap();
+        git(dir, &["commit", "-qam", "elsewhere"]);
+
+        let list = for_path(&dir.join("src"), "src/b.rs").unwrap();
+        let subjects: Vec<&str> = list.iter().map(|c| c.subject.as_str()).collect();
+
+        assert_eq!(subjects, ["renamed", "first"]);
     }
 
     #[test]

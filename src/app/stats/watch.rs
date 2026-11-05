@@ -84,19 +84,18 @@ fn verdict(
 
 fn signal_row(ui: &mut egui::Ui, signal: &Signal) {
     let p = theme::palette(ui);
-    let (icon, word, color) = if signal.on {
-        (Icon::Warning, "On", p.status_doing)
+    let (icon, color) = if signal.on {
+        (Icon::Warning, p.status_doing)
     } else {
-        (Icon::Check, "Off", p.status_done)
+        (Icon::Check, p.status_done)
     };
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_2;
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
         theme::paint_icon(ui.painter(), icon, rect, color);
-        ui.label(RichText::new(word).font(theme::meta()).color(color));
         ui.add(
             egui::Label::new(
-                RichText::new(signal.name)
+                RichText::new(&signal.headline)
                     .font(theme::ui_small())
                     .color(p.ink),
             )

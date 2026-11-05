@@ -173,6 +173,11 @@ impl Source {
         }
     }
 
+    /// The folder its git commands run in.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     /// The same project at `page`, read afresh but for the commit cache.
     pub fn at_page(&self, page: usize) -> Self {
         Self::new(&self.dir, &self.root, page, Arc::clone(&self.measures))
@@ -190,7 +195,7 @@ impl Source {
                     let listing = self.listing(cancel)?;
                     stats.older = listing.older;
                     stats.cache.clone_from(&listing.cache);
-                    stats.snapshots = listing.commits.iter().map(Listed::bare).collect();
+                    stats.snapshots = listing.commits.iter().rev().map(Listed::bare).collect();
                 }
                 Need::Measures => stats.snapshots.clone_from(&*self.snapshots(cancel)?),
                 Need::Cycles => stats.cycles.clone_from(&*self.cycles(cancel)?),

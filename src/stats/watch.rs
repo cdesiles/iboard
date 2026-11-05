@@ -38,6 +38,8 @@ impl Default for Limits {
 pub struct Signal {
     pub name: &'static str,
     pub on: bool,
+    /// How it reads on the watch, which says on or off in words.
+    pub headline: String,
     pub detail: String,
 }
 
@@ -51,15 +53,21 @@ pub fn signals(stats: &Stats, limits: &Limits) -> Vec<Signal> {
     let growth = if was > 0.0 { is / was - 1.0 } else { 0.0 };
     let slide = (base.test_share() - now.test_share()) * 100.0;
     let hot = stats.files.iter().filter(|f| f.is_hotspot()).count();
-    let (older, newer) = cycle_halves(stats);
-    let drift = match (older.percentile(0.5), newer.percentile(0.5)) {
-        (Some(before), Some(after)) => Some((before, after)),
-        _ => None,
-    };
+    let drift = cycle_drift(stats);
+    let drifts =
+        drift.is_some_and(|(before, after)| after as f32 > before as f32 * limits.cycle_drift);
+    let says = |on: bool, yes: &str, no: &str| if on { yes } else { no }.to_string();
+    let grows = growth > limits.complexity_growth || is > limits.complexity;
+    let slides = slide >= limits.tests_slide;
     vec![
         Signal {
             name: "Complexity grows faster than code",
-            on: growth > limits.complexity_growth || is > limits.complexity,
+            on: grows,
+            headline: says(
+                grows,
+                "Complexity grows faster than code",
+                "Complexity keeps pace with code",
+            ),
             detail: format!(
                 "{was:.0} → {is:.0} per kLOC ({:+.0}%), limit {:.0}",
                 growth * 100.0,
@@ -68,7 +76,8 @@ pub fn signals(stats: &Stats, limits: &Limits) -> Vec<Signal> {
         },
         Signal {
             name: "Tests are sliding",
-            on: slide >= limits.tests_slide,
+            on: slides,
+            headline: says(slides, "Tests are sliding", "Tests are holding"),
             detail: format!(
                 "{:.1}% → {:.1}% of the code is tests",
                 base.test_share() * 100.0,
@@ -78,14 +87,19 @@ pub fn signals(stats: &Stats, limits: &Limits) -> Vec<Signal> {
         Signal {
             name: "Hotspots",
             on: hot > 0,
+            headline: match hot {
+                0 => "No hotspots".to_string(),
+                1 => "1 hotspot".to_string(),
+                _ => format!("{hot} hotspots"),
+            },
             detail: format!(
                 "{hot} files with complexity ≥ {HOTSPOT_COMPLEXITY} and ≥ {HOTSPOT_CHANGES} changes"
             ),
         },
         Signal {
             name: "Cycle time drifts",
-            on: drift
-                .is_some_and(|(before, after)| after as f32 > before as f32 * limits.cycle_drift),
+            on: drifts,
+            headline: says(drifts, "Cycle time drifts", "Cycle time is steady"),
             detail: drift.map_or(
                 "too few issues closed to tell".to_string(),
                 |(before, after)| {
@@ -103,6 +117,13 @@ pub fn signals(stats: &Stats, limits: &Limits) -> Vec<Signal> {
 /// Enough signals are on to plan a refactor.
 pub fn refactor_due(signals: &[Signal]) -> bool {
     signals.iter().filter(|s| s.on).count() >= DUE_AT
+}
+
+/// The median cycle time on the page's older half and on its newer one, once
+/// both have closed issues.
+pub fn cycle_drift(stats: &Stats) -> Option<(i64, i64)> {
+    let (older, newer) = cycle_halves(stats);
+    Some((older.percentile(0.5)?, newer.percentile(0.5)?))
 }
 
 /// The page's closed issues split at its middle commit: older, newer.
@@ -220,6 +241,7 @@ mod tests {
                 "Cycle time drifts"
             ]
         );
+        assert_eq!(signals[2].headline, "1 hotspot");
         assert!(refactor_due(&signals[..2]));
         assert!(!refactor_due(&signals[..1]));
         let (title, body) = refactor_draft(&stats, &signals);
@@ -229,5 +251,26 @@ mod tests {
             "{body}"
         );
         assert!(!body.contains("src/lib.rs"), "{body}");
+    }
+
+    #[test]
+    fn a_signal_off_reads_as_off_in_words() {
+        let stats = Stats {
+            snapshots: vec![snapshot("a", 1000, 100, 300), snapshot("b", 1000, 100, 300)],
+            ..Stats::default()
+        };
+        let headlines: Vec<String> = signals(&stats, &Limits::default())
+            .into_iter()
+            .map(|s| s.headline)
+            .collect();
+        assert_eq!(
+            headlines,
+            [
+                "Complexity keeps pace with code",
+                "Tests are holding",
+                "No hotspots",
+                "Cycle time is steady"
+            ]
+        );
     }
 }

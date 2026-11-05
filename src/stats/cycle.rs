@@ -1,9 +1,10 @@
-//! Cycle time: how long an issue took, from the start of its work to the
-//! commit whose `closes <file>.md` line closed it.
+//! Cycle time: how long an issue took, from entering `doing/` to entering
+//! `done/`, as the board's file moves in git tell it.
 //!
-//! Work starts at the issue's first build run in `.builds/`, or else at the
-//! first commit that put its file on the board. Both follow the issue's slug,
-//! so a renumbered or moved file stays the same issue.
+//! A board that skips `doing/` starts at the issue's first build run in
+//! `.builds/` or its first commit, and one kept out of git ends at the commit
+//! whose `closes <file>.md` line closed it. All follow the issue's slug, so a
+//! renumbered or moved file stays the same issue.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -11,6 +12,7 @@ use std::path::Path;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
 
 use super::PAGE;
+use crate::discovery::ColumnKind;
 use crate::{build_log, git, reviews};
 
 /// One issue closed on the page, and how long it took.
@@ -56,33 +58,53 @@ pub(super) fn collect(dir: &Path, root: &Path, newest: &str) -> Result<Cycles, S
             newest,
         ],
     )?;
-    let added = git::output(
+    let moves = git::output(
         root,
         &[
             "log",
+            "--no-renames",
             "--diff-filter=A",
-            "--format=%x00%cI",
+            "--format=%x00%h%x1f%cI",
             "--name-only",
             "--relative",
             "--",
             ".",
         ],
     )
-    .map(|log| first_added(&log))
+    .map(|log| board_moves(&log))
     .unwrap_or_default();
+    let mut ends = closings(&log);
+    let page = commits_of(&log);
+    for moved in moves.values() {
+        if let Some(done) = moved
+            .done
+            .as_ref()
+            .filter(|at| page.contains(&at.short.as_str()))
+        {
+            ends.push((done.short.clone(), done.date, done.file.clone()));
+        }
+    }
     let mut seen = Vec::new();
     let mut cycles = Cycles::default();
-    for (short, closed, issue) in closings(&log) {
+    for (short, closed, issue) in ends {
         let slug = reviews::slug(Path::new(&issue));
         if seen.contains(&slug) {
             continue;
         }
         seen.push(slug.clone());
-        let started = [first_run(root, &issue), added.get(&slug).copied()]
-            .into_iter()
-            .flatten()
-            .min();
-        match started.map(|at| (closed - at).num_seconds()) {
+        let moved = moves.get(&slug);
+        let started = moved
+            .and_then(|m| m.doing.as_ref().map(|at| at.date))
+            .or_else(|| {
+                [first_run(root, &issue), moved.and_then(|m| m.added)]
+                    .into_iter()
+                    .flatten()
+                    .min()
+            });
+        let ended = moved
+            .and_then(|m| m.done.as_ref().map(|at| at.date))
+            .unwrap_or(closed);
+        match started.map(|at| (ended - at).num_seconds()) {
             Some(seconds) if seconds > 0 => cycles.cycles.push(Cycle {
                 issue,
                 short,
@@ -93,6 +115,14 @@ pub(super) fn collect(dir: &Path, root: &Path, newest: &str) -> Result<Cycles, S
     }
     cycles.cycles.sort_by_key(|c| std::cmp::Reverse(c.seconds));
     Ok(cycles)
+}
+
+/// The short hashes of the page's log.
+fn commits_of(log: &str) -> Vec<&str> {
+    log.split('\x1e')
+        .filter_map(|record| record.split('\x1f').next())
+        .map(str::trim)
+        .collect()
 }
 
 /// `(short hash, date, issue file)` for each `closes <file>.md`, newest first.
@@ -127,23 +157,58 @@ fn closings(log: &str) -> Vec<(String, DateTime<FixedOffset>, String)> {
     out
 }
 
-/// Per slug, the first commit that added an issue file, from `git log
-/// --diff-filter=A --format=%x00%cI --name-only` newest first.
-fn first_added(log: &str) -> HashMap<String, DateTime<FixedOffset>> {
-    let mut added = HashMap::new();
+/// A commit that put an issue's file in a column.
+#[derive(Debug, Clone, PartialEq)]
+struct Entered {
+    short: String,
+    date: DateTime<FixedOffset>,
+    file: String,
+}
+
+/// How one issue moved across the board.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Moves {
+    /// When its file first appeared, anywhere on the board.
+    added: Option<DateTime<FixedOffset>>,
+    /// When work first started, however often it came back.
+    doing: Option<Entered>,
+    /// When it last landed, a reopened issue counting its second landing.
+    done: Option<Entered>,
+}
+
+/// Per slug, the issue's moves, from `git log --no-renames --diff-filter=A
+/// --format=%x00%h%x1f%cI --name-only` newest first: each file appearing under
+/// a folder is the commit that moved it there.
+fn board_moves(log: &str) -> HashMap<String, Moves> {
+    let mut moves: HashMap<String, Moves> = HashMap::new();
     let mut current = None;
     for line in log.lines() {
-        if let Some(date) = line.strip_prefix('\0') {
-            current = DateTime::parse_from_rfc3339(date.trim()).ok();
-        } else if let Some(date) = current
+        if let Some(header) = line.strip_prefix('\0') {
+            current = header.split_once('\x1f').and_then(|(short, date)| {
+                let date = DateTime::parse_from_rfc3339(date.trim()).ok()?;
+                Some((short.to_string(), date))
+            });
+        } else if let Some((short, date)) = &current
             && line.ends_with(".md")
             && !line.split('/').any(|part| part.starts_with('.'))
         {
-            let name = line.rsplit('/').next().unwrap_or(line);
-            added.insert(reviews::slug(Path::new(name)), date);
+            let file = line.rsplit('/').next().unwrap_or(line).to_string();
+            let moved = moves.entry(reviews::slug(Path::new(&file))).or_default();
+            moved.added = Some(*date);
+            let entered = Entered {
+                short: short.clone(),
+                date: *date,
+                file,
+            };
+            let column = line.split('/').next().map(Path::new);
+            match column.and_then(ColumnKind::of) {
+                Some(ColumnKind::Doing) => moved.doing = Some(entered),
+                Some(ColumnKind::Done) if moved.done.is_none() => moved.done = Some(entered),
+                _ => {}
+            }
         }
     }
-    added
+    moves
 }
 
 /// When the build agent first took the issue up, from its log's first heading.
@@ -188,15 +253,27 @@ mod tests {
     }
 
     #[test]
-    fn the_first_addition_wins_and_dot_folders_are_skipped() {
-        let log = "\u{0}2026-10-02T18:00:00+02:00\n\ndone/002-a.md\n.reviews/b.md\n\n\
-                   \u{0}2026-09-01T10:00:00+00:00\n\ntodo/a.md\n";
-        let added = first_added(log);
+    fn work_starts_at_the_first_doing_and_ends_at_the_last_done() {
+        let log = "\u{0}f5\x1f2026-10-09T10:00:00+00:00\n\ndone/a.md\n\n\
+                   \u{0}f4\x1f2026-10-07T10:00:00+00:00\n\ndoing/a.md\n\n\
+                   \u{0}f3\x1f2026-10-05T10:00:00+00:00\n\ndone/a.md\n.reviews/b.md\n\n\
+                   \u{0}f2\x1f2026-10-03T10:00:00+00:00\n\nwip/002-a.md\n\n\
+                   \u{0}f1\x1f2026-09-01T10:00:00+00:00\n\ntodo/a.md\n";
+        let moves = board_moves(log);
+        let a = &moves["a"];
+        let at = |date| DateTime::parse_from_rfc3339(date).unwrap();
+        assert_eq!(a.added, Some(at("2026-09-01T10:00:00+00:00")));
+        let doing = a.doing.as_ref().unwrap();
         assert_eq!(
-            added["a"],
-            DateTime::parse_from_rfc3339("2026-09-01T10:00:00+00:00").unwrap()
+            (doing.short.as_str(), doing.date),
+            ("f2", at("2026-10-03T10:00:00+00:00"))
         );
-        assert!(!added.contains_key("b"));
+        let done = a.done.as_ref().unwrap();
+        assert_eq!(
+            (done.short.as_str(), done.date),
+            ("f5", at("2026-10-09T10:00:00+00:00"))
+        );
+        assert!(!moves.contains_key("b"));
     }
 
     #[test]

@@ -40,8 +40,9 @@ impl Part {
     fn needs(self) -> &'static [Need] {
         match self {
             Part::Head => &[Need::Commits],
-            Part::Tile(Measure::Cycle) => &[Need::Cycles],
-            Part::Trend(Measure::Cycle) => &[Need::Commits, Need::Cycles],
+            Part::Tile(Measure::Cycle) | Part::Trend(Measure::Cycle) => {
+                &[Need::Commits, Need::Cycles]
+            }
             Part::Tile(_) | Part::Trend(_) => &[Need::Measures],
             Part::Watch => &[Need::Measures, Need::Cycles, Need::Files],
             Part::Files => &[Need::Files],

@@ -27,8 +27,10 @@ const DAY_PANEL_W: f32 = 260.0;
 const SIDE_BY_SIDE: f32 = 640.0;
 /// The commits listed for a day before "N more".
 const DAY_COMMITS: usize = 8;
-/// The block's height inside its frame, so a failure keeps its size.
-const AGENDA_H: f32 = 300.0;
+/// The block's height, so a failure keeps its size.
+const AGENDA_H: f32 = 332.0;
+/// The narrowest the grid's pane goes, to hold its head and legend.
+const MAIN_W: f32 = 420.0;
 
 /// What the Agenda has to show.
 pub(super) enum Show<'a> {
@@ -82,57 +84,100 @@ pub(super) fn agenda_ui(
         .fill(p.surface)
         .stroke(Stroke::new(1.0, p.line))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-        .inner_margin(theme::SPACE_5)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.set_min_height(AGENDA_H);
-            let side = ui.available_width() >= SIDE_BY_SIDE;
-            let days = match show {
+            match show {
                 Show::Waiting { pulse } => {
-                    head(ui, agenda, clock);
-                    summary(ui, "Reading git history…");
-                    grid(ui, agenda, &BTreeMap::new(), None, pulse);
-                    return;
+                    let width = WEEKDAYS_W + agenda.range.weeks() as f32 * (DAY + GAP);
+                    panes(
+                        ui,
+                        agenda,
+                        width,
+                        |ui, agenda| {
+                            head(ui, agenda, clock);
+                            summary(ui, "Reading git history…");
+                            scrolled_grid(ui, agenda, &BTreeMap::new(), None, pulse);
+                        },
+                        |_, _| {},
+                    );
                 }
                 Show::Failed(error) => {
-                    head(ui, agenda, None);
-                    retry = failure(ui, "git history", error);
-                    return;
+                    pane(ui, ui.available_width(), |ui| {
+                        head(ui, agenda, None);
+                        retry = failure(ui, "git history", error);
+                    });
                 }
-                Show::Days(days) => days,
-            };
-            if side {
-                ui.horizontal_top(|ui| {
-                    let main_w = ui.available_width() - DAY_PANEL_W - theme::SPACE_5;
-                    ui.allocate_ui_with_layout(
-                        Vec2::new(main_w, 0.0),
-                        Layout::top_down(Align::Min),
-                        |ui| main(ui, agenda, days, clock),
+                Show::Days(days) => {
+                    let width = grid_width(&agenda.weeks(days));
+                    panes(
+                        ui,
+                        agenda,
+                        width,
+                        |ui, agenda| main(ui, agenda, days, clock),
+                        |ui, agenda| day_panel(ui, agenda.selected, days),
                     );
-                    ui.add_space(theme::SPACE_5);
-                    ui.vertical(|ui| day_panel(ui, agenda.selected, days));
-                });
-            } else {
-                main(ui, agenda, days, clock);
-                ui.add_space(theme::SPACE_4);
-                widgets::rule(ui);
-                ui.add_space(theme::SPACE_4);
-                day_panel(ui, agenda.selected, days);
+                }
             }
         });
     retry
 }
 
+/// The grid's pane and the day's, divided by a `line`: side by side with the
+/// grid as wide as it needs and the day taking the rest, or one under the other
+/// on a narrow window.
+fn panes<S>(
+    ui: &mut egui::Ui,
+    state: &mut S,
+    grid: f32,
+    left: impl FnOnce(&mut egui::Ui, &mut S),
+    right: impl FnOnce(&mut egui::Ui, &mut S),
+) {
+    let width = ui.available_width();
+    if width < SIDE_BY_SIDE {
+        pane(ui, width, |ui| left(ui, state));
+        widgets::rule(ui);
+        pane(ui, width, |ui| right(ui, state));
+        return;
+    }
+    let main = (grid + 2.0 * theme::SPACE_5)
+        .max(MAIN_W)
+        .min(width - DAY_PANEL_W);
+    let x = ui.min_rect().left() + main;
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        pane(ui, main, |ui| left(ui, state));
+        pane(ui, width - main, |ui| right(ui, state));
+    });
+    let p = theme::palette(ui);
+    ui.painter()
+        .vline(x, ui.min_rect().y_range(), Stroke::new(1.0, p.line));
+}
+
+/// One pane of the Agenda, `width` wide with the block's padding.
+fn pane(ui: &mut egui::Ui, width: f32, add: impl FnOnce(&mut egui::Ui)) {
+    let spacing = ui.ctx().global_style().spacing.item_spacing;
+    ui.allocate_ui_with_layout(Vec2::new(width, 0.0), Layout::top_down(Align::Min), |ui| {
+        ui.set_width(width);
+        Frame::new().inner_margin(theme::SPACE_5).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing = spacing;
+            ui.spacing_mut().item_spacing.y = theme::SPACE_4;
+            add(ui);
+        });
+    });
+}
+
+/// "Agenda" with its range beside it, and the clock at the far end.
 fn head(ui: &mut egui::Ui, agenda: &mut Agenda, clock: Option<Duration>) {
     let p = theme::palette(ui);
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
         ui.label(RichText::new("Agenda").font(theme::ui_title()).color(p.ink));
+        if let Some(range) = widgets::segmented(ui, agenda.range, &Range::ALL) {
+            agenda.set_range(range);
+        }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let mut options = Range::ALL;
-            options.reverse();
-            if let Some(range) = widgets::segmented(ui, agenda.range, &options) {
-                agenda.set_range(range);
-            }
             clock_note(ui, clock);
         });
     });
@@ -150,7 +195,6 @@ fn main(
     clock: Option<Duration>,
 ) {
     let p = theme::palette(ui);
-    ui.spacing_mut().item_spacing.y = theme::SPACE_4;
     head(ui, agenda, clock);
     let shown: Vec<(&NaiveDate, usize)> = days
         .range(agenda.first_day()..)
@@ -205,6 +249,18 @@ fn main(
     }
     let busiest = shown.iter().map(|(_, n)| *n).max().unwrap_or(1);
     let step = busiest.div_ceil(4).max(1);
+    scrolled_grid(ui, agenda, days, Some((&weeks, step)), false);
+    legend(ui, step);
+}
+
+/// The heatmap in the width it has, its newest weeks showing.
+fn scrolled_grid(
+    ui: &mut egui::Ui,
+    agenda: &mut Agenda,
+    days: &BTreeMap<NaiveDate, Vec<DayCommit>>,
+    shape: Option<(&[Week], usize)>,
+    pulse: bool,
+) {
     theme::scroll_area(
         ui,
         egui::ScrollArea::horizontal()
@@ -215,9 +271,20 @@ fn main(
             })
             .stick_to_right(true),
         true,
-        |ui| grid(ui, agenda, days, Some((&weeks, step)), false),
+        |ui| grid(ui, agenda, days, shape, pulse),
     );
-    legend(ui, step);
+}
+
+/// The heatmap's width over `weeks`.
+fn grid_width(weeks: &[Week]) -> f32 {
+    WEEKDAYS_W
+        + weeks
+            .iter()
+            .map(|week| match week {
+                Week::Days(_) => DAY + GAP,
+                Week::Folded(..) => FOLD_W + GAP,
+            })
+            .sum::<f32>()
 }
 
 /// The heatmap; `None` while loading draws the grid, its days pulsing from
@@ -240,14 +307,7 @@ fn grid(
             (loading.as_slice(), 1)
         }
     };
-    let width = weeks
-        .iter()
-        .map(|week| match week {
-            Week::Days(_) => DAY + GAP,
-            Week::Folded(..) => FOLD_W + GAP,
-        })
-        .sum::<f32>();
-    let size = Vec2::new(WEEKDAYS_W + width, MONTHS_H + GAP + 7.0 * (DAY + GAP));
+    let size = Vec2::new(grid_width(weeks), MONTHS_H + GAP + 7.0 * (DAY + GAP));
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let painter = ui.painter_at(rect);
     let font = theme::meta();

@@ -46,6 +46,10 @@ impl IboardApp {
     /// `‹ Board` button, then `project / Column / Issue title`, every segment
     /// but the last a link.
     pub(super) fn breadcrumb(&mut self, ui: &mut egui::Ui) {
+        if self.session.stats.is_some() {
+            self.stats_crumbs(ui);
+            return;
+        }
         let p = theme::palette(ui);
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
         let project = self.board.name();
@@ -156,6 +160,10 @@ impl IboardApp {
 
     /// The header's buttons, laid out right to left.
     pub(super) fn header_controls(&mut self, ui: &mut egui::Ui) {
+        if self.session.stats.is_some() {
+            self.stats_controls(ui);
+            return;
+        }
         match self.session.screen.clone() {
             Screen::Board => self.board_controls(ui),
             Screen::Detail(path, _) => self.detail_controls(ui, &path),

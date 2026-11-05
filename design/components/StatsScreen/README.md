@@ -69,4 +69,4 @@ Read model: `WeeklyMetrics` holds one row per week with loc, by_language, comple
 - **Loading**: Skeleton rules. Tiles and charts keep their labels and axes, with pulsing placeholders.
 - **A metric without data**: its tile says "No coverage report found" and names the file it looks for (`lcov.info`). Its row in Trends shows the same message instead of a chart.
 
-In egui, draw the trends with `egui_plot` (one `Plot` per row, `link_axis` and `link_cursor` on a shared group, `allow_zoom(false)`). Use `HLine` for limits with `p.status_doing` and a dashed `LineStyle`.
+In egui, the trends are hand-painted, each row on its own `Painter`: `Shape::line` for a series, `Shape::dashed_line` for limits in `p.status_doing` and for p85, and a `Mesh` of per-segment quads for the area, since epaint fills only convex polygons. The screen keeps the hovered commit and every row draws its crosshair from it.
