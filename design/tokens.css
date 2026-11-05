@@ -25,7 +25,8 @@
   --danger-soft: #fdecea; /* Delete drop zone when a card is over it. danger text reads 5.7:1 on it. */
   --on-danger: #ffffff; /* Label on the danger-filled Delete button in the confirmation dialog. */
   --scrim: rgba(21,24,29,0.32); /* Dims the board behind a modal confirmation. */
-  --shadow-popover: 0 4px 16px rgba(21,24,29,0.12); /* Review panel and menus only. Cards stay flat. */
+  --shadow-popover: 0 4px 16px rgba(21,24,29,0.12); /* Review panel, menus and a dragged card. Cards stay flat; modals use shadow-modal. */
+  --shadow-modal: 0 12px 40px rgba(21,24,29,0.18); /* Modals only (S to XL), above the scrim. Stronger than shadow-popover because a modal floats over everything. */
 }
 [data-theme="dark"] {
   --bg: #15171a;
@@ -54,6 +55,7 @@
   --on-danger: #3a0d08;
   --scrim: rgba(0,0,0,0.55);
   --shadow-popover: 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-modal: 0 12px 40px rgba(0,0,0,0.6);
 }
 :root {
   --space-1: 2px; /* Icon to label nudges, kbd padding. */
@@ -76,8 +78,14 @@
   --scroll-thumb-hover: 8px; /* Scrollbar thumb width under the pointer and while dragging. */
   --scroll-hit: 12px; /* Scrollbar pointer target along the pane's edge, wider than the thumb so a trackpad finds it. */
   --scroll-thumb-min: 24px; /* Shortest thumb on a very long page, the same as control-h. */
-  --font-sans: "IBM Plex Sans", -apple-system, "SF Pro Text", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", "SF Mono", Menlo, monospace;
+  --modal-s: 360px; /* Modal S: one question, one action (ConfirmDialog). */
+  --modal-m: 480px; /* Modal M: forms and settings (Settings, GroupsDialog). */
+  --modal-l: 760px; /* Modal L: one document, a 720pt sheet with 20pt each side. */
+  --modal-xl: 1200px; /* Modal XL maximum width; otherwise the window minus modal-inset each side (NewIssueModal, RefinePanel). */
+  --modal-xl-h: 900px; /* Modal XL maximum height; XL is always this tall or the window minus the inset, so nothing jumps while content streams in. */
+  --modal-inset: 32px; /* Gap kept between the window edge and a modal; 16 under 720pt of window width. */
+  --font-sans: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
   --text-ui-title: 600 15px/20px var(--font-sans); /* Project name in the header; reader h2. */
   --text-ui-body: 400 13px/18px var(--font-sans); /* Default UI text, inputs, card titles (at 500). */
   --text-ui-strong: 500 13px/18px var(--font-sans); /* Card title, current crumb, button labels at 12px. */
