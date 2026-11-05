@@ -26,7 +26,8 @@ pub use dialog::{
 };
 pub use key_hints::{key_hints, key_hints_shown};
 pub use menu::{
-    MenuOption, menu_group, menu_head, menu_note, menu_option, menu_quiet, menu_row, menu_separator,
+    Drag, MENU_ROW_H, MenuOption, RowLook, menu_group, menu_head, menu_note, menu_option,
+    menu_quiet, menu_row, menu_row_lifted, menu_separator,
 };
 pub use pill::{chip, filter_token, label_pill, pill, tag};
 pub use select::select;
@@ -317,10 +318,23 @@ mod tests {
             ..Default::default()
         };
         ctx.run_ui(raw, |ui| {
-            let current = menu_row(ui, 300.0, "moon-cull", "~/code/moon-cull", true);
+            let look = RowLook {
+                current: true,
+                ..RowLook::default()
+            };
+            let current = menu_row(ui, 300.0, "moon-cull", "~/code/moon-cull", look);
             assert!(current.rect.width() > 0.0 && current.rect.height() > 0.0);
-            let other = menu_row(ui, 300.0, "other", "~/code/other", false);
+            let other = menu_row(ui, 300.0, "other", "~/code/other", RowLook::default());
             assert!(other.rect.width() > 0.0);
+            let off_a_char = RowLook {
+                active: true,
+                mark: Some(1..3),
+                drag: Some(Drag::Placeholder),
+                ..RowLook::default()
+            };
+            let left = menu_row(ui, 300.0, "über", "", off_a_char);
+            assert_eq!(left.rect.height(), MENU_ROW_H);
+            menu_row_lifted(ui, ("über", "~/code/über"), left.rect.center());
         })
         .textures_delta
         .clear();

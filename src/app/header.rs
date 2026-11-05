@@ -280,7 +280,8 @@ impl IboardApp {
                 ui.set_min_width(MOVE_MENU_WIDTH);
                 let mut picked = None;
                 for (name, dir) in &columns {
-                    if widgets::menu_row(ui, MOVE_MENU_WIDTH, name, "", false).clicked() {
+                    let look = widgets::RowLook::default();
+                    if widgets::menu_row(ui, MOVE_MENU_WIDTH, name, "", look).clicked() {
                         picked = Some(dir.clone());
                     }
                 }

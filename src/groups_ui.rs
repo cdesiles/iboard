@@ -9,8 +9,9 @@ use egui::{
     Align, CornerRadius, Frame, Id, Key, Layout, Margin, Modifiers, RichText, Stroke, Vec2,
 };
 
+use crate::project_menu::matches;
 use crate::theme::{self, Icon};
-use crate::widgets::{self, ButtonKind, FooterClick, Tone};
+use crate::widgets::{self, ButtonKind, FooterClick, RowLook, Tone};
 use crate::workspace::config::{self, has_issues_dir};
 use crate::workspace::draft::{Added, Draft};
 use crate::workspace::{Group, Workspace};
@@ -466,7 +467,6 @@ impl Dialog {
             .filter(|project| !self.draft.groups[at].repos.contains(project))
             .collect();
         let filterable = fresh.len() > ADD_FILTER_FROM;
-        let query = self.add_filter.trim().to_lowercase();
         let mut picked: Vec<PathBuf> = Vec::new();
         widgets::popover_frame(ui)
             .inner_margin(Margin::same(theme::SPACE_1 as i8))
@@ -497,12 +497,14 @@ impl Dialog {
                                     .file_name()
                                     .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
                                 let path = config::contract(project, self.home.as_deref());
-                                let shown = query.is_empty()
-                                    || name.to_lowercase().contains(&query)
-                                    || path.to_lowercase().contains(&query);
-                                if shown
-                                    && widgets::menu_row(ui, width, &name, &path, false).clicked()
-                                {
+                                let Some(mark) = matches(&name, &path, &self.add_filter) else {
+                                    continue;
+                                };
+                                let look = RowLook {
+                                    mark,
+                                    ..RowLook::default()
+                                };
+                                if widgets::menu_row(ui, width, &name, &path, look).clicked() {
                                     picked.push((*project).clone());
                                 }
                             }
@@ -514,7 +516,7 @@ impl Dialog {
                     width,
                     "Choose folders…",
                     "Choose a project containing an issues/ folder",
-                    false,
+                    RowLook::default(),
                 );
                 if choose.clicked() {
                     picked.extend((self.pick_folders)());

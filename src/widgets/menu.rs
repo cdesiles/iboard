@@ -1,7 +1,11 @@
 //! Menus: their options, group heads, two-line rows, separators and notes.
 
+use std::ops::Range;
+
+use egui::text::LayoutJob;
 use egui::{
-    Color32, CornerRadius, FontId, Frame, Margin, Pos2, Rect, Response, RichText, Sense, Ui, Vec2,
+    Color32, CornerRadius, FontId, Frame, Margin, Painter, Pos2, Rect, Response, RichText, Sense,
+    Stroke, StrokeKind, TextFormat, Ui, Vec2,
 };
 
 use super::{focus_ring, galley, galley_truncated, help, rule};
@@ -109,37 +113,156 @@ pub fn menu_group(ui: &mut Ui, text: &str) {
 }
 
 /// Height of a two-line [`menu_row`].
-const MENU_ROW_H: f32 = 38.0;
+pub const MENU_ROW_H: f32 = 38.0;
+
+/// What sets a [`menu_row`] apart.
+#[derive(Clone, Default)]
+pub struct RowLook {
+    /// What is on screen, like the open project: the title in `accent`.
+    pub current: bool,
+    /// The keyboard's row: an `accent-soft` fill.
+    pub active: bool,
+    /// The bytes of the title a filter matched, on `accent-soft`.
+    pub mark: Option<Range<usize>>,
+    /// A row of a list being reordered.
+    pub drag: Option<Drag>,
+}
+
+/// A row that drags: a 6-dot grip at its left, `ink-muted` on hover, and a
+/// `grab` cursor.
+#[derive(Clone, Copy)]
+pub enum Drag {
+    Grip,
+    /// The slot of the row being dragged.
+    Placeholder,
+}
+
+impl RowLook {
+    /// The slot a dragged row left behind is faded.
+    fn fade(&self, color: Color32) -> Color32 {
+        match self.drag {
+            Some(Drag::Placeholder) => color.gamma_multiply(0.35),
+            _ => color,
+        }
+    }
+}
 
 /// A full-width popup row: a title, a muted detail line under it, and a
-/// `surface-hover` fill on hover. `current` tints the title with `accent`, so
-/// the project already open stands out in the recent list.
-pub fn menu_row(ui: &mut Ui, width: f32, title: &str, detail: &str, current: bool) -> Response {
+/// `surface-hover` fill on hover; its [`RowLook`] adds the rest.
+pub fn menu_row(ui: &mut Ui, width: f32, title: &str, detail: &str, look: RowLook) -> Response {
     let p = theme::palette(ui);
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, MENU_ROW_H), Sense::click());
-    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let (sense, cursor) = match look.drag {
+        Some(_) => (Sense::click_and_drag(), egui::CursorIcon::Grab),
+        None => (Sense::click(), egui::CursorIcon::PointingHand),
+    };
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, MENU_ROW_H), sense);
+    let response = response.on_hover_cursor(cursor);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, title));
     if ui.is_rect_visible(rect) {
-        if response.hovered() {
-            ui.painter()
-                .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_hover);
-        }
-        let inner = rect.shrink2(Vec2::new(theme::SPACE_3, theme::SPACE_2));
-        let title_color = if current { p.accent } else { p.ink };
-        let title = galley_truncated(ui, title, theme::ui_strong(), title_color, inner.width());
-        let detail = galley_truncated(ui, detail, theme::meta(), p.ink_faint, inner.width());
-        let gap = theme::SPACE_1;
-        let top = inner.center().y - (title.size().y + detail.size().y + gap) / 2.0;
-        let painter = ui.painter();
-        painter.galley(Pos2::new(inner.min.x, top), title.clone(), title_color);
-        painter.galley(
-            Pos2::new(inner.min.x, top + title.size().y + gap),
-            detail,
-            p.ink_faint,
-        );
+        let hovered = response.hovered();
+        let fill = if look.active {
+            p.accent_soft
+        } else if hovered {
+            p.surface_hover
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), look.fade(fill));
+        paint_row(ui, ui.painter(), rect, (title, detail), &look, hovered);
     }
     focus_ring(ui, &response, theme::RADIUS_SM);
     response
+}
+
+/// The [`menu_row`] being dragged, raised under the pointer like a dragged
+/// card.
+pub fn menu_row_lifted(ui: &Ui, (title, detail): (&str, &str), pointer: Pos2) {
+    let p = theme::palette(ui);
+    let width = ui.max_rect().width();
+    let rect = Rect::from_min_size(
+        Pos2::new(ui.max_rect().left(), pointer.y - MENU_ROW_H / 2.0),
+        Vec2::new(width, MENU_ROW_H),
+    );
+    let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("menu_row_lifted"));
+    let painter = ui.ctx().layer_painter(layer);
+    let shadow = ui.visuals().popup_shadow;
+    painter.add(shadow.as_shape(rect, CornerRadius::same(theme::RADIUS_SM)));
+    painter.rect(
+        rect,
+        CornerRadius::same(theme::RADIUS_SM),
+        p.surface,
+        Stroke::new(1.0, p.line_strong),
+        StrokeKind::Inside,
+    );
+    let look = RowLook {
+        drag: Some(Drag::Grip),
+        ..RowLook::default()
+    };
+    paint_row(ui, &painter, rect, (title, detail), &look, true);
+    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+}
+
+/// A row's grip, if it drags, then its title, the marked part on
+/// `accent-soft`, and its detail under it.
+fn paint_row(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    (title, detail): (&str, &str),
+    look: &RowLook,
+    hovered: bool,
+) {
+    let p = theme::palette(ui);
+    let mut inner = rect.shrink2(Vec2::new(theme::SPACE_3, theme::SPACE_2));
+    if look.drag.is_some() {
+        let grip = Rect::from_min_size(
+            Pos2::new(inner.left() - 2.0, rect.center().y - theme::ICON_SIZE / 2.0),
+            Vec2::splat(theme::ICON_SIZE),
+        );
+        let color = if hovered { p.ink_muted } else { p.ink_faint };
+        theme::paint_icon(painter, Icon::Grip, grip, look.fade(color));
+        inner.min.x = grip.right() + theme::SPACE_2;
+    }
+    let color = look.fade(if look.current { p.accent } else { p.ink });
+    let plain = TextFormat::simple(theme::ui_strong(), color);
+    let mut job = LayoutJob::default();
+    match look
+        .mark
+        .clone()
+        .filter(|range| title.get(range.clone()).is_some())
+    {
+        Some(range) => {
+            job.append(&title[..range.start], 0.0, plain.clone());
+            let marked = TextFormat {
+                background: p.accent_soft,
+                ..plain.clone()
+            };
+            job.append(&title[range.clone()], 0.0, marked);
+            job.append(&title[range.end..], 0.0, plain);
+        }
+        None => job.append(title, 0.0, plain),
+    }
+    job.wrap.max_width = inner.width();
+    job.wrap.max_rows = 1;
+    job.wrap.break_anywhere = true;
+    let title = ui.fonts_mut(|f| f.layout_job(job));
+    let detail_color = look.fade(p.ink_faint);
+    let detail = ui.fonts_mut(|f| {
+        let mut job = LayoutJob::simple_singleline(detail.to_string(), theme::meta(), detail_color);
+        job.wrap.max_width = inner.width();
+        job.wrap.max_rows = 1;
+        job.wrap.break_anywhere = true;
+        f.layout_job(job)
+    });
+    let gap = theme::SPACE_1;
+    let top = inner.center().y - (title.size().y + detail.size().y + gap) / 2.0;
+    painter.galley(Pos2::new(inner.min.x, top), title.clone(), color);
+    painter.galley(
+        Pos2::new(inner.min.x, top + title.size().y + gap),
+        detail,
+        detail_color,
+    );
 }
 
 /// A quiet one-line menu row that opens a dialog: `label` in `ui-small`

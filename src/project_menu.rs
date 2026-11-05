@@ -6,22 +6,20 @@
 use std::ops::Range;
 use std::path::PathBuf;
 
-use egui::text::LayoutJob;
 use egui::{
-    Align, Color32, CornerRadius, Event, Frame, Id, Key, Layout, Margin, Modifiers, Pos2, Rect,
-    RichText, Sense, Stroke, StrokeKind, TextFormat, Vec2,
+    Align, CornerRadius, Event, Frame, Id, Key, Layout, Margin, Modifiers, Pos2, Rect, RichText,
+    Stroke, Vec2,
 };
 
 use iboard::theme::{self, Icon};
-use iboard::widgets::{self, ButtonKind};
+use iboard::widgets::{self, ButtonKind, Drag, MENU_ROW_H, RowLook};
 
 const WIDTH: f32 = 360.0;
-const ROW_H: f32 = 38.0;
 const ROW_GAP: f32 = 2.0;
 /// The groups scroll after four rows.
-const GROUPS_MAX_H: f32 = 4.0 * (ROW_H + ROW_GAP);
+const GROUPS_MAX_H: f32 = 4.0 * (MENU_ROW_H + ROW_GAP);
 /// The projects scroll after eight rows, or sooner in a short window.
-const LIST_MAX_H: f32 = 8.0 * (ROW_H + ROW_GAP);
+const LIST_MAX_H: f32 = 8.0 * (MENU_ROW_H + ROW_GAP);
 /// Under this many projects the filter field hides until a key is typed.
 const FILTER_FROM: usize = 9;
 /// How close to the list's edge a dragged row scrolls it.
@@ -216,7 +214,7 @@ impl Menu {
         let top = anchor.bottom() + theme::SPACE_2;
         let room = ctx.content_rect().bottom() - top - theme::SPACE_5;
         let overhead = self.overhead.unwrap_or(260.0);
-        let list_max = (room - overhead).clamp(2.0 * (ROW_H + ROW_GAP), LIST_MAX_H);
+        let list_max = (room - overhead).clamp(2.0 * (MENU_ROW_H + ROW_GAP), LIST_MAX_H);
         let mut action = None;
         let mut list_h = 0.0;
         let area = egui::Area::new(Id::new("project_menu"))
@@ -292,16 +290,11 @@ impl Menu {
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = ROW_GAP;
                         for (at, group) in entries.groups.iter().enumerate() {
-                            let look = Look {
+                            let look = RowLook {
                                 current: entries.current_group.as_ref() == Some(&group.name),
-                                active: self.active == Some(at),
-                                ..Look::default()
+                                ..RowLook::default()
                             };
-                            let row = row(ui, &group.name, &group.count, None, look);
-                            if look.active && std::mem::take(&mut self.reveal) {
-                                row.scroll_to_me(Some(Align::Center));
-                            }
-                            if row.clicked() {
+                            if self.item_row(ui, at, (&group.name, &group.count), look) {
                                 *action = Some(Action::Open(Pick::Group(group.name.clone())));
                             }
                         }
@@ -355,16 +348,12 @@ impl Menu {
                             continue;
                         };
                         let project = &entries.projects[*index];
-                        let look = Look {
+                        let look = RowLook {
                             current: entries.current_project.as_ref() == Some(&project.path),
-                            active: self.active == Some(at),
-                            ..Look::default()
+                            mark: mark.clone(),
+                            ..RowLook::default()
                         };
-                        let row = row(ui, &project.name, &project.detail, mark.clone(), look);
-                        if look.active && std::mem::take(&mut self.reveal) {
-                            row.scroll_to_me(Some(Align::Center));
-                        }
-                        if row.clicked() {
+                        if self.item_row(ui, at, (&project.name, &project.detail), look) {
                             *action = Some(Action::Open(Pick::Project(project.path.clone())));
                         }
                     }
@@ -387,6 +376,24 @@ impl Menu {
             }
         });
         list_h
+    }
+
+    /// The row of the `at`th item, the active one scrolled into view when the
+    /// menu asks. True when clicked.
+    fn item_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        at: usize,
+        (title, detail): (&str, &str),
+        look: RowLook,
+    ) -> bool {
+        let active = self.active == Some(at);
+        let width = ui.available_width();
+        let row = widgets::menu_row(ui, width, title, detail, RowLook { active, ..look });
+        if active && std::mem::take(&mut self.reveal) {
+            row.scroll_to_me(Some(Align::Center));
+        }
+        row.clicked()
     }
 
     /// Reorder mode: every project with its grip, dragged or moved with the
@@ -422,17 +429,22 @@ impl Menu {
                 .max_height(list_max)
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = ROW_GAP;
+                    let width = ui.available_width();
                     let mut rects = Vec::with_capacity(names.len());
                     for (at, (name, detail)) in names.iter().enumerate() {
-                        let look = Look {
-                            active: reorder.selected == Some(at),
-                            grip: true,
-                            placeholder: reorder.dragging == Some(at),
-                            ..Look::default()
+                        let active = reorder.selected == Some(at);
+                        let drag = match reorder.dragging == Some(at) {
+                            true => Drag::Placeholder,
+                            false => Drag::Grip,
                         };
-                        let row = row(ui, name, detail, None, look);
+                        let look = RowLook {
+                            active,
+                            drag: Some(drag),
+                            ..RowLook::default()
+                        };
+                        let row = widgets::menu_row(ui, width, name, detail, look);
                         rects.push(row.rect);
-                        if look.active && reveal {
+                        if active && reveal {
                             row.scroll_to_me(Some(Align::Center));
                         }
                         if row.clicked() || row.drag_started() {
@@ -458,7 +470,7 @@ impl Menu {
                     };
                     let x = ui.max_rect().x_range();
                     ui.painter().hline(x, line_y, Stroke::new(2.0, p.accent));
-                    lifted(ui, names[from], pointer);
+                    widgets::menu_row_lifted(ui, names[from], pointer);
                     let view = ui.clip_rect();
                     let scroll = if pointer.y < view.top() + AUTO_SCROLL_EDGE {
                         6.0
@@ -560,7 +572,7 @@ fn step(at: Option<usize>, len: usize, down: bool) -> usize {
 
 /// Whether a project named `name` at `path` matches `query`, ignoring case:
 /// `None` when it does not, else the matched bytes of the name, if any.
-fn matches(name: &str, path: &str, query: &str) -> Option<Option<Range<usize>>> {
+pub fn matches(name: &str, path: &str, query: &str) -> Option<Option<Range<usize>>> {
     let query = query.trim().to_lowercase();
     if query.is_empty() {
         return Some(None);
@@ -666,154 +678,6 @@ fn footer(ui: &mut egui::Ui) -> Option<Footer> {
         });
     });
     picked
-}
-
-#[derive(Clone, Copy, Default)]
-struct Look {
-    current: bool,
-    active: bool,
-    grip: bool,
-    placeholder: bool,
-}
-
-impl Look {
-    /// The slot a dragged row left behind is faded.
-    fn fade(self, color: Color32) -> Color32 {
-        match self.placeholder {
-            true => color.gamma_multiply(0.35),
-            false => color,
-        }
-    }
-}
-
-/// A two-line row: the name (its matched part on `accent-soft`), the path
-/// or count under it. The whole width is the hit area.
-fn row(
-    ui: &mut egui::Ui,
-    name: &str,
-    detail: &str,
-    mark: Option<Range<usize>>,
-    look: Look,
-) -> egui::Response {
-    let p = theme::palette(ui);
-    let width = ui.available_width();
-    let sense = match look.grip {
-        true => Sense::click_and_drag(),
-        false => Sense::click(),
-    };
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, ROW_H), sense);
-    let cursor = match look.grip {
-        true => egui::CursorIcon::Grab,
-        false => egui::CursorIcon::PointingHand,
-    };
-    let response = response.on_hover_cursor(cursor);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
-    if !ui.is_rect_visible(rect) {
-        return response;
-    }
-    let fill = if look.active {
-        p.accent_soft
-    } else if response.hovered() {
-        p.surface_hover
-    } else {
-        Color32::TRANSPARENT
-    };
-    let fade = |color: Color32| look.fade(color);
-    ui.painter()
-        .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), fade(fill));
-    let mut inner = rect.shrink2(Vec2::new(theme::SPACE_3, theme::SPACE_2));
-    if look.grip {
-        let grip = Rect::from_min_size(
-            Pos2::new(inner.left() - 2.0, rect.center().y - theme::ICON_SIZE / 2.0),
-            Vec2::splat(theme::ICON_SIZE),
-        );
-        let color = if response.hovered() {
-            p.ink_muted
-        } else {
-            p.ink_faint
-        };
-        theme::paint_icon(ui.painter(), Icon::Grip, grip, fade(color));
-        inner.min.x = grip.right() + theme::SPACE_2;
-    }
-    paint_lines(ui, ui.painter(), inner, (name, detail), mark, look);
-    response
-}
-
-fn paint_lines(
-    ui: &egui::Ui,
-    painter: &egui::Painter,
-    inner: Rect,
-    (name, detail): (&str, &str),
-    mark: Option<Range<usize>>,
-    look: Look,
-) {
-    let p = theme::palette(ui);
-    let fade = |color: Color32| look.fade(color);
-    let color = fade(if look.current { p.accent } else { p.ink });
-    let plain = TextFormat::simple(theme::ui_strong(), color);
-    let mut job = LayoutJob::default();
-    match mark.filter(|range| name.get(range.clone()).is_some()) {
-        Some(range) => {
-            job.append(&name[..range.start], 0.0, plain.clone());
-            let marked = TextFormat {
-                background: p.accent_soft,
-                ..plain.clone()
-            };
-            job.append(&name[range.clone()], 0.0, marked);
-            job.append(&name[range.end..], 0.0, plain);
-        }
-        None => job.append(name, 0.0, plain),
-    }
-    job.wrap.max_width = inner.width();
-    job.wrap.max_rows = 1;
-    job.wrap.break_anywhere = true;
-    let title = ui.fonts_mut(|f| f.layout_job(job));
-    let detail_color = fade(p.ink_faint);
-    let detail = ui.fonts_mut(|f| {
-        let mut job = LayoutJob::simple_singleline(detail.to_string(), theme::meta(), detail_color);
-        job.wrap.max_width = inner.width();
-        job.wrap.max_rows = 1;
-        job.wrap.break_anywhere = true;
-        f.layout_job(job)
-    });
-    let gap = theme::SPACE_1;
-    let top = inner.center().y - (title.size().y + detail.size().y + gap) / 2.0;
-    painter.galley(Pos2::new(inner.min.x, top), title.clone(), color);
-    painter.galley(
-        Pos2::new(inner.min.x, top + title.size().y + gap),
-        detail,
-        detail_color,
-    );
-}
-
-/// The row being dragged, raised under the pointer like a dragged card.
-fn lifted(ui: &egui::Ui, (name, detail): (&str, &str), pointer: Pos2) {
-    let p = theme::palette(ui);
-    let width = ui.max_rect().width();
-    let rect = Rect::from_min_size(
-        Pos2::new(ui.max_rect().left(), pointer.y - ROW_H / 2.0),
-        Vec2::new(width, ROW_H),
-    );
-    let layer = egui::LayerId::new(egui::Order::Tooltip, Id::new("project_menu_lifted"));
-    let painter = ui.ctx().layer_painter(layer);
-    let shadow = ui.visuals().popup_shadow;
-    painter.add(shadow.as_shape(rect, CornerRadius::same(theme::RADIUS_SM)));
-    painter.rect(
-        rect,
-        CornerRadius::same(theme::RADIUS_SM),
-        p.surface,
-        Stroke::new(1.0, p.line_strong),
-        StrokeKind::Inside,
-    );
-    let mut inner = rect.shrink2(Vec2::new(theme::SPACE_3, theme::SPACE_2));
-    let grip = Rect::from_min_size(
-        Pos2::new(inner.left() - 2.0, rect.center().y - theme::ICON_SIZE / 2.0),
-        Vec2::splat(theme::ICON_SIZE),
-    );
-    theme::paint_icon(&painter, Icon::Grip, grip, p.ink_muted);
-    inner.min.x = grip.right() + theme::SPACE_2;
-    paint_lines(ui, &painter, inner, (name, detail), None, Look::default());
-    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
 }
 
 #[cfg(test)]
