@@ -26,10 +26,6 @@ pub use catalog::Catalog;
 use iboard::preferences::Preferences;
 use select_menu::SelectMenu;
 
-/// Height of the tab body. Fixed, so the panel stands still when the tab
-/// changes; taller content scrolls inside it.
-const DIALOG_BODY_H: f32 = 420.0;
-
 /// What the dialog asks of the app after a frame.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action {
@@ -47,6 +43,19 @@ pub enum Tab {
     Build,
     Titles,
     Labels,
+}
+
+/// What Save would write, to tell whether there is anything to lose.
+#[derive(Clone, PartialEq)]
+struct Edits {
+    form: AgentConfig,
+    build_form: AgentConfig,
+    build_timeout: BuildTimeout,
+    engine: Engine,
+    confirm_delete: bool,
+    appearance: Appearance,
+    auto: bool,
+    label_rows: Vec<(String, String)>,
 }
 
 /// The dialog's state while it is open.
@@ -93,6 +102,10 @@ pub struct Dialog {
     /// Why saving failed, shown above the footer.
     pub save_error: Option<String>,
     menu: SelectMenu,
+    /// The settings as they opened.
+    opening: Option<Edits>,
+    /// `esc` found unsaved edits: the dialog asks before dropping them.
+    discarding: bool,
 }
 
 impl Dialog {
@@ -125,6 +138,8 @@ impl Dialog {
             invalid: None,
             save_error: None,
             menu: SelectMenu::default(),
+            opening: None,
+            discarding: false,
         }
     }
 
@@ -139,6 +154,36 @@ impl Dialog {
         }
         rows.sort_by(|a, b| a.0.cmp(&b.0));
         self
+    }
+
+    fn edits(&self) -> Edits {
+        Edits {
+            form: self.form.clone(),
+            build_form: self.build_form.clone(),
+            build_timeout: self.build_timeout,
+            engine: self.engine,
+            confirm_delete: self.confirm_delete,
+            appearance: self.appearance,
+            auto: self.auto,
+            label_rows: self.label_rows.clone(),
+        }
+    }
+
+    fn is_dirty(&self) -> bool {
+        !self.new_label.is_empty()
+            || !self.new_hex.is_empty()
+            || self.opening.as_ref() != Some(&self.edits())
+    }
+
+    /// Esc, Cancel, the close button or `⌘,`: closes, or asks first when it
+    /// holds unsaved edits.
+    pub fn close(&mut self) -> Action {
+        if self.is_dirty() && !self.discarding {
+            self.discarding = true;
+            Action::Keep
+        } else {
+            Action::Close
+        }
     }
 
     /// Checks the form before saving; on failure the dialog stays open with
@@ -172,19 +217,26 @@ impl Dialog {
         // An open menu owns the arrows, `↩` and `esc`; otherwise `esc` closes
         // and `⌘↩` saves.
         let mut action = Action::Keep;
+        if self.opening.is_none() {
+            self.opening = Some(self.edits());
+        }
         if self.menu.is_closed() {
             if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter)) {
                 action = Action::Save;
             } else if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
-                action = Action::Close;
+                if self.discarding {
+                    self.discarding = false;
+                } else {
+                    action = self.close();
+                }
             }
         }
 
-        widgets::modal(ui, "review-settings", theme::ModalSize::M).show(ctx, |ui| {
+        widgets::modal(ui, "review-settings", theme::ModalSize::M, "Settings").show(ctx, |ui| {
             ui.set_width(theme::modal_size(theme::ModalSize::M, ctx.content_rect()).x);
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             if self.header(ui) {
-                action = Action::Close;
+                action = self.close();
             }
             widgets::rule(ui);
             theme::scroll_area(
@@ -192,32 +244,41 @@ impl Dialog {
                 egui::ScrollArea::vertical()
                     .id_salt("settings-body")
                     .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
-                    .min_scrolled_height(DIALOG_BODY_H + 2.0 * theme::SPACE_5)
-                    .max_height(DIALOG_BODY_H + 2.0 * theme::SPACE_5)
-                    .auto_shrink([false, false]),
+                    .max_height(widgets::modal_body_max(ctx.content_rect()))
+                    .auto_shrink([false, true]),
                 true,
-                |ui| match self.tab {
-                    Tab::General => self.general_body(ui),
-                    Tab::Review => {
-                        self.review_seen = true;
-                        self.review_body(ui, catalog);
-                    }
-                    Tab::Build => {
-                        self.build_seen = true;
-                        self.build_body(ui, catalog);
-                    }
-                    Tab::Titles => self.titles_body(ui),
-                    Tab::Labels => {
-                        self.labels_seen = true;
-                        self.labels_body(ui);
+                |ui| {
+                    widgets::focus_here(ui);
+                    match self.tab {
+                        Tab::General => self.general_body(ui),
+                        Tab::Review => {
+                            self.review_seen = true;
+                            self.review_body(ui, catalog);
+                        }
+                        Tab::Build => {
+                            self.build_seen = true;
+                            self.build_body(ui, catalog);
+                        }
+                        Tab::Titles => self.titles_body(ui),
+                        Tab::Labels => {
+                            self.labels_seen = true;
+                            self.labels_body(ui);
+                        }
                     }
                 },
             );
             widgets::rule(ui);
+            if self.discarding {
+                match widgets::discard_bar(ui, "Discard changes to settings?") {
+                    Some(true) => action = Action::Close,
+                    Some(false) => self.discarding = false,
+                    None => {}
+                }
+            }
             match widgets::modal_footer(ui, saved_to, "Save") {
                 FooterClick::None => {}
                 FooterClick::Primary => action = Action::Save,
-                FooterClick::Cancel => action = Action::Close,
+                FooterClick::Cancel => action = self.close(),
             }
         });
         action

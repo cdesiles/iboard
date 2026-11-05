@@ -69,18 +69,17 @@ impl IboardApp {
     /// loses their answers; `esc`, Cancel or the scrim keeps iboard open.
     pub(super) fn quit_dialog(&mut self, ui: &egui::Ui, runs: usize) {
         let p = theme::palette(ui);
-        let (width, pad) = (360.0, 20.0);
-        let mut confirmed = false;
-        let mut cancelled = false;
+        let size = theme::ModalSize::S;
+        let (width, pad) = (theme::modal_size(size, ui.ctx().content_rect()).x, 20.0);
+        let mut answer = widgets::Answer::Pending;
         let frame = widgets::modal_frame(ui).inner_margin(MarginF32 {
             left: pad,
             right: pad,
             top: pad,
             bottom: theme::SPACE_5,
         });
-        let modal = egui::Modal::new(egui::Id::new("confirm-quit"))
+        let modal = widgets::modal(ui, "confirm-quit", size, "Quit iboard?")
             .frame(frame)
-            .backdrop_color(p.scrim)
             .show(ui.ctx(), |ui| {
                 ui.set_width(width - 2.0 * pad);
                 ui.style_mut().interaction.selectable_labels = false;
@@ -102,32 +101,24 @@ impl IboardApp {
                         .color(p.ink_muted),
                 );
                 ui.add_space(theme::SPACE_3);
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    let quit = widgets::button(ui, ButtonKind::Danger, None, "Quit", Some("↩"));
-                    widgets::paint_focus_ring(ui, quit.rect, theme::RADIUS_SM);
-                    confirmed = quit.clicked();
-                    cancelled =
-                        widgets::button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc"))
-                            .clicked();
-                });
+                answer = widgets::confirm_buttons(ui, None, "Quit");
             });
-        if confirmed {
+        if answer == widgets::Answer::Confirmed {
             self.quit_anyway();
-        } else if cancelled || modal.should_close() {
+        } else if answer == widgets::Answer::Cancelled || modal.should_close() {
             self.session.confirm = None;
         }
     }
 
     /// The commits popup: the hashes whose message names the ticket's file,
-    /// read from git when its node button was pressed. `esc` or the scrim
-    /// closes it.
+    /// read from git when its node button was pressed. `esc` closes it.
     pub(super) fn commits_window(&mut self, ui: &egui::Ui) {
         let p = theme::palette(ui);
         let Some(panel) = self.session.commits.as_ref() else {
             return;
         };
-        let width = 460.0;
+        let size = theme::ModalSize::M;
+        let width = theme::modal_size(size, ui.ctx().content_rect()).x;
         let pad = 20.0;
         let mut close = false;
         let mut picked = None;
@@ -137,9 +128,8 @@ impl IboardApp {
             top: pad,
             bottom: theme::SPACE_5,
         });
-        let modal = egui::Modal::new(egui::Id::new("commits"))
+        let modal = widgets::modal(ui, "commits", size, "Commits")
             .frame(frame)
-            .backdrop_color(p.scrim)
             .show(ui.ctx(), |ui| {
                 let inner = width - 2.0 * pad;
                 ui.set_width(inner);
@@ -168,6 +158,7 @@ impl IboardApp {
                     .color(p.ink_muted),
                 );
                 ui.add_space(theme::SPACE_2);
+                widgets::focus_here(ui);
                 picked = commit_list(ui, &panel.list);
                 ui.add_space(theme::SPACE_2);
                 ui.label(
@@ -189,7 +180,7 @@ impl IboardApp {
         if let Some(hashes) = picked {
             let path = panel.path.clone();
             self.open_diff(&path, hashes);
-        } else if close || modal.should_close() {
+        } else if close || (!modal.backdrop_response.clicked() && modal.should_close()) {
             self.session.commits = None;
         }
     }

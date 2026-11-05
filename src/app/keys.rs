@@ -5,7 +5,7 @@
 use super::editor::EditorState;
 use super::{
     Confirm, DetailMode, IboardApp, Instant, Job, Key, LeaveChoice, PathBuf, RESCAN_EVERY, Screen,
-    Vec2, job, quitting, scan,
+    Vec2, job, quitting, scan, settings_ui, widgets,
 };
 
 /// How far two fingers swipe right, in points, to go back.
@@ -248,7 +248,12 @@ impl IboardApp {
     /// NewIssueModal. True when one does.
     fn modal_keys(&mut self, ctx: &egui::Context, confirming: bool) -> bool {
         if self.settings.is_some() {
-            if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma)) {
+            if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma))
+                && self
+                    .settings
+                    .as_mut()
+                    .is_some_and(|dialog| dialog.close() == settings_ui::Action::Close)
+            {
                 self.settings = None;
             }
             return true;
@@ -406,7 +411,7 @@ impl IboardApp {
         };
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             self.session.confirm = None;
-        } else if ctx.input(|i| i.key_pressed(Key::Enter)) {
+        } else if widgets::enter_confirms(ctx) && ctx.input(|i| i.key_pressed(Key::Enter)) {
             match confirm {
                 Confirm::Delete(paths) => self.delete_issues(&paths),
                 Confirm::Quit(_) => self.quit_anyway(),

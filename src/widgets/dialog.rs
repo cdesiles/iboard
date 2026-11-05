@@ -7,6 +7,7 @@ use egui::{
     RichText, Stroke, StrokeKind, Ui, Vec2,
 };
 
+use super::modal::{focus_here, modal};
 use super::{ButtonKind, button};
 use crate::theme::{self, Icon};
 
@@ -74,16 +75,6 @@ pub fn modal_frame(ui: &Ui) -> Frame {
     })
 }
 
-/// A Modal of `size`: placed for its size, over the `scrim`, in
-/// [`modal_frame`] with no margin of its own.
-pub fn modal(ui: &Ui, id: &str, size: theme::ModalSize) -> egui::Modal {
-    let id = egui::Id::new(id);
-    egui::Modal::new(id)
-        .area(theme::modal_area(id, size, ui.ctx().content_rect()))
-        .frame(modal_frame(ui))
-        .backdrop_color(theme::palette(ui).scrim)
-}
-
 /// What a [`confirm`] asks: its question, the subject (a title and a path),
 /// what follows, and the verb on its danger button.
 pub struct Ask<'a> {
@@ -110,11 +101,11 @@ pub fn confirm(ui: &Ui, ask: &Ask) -> Answer {
     let pad = 20.0;
     let mut answer = Answer::Pending;
     let frame = modal_frame(ui).inner_margin(pad);
-    let modal = egui::Modal::new(egui::Id::new(ask.id))
+    let size = theme::ModalSize::S;
+    let modal = modal(ui, ask.id, size, ask.question)
         .frame(frame)
-        .backdrop_color(p.scrim)
         .show(ui.ctx(), |ui| {
-            let inner = theme::MODAL_S - 2.0 * pad;
+            let inner = theme::modal_size(size, ui.ctx().content_rect()).x - 2.0 * pad;
             ui.set_width(inner);
             ui.style_mut().interaction.selectable_labels = false;
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
@@ -146,30 +137,43 @@ pub fn confirm(ui: &Ui, ask: &Ask) -> Answer {
                     .color(p.ink_muted),
             );
             ui.add_space(theme::SPACE_3);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                // The danger button starts focused: `Del` then `↩` is the fast
-                // path, and the dialog itself is the safety step.
-                let confirm = button(
-                    ui,
-                    ButtonKind::Danger,
-                    Some(Icon::Trash),
-                    ask.confirm,
-                    Some("↩"),
-                );
-                paint_focus_ring(ui, confirm.rect, theme::RADIUS_SM);
-                if confirm.clicked() {
-                    answer = Answer::Confirmed;
-                }
-                if button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc")).clicked() {
-                    answer = Answer::Cancelled;
-                }
-            });
+            answer = confirm_buttons(ui, Some(Icon::Trash), ask.confirm);
         });
     if answer == Answer::Pending && modal.should_close() {
         answer = Answer::Cancelled;
     }
     answer
+}
+
+fn confirm_cancel_id() -> egui::Id {
+    egui::Id::new("confirm-cancel")
+}
+
+/// The buttons of a Modal S: Cancel, then the danger button, which starts
+/// focused: `Del` then `↩` is the fast path, and the dialog itself is the
+/// safety step.
+pub fn confirm_buttons(ui: &mut Ui, icon: Option<Icon>, confirm: &str) -> Answer {
+    let mut answer = Answer::Pending;
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+        focus_here(ui);
+        if button(ui, ButtonKind::Danger, icon, confirm, Some("↩")).clicked() {
+            answer = Answer::Confirmed;
+        }
+        let cancel = button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc"));
+        ui.data_mut(|d| d.insert_temp(confirm_cancel_id(), cancel.id));
+        if cancel.clicked() {
+            answer = Answer::Cancelled;
+        }
+    });
+    answer
+}
+
+/// Whether `↩` means the danger button, not a Cancel tabbed to, which takes
+/// `↩` itself.
+pub fn enter_confirms(ctx: &egui::Context) -> bool {
+    let cancel = ctx.data(|d| d.get_temp::<egui::Id>(confirm_cancel_id()));
+    !cancel.is_some_and(|cancel| ctx.memory(|m| m.has_focus(cancel)))
 }
 
 /// A modal's `bar-h` header: its title, `extra` (Settings puts its tabs
@@ -193,9 +197,13 @@ pub fn modal_header(ui: &mut Ui, title: &str, extra: impl FnOnce(&mut Ui)) -> bo
                     ui.add_space(theme::SPACE_4);
                     extra(ui);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        close = button(ui, ButtonKind::Ghost, Some(Icon::Close), "", None)
-                            .on_hover_text("Close (esc)")
-                            .clicked();
+                        let close_button =
+                            button(ui, ButtonKind::Ghost, Some(Icon::Close), "", None)
+                                .on_hover_text("Close (esc)");
+                        close_button.widget_info(|| {
+                            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Close (esc)")
+                        });
+                        close = close_button.clicked();
                     });
                 },
             );
@@ -220,7 +228,7 @@ pub fn modal_footer(ui: &mut Ui, note: &str, primary: &str) -> FooterClick {
         if button(ui, ButtonKind::Primary, None, primary, Some("⌘↩")).clicked() {
             click = FooterClick::Primary;
         }
-        if button(ui, ButtonKind::Secondary, None, "Cancel", None).clicked() {
+        if button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc")).clicked() {
             click = FooterClick::Cancel;
         }
         ui.add(
@@ -228,6 +236,30 @@ pub fn modal_footer(ui: &mut Ui, note: &str, primary: &str) -> FooterClick {
         );
     });
     click
+}
+
+/// The band above a footer that asks before typed text is lost: `question`,
+/// Discard and Keep editing (`esc`). Says whether to discard, once answered.
+pub fn discard_bar(ui: &mut Ui, question: &str) -> Option<bool> {
+    let p = theme::palette(ui);
+    let mut answer = None;
+    Frame::new().inner_margin(theme::BAND_PAD).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+            ui.label(
+                RichText::new(question)
+                    .font(theme::ui_strong())
+                    .color(p.ink),
+            );
+            if button(ui, ButtonKind::Secondary, None, "Discard", None).clicked() {
+                answer = Some(true);
+            }
+            if button(ui, ButtonKind::Secondary, None, "Keep editing", Some("esc")).clicked() {
+                answer = Some(false);
+            }
+        });
+    });
+    answer
 }
 
 /// The band a footer's buttons sit in, `pad` in from the sides: a
@@ -304,6 +336,7 @@ pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &s
     let mut picked = None;
     Frame::new()
         .fill(p.surface_sunken)
+        .stroke(Stroke::new(1.0, p.line_strong))
         .corner_radius(CornerRadius::same(theme::RADIUS_SM))
         .inner_margin(Margin::same(2))
         .show(ui, |ui| {
@@ -328,7 +361,9 @@ pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &s
                         .stroke(Stroke::new(1.0, edge))
                         .corner_radius(CornerRadius::same(theme::RADIUS_SM - 1))
                         .min_size(Vec2::new(0.0, theme::CONTROL_H - 4.0));
-                    if ui.add(button).clicked() {
+                    let response = ui.add(button);
+                    focus_ring(ui, &response, theme::RADIUS_SM - 1);
+                    if response.clicked() {
                         picked = Some(option);
                     }
                 }

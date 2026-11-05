@@ -15,20 +15,23 @@ mod button;
 mod dialog;
 mod key_hints;
 mod menu;
+mod modal;
 mod pill;
 mod select;
 
 pub use button::{ButtonKind, CARD_ACTION, Tone, action_button, button, icon_button, split_button};
 pub use dialog::{
-    Answer, Ask, FooterClick, confirm, dashed_rect, field_edit, field_label, focus_halo,
-    focus_ring, footer_bar, help, modal, modal_footer, modal_frame, modal_header, paint_focus_halo,
-    paint_focus_ring, popover_frame, rule, segmented, text_entry, text_field,
+    Answer, Ask, FooterClick, confirm, confirm_buttons, dashed_rect, discard_bar, enter_confirms,
+    field_edit, field_label, focus_halo, focus_ring, footer_bar, help, modal_footer, modal_frame,
+    modal_header, paint_focus_halo, paint_focus_ring, popover_frame, rule, segmented, text_entry,
+    text_field,
 };
 pub use key_hints::{key_hints, key_hints_shown};
 pub use menu::{
     Drag, MENU_ROW_H, MenuOption, RowLook, menu_group, menu_head, menu_note, menu_option, menu_row,
     menu_row_lifted, menu_separator,
 };
+pub use modal::{focus_here, modal, modal_body_max, settle_modals};
 pub use pill::{chip, filter_token, label_pill, label_pill_lit, pill, tag};
 pub use select::select;
 

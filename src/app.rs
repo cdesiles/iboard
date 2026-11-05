@@ -705,6 +705,7 @@ impl IboardApp {
         self.enrichment_window(ui);
         self.commits_window(ui);
         self.new_issue_modal(ui);
+        widgets::settle_modals(ui.ctx());
         self.flush_pending_front(ui.ctx());
     }
 }

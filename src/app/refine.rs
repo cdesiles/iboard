@@ -370,7 +370,7 @@ impl IboardApp {
         } else {
             let size = theme::modal_size(theme::ModalSize::Xl, ui.ctx().content_rect());
             let shown = self.relative(&refine.path);
-            widgets::modal(ui, "refine", theme::ModalSize::Xl)
+            widgets::modal(ui, "refine", theme::ModalSize::Xl, "Refine")
                 .show(ui.ctx(), |ui| {
                     refine_ui(ui, size, &shown, &mut refine, &mut self.reader.cache)
                 })

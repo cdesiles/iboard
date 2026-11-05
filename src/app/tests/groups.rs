@@ -63,7 +63,7 @@ fn deleting_the_shown_group_asks_then_the_first_left_opens() {
     app.open_groups(false);
     let mut harness = kittest(app);
     press_nth(&mut harness, "Delete group (asks first)", 0);
-    harness.get_by_label("Delete this group?");
+    harness.get_by_role_and_label(egui::accesskit::Role::AlertDialog, "Delete this group?");
     press(&mut harness, "Delete group");
     assert_eq!(
         dialog(&mut harness).draft.groups.len(),

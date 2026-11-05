@@ -270,13 +270,18 @@ pub fn modal_size(size: ModalSize, window: Rect) -> Vec2 {
 
 /// Where a modal of `size` sits: S and XL centred, M and L 12% from the
 /// top, so only their bottom edge moves as their content grows.
-pub fn modal_area(id: egui::Id, size: ModalSize, window: Rect) -> egui::Area {
+pub fn modal_area(id: egui::Id, size: ModalSize, window: Rect, rise: f32) -> egui::Area {
     let area = egui::Modal::default_area(id);
     match size {
-        ModalSize::S | ModalSize::Xl => area,
+        ModalSize::S | ModalSize::Xl => {
+            area.anchor(egui::Align2::CENTER_CENTER, Vec2::new(0.0, rise))
+        }
         ModalSize::M | ModalSize::L => area.anchor(
             egui::Align2::CENTER_TOP,
-            Vec2::new(0.0, (window.height() * 0.12).max(modal_inset(window))),
+            Vec2::new(
+                0.0,
+                (window.height() * 0.12).max(modal_inset(window)) + rise,
+            ),
         ),
     }
 }

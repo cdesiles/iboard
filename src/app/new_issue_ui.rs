@@ -68,7 +68,7 @@ impl IboardApp {
             blocked,
         };
         let cache = &mut self.reader.cache;
-        let actions = widgets::modal(ui, "new-issue", theme::ModalSize::Xl)
+        let actions = widgets::modal(ui, "new-issue", theme::ModalSize::Xl, "New issue")
             .show(ui.ctx(), |ui| {
                 modal_ui(ui, size, composer, &mut view, cache)
             })

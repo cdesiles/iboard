@@ -15,6 +15,7 @@ mod handover;
 mod images;
 mod kit;
 mod labelling;
+mod modals;
 mod moves;
 mod panes;
 mod project_menu;

@@ -15,7 +15,6 @@ use crate::workspace::draft::{Added, Draft};
 use crate::workspace::{Group, Workspace};
 
 /// The body scrolls past this height.
-const BODY_MAX_H: f32 = 520.0;
 /// The Add project menu filters once it lists more projects than this.
 const ADD_FILTER_FROM: usize = 8;
 /// The Add project menu's list scrolls after eight two-line rows.
@@ -119,7 +118,7 @@ impl Dialog {
     fn keys(&mut self, ctx: &egui::Context) -> Action {
         let take = |modifiers, key| ctx.input_mut(|i| i.consume_key(modifiers, key));
         if let Some(at) = self.deleting {
-            if take(Modifiers::NONE, Key::Enter) {
+            if widgets::enter_confirms(ctx) && take(Modifiers::NONE, Key::Enter) {
                 self.draft.delete_group(at);
                 self.deleting = None;
             } else if take(Modifiers::NONE, Key::Escape) {
@@ -151,40 +150,46 @@ impl Dialog {
     pub fn show(&mut self, ui: &egui::Ui, projects: &[PathBuf], config_file: &str) -> Action {
         let ctx = ui.ctx().clone();
         let mut action = self.keys(&ctx);
-        widgets::modal(ui, "groups-dialog", theme::ModalSize::M).show(&ctx, |ui| {
-            ui.set_width(theme::modal_size(theme::ModalSize::M, ctx.content_rect()).x);
-            ui.spacing_mut().item_spacing = Vec2::ZERO;
-            if widgets::modal_header(ui, "Project groups", |_| {}) {
-                action = self.cancel();
-            }
-            widgets::rule(ui);
-            theme::scroll_area(
-                ui,
-                egui::ScrollArea::vertical()
-                    .id_salt("groups-body")
-                    .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
-                    .max_height(BODY_MAX_H)
-                    .auto_shrink([false, true]),
-                true,
-                |ui| self.body(ui, projects),
-            );
-            widgets::rule(ui);
-            if let Some(picked) = self.error_bar(ui) {
-                action = picked;
-            }
-            if self.discarding {
-                self.discard_bar(ui, &mut action);
-            }
-            let note = match self.draft.is_dirty() {
-                true => format!("{config_file} · Unsaved"),
-                false => config_file.to_string(),
-            };
-            match widgets::modal_footer(ui, &note, "Save") {
-                FooterClick::None => {}
-                FooterClick::Primary => action = self.save(self.conflict),
-                FooterClick::Cancel => action = self.cancel(),
-            }
-        });
+        widgets::modal(ui, "groups-dialog", theme::ModalSize::M, "Project groups").show(
+            &ctx,
+            |ui| {
+                ui.set_width(theme::modal_size(theme::ModalSize::M, ctx.content_rect()).x);
+                ui.spacing_mut().item_spacing = Vec2::ZERO;
+                if widgets::modal_header(ui, "Project groups", |_| {}) {
+                    action = self.cancel();
+                }
+                widgets::rule(ui);
+                theme::scroll_area(
+                    ui,
+                    egui::ScrollArea::vertical()
+                        .id_salt("groups-body")
+                        .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
+                        .max_height(widgets::modal_body_max(ctx.content_rect()))
+                        .auto_shrink([false, true]),
+                    true,
+                    |ui| {
+                        widgets::focus_here(ui);
+                        self.body(ui, projects);
+                    },
+                );
+                widgets::rule(ui);
+                if let Some(picked) = self.error_bar(ui) {
+                    action = picked;
+                }
+                if self.discarding {
+                    self.discard_bar(ui, &mut action);
+                }
+                let note = match self.draft.is_dirty() {
+                    true => format!("{config_file} · Unsaved"),
+                    false => config_file.to_string(),
+                };
+                match widgets::modal_footer(ui, &note, "Save") {
+                    FooterClick::None => {}
+                    FooterClick::Primary => action = self.save(self.conflict),
+                    FooterClick::Cancel => action = self.cancel(),
+                }
+            },
+        );
         if let Some(at) = self.deleting {
             self.confirm_delete(ui, at);
         }
@@ -519,25 +524,11 @@ impl Dialog {
     }
 
     fn discard_bar(&mut self, ui: &mut egui::Ui, action: &mut Action) {
-        let p = theme::palette(ui);
-        Frame::new().inner_margin(theme::BAND_PAD).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                ui.label(
-                    RichText::new("Discard changes to groups?")
-                        .font(theme::ui_strong())
-                        .color(p.ink),
-                );
-                if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None).clicked() {
-                    *action = Action::Close;
-                }
-                if widgets::button(ui, ButtonKind::Secondary, None, "Keep editing", Some("esc"))
-                    .clicked()
-                {
-                    self.discarding = false;
-                }
-            });
-        });
+        match widgets::discard_bar(ui, "Discard changes to groups?") {
+            Some(true) => *action = Action::Close,
+            Some(false) => self.discarding = false,
+            None => {}
+        }
     }
 
     /// ConfirmDialog over this one: deleting a group always asks.
