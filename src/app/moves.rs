@@ -163,7 +163,7 @@ impl IboardApp {
                 follow(selected);
             }
             self.session.picked.iter_mut().for_each(follow);
-            if let Screen::Detail(open) = &mut self.session.screen {
+            if let Screen::Detail(open, _) = &mut self.session.screen {
                 follow(open);
             }
             if let Some(Confirm::Delete(paths)) = self.session.confirm.as_mut() {
@@ -424,8 +424,7 @@ impl IboardApp {
         if self.session.editor.as_ref().is_some_and(|e| e.path == path) {
             self.session.editor = None;
         }
-        if matches!(&self.session.screen, Screen::Detail(open) if open == path) {
-            self.session.detail_mode = DetailMode::Preview;
+        if matches!(&self.session.screen, Screen::Detail(open, _) if open == path) {
             self.session.screen = Screen::Board;
         }
     }

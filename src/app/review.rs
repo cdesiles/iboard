@@ -179,8 +179,7 @@ impl IboardApp {
             }
             self.session.review_runs.ready.insert(path.clone());
             // The issue being read shows its answer at once.
-            let reading = matches!(&self.session.screen, Screen::Detail(open) if *open == path)
-                && self.session.detail_mode == DetailMode::Preview
+            let reading = self.session.reading() == Some(path.as_path())
                 && self.session.review.is_none()
                 && !self.refinement_shown();
             if reading {
@@ -212,20 +211,12 @@ impl IboardApp {
         let Some(proposal) = review.proposal().map(str::to_string) else {
             return;
         };
-        if !self
-            .session
-            .editor
-            .as_ref()
-            .is_some_and(|editor| editor.path == path)
-        {
-            self.open_editor(&path);
-        }
+        self.open_editor(&path);
         if let Some(editor) = self.session.editor.as_mut()
             && editor.path == path
         {
             editor.replace(proposal);
         }
-        self.session.detail_mode = DetailMode::Edit;
         self.session.review = None;
     }
 
@@ -296,7 +287,7 @@ impl IboardApp {
     ) {
         let running = self.review_is_running(path);
         let configured = self.prefs.agent.configured();
-        let draft = self.session.detail_mode == DetailMode::Edit;
+        let draft = self.session.editing().is_some();
         match picked {
             Some(ReviewMenu::Review | ReviewMenu::OtherScope | ReviewMenu::Refine) if running => {}
             Some(ReviewMenu::Review) if configured => self.start_review(path, draft),

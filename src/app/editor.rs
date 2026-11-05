@@ -204,7 +204,7 @@ impl IboardApp {
         if let Some(editor) = self.session.editor.as_mut() {
             editor.discard();
         }
-        self.session.detail_mode = DetailMode::Preview;
+        self.session.stop_editing();
     }
 
     pub(super) fn start_editing(&mut self, path: &Path) {
@@ -223,7 +223,7 @@ impl IboardApp {
             .map(|e| e.path == path)
             .unwrap_or(false)
         {
-            self.session.detail_mode = DetailMode::Edit;
+            self.session.screen = Screen::Detail(path.to_path_buf(), DetailMode::Edit);
             return;
         }
         // Persist any pending edits of another issue before switching.
@@ -234,8 +234,7 @@ impl IboardApp {
         };
         let content = issue.markdown.clone();
         self.session.editor = Some(EditorState::new(path.to_path_buf(), content));
-        self.session.screen = Screen::Detail(path.to_path_buf());
-        self.session.detail_mode = DetailMode::Edit;
+        self.session.screen = Screen::Detail(path.to_path_buf(), DetailMode::Edit);
     }
 
     /// Saves unsaved edits unless they conflict with the file on disk.
@@ -288,7 +287,7 @@ impl IboardApp {
             .as_ref()
             .is_some_and(|e| e.error.is_none())
         {
-            self.session.detail_mode = DetailMode::Preview;
+            self.session.stop_editing();
         }
     }
 

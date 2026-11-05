@@ -296,7 +296,7 @@ impl IboardApp {
     pub(super) fn close_diff(&mut self) {
         let issue = self.session.diff.take().map(|view| view.issue);
         self.session.screen = match issue {
-            Some(path) => Screen::Detail(path),
+            Some(path) => Screen::Detail(path, DetailMode::Preview),
             None => Screen::Board,
         };
     }

@@ -378,7 +378,7 @@ fn a_done_card_opens_its_agent_log() {
     draw(&ctx, &mut app, vec![moved(at)]);
     draw(&ctx, &mut app, vec![button(at, true)]);
     draw(&ctx, &mut app, vec![button(at, false)]);
-    assert!(matches!(&app.session.screen, Screen::Detail(path) if *path == done));
+    assert!(matches!(&app.session.screen, Screen::Detail(path, _) if *path == done));
     draw(&ctx, &mut app, vec![]);
     assert_eq!(app.session.agent_log.as_ref().unwrap().text, "built it\n");
 

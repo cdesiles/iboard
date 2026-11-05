@@ -13,8 +13,7 @@ impl IboardApp {
         self.close_review();
         self.session.picked.clear();
         self.session.selected = Some(path.clone());
-        self.session.screen = Screen::Detail(path.clone());
-        self.session.detail_mode = DetailMode::Preview;
+        self.session.screen = Screen::Detail(path.clone(), DetailMode::Preview);
         // A review that finished while the issue was closed shows now.
         if self.session.review_runs.is_ready(&path) {
             self.reveal_review(&path);
@@ -25,9 +24,7 @@ impl IboardApp {
     /// saved when Auto is on; otherwise, or when saving fails, the editor bar
     /// asks first and nothing moves until the user answers.
     pub(super) fn leave(&mut self, to: Leave) {
-        let editing = matches!(self.session.screen, Screen::Detail(_))
-            && self.session.detail_mode == DetailMode::Edit;
-        if editing {
+        if self.session.editing().is_some() {
             if self.prefs.auto {
                 self.save_pending();
             }
@@ -42,18 +39,13 @@ impl IboardApp {
     pub(super) fn go(&mut self, to: Leave) {
         self.session.leave_prompt = None;
         match to {
-            Leave::Reader => self.session.detail_mode = DetailMode::Preview,
-            Leave::Board => {
-                self.session.detail_mode = DetailMode::Preview;
-                self.session.screen = Screen::Board;
-            }
+            Leave::Reader => self.session.stop_editing(),
+            Leave::Board => self.session.screen = Screen::Board,
             Leave::Composer => {
-                self.session.detail_mode = DetailMode::Preview;
                 self.session.screen = Screen::Board;
                 self.show_composer();
             }
             Leave::Open(target) => {
-                self.session.detail_mode = DetailMode::Preview;
                 self.session.screen = Screen::Board;
                 self.open_target(target);
             }

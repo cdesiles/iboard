@@ -87,9 +87,10 @@ impl IboardApp {
             theme::pane_divider(ui, split, panes, strip, range, REVIEW_PANEL_WIDTH, false);
         }
 
-        match self.session.detail_mode {
-            DetailMode::Preview => self.detail_preview(ui, path),
-            DetailMode::Edit => self.detail_edit(ui, path),
+        if self.session.editing().is_some() {
+            self.detail_edit(ui, path);
+        } else {
+            self.detail_preview(ui, path);
         }
         if refined {
             self.refine_popin(ui);

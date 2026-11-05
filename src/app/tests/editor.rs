@@ -22,7 +22,7 @@ fn renaming_an_issue_via_the_editor_moves_the_file() {
     assert!(!file.exists(), "the old file name is gone");
     assert!(app.error.is_none(), "a clean rename reports no error");
     assert!(
-        matches!(&app.session.screen, Screen::Detail(path) if path == &renamed),
+        matches!(&app.session.screen, Screen::Detail(path, _) if path == &renamed),
         "the detail view follows the renamed file"
     );
     assert_eq!(app.session.editor.as_ref().unwrap().path, renamed);
@@ -100,7 +100,7 @@ fn leaving_with_auto_on_saves() {
 
     app.show_preview();
 
-    assert_eq!(app.session.detail_mode, DetailMode::Preview);
+    assert_eq!(app.session.reading(), Some(file.as_path()));
     assert!(
         app.session.leave_prompt.is_none(),
         "no question when the save worked"
@@ -118,12 +118,12 @@ fn leaving_with_auto_off_asks_first() {
         Some(Leave::Board),
         "the editor asks"
     );
-    assert_eq!(app.session.detail_mode, DetailMode::Edit, "and stays put");
+    assert_eq!(app.session.editing(), Some(file.as_path()), "and stays put");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Demo\n");
 
     app.answer_leave(LeaveChoice::KeepEditing);
     assert!(app.session.leave_prompt.is_none());
-    assert_eq!(app.session.detail_mode, DetailMode::Edit);
+    assert_eq!(app.session.editing(), Some(file.as_path()));
 
     app.back_to_board();
     app.answer_leave(LeaveChoice::Save);
@@ -149,6 +149,36 @@ fn discarding_on_leave_keeps_the_file() {
     );
     assert!(!app.has_unsaved_edits());
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Demo\n");
+}
+
+/// Bug: back on the board, `E` on the card the editor still held only set
+/// the Edit mode, and the board stayed on screen.
+#[test]
+fn e_on_the_board_edits_the_card_the_editor_still_holds() {
+    let dir = scratch_dir("edit-again");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("demo.md");
+    std::fs::write(&file, "# Demo\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let ctx = themed_ctx();
+    let press = |app: &mut IboardApp, pressed: Key| {
+        frame(&ctx, app, vec![key(pressed, egui::Modifiers::NONE)]);
+    };
+
+    app.open_issue(file.clone());
+    press(&mut app, Key::E);
+    press(&mut app, Key::Escape);
+    press(&mut app, Key::Escape);
+    assert!(matches!(app.session.screen, Screen::Board));
+    assert!(app.session.editor.is_some(), "the editor keeps its buffer");
+
+    press(&mut app, Key::E);
+    assert_eq!(
+        app.session.editing(),
+        Some(file.as_path()),
+        "the editor opens on it"
+    );
 }
 
 #[test]
@@ -200,8 +230,8 @@ fn command_s_saves_the_editor() {
     );
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Demo\n\nMore.\n");
     assert_eq!(
-        app.session.detail_mode,
-        DetailMode::Preview,
+        app.session.reading(),
+        Some(file.as_path()),
         "like the Save ⌘S button, it shows the saved issue"
     );
 }

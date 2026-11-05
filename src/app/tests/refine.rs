@@ -59,7 +59,7 @@ fn a_conversation_ends_in_a_refined_issue() {
 
     app.apply_refinement();
     assert_eq!(app.session.editor.as_ref().unwrap().text, "# Spec");
-    assert_eq!(app.session.detail_mode, DetailMode::Edit);
+    assert_eq!(app.session.editing(), Some(file.as_path()));
     assert!(app.session.refine.is_some(), "the conversation stays open");
     assert!(
         !app.refinement_shown(),

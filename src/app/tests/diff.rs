@@ -112,7 +112,7 @@ fn a_commit_opens_as_a_diff_and_finds_a_term() {
     assert_eq!(count(&harness), None, "esc closes the find bar");
     harness.key_press(Key::Escape);
     harness.run_steps(2);
-    assert!(matches!(&harness.state().1.session.screen, Screen::Detail(path) if *path == issue));
+    assert!(matches!(&harness.state().1.session.screen, Screen::Detail(path, _) if *path == issue));
 }
 
 /// A Done card's diff action opens every commit that closed it.

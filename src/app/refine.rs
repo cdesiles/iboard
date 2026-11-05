@@ -328,7 +328,7 @@ impl IboardApp {
     pub(super) fn refinement_shown(&self) -> bool {
         self.session.refine.as_ref().is_some_and(|refine| {
             !refine.hidden
-                && matches!(&self.session.screen, Screen::Detail(path) if *path == refine.path)
+                && matches!(&self.session.screen, Screen::Detail(path, _) if *path == refine.path)
         })
     }
 

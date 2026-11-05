@@ -88,7 +88,7 @@ fn a_review_is_kept_beside_the_issue() {
         .expect("kept across restarts");
     assert!(!past.stale);
     restarted.show_past_review(file.clone());
-    assert!(matches!(&restarted.session.screen, Screen::Detail(path) if *path == file));
+    assert!(matches!(&restarted.session.screen, Screen::Detail(path, _) if *path == file));
     let review = restarted
         .session
         .review
@@ -140,7 +140,7 @@ fn applying_a_review_opens_the_editor_with_an_unsaved_draft() {
 
     app.apply_review_proposal();
 
-    assert_eq!(app.session.detail_mode, DetailMode::Edit);
+    assert_eq!(app.session.editing(), Some(file.as_path()));
     assert_eq!(app.session.editor.as_ref().unwrap().path, file);
     assert_eq!(
         app.session.editor.as_ref().unwrap().text,
@@ -491,7 +491,7 @@ fn a_ready_review_opens_from_its_card() {
     harness.get_by_label("Review ready").click();
     harness.run_steps(2);
     let app = &harness.state().1;
-    assert!(matches!(&app.session.screen, Screen::Detail(path) if *path == file));
+    assert!(matches!(&app.session.screen, Screen::Detail(path, _) if *path == file));
     let review = app.session.review.as_ref().expect("the panel opens");
     assert!(review.split.is_none());
     assert!(!app.session.review_runs.is_ready(&file), "seen now");

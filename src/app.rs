@@ -128,7 +128,7 @@ enum DetailMode {
 #[derive(Clone)]
 enum Screen {
     Board,
-    Detail(PathBuf),
+    Detail(PathBuf, DetailMode),
     /// The commits of an issue, as a diff ([`Session::diff`]).
     Diff,
 }
@@ -280,7 +280,6 @@ pub struct IboardApp {
 /// background work. Opening another project starts a new one.
 struct Session {
     screen: Screen,
-    detail_mode: DetailMode,
     editor: Option<EditorState>,
     composer: Option<Composer>,
     /// A new issue discarded, for `⌘Z` in the next [`compose::DISCARD_UNDO`].
@@ -362,7 +361,6 @@ impl Default for Session {
     fn default() -> Self {
         Self {
             screen: Screen::Board,
-            detail_mode: DetailMode::Preview,
             editor: None,
             composer: None,
             discarded: None,
@@ -399,6 +397,31 @@ impl Default for Session {
             agent_log: None,
             stats: None,
             agenda_range: iboard::agenda::Range::default(),
+        }
+    }
+}
+
+impl Session {
+    /// The issue open in the editor.
+    fn editing(&self) -> Option<&Path> {
+        match &self.screen {
+            Screen::Detail(path, DetailMode::Edit) => Some(path),
+            _ => None,
+        }
+    }
+
+    /// The issue open in the reader.
+    fn reading(&self) -> Option<&Path> {
+        match &self.screen {
+            Screen::Detail(path, DetailMode::Preview) => Some(path),
+            _ => None,
+        }
+    }
+
+    /// The issue in the editor shows in the reader again; its buffer stays.
+    fn stop_editing(&mut self) {
+        if let Screen::Detail(_, mode) = &mut self.screen {
+            *mode = DetailMode::Preview;
         }
     }
 }
@@ -665,7 +688,7 @@ impl IboardApp {
                         self.board_ui(ui);
                         self.drop_dock(ui);
                     }
-                    Screen::Detail(path) => self.detail_ui(ui, &path),
+                    Screen::Detail(path, _) => self.detail_ui(ui, &path),
                     Screen::Diff => self.diff_ui(ui),
                 }
             });

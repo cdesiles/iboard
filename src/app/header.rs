@@ -87,7 +87,7 @@ impl IboardApp {
                     self.show_project_menu(ui.ctx(), response.rect);
                 }
             }
-            Screen::Detail(path) => self.detail_breadcrumb(ui, &path, &project),
+            Screen::Detail(path, _) => self.detail_breadcrumb(ui, &path, &project),
             Screen::Diff => {
                 if let Some(path) = self.session.diff.as_ref().map(|view| view.issue.clone()) {
                     self.detail_breadcrumb(ui, &path, &project);
@@ -103,7 +103,7 @@ impl IboardApp {
     fn detail_breadcrumb(&mut self, ui: &mut egui::Ui, path: &Path, project: &str) {
         let p = theme::palette(ui);
         // The visible way out, for whoever does not know the shortcuts.
-        let hint = if self.session.detail_mode == DetailMode::Edit {
+        let hint = if self.session.editing().is_some() {
             "Back to the board (asks if unsaved)"
         } else {
             "Back to the board (esc)"
@@ -154,7 +154,7 @@ impl IboardApp {
     pub(super) fn header_controls(&mut self, ui: &mut egui::Ui) {
         match self.session.screen.clone() {
             Screen::Board => self.board_controls(ui),
-            Screen::Detail(path) => self.detail_controls(ui, &path),
+            Screen::Detail(path, _) => self.detail_controls(ui, &path),
             Screen::Diff => self.refresh_button(ui),
         }
     }
@@ -204,7 +204,7 @@ impl IboardApp {
             .column_of(&path)
             .map(Column::is_done)
             .unwrap_or(false);
-        let reading = self.session.detail_mode == DetailMode::Preview && exists;
+        let reading = self.session.reading().is_some() && exists;
         // Reviewing refines an issue, so only Todo issues offer it; the
         // later ones can be brought up to date.
         if self.is_todo_issue(&path) {
@@ -216,7 +216,7 @@ impl IboardApp {
             self.ask_button(ui, &path);
         }
         // In the Editor, Save and Discard take Edit's place.
-        if self.session.detail_mode == DetailMode::Edit && exists {
+        if self.session.editing().is_some() && exists {
             if widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S")).clicked() {
                 self.save_and_preview();
             }
@@ -332,7 +332,7 @@ impl IboardApp {
         self.refresh_button(ui);
         // Labelled, and the one control drawn in `danger` at rest. In
         // the Editor `Del` edits text, so the key hint goes.
-        let delete_key = (self.session.detail_mode == DetailMode::Preview).then_some("Del");
+        let delete_key = self.session.reading().is_some().then_some("Del");
         if exists
             && !done
             && widgets::button(
@@ -352,7 +352,7 @@ impl IboardApp {
             self.request_delete(path.clone());
         }
         // Add label sits first in the right group, before Delete.
-        if exists && self.can_edit(&path) && self.session.detail_mode == DetailMode::Preview {
+        if exists && self.can_edit(&path) && self.session.reading().is_some() {
             let open = self
                 .session
                 .label_picker
@@ -377,7 +377,7 @@ impl IboardApp {
         }
         if exists
             && done
-            && self.session.detail_mode == DetailMode::Preview
+            && self.session.reading().is_some()
             && widgets::button(
                 ui,
                 ButtonKind::Secondary,

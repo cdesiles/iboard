@@ -30,7 +30,7 @@ fn a_ticket_clicked_while_it_is_renumbered_stays_open() {
 
     let renamed = todo.join("001-fresh.md");
     assert!(renamed.is_file() && !written.exists());
-    assert!(matches!(&app.session.screen, Screen::Detail(path) if *path == renamed));
+    assert!(matches!(&app.session.screen, Screen::Detail(path, _) if *path == renamed));
     assert!(app.board.find(&renamed).is_some(), "the reader finds it");
     assert_eq!(
         app.session
@@ -129,8 +129,8 @@ fn modal_keys() {
     frame(&ctx, &mut app, vec![]);
     assert!(created.exists(), "⌘↩ adds");
     assert_eq!(
-        app.session.detail_mode,
-        DetailMode::Edit,
+        app.session.editing(),
+        Some(created.as_path()),
         "and opens the Editor"
     );
 }

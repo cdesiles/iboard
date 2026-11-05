@@ -250,7 +250,7 @@ fn reader_sheet_offers_missing_sections() {
     draw(&ctx, &mut app, vec![]); // "Add a section" chips and checklist progress
 
     app.add_section(&partial, "Acceptance criteria");
-    assert_eq!(app.session.detail_mode, DetailMode::Edit);
+    assert_eq!(app.session.editing(), Some(partial.as_path()));
     assert!(
         app.session.focus_editor,
         "the caret goes under the new heading"
@@ -395,7 +395,7 @@ fn move_to_sends_the_open_issue_and_keeps_it_open() {
     app.send_to(&file, &done);
     let moved = done.join("task.md");
     assert!(moved.exists() && !file.exists());
-    assert!(matches!(&app.session.screen, Screen::Detail(open) if *open == moved));
+    assert!(matches!(&app.session.screen, Screen::Detail(open, _) if *open == moved));
 }
 
 /// A long error keeps its Dismiss button in the window.
@@ -708,7 +708,7 @@ fn a_click_selects_a_card_and_expand_opens_it() {
     );
     click(&mut app, expand.center());
     assert!(
-        matches!(app.session.screen, Screen::Detail(path) if path == file),
+        matches!(app.session.screen, Screen::Detail(path, _) if path == file),
         "Expand opens the issue"
     );
 }
@@ -1244,7 +1244,7 @@ fn a_two_finger_swipe_right_goes_back() {
         frame(&ctx, &mut app, vec![wheel(0.0, -60.0)]);
     }
     assert!(
-        matches!(app.session.screen, Screen::Detail(_)),
+        matches!(app.session.screen, Screen::Detail(..)),
         "scrolling stays"
     );
 

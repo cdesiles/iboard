@@ -429,17 +429,15 @@ impl IboardApp {
                     self.session.selected = None;
                     self.session.picked.clear();
                 }
-                Screen::Detail(_) if self.session.detail_mode == DetailMode::Edit => {
-                    self.show_preview()
-                }
-                Screen::Detail(_) => self.back_to_board(),
+                Screen::Detail(_, DetailMode::Edit) => self.show_preview(),
+                Screen::Detail(_, DetailMode::Preview) => self.back_to_board(),
             }
         }
     }
 
     fn key_context(&self, ctx: &egui::Context, confirming: bool) -> KeyContext {
         let open = match &self.session.screen {
-            Screen::Detail(path) if self.board.find(path).is_some() => Some(path.clone()),
+            Screen::Detail(path, _) if self.board.find(path).is_some() => Some(path.clone()),
             _ => None,
         };
         KeyContext {
@@ -450,7 +448,7 @@ impl IboardApp {
             refinable: open.as_deref().is_some_and(|path| self.is_todo_issue(path)),
             proposal: self.proposal_shown() && !self.refinement_shown(),
             open,
-            editing: self.session.detail_mode == DetailMode::Edit,
+            editing: self.session.editing().is_some(),
             composer: self.composer_open(),
             selected: self.selected_issue().map(|path| {
                 let done = self
@@ -478,17 +476,17 @@ impl IboardApp {
                 if self.review_is_running(&path) {
                     self.cancel_review_run(&path);
                 } else {
-                    let draft = self.session.detail_mode == DetailMode::Edit;
+                    let draft = self.session.editing().is_some();
                     self.start_review(&path, draft);
                 }
             }
-            Command::Back if self.session.detail_mode == DetailMode::Edit => self.show_preview(),
+            Command::Back if self.session.editing().is_some() => self.show_preview(),
             Command::Back if matches!(self.session.screen, Screen::Diff) => self.close_diff(),
             Command::Back => self.back_to_board(),
             // `⌘S` is the header's Save: it forces a save (overwriting a
             // conflict) and, when it went through, shows the issue again.
             Command::Save => {
-                if self.session.detail_mode == DetailMode::Edit {
+                if self.session.editing().is_some() {
                     self.save_and_preview();
                 } else {
                     self.flush_autosave(true);

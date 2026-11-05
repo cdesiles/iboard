@@ -31,8 +31,8 @@ impl IboardApp {
             self.board.find(&picker.path).is_some()
                 && match &self.session.screen {
                     Screen::Board => true,
-                    Screen::Detail(path) => {
-                        *path == picker.path && self.session.detail_mode == DetailMode::Preview
+                    Screen::Detail(path, mode) => {
+                        *path == picker.path && *mode == DetailMode::Preview
                     }
                     Screen::Diff => false,
                 }

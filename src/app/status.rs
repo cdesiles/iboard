@@ -13,7 +13,7 @@ impl IboardApp {
             ui.spacing_mut().item_spacing.x = theme::SPACE_5;
             let hints = match self.session.screen.clone() {
                 Screen::Board => self.board_status(ui),
-                Screen::Detail(path) => self.detail_status(ui, &path),
+                Screen::Detail(path, _) => self.detail_status(ui, &path),
                 Screen::Diff => self.diff_status(ui),
             };
             if !widgets::key_hints_shown(ui.ctx()) {
@@ -152,7 +152,7 @@ impl IboardApp {
     /// or when it was modified in the Reader. Returns its key hints.
     fn detail_status(&mut self, ui: &mut egui::Ui, path: &Path) -> Vec<Hint> {
         ui.label(status_meta(ui, self.relative(path)));
-        if self.session.detail_mode == DetailMode::Edit {
+        if self.session.editing().is_some() {
             self.save_pill(ui, path);
             return if self.session.leave_prompt.is_some() {
                 vec![("esc", "keep editing")]

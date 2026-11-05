@@ -112,9 +112,7 @@ impl IboardApp {
     /// to have the keyboard.
     fn image_target(&self, ctx: &egui::Context, paste: bool) -> Option<Target> {
         let focused = |id: &str| !paste || ctx.memory(|m| m.has_focus(egui::Id::new(id)));
-        let editing = matches!(self.session.screen, Screen::Detail(_))
-            && self.session.detail_mode == DetailMode::Edit
-            && self.session.editor.is_some();
+        let editing = self.session.editing().is_some() && self.session.editor.is_some();
         if editing && focused(EDITOR_ID) {
             return Some(Target::Editor);
         }

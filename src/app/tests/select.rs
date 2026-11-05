@@ -73,7 +73,7 @@ fn only_the_card_with_focus_offers_expand_and_enter_opens_the_first_picked() {
     assert!(expand(&b).is_some(), "the card with focus");
 
     frame(&ctx, &mut app, vec![key(Key::Enter, egui::Modifiers::NONE)]);
-    assert!(matches!(&app.session.screen, Screen::Detail(path) if *path == a));
+    assert!(matches!(&app.session.screen, Screen::Detail(path, _) if *path == a));
 }
 
 #[test]
