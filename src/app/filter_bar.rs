@@ -1,7 +1,7 @@
 //! The filter field in the header bar, and its keys.
 
 use super::{
-    Align, Board, CornerRadius, Filter, Frame, IboardApp, Icon, Key, Layout, Margin, Pos2, Rect,
+    Align, Board, CornerRadius, Filter, Frame, IboardApp, Icon, Key, Layout, Margin, Rect,
     RichText, Sense, Stroke, StrokeKind, Vec2, filter, theme, widgets,
 };
 
@@ -240,11 +240,9 @@ impl FilterBar {
                 if let Some(count) = &extras.count {
                     ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
                 }
-                if !extras.open && widgets::key_hints_shown(ui.ctx()) {
+                if !extras.open {
                     let key = if extras.active { "esc" } else { "⌘F" };
-                    let width = widgets::text_width(ui, key, theme::meta()) + 8.0;
-                    let (cap, _) = ui.allocate_exact_size(Vec2::new(width, 16.0), Sense::hover());
-                    widgets::paint_kbd(ui, key, Pos2::new(cap.min.x, cap.center().y));
+                    widgets::sliding_kbd(ui, key);
                 }
                 let hint = if self.filter.tokens.is_empty() {
                     "Filter issues"

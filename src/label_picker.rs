@@ -412,10 +412,12 @@ fn key_hints(ui: &mut egui::Ui) {
         return;
     }
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-        widgets::hint(ui, "↩", "add");
-        widgets::hint(ui, "↓", "pick");
-        widgets::hint(ui, "esc", "close");
+        widgets::sliding_hints(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+            widgets::hint(ui, "↩", "add");
+            widgets::hint(ui, "↓", "pick");
+            widgets::hint(ui, "esc", "close");
+        });
     });
 }
 

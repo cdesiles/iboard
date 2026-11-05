@@ -244,7 +244,10 @@ impl IboardApp {
                     );
                     let ready = !enrichment.refine.trim().is_empty();
                     if ui
-                        .add_enabled(ready, egui::Button::new("Refine"))
+                        .add_enabled_ui(ready, |ui| {
+                            widgets::button(ui, ButtonKind::Secondary, None, "Refine", None)
+                        })
+                        .inner
                         .on_disabled_hover_text("Describe what to change")
                         .clicked()
                     {

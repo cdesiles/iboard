@@ -367,10 +367,10 @@ fn find_bar(ui: &mut egui::Ui, view: &mut DiffView) {
             field.request_focus();
         }
         ui.label(RichText::new(&count).font(theme::meta()).color(p.ink_muted));
-        if widgets::key_hints_shown(ui.ctx()) {
+        widgets::sliding_hints(ui, |ui| {
             widgets::hint(ui, "↩", "next");
             widgets::hint(ui, "⇧↩", "previous");
-        }
+        });
     });
     view.search();
     if let Some(forward) = step {

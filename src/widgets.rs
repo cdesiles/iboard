@@ -30,7 +30,7 @@ pub use dialog::{
     modal_header, paint_focus_halo, paint_focus_ring, popover_frame, rule, segmented, text_entry,
     text_field,
 };
-pub use key_hints::{key_hints, key_hints_shown};
+pub use key_hints::{key_hints, key_hints_shown, sliding_hints, sliding_kbd};
 pub use menu::{
     Drag, MENU_ROW_H, MenuOption, RowLook, menu_group, menu_head, menu_note, menu_option, menu_row,
     menu_row_lifted, menu_separator,
@@ -107,10 +107,24 @@ pub fn skeleton_bar(ui: &mut Ui, share: f32, height: f32) {
 
 /// The 14pt checkbox: `accent` fill and an `on-accent` tick when checked.
 pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
+    checkbox_named(ui, checked, label, label)
+}
+
+/// A [`checkbox`] with no text beside it, read aloud as `name`: what it ticks
+/// is the field next to it.
+pub fn bare_checkbox(ui: &mut Ui, checked: &mut bool, name: &str) -> Response {
+    checkbox_named(ui, checked, "", name)
+}
+
+fn checkbox_named(ui: &mut Ui, checked: &mut bool, label: &str, name: &str) -> Response {
     let p = theme::palette(ui);
     let text = galley(ui, label, theme::ui_button(), p.ink);
     let box_size = 14.0;
-    let width = box_size + 6.0 + text.size().x;
+    let width = if label.is_empty() {
+        box_size
+    } else {
+        box_size + 6.0 + text.size().x
+    };
     let (rect, mut response) =
         ui.allocate_exact_size(Vec2::new(width, theme::CONTROL_H), Sense::click());
     if response.clicked() {
@@ -119,7 +133,7 @@ pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
     }
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *checked, label)
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *checked, name)
     });
 
     if ui.is_rect_visible(rect) {
@@ -186,7 +200,7 @@ pub fn paint_kbd_in(ui: &Ui, key: &str, left_center: Pos2, edge: Color32, ink: C
 }
 
 /// A key cap followed by what it does, as a hint row in the status bar. Its
-/// caller draws it only while [`key_hints_shown`].
+/// caller draws it only while the hints are out, through [`sliding_hints`].
 pub fn hint(ui: &mut Ui, key: &str, action: &str) {
     let p = theme::palette(ui);
     let text = galley(ui, key, theme::meta(), p.ink_muted);
@@ -201,12 +215,60 @@ pub fn hint(ui: &mut Ui, key: &str, action: &str) {
     );
 }
 
+/// The room a [`crumb`] keeps on each side of its text. A plain segment after
+/// a separator adds it, so the trail reads evenly.
+pub const CRUMB_PAD: f32 = 6.0;
+
+/// The project menu's trigger: the project's name, its path and a chevron.
+/// Transparent at rest; `surface-hover` and a `line-strong` edge on hover and
+/// while the menu is open. The path truncates into the width left.
+pub fn project_trigger(ui: &mut Ui, project: &str, path: &str, open: bool) -> Response {
+    const HEIGHT: f32 = 28.0;
+    const PAD: f32 = 6.0;
+    let p = theme::palette(ui);
+    let backdrop = ui.painter().add(egui::Shape::Noop);
+    let size = Vec2::new(ui.available_width(), HEIGHT);
+    let layout = egui::Layout::left_to_right(egui::Align::Center);
+    let row = ui.allocate_ui_with_layout(size, layout, |ui| {
+        ui.set_min_height(HEIGHT);
+        ui.spacing_mut().item_spacing.x = PAD;
+        ui.add_space(PAD);
+        let name = egui::RichText::new(project).font(theme::ui_title());
+        ui.label(name.color(p.ink));
+        let trail = egui::RichText::new(path).font(theme::meta());
+        ui.add(egui::Label::new(trail.color(p.ink_muted)).truncate());
+        let (icon, _) = ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
+        theme::paint_icon(ui.painter(), Icon::ChevronDown, icon, p.ink_muted);
+    });
+    let rect = row.response.rect.with_max_x(row.response.rect.max.x + PAD);
+    let response = ui
+        .interact(rect, ui.id().with("project-trigger"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Switch project")
+    });
+    if open || response.hovered() {
+        ui.painter().set(
+            backdrop,
+            egui::epaint::RectShape::new(
+                rect,
+                CornerRadius::same(theme::RADIUS_SM),
+                p.surface_hover,
+                Stroke::new(1.0, p.line_strong),
+                StrokeKind::Inside,
+            ),
+        );
+    }
+    focus_ring(ui, &response, theme::RADIUS_SM);
+    response
+}
+
 /// A breadcrumb segment that links back: `ink-muted`, `surface-hover` on hover.
 pub fn crumb(ui: &mut Ui, text: &str, font: FontId) -> Response {
     let p = theme::palette(ui);
     let normal = galley(ui, text, font.clone(), p.ink_muted);
     // A 24pt hit area, however small the text.
-    let size = Vec2::new(normal.size().x + 12.0, theme::CONTROL_H);
+    let size = Vec2::new(normal.size().x + 2.0 * CRUMB_PAD, theme::CONTROL_H);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response

@@ -60,9 +60,9 @@ impl IboardApp {
             false => (Icon::Review, "Update with AI"),
         };
         let hint = if running {
-            "The agent is checking the project: cancel it"
+            "The agent is checking the project: cancel it  ⌘U"
         } else if configured {
-            "Ask the agent where this issue stands in the project, and to rewrite it as things are"
+            "Ask the agent where this issue stands in the project, and to rewrite it as things are  ⌘U"
         } else {
             "No agent is set up yet: choose one in Settings › AI review (⌘,)"
         };

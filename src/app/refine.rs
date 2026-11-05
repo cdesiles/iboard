@@ -1033,19 +1033,18 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
 
 /// The keys that apply where the keyboard is, while ⌘ is held.
 fn footer_hints(ui: &mut egui::Ui, refine: &Refinement) {
-    if !widgets::key_hints_shown(ui.ctx()) {
-        return;
-    }
-    if refine.is_running() {
-        widgets::hint(ui, "esc", "cancel");
-        return;
-    }
-    if ui.memory(|m| m.has_focus(note_id())) {
-        widgets::hint(ui, "⇧tab", "back to choices");
-    } else if !refine.options().is_empty() {
-        let keys = format!("1–{}", refine.options().len().min(NUMBERS.len()));
-        widgets::hint(ui, &keys, "choose");
-        widgets::hint(ui, "tab", "note");
-    }
-    widgets::hint(ui, "esc", "hide");
+    widgets::sliding_hints(ui, |ui| {
+        if refine.is_running() {
+            widgets::hint(ui, "esc", "cancel");
+            return;
+        }
+        if ui.memory(|m| m.has_focus(note_id())) {
+            widgets::hint(ui, "⇧⇥", "back to choices");
+        } else if !refine.options().is_empty() {
+            let keys = format!("1–{}", refine.options().len().min(NUMBERS.len()));
+            widgets::hint(ui, &keys, "choose");
+            widgets::hint(ui, "⇥", "note");
+        }
+        widgets::hint(ui, "esc", "hide");
+    });
 }

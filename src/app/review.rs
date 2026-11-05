@@ -235,19 +235,19 @@ impl IboardApp {
             Some(refine) if refine.is_running() => (
                 Icon::Thinking,
                 "Refining…",
-                "The challenger is answering: back to the refinement",
+                "The challenger is answering: back to the refinement (⌘R)",
                 "⌘R",
             ),
             Some(_) => (
                 Icon::Review,
                 "Refinement waiting",
-                "The challenger waits for your answer: back to the refinement",
+                "The challenger waits for your answer: back to the refinement (⌘R)",
                 "⌘R",
             ),
             None if self.prefs.agent.configured() => (
                 Icon::Review,
                 "Refine",
-                "Refine this issue in a conversation with a challenger",
+                "Refine this issue in a conversation with a challenger (⌘R)",
                 "⌘R",
             ),
             None => (

@@ -272,7 +272,8 @@ pub(super) fn drafts_ui(ui: &mut egui::Ui, drafts: &mut [SplitDraft]) {
     for (index, draft) in drafts.iter_mut().enumerate() {
         ui.push_id(("split-draft", index), |ui| {
             ui.horizontal(|ui| {
-                widgets::checkbox(ui, &mut draft.include, "");
+                let name = format!("Include {}", draft.title);
+                widgets::bare_checkbox(ui, &mut draft.include, &name);
                 widgets::text_entry(
                     ui,
                     egui::TextEdit::singleline(&mut draft.title)

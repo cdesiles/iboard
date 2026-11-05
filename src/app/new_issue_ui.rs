@@ -980,9 +980,6 @@ fn foot(
                         widgets::checkbox(ui, view.keep_notes, "Keep my notes under ## Notes");
                     }
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        if !widgets::key_hints_shown(ui.ctx()) {
-                            return;
-                        }
                         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
                         let hints: &[(&str, &str)] = if drafting {
                             &[("esc", "stop, keep what arrived")]
@@ -991,9 +988,11 @@ fn foot(
                         } else {
                             &[("↩", "add"), ("⇧↩", "new line"), ("⌘↩", "add & edit")]
                         };
-                        for (key, action) in hints {
-                            ui.horizontal(|ui| widgets::hint(ui, key, action));
-                        }
+                        widgets::sliding_hints(ui, |ui| {
+                            for (key, action) in hints {
+                                ui.horizontal(|ui| widgets::hint(ui, key, action));
+                            }
+                        });
                     });
                 },
             );

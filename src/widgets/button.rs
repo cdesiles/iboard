@@ -58,6 +58,25 @@ fn button_colors(p: &theme::Palette, kind: ButtonKind) -> (Color32, Color32, Col
     }
 }
 
+/// A disabled ui draws every kind as [`ButtonKind::Disabled`].
+fn drawn_kind(ui: &Ui, kind: ButtonKind) -> ButtonKind {
+    if ui.is_enabled() {
+        kind
+    } else {
+        ButtonKind::Disabled
+    }
+}
+
+/// The ui's painter, without the fade egui puts on a disabled ui: `line` and
+/// `ink-faint` are already what a disabled button looks like.
+fn unfaded_painter(ui: &Ui) -> egui::Painter {
+    let mut painter = ui.painter().clone();
+    if !ui.is_enabled() {
+        painter.set_opacity(painter.opacity() / ui.visuals().disabled_alpha());
+    }
+    painter
+}
+
 /// The laid-out content of a button: its label and shortcut galleys, and its
 /// width.
 struct ButtonContent {
@@ -147,7 +166,7 @@ fn paint_button(
     } else {
         ink
     };
-    let painter = ui.painter();
+    let painter = unfaded_painter(ui);
     painter.rect(
         rect,
         radius,
@@ -175,7 +194,7 @@ fn paint_button(
             Pos2::new(x, center_y - theme::ICON_SIZE / 2.0),
             Vec2::splat(theme::ICON_SIZE),
         );
-        theme::paint_icon(painter, icon, icon_rect, ink);
+        theme::paint_icon(&painter, icon, icon_rect, ink);
         x += theme::ICON_SIZE + icon_gap;
     }
     if let Some(text) = text {
@@ -220,6 +239,7 @@ pub fn button(
     label: &str,
     shortcut: Option<&str>,
 ) -> Response {
+    let kind = drawn_kind(ui, kind);
     let content = button_content(ui, kind, icon, label, shortcut);
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(content.width, theme::CONTROL_H), Sense::click());
@@ -334,13 +354,24 @@ pub enum Tone {
     /// The trigger of an open popup (Add label): `accent` edge and icon on
     /// `accent-soft`, hovered or not.
     Open,
+    /// 20×20 and never an edge, as Todo's `+`.
+    Ghost,
 }
+
+/// The size of a [`Tone::Ghost`] icon button.
+const GHOST_ACTION: f32 = 20.0;
 
 /// An icon-only 22×22 card action with a caller-chosen id, so tests can find
 /// it: no edge at rest, `surface-hover` and a `line-strong` edge on its own
-/// hover. A `Danger` action (delete) turns `danger` only then.
+/// hover. A `Danger` action (delete) turns `danger` only then. Disabled, it
+/// is `ink-faint` whatever its tone.
 pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Tone) -> Response {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(CARD_ACTION), Sense::hover());
+    let size = if tone == Tone::Ghost {
+        GHOST_ACTION
+    } else {
+        CARD_ACTION
+    };
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     let response = ui
         .interact(rect, id, Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -353,10 +384,11 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
         let p = theme::palette(ui);
         let hovered = response.hovered() || tone == Tone::Open;
         let ink = match (hovered, tone) {
+            _ if !ui.is_enabled() => p.ink_faint,
             (_, Tone::Review) => p.review,
             (_, Tone::Open) => p.accent,
             (true, Tone::Danger) => p.danger,
-            (true, Tone::Plain) => p.ink,
+            (true, Tone::Plain | Tone::Ghost) => p.ink,
             _ => p.ink_muted,
         };
         if hovered {
@@ -365,6 +397,7 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
                 Tone::Review => p.review,
                 Tone::Open => p.accent,
                 Tone::Plain => p.line_strong,
+                Tone::Ghost => Color32::TRANSPARENT,
             };
             ui.painter().rect(
                 rect,
@@ -379,8 +412,43 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
             );
         }
         let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_SIZE));
-        theme::paint_icon(ui.painter(), icon, icon_rect, ink);
+        theme::paint_icon(&unfaded_painter(ui), icon, icon_rect, ink);
     }
     focus_ring(ui, &response, theme::RADIUS_SM);
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::epaint::Shape;
+
+    #[test]
+    fn a_disabled_button_draws_line_and_ink_faint_whatever_its_kind() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut palette = None;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            palette = Some(theme::palette(ui));
+            ui.add_enabled_ui(false, |ui| {
+                button(ui, ButtonKind::Primary, None, "New issue", None);
+            });
+        });
+        output.textures_delta.clear();
+        let p = palette.unwrap();
+        let shapes: Vec<Shape> = output.shapes.into_iter().map(|s| s.shape).collect();
+        let edge = shapes.iter().find_map(|shape| match shape {
+            Shape::Rect(rect) => Some((rect.fill, rect.stroke.color)),
+            _ => None,
+        });
+        assert_eq!(edge, Some((p.surface, p.line)));
+        let ink = shapes.iter().find_map(|shape| match shape {
+            Shape::Text(text) => text.override_text_color,
+            _ => None,
+        });
+        assert_eq!(ink, Some(p.ink_faint));
+    }
 }

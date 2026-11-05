@@ -358,7 +358,7 @@ fn new_issue_button(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Inte
     } else {
         "New issue  ⌘N"
     };
-    let plus = widgets::icon_button(ui, Icon::Plus, id, hover, widgets::Tone::Plain);
+    let plus = widgets::icon_button(ui, Icon::Plus, id, hover, widgets::Tone::Ghost);
     if view.parked {
         let p = theme::palette(ui);
         ui.painter()

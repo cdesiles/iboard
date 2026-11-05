@@ -23,10 +23,12 @@ impl IboardApp {
                 return;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                for (key, action) in hints.into_iter().rev() {
-                    ui.horizontal(|ui| widgets::hint(ui, key, action));
-                }
+                widgets::sliding_hints(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                    for (key, action) in hints.into_iter().rev() {
+                        ui.horizontal(|ui| widgets::hint(ui, key, action));
+                    }
+                });
             });
         });
     }
@@ -66,13 +68,7 @@ impl IboardApp {
             .as_ref()
             .filter(|(_, at)| at.elapsed() < NOTICE_FOR)
             .map(|(text, at)| (text.clone(), *at));
-        let mut idle = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
-        if !self.showing_group() {
-            idle.push(("⌘I", "stats"));
-        }
-        if self.project_cycle().len() > 1 {
-            idle.push(("Ctrl⇥", "project"));
-        }
+        let idle = vec![("⌘N", "new"), ("⌘F", "filter"), ("⌘R", "refresh")];
         if let Some(drag) = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx()) {
             ui.label(status_meta(ui, self.relative(&drag.path)));
             return vec![("esc", "cancel drag")];
@@ -116,7 +112,7 @@ impl IboardApp {
             && let Some(todo) = self.board.todo_column()
         {
             ui.label(status_meta(ui, self.relative(&todo.dir)));
-            return vec![("↩", "add"), ("⇧↩", "new line"), ("esc", "close")];
+            return vec![("↩", "add"), ("⌘↩", "add & edit"), ("esc", "close")];
         }
         let Some(selected) = self.selected_issue() else {
             return idle;
@@ -127,12 +123,7 @@ impl IboardApp {
             .find(&selected)
             .is_some_and(|issue| issue.done_at.is_some());
         if self.can_edit(&selected) {
-            vec![
-                ("↩", "open"),
-                ("E", "edit"),
-                ("⌘↩", "move"),
-                ("Del", "delete"),
-            ]
+            vec![("↩", "open"), ("E", "edit"), ("⌘↩", "move")]
         } else if done {
             vec![("↩", "open"), ("A", "archive")]
         } else if self.updatable(&selected) {
@@ -147,12 +138,7 @@ impl IboardApp {
         if let Some(view) = &self.session.diff {
             ui.label(status_meta(ui, view.summary()));
         }
-        vec![
-            ("⌘F", "find"),
-            ("n p", "file"),
-            ("] [", "hunk"),
-            ("esc", "back"),
-        ]
+        vec![("⌘F", "find"), ("n p", "file"), ("esc", "back")]
     }
 
     /// The open issue's status: its file, then the save state in the Editor
@@ -173,17 +159,16 @@ impl IboardApp {
                 format!("modified {}", relative_time(modified)),
             ));
         }
-        let mut hints = match self.can_edit(path) {
-            true => vec![("E", "edit"), ("Del", "delete"), ("esc", "back")],
-            false => vec![("Del", "delete"), ("esc", "back")],
-        };
-        if self.updatable(path) {
-            hints.insert(0, ("⌘U", "update"));
+        let done = self.is_done_issue(path);
+        if self.can_edit(path) {
+            vec![("E", "edit"), ("Del", "delete"), ("esc", "back")]
+        } else if done {
+            vec![("esc", "back")]
+        } else if self.updatable(path) {
+            vec![("⌘U", "update"), ("Del", "delete"), ("esc", "back")]
+        } else {
+            vec![("Del", "delete"), ("esc", "back")]
         }
-        if self.askable(path) {
-            hints.insert(0, ("⌘K", "ask"));
-        }
-        hints
     }
 
     /// A dismissible `danger` line naming what failed, across the top. A

@@ -164,12 +164,12 @@ impl IboardApp {
             true => (
                 Icon::Thinking,
                 "Asking…",
-                "The agent works on your ask: stop it",
+                "The agent works on your ask: stop it  ⌘K",
             ),
             false => (
                 Icon::Review,
                 "Ask AI…",
-                "Ask the agent for something on this issue: \"take care of point 1\"",
+                "Ask the agent for something on this issue: \"take care of point 1\"  ⌘K",
             ),
         };
         if widgets::button(ui, ButtonKind::Review, Some(icon), label, Some("⌘K"))
@@ -238,11 +238,16 @@ fn about(ui: &mut egui::Ui, title: &str) {
 fn ask_body(ui: &mut egui::Ui, draft: &mut AskDraft) {
     ui.spacing_mut().item_spacing.y = theme::SPACE_3;
     widgets::focus_here(ui);
-    ui.add(
+    let hint = egui::RichText::new("Take care of point 1…").color(theme::palette(ui).ink_faint);
+    let width = ui.available_width();
+    widgets::text_entry(
+        ui,
         egui::TextEdit::multiline(&mut draft.request)
-            .hint_text("Take care of point 1…")
+            .hint_text(hint)
+            .font(theme::ui_body())
+            .margin(egui::Vec2::new(theme::SPACE_3, theme::SPACE_2))
             .desired_rows(4)
-            .desired_width(ui.available_width()),
+            .desired_width(width),
     );
     widgets::checkbox(
         ui,

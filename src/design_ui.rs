@@ -683,13 +683,16 @@ impl Panel {
                 }
             });
         if agent_ready {
-            ui.checkbox(&mut self.draft, "Draft the preview with the agent");
+            widgets::checkbox(ui, &mut self.draft, "Draft the preview with the agent");
         } else {
             self.draft = false;
         }
         let ready = !self.name.trim().is_empty();
         if ui
-            .add_enabled(ready, egui::Button::new("Create component"))
+            .add_enabled_ui(ready, |ui| {
+                widgets::button(ui, ButtonKind::Secondary, None, "Create component", None)
+            })
+            .inner
             .on_disabled_hover_text("Name the component first")
             .clicked()
         {

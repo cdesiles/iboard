@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use egui::{Context, Event, Id, InputState, Modifiers};
+use egui::{Context, Event, Id, InputState, Modifiers, Pos2, Sense, Ui, Vec2};
 
 use crate::theme;
 
@@ -14,6 +14,9 @@ pub const HOLD: f64 = 0.5;
 
 /// How long the hints take to slide out or away.
 const SLIDE: f32 = 0.12;
+
+/// How far a row of hints travels as it slides out.
+const SLIDE_BY: f32 = theme::SPACE_3;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Hold {
@@ -80,6 +83,36 @@ pub fn key_hints(ctx: &Context) -> f32 {
 /// Whether the key hints are out, even partly.
 pub fn key_hints_shown(ctx: &Context) -> bool {
     key_hints(ctx) > 0.0
+}
+
+/// Draws a row of hints with the slide: `add` runs only while they are out,
+/// and its hints fade in as they travel to where they rest.
+pub fn sliding_hints(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
+    let reveal = key_hints(ui.ctx());
+    if reveal <= 0.0 {
+        return;
+    }
+    ui.scope(|ui| {
+        ui.multiply_opacity(reveal);
+        ui.add_space((1.0 - reveal) * SLIDE_BY);
+        add(ui);
+    });
+}
+
+/// A lone key cap in a right-to-left row, as the filter has: it takes its room
+/// as it slides out, coming from behind its right edge.
+pub fn sliding_kbd(ui: &mut Ui, key: &str) {
+    let reveal = key_hints(ui.ctx());
+    if reveal <= 0.0 {
+        return;
+    }
+    let width = super::text_width(ui, key, theme::meta()) + 8.0;
+    let (cap, _) = ui.allocate_exact_size(Vec2::new(width * reveal, 16.0), Sense::hover());
+    ui.scope(|ui| {
+        ui.multiply_opacity(reveal);
+        ui.shrink_clip_rect(cap);
+        super::paint_kbd(ui, key, Pos2::new(cap.min.x, cap.center().y));
+    });
 }
 
 #[cfg(test)]
@@ -165,6 +198,44 @@ mod tests {
             .textures_delta
             .clear();
         assert_eq!(out, 0.0, "⌘⇥ to another app");
+    }
+
+    #[test]
+    fn a_row_of_hints_fades_and_travels_as_it_slides_out() {
+        let ctx = Context::default();
+        let step = |time: f64, events: Vec<Event>| {
+            let input = egui::RawInput {
+                time: Some(time),
+                events,
+                ..Default::default()
+            };
+            let mut seen = None;
+            ctx.run_ui(input, |ui| {
+                ui.horizontal(|ui| {
+                    let start = ui.next_widget_position().x;
+                    sliding_hints(ui, |ui| {
+                        seen = Some((ui.opacity(), ui.next_widget_position().x - start));
+                    });
+                });
+            })
+            .textures_delta
+            .clear();
+            seen
+        };
+        assert_eq!(step(0.0, modifiers(Modifiers::COMMAND)), None);
+        assert_eq!(step(HOLD - 0.01, vec![]), None);
+        let (opacity, offset) = step(HOLD, vec![]).expect("past the hold");
+        assert!(opacity > 0.0 && opacity < 1.0, "{opacity}");
+        assert!(offset.abs() > 0.0, "{offset}");
+        let mut last = None;
+        for frame in 1..30 {
+            last = step(HOLD + f64::from(frame) / 60.0, vec![]);
+        }
+        assert_eq!(
+            last.map(|(opacity, _)| opacity),
+            Some(1.0),
+            "at rest once out"
+        );
     }
 
     #[test]

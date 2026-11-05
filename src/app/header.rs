@@ -55,39 +55,13 @@ impl IboardApp {
         let project = self.board.name();
         match self.session.screen.clone() {
             Screen::Board => {
-                ui.label(RichText::new(&project).font(theme::ui_title()).color(p.ink));
                 let path = match self.shown_group() {
                     Some(group) => format!("group · {}", group.count()),
                     None => display_path(&self.board.root),
                 };
-                let response = ui
-                    .horizontal(|ui| {
-                        let label = ui.add(
-                            egui::Label::new(
-                                RichText::new(path)
-                                    .font(egui::FontId::monospace(11.0))
-                                    .color(p.ink_muted),
-                            )
-                            .truncate()
-                            .sense(Sense::click()),
-                        );
-                        let (rect, caret) =
-                            ui.allocate_exact_size(Vec2::new(12.0, 12.0), Sense::click());
-                        caret.widget_info(|| {
-                            egui::WidgetInfo::labeled(
-                                egui::WidgetType::Button,
-                                ui.is_enabled(),
-                                "Switch project",
-                            )
-                        });
-                        if ui.is_rect_visible(rect) {
-                            theme::paint_icon(ui.painter(), Icon::ChevronDown, rect, p.ink_faint);
-                        }
-                        label.union(caret)
-                    })
-                    .inner
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text("Switch project  Ctrl⇥");
+                let open = self.project_menu.is_some();
+                let response = widgets::project_trigger(ui, &project, &path, open)
+                    .on_hover_text("Switch project  ⌃⇥");
                 if response.clicked() {
                     self.toggle_project_menu(ui.ctx());
                 }
@@ -99,7 +73,9 @@ impl IboardApp {
             Screen::Diff => {
                 if let Some(path) = self.session.diff.as_ref().map(|view| view.issue.clone()) {
                     self.detail_breadcrumb(ui, &path, &project);
+                    ui.add_space(widgets::CRUMB_PAD);
                     ui.label(RichText::new("/").color(p.ink_faint));
+                    ui.add_space(widgets::CRUMB_PAD);
                     ui.label(RichText::new("Diff").font(theme::ui_strong()).color(p.ink));
                 }
             }
@@ -112,9 +88,9 @@ impl IboardApp {
         let p = theme::palette(ui);
         // The visible way out, for whoever does not know the shortcuts.
         let hint = if self.session.editing().is_some() {
-            "Back to the board (asks if unsaved)"
+            "Back to the board, asking if unsaved  esc"
         } else {
-            "Back to the board (esc)"
+            "Back to the board  esc"
         };
         let mut back =
             widgets::button(ui, ButtonKind::Back, Some(Icon::Back), "Board", Some("esc"))
@@ -150,6 +126,7 @@ impl IboardApp {
             back |= widgets::crumb(ui, &column, theme::ui_body()).clicked();
         }
         separator(ui);
+        ui.add_space(widgets::CRUMB_PAD);
         ui.add(
             egui::Label::new(RichText::new(title).font(theme::ui_strong()).color(p.ink)).truncate(),
         );
@@ -182,7 +159,7 @@ impl IboardApp {
                 "New issue",
                 Some("⌘N"),
             )
-            .on_hover_text("Add an issue to Todo")
+            .on_hover_text("Add an issue to Todo  ⌘N")
         });
         if new_issue.inner.clicked() {
             self.open_composer();
@@ -190,7 +167,7 @@ impl IboardApp {
         self.refresh_button(ui);
         if !self.showing_group()
             && widgets::button(ui, ButtonKind::Secondary, None, "Stats", Some("⌘I"))
-                .on_hover_text("Project stats: what the commits say, and the Agenda")
+                .on_hover_text("Project stats: what the commits say, and the Agenda  ⌘I")
                 .clicked()
         {
             self.open_stats();
@@ -229,7 +206,10 @@ impl IboardApp {
         }
         // In the Editor, Save and Discard take Edit's place.
         if self.session.editing().is_some() && exists {
-            if widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S")).clicked() {
+            if widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S"))
+                .on_hover_text("Save this issue  ⌘S")
+                .clicked()
+            {
                 self.save_and_preview();
             }
             if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None)
@@ -248,6 +228,7 @@ impl IboardApp {
                 "Edit",
                 Some("E"),
             )
+            .on_hover_text("Edit this issue  E")
             .clicked()
         {
             self.start_editing(&path);
@@ -326,12 +307,8 @@ impl IboardApp {
         .on_hover_text("The git commits that name this ticket");
         if let Some(hash) = self.latest_commit(path, ui.ctx()) {
             let p = theme::palette(ui);
-            ui.label(
-                RichText::new(hash)
-                    .font(egui::FontId::monospace(11.0))
-                    .color(p.ink_muted),
-            )
-            .on_hover_text("Newest commit naming this ticket");
+            ui.label(RichText::new(hash).font(theme::meta()).color(p.ink_muted))
+                .on_hover_text("Newest commit naming this ticket");
         }
         if button.clicked() {
             self.open_commits(path);
@@ -355,11 +332,7 @@ impl IboardApp {
                 "Delete",
                 delete_key,
             )
-            .on_hover_text(if self.prefs.confirm_delete {
-                "Delete this issue (asks to confirm)"
-            } else {
-                "Delete this issue"
-            })
+            .on_hover_text(delete_tooltip(self.prefs.confirm_delete, delete_key))
             .clicked()
         {
             self.request_delete(path.clone());
@@ -382,7 +355,7 @@ impl IboardApp {
                 "Add label",
                 Some("L"),
             )
-            .on_hover_text("Add a label to this issue");
+            .on_hover_text("Add a label to this issue  L");
             set_label_anchor(ui, &path, add.rect);
             if add.clicked() {
                 self.toggle_label_picker(path.clone());
@@ -407,22 +380,41 @@ impl IboardApp {
 
     /// Only offered when Settings › General turns Auto off: with Auto on the
     /// board already reloads itself. `⌘R` keeps working either way, but on a
-    /// Todo issue it refines.
+    /// Todo issue it refines, so there the button has no key.
     pub(super) fn refresh_button(&mut self, ui: &mut egui::Ui) {
         if self.prefs.auto {
             return;
         }
+        let refines = match &self.session.screen {
+            Screen::Detail(path, _) => self.is_todo_issue(path),
+            Screen::Board | Screen::Diff => false,
+        };
+        let (key, tooltip) = if refines {
+            (None, "Reload from disk")
+        } else {
+            (Some("⌘R"), "Reload from disk  ⌘R")
+        };
         if widgets::button(
             ui,
             ButtonKind::Secondary,
             Some(Icon::Refresh),
             "Refresh",
-            None,
+            key,
         )
-        .on_hover_text("Reload from disk (⌘R)")
+        .on_hover_text(tooltip)
         .clicked()
         {
             self.refresh();
         }
     }
+}
+
+/// Delete's tooltip: what it does, and its key where it has one.
+fn delete_tooltip(confirm: bool, key: Option<&str>) -> String {
+    let action = if confirm {
+        "Delete this issue (asks to confirm)"
+    } else {
+        "Delete this issue"
+    };
+    key.map_or_else(|| action.to_string(), |key| format!("{action}  {key}"))
 }
