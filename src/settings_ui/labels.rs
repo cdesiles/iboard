@@ -394,16 +394,15 @@ mod tests {
         let row_y = harness.get_by_label("bug").rect().center().y;
         let mut walked = Vec::new();
         for _ in 0..40 {
+            let focused = harness.ctx.memory(|m| m.focused());
+            if let Some(rect) = focused.and_then(|id| harness.ctx.read_response(id)) {
+                let rect = rect.rect;
+                if rect.y_range().contains(row_y) && !walked.contains(&rect) {
+                    walked.push(rect);
+                }
+            }
             harness.key_press(egui::Key::Tab);
             harness.run_steps(2);
-            let focused = harness.ctx.memory(|m| m.focused());
-            let Some(rect) = focused.and_then(|id| harness.ctx.read_response(id)) else {
-                continue;
-            };
-            let rect = rect.rect;
-            if rect.y_range().contains(row_y) && !walked.contains(&rect) {
-                walked.push(rect);
-            }
         }
         assert_eq!(walked.len(), 3, "hex, Reset, trash, never the chip");
         assert!(walked[0].max.x < walked[1].min.x && walked[1].max.x < walked[2].min.x);

@@ -25,6 +25,7 @@ fn three_projects(tag: &str) -> (Scratch, PathBuf, Vec<PathBuf>, IboardApp) {
     std::fs::write(&config, "# mine\n[ai]\ntool = \"claude\"\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&projects[0]).unwrap());
     app.config_file = Some(config.clone());
+    app.config_stamp = crate::app::groups::modified(&config);
     app.projects = projects.clone();
     (parent, config, projects, app)
 }
