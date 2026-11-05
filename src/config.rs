@@ -15,7 +15,7 @@
 //! ```
 
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,13 +41,8 @@ pub struct ReaderConfig {
     pub sections: Option<Vec<String>>,
 }
 
-pub struct LoadedConfig {
-    pub config: Config,
-    pub path: PathBuf,
-}
-
 /// The `iboard.toml` in `dir`, when there is one and it parses.
-pub fn load(dir: &Path) -> Option<LoadedConfig> {
+pub fn load(dir: &Path) -> Option<Config> {
     let path = dir.join("iboard.toml");
     if !path.is_file() {
         return None;
@@ -60,7 +55,7 @@ pub fn load(dir: &Path) -> Option<LoadedConfig> {
         }
     };
     match toml::from_str::<Config>(&text) {
-        Ok(config) => Some(LoadedConfig { config, path }),
+        Ok(config) => Some(config),
         Err(err) => {
             eprintln!("warning: invalid {}: {err}", path.display());
             None
@@ -80,7 +75,7 @@ mod tests {
 
         let text = "title = \"Moon\"\ncolumns = [\"todo\"]\n[reader]\nsections = []\n";
         std::fs::write(dir.join("iboard.toml"), text).unwrap();
-        let config = load(dir).unwrap().config;
+        let config = load(dir).unwrap();
         assert_eq!(config.title.as_deref(), Some("Moon"));
         assert_eq!(config.columns, Some(vec!["todo".to_string()]));
         assert_eq!(config.reader.unwrap().sections, Some(Vec::new()));

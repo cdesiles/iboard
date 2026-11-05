@@ -1,7 +1,7 @@
 //! Controls of the design system that egui does not draw the same way:
-//! buttons, selects, menus, pills, column tabs, the pieces dialogs share, the
-//! checkbox, keyboard hints and breadcrumbs. See
-//! `design/components/*/README.md` for what each one is for.
+//! buttons, selects, menus, pills, the pieces dialogs share, the checkbox,
+//! keyboard hints and breadcrumbs. See `design/components/*/README.md` for
+//! what each one is for.
 
 use egui::{
     Color32, CornerRadius, FontId, Galley, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui,
@@ -26,8 +26,8 @@ pub use dialog::{
 };
 pub use key_hints::{key_hints, key_hints_shown};
 pub use menu::{
-    Drag, MENU_ROW_H, MenuOption, RowLook, menu_group, menu_head, menu_note, menu_option,
-    menu_quiet, menu_row, menu_row_lifted, menu_separator,
+    Drag, MENU_ROW_H, MenuOption, RowLook, menu_group, menu_head, menu_note, menu_option, menu_row,
+    menu_row_lifted, menu_separator,
 };
 pub use pill::{chip, filter_token, label_pill, pill, tag};
 pub use select::select;

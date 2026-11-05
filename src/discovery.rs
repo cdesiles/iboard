@@ -275,15 +275,15 @@ pub fn locate(start: &Path) -> Result<Located, String> {
 /// is an `issues/` itself.
 fn find_project(start: &Path) -> Option<Located> {
     start.ancestors().find_map(|dir| {
-        if let Some(loaded) = crate::config::load(dir) {
-            let root = match loaded.config.root.as_deref() {
+        if let Some(config) = crate::config::load(dir) {
+            let root = match config.root.as_deref() {
                 Some(relative) => dir.join(relative),
                 None => dir.join("issues"),
             };
             return Some(Located {
                 project_dir: dir.to_path_buf(),
                 root,
-                config: Some(loaded.config),
+                config: Some(config),
             });
         }
 

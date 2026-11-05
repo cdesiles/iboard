@@ -265,40 +265,6 @@ fn paint_row(
     );
 }
 
-/// A quiet one-line menu row that opens a dialog: `label` in `ui-small`
-/// `ink-muted` (`ink` on hover), `hint` in `meta` at the right.
-pub fn menu_quiet(ui: &mut Ui, width: f32, label: &str, hint: &str) -> Response {
-    let p = theme::palette(ui);
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(width, theme::CONTROL_H), Sense::click());
-    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
-    if ui.is_rect_visible(rect) {
-        let hovered = response.hovered();
-        if hovered {
-            ui.painter()
-                .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_hover);
-        }
-        let inner = rect.shrink2(Vec2::new(theme::SPACE_3, 0.0));
-        let color = if hovered { p.ink } else { p.ink_muted };
-        let hint = galley(ui, hint, theme::meta(), p.ink_faint);
-        let label = galley_truncated(
-            ui,
-            label,
-            theme::ui_small(),
-            color,
-            inner.width() - hint.size().x - theme::SPACE_3,
-        );
-        let painter = ui.painter();
-        let y = |size: Vec2| inner.center().y - size.y / 2.0;
-        painter.galley(Pos2::new(inner.min.x, y(label.size())), label, color);
-        let at = Pos2::new(inner.max.x - hint.size().x, y(hint.size()));
-        painter.galley(at, hint, p.ink_faint);
-    }
-    focus_ring(ui, &response, theme::RADIUS_SM);
-    response
-}
-
 /// The `line` rule between groups of a menu.
 pub fn menu_separator(ui: &mut Ui) {
     ui.add_space(theme::SPACE_2);

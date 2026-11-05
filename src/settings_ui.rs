@@ -1,7 +1,7 @@
 //! The Settings dialog (`⌘,`), with five tabs: General (the theme, and
 //! whether deleting asks first), AI review (which agent runs the review, and with which model),
 //! AI build (the same, for the agent that implements Ready issues), Titles (which engine names new issues) and Labels (label colours). See
-//! `design/components/{GeneralSettings,ReviewSettings,TitleSettings}`.
+//! `design/components/{GeneralSettings,ReviewSettings,TitleSettings,SettingsLabels}`.
 //!
 //! One module per tab. What the dialog shows about the tools (where each is
 //! installed, its version, its models) comes from running them, so it is

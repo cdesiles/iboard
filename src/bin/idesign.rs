@@ -366,7 +366,7 @@ fn catalog(system: &DesignSystem, flags: &Flags) -> Result<(), Failure> {
     Ok(())
 }
 
-/// Fatal errors first, then warnings; exit 1 when anything is fatal.
+/// Warnings first, then fatal errors; exit 1 when anything is fatal.
 fn validate(system: &DesignSystem) -> Result<(), Failure> {
     let errors = system.errors();
     for warning in &system.warnings {

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 pub fn pick_folders() -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        macos::pick(true)
+        macos::pick()
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -28,14 +28,14 @@ mod macos {
     use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
     use objc2_foundation::NSString;
 
-    pub fn pick(multiple: bool) -> Vec<PathBuf> {
+    pub fn pick() -> Vec<PathBuf> {
         let Some(mtm) = MainThreadMarker::new() else {
             return Vec::new();
         };
         let panel = NSOpenPanel::openPanel(mtm);
         panel.setCanChooseFiles(false);
         panel.setCanChooseDirectories(true);
-        panel.setAllowsMultipleSelection(multiple);
+        panel.setAllowsMultipleSelection(true);
         panel.setResolvesAliases(true);
         panel.setMessage(Some(&NSString::from_str(
             "Choose a project containing an issues/ folder",

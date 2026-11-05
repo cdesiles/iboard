@@ -160,7 +160,6 @@ const NOTICE_FOR: Duration = Duration::from_secs(4);
 /// How long `⌘Z` can bring back an issue deleted without asking.
 const UNDO_FOR: Duration = Duration::from_secs(10);
 
-/// An issue deleted without asking, kept so `⌘Z` can put it back.
 /// What `⌘Z` on the board can still take back.
 enum Undo {
     Deleted(Vec<Deleted>),
@@ -176,6 +175,7 @@ impl Undo {
     }
 }
 
+/// An issue deleted without asking, kept so `⌘Z` can put it back.
 struct Deleted {
     path: PathBuf,
     /// Where the Trash put it, when it could say.

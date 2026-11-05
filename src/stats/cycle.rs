@@ -11,7 +11,7 @@ use std::path::Path;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
 
 use super::PAGE;
-use crate::{build_log, git, priority};
+use crate::{build_log, git, reviews};
 
 /// One issue closed on the page, and how long it took.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,7 +73,7 @@ pub(super) fn collect(dir: &Path, root: &Path, newest: &str) -> Result<Cycles, S
     let mut seen = Vec::new();
     let mut cycles = Cycles::default();
     for (short, closed, issue) in closings(&log) {
-        let slug = slug(&issue);
+        let slug = reviews::slug(Path::new(&issue));
         if seen.contains(&slug) {
             continue;
         }
@@ -93,11 +93,6 @@ pub(super) fn collect(dir: &Path, root: &Path, newest: &str) -> Result<Cycles, S
     }
     cycles.cycles.sort_by_key(|c| std::cmp::Reverse(c.seconds));
     Ok(cycles)
-}
-
-fn slug(file: &str) -> String {
-    let name = priority::strip_priority(file);
-    name.strip_suffix(".md").unwrap_or(name).to_string()
 }
 
 /// `(short hash, date, issue file)` for each `closes <file>.md`, newest first.
@@ -145,7 +140,7 @@ fn first_added(log: &str) -> HashMap<String, DateTime<FixedOffset>> {
             && !line.split('/').any(|part| part.starts_with('.'))
         {
             let name = line.rsplit('/').next().unwrap_or(line);
-            added.insert(slug(name), date);
+            added.insert(reviews::slug(Path::new(name)), date);
         }
     }
     added

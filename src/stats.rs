@@ -45,9 +45,6 @@ const CACHE_VERSION: u32 = 1;
 /// Files bigger than this are generated or data, not code to measure.
 const MAX_BLOB: u64 = 1 << 20;
 
-/// How many files the top lists keep.
-const TOP: usize = 5;
-
 /// Commits read so far out of those to read, shared with the UI.
 #[derive(Debug, Default)]
 pub struct Progress {
@@ -72,7 +69,6 @@ pub struct Snapshot {
     pub short: String,
     /// The committer date, RFC 3339.
     pub date: String,
-    pub author: String,
     pub subject: String,
     pub files: usize,
     pub code: usize,
@@ -89,10 +85,6 @@ pub struct Snapshot {
     pub large_files: usize,
     /// Code lines per language, most first.
     pub languages: Vec<(String, usize)>,
-    /// The files with the most code lines.
-    pub largest: Vec<(String, usize)>,
-    /// The files with the highest complexity.
-    pub complex: Vec<(String, usize)>,
 }
 
 impl Snapshot {
@@ -101,29 +93,14 @@ impl Snapshot {
         self.date.get(..10).unwrap_or(&self.date)
     }
 
-    /// Average complexity per function.
-    pub fn mean_complexity(&self) -> f32 {
-        ratio(self.complexity, self.units)
-    }
-
     /// Share of the code lines that are tests.
     pub fn test_share(&self) -> f32 {
         ratio(self.test_code, self.code)
     }
 
-    /// Comment lines per code line.
-    pub fn comment_ratio(&self) -> f32 {
-        ratio(self.comments, self.code)
-    }
-
     /// Complexity per thousand code lines, so size alone doesn't raise it.
     pub fn complexity_per_kloc(&self) -> f32 {
         ratio(self.complexity * 1000, self.code)
-    }
-
-    /// TODO marks per thousand code lines.
-    pub fn todo_density(&self) -> f32 {
-        ratio(self.todos * 1000, self.code)
     }
 }
 
@@ -247,7 +224,6 @@ struct Listed {
     hash: String,
     short: String,
     date: String,
-    author: String,
     subject: String,
 }
 
@@ -262,19 +238,18 @@ fn list(dir: &Path, page: usize) -> Result<Vec<Listed>, String> {
             "--first-parent",
             &format!("--skip={}", page * PAGE),
             &format!("--max-count={}", PAGE + 1),
-            "--format=%H%x1f%h%x1f%cI%x1f%an%x1f%s",
+            "--format=%H%x1f%h%x1f%cI%x1f%s",
             head.trim(),
         ],
     )?;
     Ok(out
         .lines()
         .filter_map(|line| {
-            let mut fields = line.splitn(5, '\x1f');
+            let mut fields = line.splitn(4, '\x1f');
             Some(Listed {
                 hash: fields.next()?.to_string(),
                 short: fields.next()?.to_string(),
                 date: fields.next()?.to_string(),
-                author: fields.next()?.to_string(),
                 subject: fields.next().unwrap_or_default().to_string(),
             })
         })
@@ -324,12 +299,10 @@ fn measure_commit(
         hash: commit.hash.clone(),
         short: commit.short.clone(),
         date: commit.date.clone(),
-        author: commit.author.clone(),
         subject: commit.subject.clone(),
         ..Snapshot::default()
     };
     let mut languages: HashMap<&str, usize> = HashMap::new();
-    let mut files = Vec::new();
     for entry in entries(&tree) {
         let key = (
             entry.sha.to_string(),
@@ -352,14 +325,8 @@ fn measure_commit(
         };
         add(&mut snapshot, &m);
         *languages.entry(entry.language.name).or_default() += m.code;
-        files.push((entry.path, m.code, m.complexity()));
     }
-    snapshot.languages = top(
-        languages.into_iter().map(|(k, v)| (k.to_string(), v)),
-        usize::MAX,
-    );
-    snapshot.largest = top(files.iter().map(|f| (f.0.to_string(), f.1)), TOP);
-    snapshot.complex = top(files.iter().map(|f| (f.0.to_string(), f.2)), TOP);
+    snapshot.languages = top(languages.into_iter().map(|(k, v)| (k.to_string(), v)));
     Ok(snapshot)
 }
 
@@ -378,11 +345,10 @@ fn add(snapshot: &mut Snapshot, m: &FileMetrics) {
     }
 }
 
-/// The `count` highest, highest first, ties by name.
-fn top(items: impl Iterator<Item = (String, usize)>, count: usize) -> Vec<(String, usize)> {
+/// Highest first, ties by name.
+fn top(items: impl Iterator<Item = (String, usize)>) -> Vec<(String, usize)> {
     let mut items: Vec<_> = items.filter(|(_, n)| *n > 0).collect();
     items.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    items.truncate(count);
     items
 }
 
