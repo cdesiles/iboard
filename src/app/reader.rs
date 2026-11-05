@@ -832,17 +832,7 @@ fn sheet_head(ui: &mut egui::Ui, head: SheetHead) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
         if !head.column.is_empty() {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                let (dot, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
-                ui.painter().circle_filled(dot.center(), 4.0, head.status);
-                ui.label(
-                    RichText::new(head.column.to_uppercase())
-                        .font(theme::ui_label())
-                        .extra_letter_spacing(theme::LABEL_TRACKING)
-                        .color(p.ink),
-                );
-            });
+            column_mark(ui, head.column, head.status);
             ui.add(meta("·".into(), p.ink_faint));
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -869,10 +859,31 @@ fn sheet_head(ui: &mut egui::Ui, head: SheetHead) {
         });
     });
     ui.add_space(theme::SPACE_4);
+    sheet_rule(ui);
+    ui.add_space(20.0);
+}
+
+/// A sheet head's column: its status dot and its name in capitals.
+pub(super) fn column_mark(ui: &mut egui::Ui, column: &str, status: Color32) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let (dot, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
+        ui.painter().circle_filled(dot.center(), 4.0, status);
+        ui.label(
+            RichText::new(column.to_uppercase())
+                .font(theme::ui_label())
+                .extra_letter_spacing(theme::LABEL_TRACKING)
+                .color(theme::palette(ui).ink),
+        );
+    });
+}
+
+/// The `line` rule under a sheet's head.
+pub(super) fn sheet_rule(ui: &mut egui::Ui) {
+    let line = theme::palette(ui).line;
     let (rule, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
     ui.painter()
-        .hline(rule.x_range(), rule.center().y, Stroke::new(1.0, p.line));
-    ui.add_space(20.0);
+        .hline(rule.x_range(), rule.center().y, Stroke::new(1.0, line));
 }
 
 /// "Click below the text to keep writing" in `ink-faint`, at the foot of the

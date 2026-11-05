@@ -2,12 +2,15 @@
 //! file, exactly as `↩` will write it, on the right. See
 //! `design/components/NewIssueModal`.
 
+use super::board::status_color;
 use super::compose::{Composer, ComposerField, Drafted, TitleStage};
+use super::reader::{column_mark, sheet_rule};
 use super::{
     Align, ButtonKind, CCursor, CCursorRange, Color32, CommonMarkCache, CommonMarkViewer,
     CornerRadius, Engine, Frame, IboardApp, Key, Labels, Layout, Margin, Path, Pos2, Rect,
-    RichText, Sense, Shape, Stroke, Vec2, files, sheet, theme, titles, widgets,
+    RichText, Sense, Shape, Stroke, Vec2, files, labels, sheet, theme, titles, widgets,
 };
+use crate::theme::Icon;
 use iboard::new_issue;
 
 pub(super) const TITLE_ID: &str = "composer";
@@ -33,6 +36,9 @@ pub(super) enum ComposeAction {
 
 /// What the modal shows besides the composer itself.
 struct ComposeView<'a> {
+    /// The column the issue lands in, for the sheet's head.
+    column: &'a str,
+    status: Color32,
     /// The folder the issue lands in, and the file it will be.
     folder: &'a str,
     dir: Option<&'a Path>,
@@ -49,7 +55,12 @@ impl IboardApp {
         if !self.composer_open() {
             return;
         }
-        let Some(todo) = self.board.todo_column().map(|c| c.dir.clone()) else {
+        let p = theme::palette(ui);
+        let Some((todo, column, status)) = self
+            .board
+            .todo_column()
+            .map(|c| (c.dir.clone(), c.name.clone(), status_color(p, c)))
+        else {
             return;
         };
         let dir = self.compose_preview(&todo).unwrap_or(todo);
@@ -60,6 +71,8 @@ impl IboardApp {
             return;
         };
         let mut view = ComposeView {
+            column: &column,
+            status,
             folder: &folder,
             dir: Some(dir.as_path()).filter(|dir| dir.is_dir()),
             sections: &self.board.reader_sections,
@@ -207,7 +220,7 @@ fn head(
             Some(engine) => engine.tag(),
             None => Engine::Manual.tag(),
         };
-        if widgets::tag(ui, tag, false)
+        if widgets::tag(ui, tag)
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .on_hover_text("Title inference (⌘, › Titles)")
             .clicked()
@@ -279,8 +292,9 @@ fn notes_pane(ui: &mut egui::Ui, composer: &mut Composer, height: f32) {
     } else {
         (p.surface, p.ink)
     };
+    let focused = !drafting && ui.memory(|m| m.has_focus(egui::Id::new(DESCRIPTION_ID)));
     Frame::new()
-        .fill(fill)
+        .fill(p.surface)
         .inner_margin(theme::SPACE_5)
         .show(ui, |ui| {
             ui.set_min_size(Vec2::new(
@@ -310,44 +324,61 @@ fn notes_pane(ui: &mut egui::Ui, composer: &mut Composer, height: f32) {
                     );
                 });
             });
-            let room = ui.available_height();
-            let scroll = theme::scroll_area(
-                ui,
-                egui::ScrollArea::vertical()
-                    .id_salt("new-issue-notes")
-                    .max_height(room)
-                    .auto_shrink([false, false]),
-                false,
-                |ui| {
-                    let rows = (room / 22.0).floor().max(3.0) as usize;
-                    ui.add_enabled(
-                        !drafting,
-                        egui::TextEdit::multiline(&mut composer.description)
-                            .id(egui::Id::new(DESCRIPTION_ID))
-                            .font(theme::read_body())
-                            .text_color(ink)
-                            .hint_text(
-                                RichText::new(
-                                    "Describe the issue. Write or dictate as much as you like.",
-                                )
-                                .color(p.ink_faint),
-                            )
-                            .frame(Frame::NONE)
-                            .margin(Margin::ZERO)
-                            .desired_rows(rows)
-                            .desired_width(f32::INFINITY)
-                            .return_key(Some(egui::KeyboardShortcut::new(
-                                egui::Modifiers::SHIFT,
-                                Key::Enter,
-                            ))),
-                    )
-                },
-            );
-            if composer.focus == Some(ComposerField::Description) && !drafting {
-                composer.focus = None;
-                scroll.inner.request_focus();
+            let margin = Vec2::new(theme::SPACE_4, 10.0);
+            let room = ui.available_height() - 2.0 * margin.y - 2.0;
+            let area = Frame::new()
+                .fill(fill)
+                .stroke(Stroke::new(
+                    1.0,
+                    if focused { p.accent } else { p.line_strong },
+                ))
+                .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+                .inner_margin(margin)
+                .show(ui, |ui| notes_field(ui, composer, ink, room));
+            if focused {
+                widgets::paint_focus_halo(ui, area.response.rect, theme::RADIUS_SM);
             }
         });
+}
+
+/// The notes' text area, scrolling inside itself.
+fn notes_field(ui: &mut egui::Ui, composer: &mut Composer, ink: Color32, room: f32) {
+    let p = theme::palette(ui);
+    let drafting = composer.drafting.is_some();
+    let scroll = theme::scroll_area(
+        ui,
+        egui::ScrollArea::vertical()
+            .id_salt("new-issue-notes")
+            .max_height(room)
+            .auto_shrink([false, false]),
+        false,
+        |ui| {
+            let rows = (room / 22.0).floor().max(3.0) as usize;
+            ui.add_enabled(
+                !drafting,
+                egui::TextEdit::multiline(&mut composer.description)
+                    .id(egui::Id::new(DESCRIPTION_ID))
+                    .font(theme::read_body())
+                    .text_color(ink)
+                    .hint_text(
+                        RichText::new("Describe the issue. Write or dictate as much as you like.")
+                            .color(p.ink_faint),
+                    )
+                    .frame(Frame::NONE)
+                    .margin(Margin::ZERO)
+                    .desired_rows(rows)
+                    .desired_width(f32::INFINITY)
+                    .return_key(Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::SHIFT,
+                        Key::Enter,
+                    ))),
+            )
+        },
+    );
+    if composer.focus == Some(ComposerField::Description) && !drafting {
+        composer.focus = None;
+        scroll.inner.request_focus();
+    }
 }
 
 /// The `bg` well with the Reader sheet: the file as it will be written.
@@ -390,6 +421,7 @@ fn issue_pane(
                     .inner_margin(Vec2::new(theme::SPACE_7, theme::SPACE_6))
                     .show(ui, |ui| {
                         ui.set_width(page_w - 2.0 * theme::SPACE_7);
+                        ui.set_min_height(size.y - 2.0 * gutter - 2.0 * theme::SPACE_6 - 2.0);
                         ui.with_layout(Layout::top_down(Align::Min), |ui| {
                             writing_at = sheet(ui, composer, view, cache, actions);
                         });
@@ -464,7 +496,7 @@ fn sheet(
             widgets::skeleton_bar(ui, 0.6, 12.0);
         }
     } else {
-        title_row(ui, composer, actions);
+        title_row(ui, composer, view.labels);
     }
     match &composer.draft {
         None => {
@@ -489,24 +521,31 @@ fn sheet(
     }
 }
 
-/// `TODO · todo/<slug>.md`, or `todo/` named on save; while Review drafts,
-/// the Thinking mark and its clock on the right.
+/// `● TODO · todo/<slug>.md`, or `todo/` and how the title will come, over a
+/// rule; while Review drafts, the Thinking mark and its clock on the right.
 fn sheet_head(ui: &mut egui::Ui, composer: &Composer, view: &ComposeView) {
     let p = theme::palette(ui);
     let meta = |text: String, color: Color32| RichText::new(text).font(theme::meta()).color(color);
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+        column_mark(ui, view.column, view.status);
+        ui.label(meta("·".into(), p.ink_faint));
         ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label(meta("TODO · ".into(), p.ink_faint));
-        let title = composer.title.trim();
+        let title = composer.written_title();
+        let display = labels::display_title(&title);
         if let Some(error) = &composer.error {
             ui.add(egui::Label::new(meta(error.clone(), p.danger)).truncate());
-        } else if title.is_empty() {
+        } else if display.is_empty() {
+            let unnamed = match composer.engine {
+                Some(_) => " named on save",
+                None => " empty title uses the first line",
+            };
             ui.label(meta(view.folder.to_string(), p.ink_muted));
-            ui.label(meta(" named on save".into(), p.ink_faint));
+            ui.label(meta(unnamed.into(), p.ink_faint));
         } else {
             let (name, taken) = match view.dir {
-                Some(dir) => crate::issue::new_file_name(dir, title),
-                None => (format!("{}.md", files::slugify(title)), false),
+                Some(dir) => crate::issue::new_file_name(dir, &title),
+                None => (format!("{}.md", files::slugify(&display)), false),
             };
             let color = if taken {
                 p.status_doing
@@ -531,6 +570,9 @@ fn sheet_head(ui: &mut egui::Ui, composer: &Composer, view: &ComposeView) {
             });
         }
     });
+    ui.add_space(theme::SPACE_2);
+    sheet_rule(ui);
+    ui.add_space(theme::SPACE_3);
 }
 
 /// Under the sheet head: who drafted it, that the notes changed since, or
@@ -576,7 +618,9 @@ fn receipt(ui: &mut egui::Ui, composer: &Composer, actions: &mut Vec<ComposeActi
     if drafted.notes_hash != new_issue::notes_hash(&composer.description) {
         line(ui, p.surface_sunken, &mut |ui| {
             ui.label(small("Your notes changed since this draft", p.status_doing));
-            if widgets::button(ui, ButtonKind::Review, None, "Redraft", None).clicked() {
+            if widgets::button(ui, ButtonKind::Review, Some(Icon::Review), "Redraft", None)
+                .clicked()
+            {
                 actions.push(ComposeAction::Draft);
             }
         });
@@ -757,18 +801,17 @@ fn unwritten(
     });
 }
 
-/// The title row on the sheet, in `read-h1`: the title, the character count
-/// near the limit, and the Drafted tag, over a rule that says how it will be
-/// named.
-fn title_row(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<ComposeAction>) {
+/// The title row on the sheet, in `read-h1`: the tags typed, the title, the
+/// character count near the limit, and the Drafted tag, over a rule, dashed
+/// when an empty title can only come from the first line.
+fn title_row(ui: &mut egui::Ui, composer: &mut Composer, known: &Labels) {
     let p = theme::palette(ui);
     let width = ui.available_width();
     let (row, _) = ui.allocate_exact_size(Vec2::new(width, 34.0), Sense::hover());
     let rule_y = row.max.y - 0.5;
     let rule = [Pos2::new(row.min.x, rule_y), Pos2::new(row.max.x, rule_y)];
     let drafted = composer.stage == TitleStage::Drafted;
-    let inferred = composer.title.trim().is_empty() && composer.engine.is_some();
-    if drafted || inferred {
+    if composer.engine.is_some() || !composer.title.trim().is_empty() {
         ui.painter().line_segment(rule, Stroke::new(1.0, p.line));
     } else {
         ui.painter().extend(Shape::dashed_line(
@@ -785,7 +828,7 @@ fn title_row(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<Compo
     );
     row_ui.spacing_mut().item_spacing.x = theme::SPACE_3;
     if drafted {
-        widgets::tag(&mut row_ui, "Drafted", true);
+        widgets::review_tag(&mut row_ui, "Drafted");
     }
     let chars = composer.title.chars().count();
     if chars >= titles::MAX_TITLE_CHARS - 10 {
@@ -795,21 +838,53 @@ fn title_row(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<Compo
                 .color(p.ink_muted),
         );
     }
-    title_field(&mut row_ui, composer);
-    let _ = actions;
+    row_ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+        for label in &composer.title_labels {
+            let name = labels::normalize(label).unwrap_or_else(|| label.clone());
+            widgets::label_pill(ui, &name, known.color(&name));
+        }
+        title_field(ui, composer);
+    });
+}
+
+/// `⌫` at the very start of the title turns the last tag back into text.
+fn untag_on_backspace(row: &egui::Ui, composer: &mut Composer, title_id: egui::Id) {
+    if composer.title_labels.is_empty() || !row.memory(|m| m.has_focus(title_id)) {
+        return;
+    }
+    let ctx = row.ctx();
+    let range = egui::text_edit::TextEditState::load(ctx, title_id)
+        .and_then(|state| state.cursor.char_range());
+    let at_start = range.map_or_else(
+        || composer.title.is_empty(),
+        |range| range.is_empty() && range.primary.index.0 == 0,
+    );
+    if at_start
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Backspace))
+        && let Some(cursor) = composer.untag_label()
+    {
+        set_title_cursor(ctx, title_id, CCursorRange::one(CCursor::new(cursor)));
+    }
+}
+
+fn set_title_cursor(ctx: &egui::Context, title_id: egui::Id, range: CCursorRange) {
+    let mut state = egui::text_edit::TextEditState::load(ctx, title_id).unwrap_or_default();
+    state.cursor.set_char_range(Some(range));
+    state.store(ctx, title_id);
 }
 
 /// The title's text field; focused on request, with the whole suggestion
-/// selected so typing replaces it.
+/// selected so typing replaces it. `[bug]` typed at its start becomes a tag.
 fn title_field(row: &mut egui::Ui, composer: &mut Composer) {
     let p = theme::palette(row);
     let title_id = egui::Id::new(TITLE_ID);
+    untag_on_backspace(row, composer, title_id);
     let hint = match composer.engine {
         None => "Add a title",
         Some(_) => "Title is named from your notes",
     };
     let width = row.available_width();
-    let mut output = egui::TextEdit::singleline(&mut composer.title)
+    let output = egui::TextEdit::singleline(&mut composer.title)
         .id(title_id)
         .font(theme::read_h1())
         .hint_text(
@@ -827,16 +902,17 @@ fn title_field(row: &mut egui::Ui, composer: &mut Composer) {
         output.response.request_focus();
         if std::mem::take(&mut composer.select_title) {
             let end = CCursor::new(composer.title.chars().count());
-            output
-                .state
-                .cursor
-                .set_char_range(Some(CCursorRange::two(CCursor::new(0), end)));
-            output.state.store(row.ctx(), title_id);
+            set_title_cursor(row.ctx(), title_id, CCursorRange::two(CCursor::new(0), end));
         }
     }
     // Editing a draft's title makes it the user's own.
     if output.response.changed() {
         composer.stage = TitleStage::Idle;
+        let cursor = output.cursor_range.map(|range| range.primary.index.0);
+        if let Some(cursor) = cursor.and_then(|at| composer.tag_typed_label(at)) {
+            set_title_cursor(row.ctx(), title_id, CCursorRange::one(CCursor::new(cursor)));
+            row.ctx().request_repaint();
+        }
     }
 }
 
@@ -876,7 +952,7 @@ fn foot(
                     } else {
                         ButtonKind::Review
                     };
-                    let draft = widgets::button(ui, kind, None, label, Some("⌘⇧R"));
+                    let draft = widgets::button(ui, kind, Some(Icon::Review), label, Some("⌘⇧R"));
                     let draft = match blocked {
                         Some(why) => draft.on_hover_text(why),
                         None => draft,

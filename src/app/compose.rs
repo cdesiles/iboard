@@ -4,7 +4,7 @@
 
 use super::{
     Duration, Engine, HashMap, IboardApp, Instant, Job, Leave, Path, PathBuf, Screen, agent,
-    atomic_write, images, prompts, titles,
+    atomic_write, images, labels, prompts, titles,
 };
 use iboard::new_issue::{self, Parked};
 
@@ -16,7 +16,10 @@ pub(super) const DISCARD_UNDO: Duration = Duration::from_secs(10);
 /// `⌘N`. Nothing touches Todo until the issue is added.
 #[derive(Default)]
 pub(super) struct Composer {
+    /// The title field, without its tags.
     pub(super) title: String,
+    /// The `[label]`s typed at the start of the title, as typed, shown as tags.
+    pub(super) title_labels: Vec<String>,
     /// Your notes.
     pub(super) description: String,
     /// Shown over the board; closed, it holds the parked notes.
@@ -64,7 +67,48 @@ pub(super) struct DraftRun {
 impl Composer {
     /// Nothing typed: closing it loses nothing.
     pub(super) fn is_empty(&self) -> bool {
-        self.title.trim().is_empty() && self.description.trim().is_empty()
+        self.title.trim().is_empty()
+            && self.title_labels.is_empty()
+            && self.description.trim().is_empty()
+    }
+
+    /// The title as the file has it: the tags in brackets, then the field.
+    pub(super) fn written_title(&self) -> String {
+        new_issue::labelled_title(&self.title_labels, &self.title)
+            .trim_end()
+            .to_string()
+    }
+
+    /// After typing: `[bug]` ending at `cursor`, at the start of the field,
+    /// becomes a tag, and a space right after a tag is swallowed. Returns the
+    /// cursor's new place when the field changed.
+    pub(super) fn tag_typed_label(&mut self, cursor: usize) -> Option<usize> {
+        if cursor == 1 && !self.title_labels.is_empty() && self.title.starts_with(' ') {
+            self.title.remove(0);
+            return Some(0);
+        }
+        let head: String = self.title.chars().take(cursor).collect();
+        let inner = head.strip_prefix('[')?.strip_suffix(']')?;
+        if inner.contains(['[', ']']) {
+            return None;
+        }
+        labels::normalize(inner)?;
+        self.title_labels.push(inner.to_string());
+        self.title = self.title[head.len()..].trim_start().to_string();
+        Some(0)
+    }
+
+    /// `⌫` right after a tag: the last tag is text again. Returns the cursor's
+    /// new place, after the `]`.
+    pub(super) fn untag_label(&mut self) -> Option<usize> {
+        let text = format!("[{}]", self.title_labels.pop()?);
+        let cursor = text.chars().count();
+        self.title = if self.title.is_empty() {
+            text
+        } else {
+            format!("{text} {}", self.title)
+        };
+        Some(cursor)
     }
 }
 
@@ -145,8 +189,15 @@ impl IboardApp {
             stopped: false,
             title_before: (String::new(), TitleStage::Idle),
         });
+        let (groups, title) = labels::bracket_groups(&parked.title);
+        let title_labels = groups
+            .into_iter()
+            .filter(|group| labels::normalize(group).is_some())
+            .map(str::to_string)
+            .collect();
         Some(Composer {
-            title: parked.title,
+            title: title.to_string(),
+            title_labels,
             description: parked.notes,
             draft,
             ..Composer::default()
@@ -161,7 +212,7 @@ impl IboardApp {
             return;
         };
         let parked = Parked {
-            title: composer.title.clone(),
+            title: composer.written_title(),
             notes: composer.description.clone(),
             draft: composer.draft.as_ref().map(|d| d.draft.clone()),
         };
@@ -237,7 +288,9 @@ impl IboardApp {
     /// used as it is; with none, it lands as `unnamed-ticket-xxxx` while an
     /// engine names it, or takes the first line when no engine is ready.
     /// `⌘↩` (`edit`) also opens the Editor. While Review drafts, it adds what
-    /// is shown.
+    /// is shown. Tags stay on the title it ends up with. With no notes and no
+    /// titled draft to write, nothing is created and the cursor goes to the
+    /// notes.
     pub(super) fn submit_composer(&mut self, edit: bool) {
         if self
             .session
@@ -247,24 +300,28 @@ impl IboardApp {
         {
             self.stop_draft();
         }
-        let Some(composer) = self.session.composer.as_ref() else {
+        let Some(composer) = self.session.composer.as_mut() else {
             return;
         };
-        let typed = composer.title.trim().to_string();
+        let typed = composer.written_title();
+        let named = !labels::display_title(&typed).is_empty();
         let description = composer.description.clone();
         let engine = composer.engine;
-        if typed.is_empty() && description.trim().is_empty() {
+        let drafted = composer.draft.as_ref().is_some_and(|d| !d.draft.is_empty());
+        if description.trim().is_empty() && !(named && drafted) {
+            composer.focus = Some(ComposerField::Description);
             return;
         }
-        if !typed.is_empty() {
+        let tagged = |name: &str| format!("{typed} {name}").trim().to_string();
+        if named {
             self.write_composed(&typed, edit);
         } else if let Some(engine) = engine {
             let placeholder = self.unnamed_title();
-            if self.write_composed(&placeholder, edit) {
+            if self.write_composed(&tagged(&placeholder), edit) {
                 self.start_naming(engine, placeholder, &description);
             }
         } else {
-            self.write_composed(&titles::first_line_title(&description), edit);
+            self.write_composed(&tagged(&titles::first_line_title(&description)), edit);
         }
     }
 

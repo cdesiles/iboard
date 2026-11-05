@@ -2,7 +2,7 @@
 //! parking, adding, and the ticket just written.
 
 use super::*;
-use crate::app::compose::TitleStage;
+use crate::app::compose::{ComposerField, TitleStage};
 use crate::app::dock::IssueDrag;
 
 /// Bug: a new ticket is renumbered to position 1 a moment after it shows,
@@ -55,22 +55,174 @@ fn the_modal_creates_an_issue_and_closes() {
 
     app.open_composer();
     assert!(app.composer_open());
-    app.session.composer.as_mut().unwrap().title = "Fix login redirect".to_string();
+    let composer = app.session.composer.as_mut().unwrap();
+    composer.title = "Fix login redirect".to_string();
+    composer.description = "It loses the deep link.".to_string();
     app.submit_composer(false);
 
     let created = todo.join("fix-login-redirect.md");
     assert_eq!(
         std::fs::read_to_string(&created).unwrap(),
-        "# Fix login redirect\n"
+        "# Fix login redirect\n\nIt loses the deep link.\n"
     );
     assert!(app.session.composer.is_none(), "the modal closes");
     assert!(app.board.find(&created).is_some(), "the board sees it");
     assert_eq!(app.session.selected.as_deref(), Some(created.as_path()));
 
-    // An empty title never creates a file.
+    // An empty description never creates a file, even with a title.
     app.open_composer();
     app.submit_composer(false);
+    app.session.composer.as_mut().unwrap().title = "Only a title".to_string();
+    app.submit_composer(false);
     assert_eq!(std::fs::read_dir(&todo).unwrap().count(), 1);
+    assert!(app.composer_open(), "it stays open, on the notes");
+    assert!(app.session.composer.as_ref().unwrap().focus == Some(ComposerField::Description));
+}
+
+/// The title's text field, focused and ready for typing.
+fn title_focused(tag: &str) -> (Scratch, PathBuf, IboardApp, egui::Context) {
+    let dir = scratch_dir(tag);
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_composer();
+    app.session.composer.as_mut().unwrap().focus = Some(ComposerField::Title);
+    let ctx = themed_ctx();
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, vec![]);
+    (dir, todo, app, ctx)
+}
+
+/// QuickAdd's Labels: `[bug]` turns into a tag as the `]` is typed, the space
+/// after it is not kept, `⌫` turns it back, and the file keeps the brackets
+/// while its name does not.
+#[test]
+fn a_label_typed_in_the_title_becomes_a_tag() {
+    let (_dir, todo, mut app, ctx) = title_focused("compose-tag");
+    let text = |text: &str| vec![egui::Event::Text(text.into())];
+    let composer = |app: &IboardApp| {
+        let composer = app.session.composer.as_ref().unwrap();
+        (composer.title_labels.clone(), composer.title.clone())
+    };
+
+    frame(&ctx, &mut app, text("[Bug"));
+    assert_eq!(composer(&app), (vec![], "[Bug".to_string()));
+    frame(&ctx, &mut app, text("]"));
+    assert_eq!(composer(&app), (vec!["Bug".to_string()], String::new()));
+
+    frame(&ctx, &mut app, text(" "));
+    frame(&ctx, &mut app, text("Fix"));
+    assert_eq!(composer(&app), (vec!["Bug".to_string()], "Fix".to_string()));
+
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(Key::Backspace, egui::Modifiers::NONE)],
+    );
+    assert_eq!(composer(&app), (vec!["Bug".to_string()], "Fi".to_string()));
+    for _ in 0..2 {
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(Key::Backspace, egui::Modifiers::NONE)],
+        );
+    }
+    assert_eq!(composer(&app), (vec!["Bug".to_string()], String::new()));
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(Key::Backspace, egui::Modifiers::NONE)],
+    );
+    assert_eq!(
+        composer(&app),
+        (vec![], "[Bug]".to_string()),
+        "back to text"
+    );
+    frame(&ctx, &mut app, vec![]);
+    assert_eq!(
+        composer(&app),
+        (vec![], "[Bug]".to_string()),
+        "and it stays"
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(Key::Backspace, egui::Modifiers::NONE)],
+    );
+    assert_eq!(
+        composer(&app),
+        (vec![], "[Bug".to_string()),
+        "the cursor is after ]"
+    );
+
+    frame(&ctx, &mut app, text("]"));
+    frame(&ctx, &mut app, text("Fix login redirect"));
+    let composer = app.session.composer.as_mut().unwrap();
+    composer.description = "Notes.".into();
+    app.submit_composer(false);
+    assert_eq!(
+        std::fs::read_to_string(todo.join("fix-login-redirect.md")).unwrap(),
+        "# [Bug] Fix login redirect\n\nNotes.\n"
+    );
+}
+
+#[test]
+fn a_tag_alone_is_no_title() {
+    let (_dir, todo, mut app, _ctx) = title_focused("compose-tag-alone");
+    let composer = app.session.composer.as_mut().unwrap();
+    composer.title_labels = vec!["bug".to_string()];
+    app.submit_composer(false);
+    assert_eq!(std::fs::read_dir(&todo).unwrap().count(), 0, "no notes");
+
+    let composer = app.session.composer.as_mut().unwrap();
+    composer.description = "Login loses the link\nDetails.".into();
+    app.submit_composer(false);
+    assert_eq!(
+        std::fs::read_to_string(todo.join("login-loses-the-link.md")).unwrap(),
+        "# [bug] Login loses the link\n\nLogin loses the link\nDetails.\n"
+    );
+}
+
+#[test]
+fn parked_tags_come_back_as_tags() {
+    let (dir, _todo, mut app, _ctx) = title_focused("compose-tag-park");
+    let composer = app.session.composer.as_mut().unwrap();
+    composer.title_labels = vec!["bug".to_string()];
+    composer.title = "Fix".to_string();
+    composer.description = "Notes.".to_string();
+    app.close_composer();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_composer();
+    let composer = app.session.composer.as_ref().unwrap();
+    assert_eq!(composer.title_labels, ["bug"]);
+    assert_eq!(composer.title, "Fix");
+}
+
+/// The sheet's head says how an untitled issue will get its title.
+#[test]
+fn the_sheet_head_follows_the_engine() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("compose-head");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_composer();
+    let mut harness = kittest(app);
+    assert!(
+        harness
+            .query_by_label(" empty title uses the first line")
+            .is_some()
+    );
+    assert!(harness.query_by_label(" named on save").is_none());
+
+    let app = &mut harness.state_mut().1;
+    app.session.composer.as_mut().unwrap().engine = Some(Engine::Apple);
+    harness.run_steps(1);
+    assert!(harness.query_by_label(" named on save").is_some());
+    assert!(
+        harness
+            .query_by_label(" empty title uses the first line")
+            .is_none()
+    );
 }
 
 /// The modal's keys, as typed: `⇧↩` is a new line, `↩` adds, `⌘↩` adds and

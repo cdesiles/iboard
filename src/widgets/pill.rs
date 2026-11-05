@@ -184,30 +184,33 @@ pub fn chip(ui: &mut Ui, text: &str, current: bool) -> Response {
     response
 }
 
-/// An 18pt tag in `meta`: `line-strong` edge on `surface`, or `accent` on
-/// `accent-soft` when `inferred`. Clickable when the caller acts on it.
-pub fn tag(ui: &mut Ui, text: &str, inferred: bool) -> Response {
+/// An 18pt tag in `meta`: `line-strong` edge on `surface`. Clickable when the
+/// caller acts on it.
+pub fn tag(ui: &mut Ui, text: &str) -> Response {
     let p = theme::palette(ui);
-    let (fill, edge, ink) = if inferred {
-        (p.accent_soft, Color32::TRANSPARENT, p.accent)
-    } else {
-        (p.surface, p.line_strong, p.ink_muted)
-    };
+    let fills = [p.surface, p.surface_hover];
+    tag_with(ui, text, fills, p.line_strong, p.ink_muted)
+}
+
+/// The tag of what Review wrote: `review` on `review-soft`.
+pub fn review_tag(ui: &mut Ui, text: &str) -> Response {
+    let p = theme::palette(ui);
+    let fills = [p.review_soft, p.review_soft];
+    tag_with(ui, text, fills, Color32::TRANSPARENT, p.review)
+}
+
+/// `fills`: at rest, and under the pointer.
+fn tag_with(ui: &mut Ui, text: &str, fills: [Color32; 2], edge: Color32, ink: Color32) -> Response {
     let label = galley(ui, text, theme::meta(), ink);
     let size = Vec2::new(6.0 + label.size().x + 6.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     response
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text));
     if ui.is_rect_visible(rect) {
-        let fill = if response.hovered() && !inferred {
-            p.surface_hover
-        } else {
-            fill
-        };
         ui.painter().rect(
             rect,
             CornerRadius::same(theme::RADIUS_SM),
-            fill,
+            fills[usize::from(response.hovered())],
             Stroke::new(1.0, edge),
             StrokeKind::Inside,
         );

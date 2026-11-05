@@ -35,7 +35,9 @@ pub use menu::{
     menu_row_lifted, menu_separator,
 };
 pub use modal::{focus_here, modal, modal_body_max, settle_modals};
-pub use pill::{chip, filter_token, label_pill, label_pill_lit, pill, tag, unfocusable_label_pill};
+pub use pill::{
+    chip, filter_token, label_pill, label_pill_lit, pill, review_tag, tag, unfocusable_label_pill,
+};
 pub use select::select;
 
 fn galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<Galley> {
@@ -463,7 +465,7 @@ mod tests {
                     clicked.push("ux");
                 }
                 chip(ui, "feature", false);
-                tag(ui, "on-device", false);
+                tag(ui, "on-device");
                 select(
                     ui,
                     egui::Id::new("tool"),

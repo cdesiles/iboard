@@ -131,6 +131,32 @@ fn a_typed_title_is_used_straight_away() {
     assert!(app.session.namings.is_empty(), "no job");
 }
 
+/// A tag typed with no title stays on the heading while the title lands.
+#[test]
+fn a_tag_stays_on_the_title_that_lands() {
+    let (_dir, todo, mut app) = composer_with_engine("naming-tag");
+    app.session.composer.as_mut().unwrap().title_labels = vec!["bug".to_string()];
+    let (path, placeholder) = added(&mut app);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        format!("# [bug] {placeholder}\n\n{NOTES}\n")
+    );
+    let naming = app.session.namings.last_mut().unwrap();
+    naming.answer = Job::done(Ok("Board export".to_string()));
+    let ctx = themed_ctx();
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, vec![]);
+    let landed = std::fs::read_dir(&todo)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| file_name(path).ends_with("board-export.md"))
+        .expect("renamed");
+    assert_eq!(
+        std::fs::read_to_string(landed).unwrap(),
+        format!("# [bug] Board export\n\n{NOTES}\n")
+    );
+}
+
 #[test]
 fn without_an_engine_there_is_no_job() {
     let (_dir, todo, mut app) = composer_with_engine("naming-off");

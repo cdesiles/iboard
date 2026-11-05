@@ -201,7 +201,7 @@ pub fn split_leading_labels(heading: &str) -> (Vec<String>, String) {
 
 /// The leading `[…]` groups of a heading, as written, and the text after
 /// them. A markdown link (`[text](url)`) ends the run.
-fn bracket_groups(heading: &str) -> (Vec<&str>, &str) {
+pub fn bracket_groups(heading: &str) -> (Vec<&str>, &str) {
     let mut groups = Vec::new();
     let mut tail = heading.trim_start();
     while let Some(inner) = tail.strip_prefix('[')
