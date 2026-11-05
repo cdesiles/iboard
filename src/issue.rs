@@ -88,13 +88,10 @@ fn extract_title(content: &str, path: &Path) -> (String, Vec<String>, Option<usi
     // Prefer the first level-1 heading. Its leading `[label]` groups are split
     // off before the inline markup is stripped.
     for (idx, line) in prose_lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("# ") {
-            let (labels, display) = labels::split_leading_labels(rest.trim());
-            let heading = strip_inline(&display);
-            if !heading.is_empty() {
-                return (heading, labels, Some(idx));
-            }
+        let (labels, display) = labels::split_leading_labels(markdown::heading_text(line));
+        let heading = markdown::strip_inline(&display);
+        if !heading.is_empty() {
+            return (heading, labels, Some(idx));
         }
     }
     // Otherwise the first non-empty line.
@@ -103,7 +100,7 @@ fn extract_title(content: &str, path: &Path) -> (String, Vec<String>, Option<usi
         if trimmed.is_empty() {
             continue;
         }
-        let cleaned = strip_inline(trimmed.trim_start_matches('#').trim());
+        let cleaned = markdown::strip_inline(trimmed.trim_start_matches('#').trim());
         if !cleaned.is_empty() {
             return (cleaned, Vec::new(), Some(idx));
         }
@@ -129,7 +126,7 @@ fn extract_summary(content: &str, title_line: Option<usize>) -> String {
             }
             continue;
         }
-        if trimmed.starts_with('#') || is_horizontal_rule(trimmed) {
+        if trimmed.starts_with('#') || markdown::is_horizontal_rule(trimmed) {
             if out.is_empty() {
                 continue;
             }
@@ -138,14 +135,14 @@ fn extract_summary(content: &str, title_line: Option<usize>) -> String {
 
         // A list item ends a prose summary; if there is no prose yet, the first
         // item is the best summary we have.
-        if is_list_line(trimmed) {
+        if markdown::list_marker(trimmed).is_some() {
             if out.is_empty() {
-                out.push_str(&clean_line(trimmed));
+                out.push_str(&markdown::clean_line(trimmed));
             }
             break;
         }
 
-        let cleaned = clean_line(trimmed);
+        let cleaned = markdown::clean_line(trimmed);
         if cleaned.is_empty() {
             continue;
         }
@@ -159,149 +156,6 @@ fn extract_summary(content: &str, title_line: Option<usize>) -> String {
     }
 
     truncate_with_ellipsis(out.trim(), SUMMARY_LIMIT)
-}
-
-/// Strips blockquote and list markers, then inline markdown, from a source line.
-fn clean_line(line: &str) -> String {
-    let mut s = line.trim();
-    while let Some(rest) = s.strip_prefix('>') {
-        s = rest.trim_start();
-    }
-    s = strip_list_marker(s).trim_start();
-    strip_inline(s)
-}
-
-fn strip_list_marker(line: &str) -> &str {
-    let t = line.trim_start();
-    for marker in ["- [ ] ", "- [x] ", "- [X] ", "- ", "* ", "+ "] {
-        if let Some(rest) = t.strip_prefix(marker) {
-            return rest;
-        }
-    }
-    // Ordered lists: "1. " or "1) ".
-    let digits = t.chars().take_while(|c| c.is_ascii_digit()).count();
-    if digits > 0 {
-        let rest = &t[digits..];
-        if let Some(rest) = rest.strip_prefix(". ").or_else(|| rest.strip_prefix(") ")) {
-            return rest;
-        }
-    }
-    t
-}
-
-/// True when the line starts with a bullet or ordered-list marker.
-fn is_list_line(line: &str) -> bool {
-    let trimmed = line.trim_start();
-    strip_list_marker(trimmed) != trimmed
-}
-
-/// Removes emphasis markers, inline code and links/images, keeping their text.
-fn strip_inline(input: &str) -> String {
-    let chars: Vec<char> = input.chars().collect();
-    let mut out = String::with_capacity(input.len());
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        match c {
-            '\\' => {
-                if let Some(&next) = chars.get(i + 1) {
-                    out.push(next);
-                    i += 1;
-                }
-            }
-            // A code span keeps its text as written: `parse_color` stays.
-            '`' => {
-                if let Some(len) = chars[i + 1..].iter().position(|&cc| cc == '`') {
-                    out.extend(&chars[i + 1..i + 1 + len]);
-                    i += len + 1;
-                }
-            }
-            '*' => {}
-            // Emphasis, unless inside a word: `snake_case` stays.
-            '_' => {
-                let inside_word = i > 0
-                    && chars[i - 1].is_alphanumeric()
-                    && chars.get(i + 1).is_some_and(|next| next.is_alphanumeric());
-                if inside_word {
-                    out.push('_');
-                }
-            }
-            // `~~` is strikethrough; a single `~` stays, as in `~/notes`.
-            '~' => {
-                if chars.get(i + 1) == Some(&'~') {
-                    i += 1;
-                } else {
-                    out.push('~');
-                }
-            }
-            '!' => {
-                // Only drop the bang when it precedes a link (image syntax).
-                if chars.get(i + 1) != Some(&'[') {
-                    out.push(c);
-                }
-            }
-            '[' => {
-                let mut text = String::new();
-                let mut depth = 1;
-                i += 1;
-                while i < chars.len() {
-                    let cc = chars[i];
-                    if cc == '[' {
-                        depth += 1;
-                    } else if cc == ']' {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    }
-                    text.push(cc);
-                    i += 1;
-                }
-                // Drop a following "(url)" target, if any.
-                if chars.get(i + 1) == Some(&'(') {
-                    i += 2;
-                    let mut depth = 1;
-                    while i < chars.len() {
-                        match chars[i] {
-                            '(' => depth += 1,
-                            ')' => {
-                                depth -= 1;
-                                if depth == 0 {
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                        i += 1;
-                    }
-                }
-                out.push_str(&strip_inline(&text));
-            }
-            _ => out.push(c),
-        }
-        i += 1;
-    }
-    out
-}
-
-fn is_horizontal_rule(line: &str) -> bool {
-    let mut seen = 0;
-    let mut marker = None;
-    for c in line.chars() {
-        if c == ' ' || c == '\t' {
-            continue;
-        }
-        if c != '-' && c != '*' && c != '_' {
-            return false;
-        }
-        match marker {
-            None => marker = Some(c),
-            Some(m) if m != c => return false,
-            _ => {}
-        }
-        seen += 1;
-    }
-    seen >= 3
 }
 
 /// Turns `2026-05-29-merge-nut-exporter` into `Merge nut exporter`.
@@ -366,26 +220,6 @@ mod tests {
         let content = "---\nlabels: bug\n---\n# T\n\nWhy it matters.\n";
         let (_, _, line) = extract_title(content, path);
         assert_eq!(extract_summary(content, line), "Why it matters.");
-    }
-
-    #[test]
-    fn inline_markup_goes_but_code_and_words_stay() {
-        assert_eq!(
-            strip_inline("Fix `parse_color` for *dark* themes"),
-            "Fix parse_color for dark themes"
-        );
-        assert_eq!(
-            strip_inline("Rename snake_case files, _not_ this"),
-            "Rename snake_case files, not this"
-        );
-        assert_eq!(
-            strip_inline("Moved to ~/notes, ~~old~~ gone"),
-            "Moved to ~/notes, old gone"
-        );
-        assert_eq!(
-            strip_inline("See [**the** doc](https://x) and ![shot](a.png)"),
-            "See the doc and shot"
-        );
     }
 
     #[test]
@@ -480,15 +314,6 @@ mod tests {
         std::fs::write(&file, "---\nlabels: [zebra, apple]\n---\n# [mango] T\n").unwrap();
         let issue = Issue::load(&file).unwrap();
         assert_eq!(issue.labels, ["apple", "mango", "zebra"]);
-    }
-
-    #[test]
-    fn strips_inline_markup() {
-        assert_eq!(
-            strip_inline("**bold** and `code` and [link](http://x)"),
-            "bold and code and link"
-        );
-        assert_eq!(strip_inline("![alt](img.png) rest"), "alt rest");
     }
 
     #[test]

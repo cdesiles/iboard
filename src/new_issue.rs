@@ -195,8 +195,8 @@ fn whole_words(text: &str) -> String {
     }
 }
 
-/// The `# ` line: the labels in brackets, then the title.
-pub fn title_line(labels: &[String], title: &str) -> String {
+/// The text of the `# ` line: the labels in brackets, then the title.
+pub fn labelled_title(labels: &[String], title: &str) -> String {
     let mut line = String::new();
     for label in labels {
         line.push_str(&format!("[{label}] "));
@@ -217,7 +217,7 @@ pub fn render(title: &str, notes: &str, draft: Option<&Draft>, keep_notes: bool)
             format!("# {}\n\n{notes}\n", title.trim())
         };
     };
-    let mut out = format!("# {}\n", title_line(&draft.labels, title));
+    let mut out = format!("# {}\n", labelled_title(&draft.labels, title));
     if !draft.summary.trim().is_empty() {
         out.push_str(&format!("\n{}\n", draft.summary.trim()));
     }

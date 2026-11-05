@@ -261,7 +261,8 @@ pub fn front_matter_labels(markdown: &str) -> Vec<String> {
 /// has the label; `Err` when there is no `# ` heading to put it on.
 fn add_label(markdown: &str, label: &str) -> Result<Option<String>, String> {
     let lines: Vec<&str> = markdown.split_inclusive('\n').collect();
-    if let Some((title_labels, _)) = h1(&lines).map(|i| split_leading_labels(heading(lines[i])))
+    if let Some((title_labels, _)) =
+        h1(&lines).map(|i| split_leading_labels(markdown::heading_text(lines[i])))
         && title_labels.iter().any(|name| name == label)
     {
         return Ok(None);
@@ -313,7 +314,7 @@ fn add_to_list(lines: &[&str], out: &mut Vec<String>, at: List, label: &str) {
 fn add_to_heading(line: &str, label: &str) -> String {
     let (body, end) = split_eol(line);
     let indent = &body[..body.len() - body.trim_start().len()];
-    let rest = heading(line);
+    let rest = markdown::heading_text(line);
     let (_, tail) = bracket_groups(rest);
     let groups = rest[..rest.len() - tail.len()].trim_end();
     let line = if groups.is_empty() {
@@ -391,7 +392,7 @@ fn remove_from_list(lines: &[&str], out: &mut [String], label: &str) -> bool {
 fn remove_from_heading(line: &str, label: &str) -> Option<String> {
     let (body, end) = split_eol(line);
     let indent = &body[..body.len() - body.trim_start().len()];
-    let (groups, tail) = bracket_groups(heading(line));
+    let (groups, tail) = bracket_groups(markdown::heading_text(line));
     let is_label = |group: &&str| normalize(group).as_deref() == Some(label);
     if !groups.iter().any(is_label) {
         return None;
@@ -487,15 +488,6 @@ fn inline_items(value: &str) -> impl Iterator<Item = &str> {
 /// The index of the title line, outside the front matter and code.
 fn h1(lines: &[&str]) -> Option<usize> {
     markdown::title_line(lines)
-}
-
-/// The text of a `# ` heading line, after the marker.
-fn heading(line: &str) -> &str {
-    let (body, _) = split_eol(line);
-    body.trim_start()
-        .strip_prefix("# ")
-        .unwrap_or("")
-        .trim_end()
 }
 
 /// A line without its line ending, and the ending.

@@ -8,9 +8,10 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use pulldown_cmark::{Event, Options, Parser, Tag};
+use pulldown_cmark::{Event, Parser, Tag};
 
 use crate::files;
+use crate::markdown;
 
 /// The folder under the issues root that holds every issue's images.
 pub const DIR: &str = ".assets";
@@ -65,11 +66,7 @@ pub struct ImageLink {
 /// The inline image links of `text`, in order. Code fences and inline code
 /// hold none: the parser reads them as code.
 pub fn image_links(text: &str) -> Vec<ImageLink> {
-    let options = Options::ENABLE_TABLES
-        | Options::ENABLE_TASKLISTS
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_FOOTNOTES;
-    Parser::new_ext(text, options)
+    Parser::new_ext(text, markdown::OPTIONS)
         .into_offset_iter()
         .filter_map(|(event, span)| {
             let Event::Start(Tag::Image { dest_url, .. }) = event else {

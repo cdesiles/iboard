@@ -18,19 +18,10 @@ pub fn checklist(markdown: &str) -> (usize, usize) {
     let mut done = 0;
     let mut total = 0;
     for line in prose_lines(markdown) {
-        let line = line.trim_start();
-        let rest = if let Some(rest) = line
-            .strip_prefix("- ")
-            .or_else(|| line.strip_prefix("* "))
-            .or_else(|| line.strip_prefix("+ "))
-        {
-            rest
-        } else {
-            let digits = line.chars().take_while(char::is_ascii_digit).count();
-            match line[digits..].strip_prefix(". ") {
-                Some(rest) if digits > 0 => rest,
-                _ => continue,
-            }
+        let Some((_, rest)) =
+            markdown::list_marker(line).filter(|(marker, _)| !marker.ends_with(')'))
+        else {
+            continue;
         };
         if rest.starts_with("[ ]") {
             total += 1;
@@ -112,8 +103,8 @@ pub fn hide_title_labels(markdown: &str) -> (String, Option<(usize, String)>) {
         return (markdown.to_string(), None);
     };
     let original = lines[index];
-    let heading = original.trim_start().trim_start_matches("# ");
-    let (found, title) = labels::split_leading_labels(heading.trim_end());
+    let heading = markdown::heading_text(original).trim_start_matches("# ");
+    let (found, title) = labels::split_leading_labels(heading);
     if found.is_empty() || title.is_empty() {
         return (markdown.to_string(), None);
     }
