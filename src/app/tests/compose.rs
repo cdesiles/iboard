@@ -188,12 +188,7 @@ fn drafting(tag: &str, answer: &str) -> (Scratch, PathBuf, IboardApp) {
     )
     .unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        command: format!("printf '%s\\n' {answer} # {{prompt}}"),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent(&format!("printf '%s\\n' {answer} # {{prompt}}"));
     app.open_composer();
     app.session.composer.as_mut().unwrap().description = "Export the board. One per column.".into();
     (dir, todo, app)
@@ -271,12 +266,7 @@ fn composer_with_engine(tag: &str) -> (Scratch, PathBuf, IboardApp) {
     std::fs::create_dir_all(&todo).unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     // A stand-in that answers at once: no test ever runs a real agent.
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        command: "true # {prompt}".to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent("true # {prompt}");
     app.open_composer();
     let composer = app.session.composer.as_mut().unwrap();
     composer.engine = Some(Engine::Agent);

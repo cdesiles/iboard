@@ -24,14 +24,8 @@ fn enrichment_drafts_an_artifact_for_an_issue() {
 
     app.prefs.idesign = true;
     // A fake agent: prints a whole HTML page, ignores the prompt.
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "printf '<!doctype html><html><body><h1>Demo</h1></body></html>' # {prompt}"
-            .to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent =
+        fake_agent("printf '<!doctype html><html><body><h1>Demo</h1></body></html>' # {prompt}");
 
     app.start_enrichment(&file);
     assert!(app.session.enrichment.is_some(), "an enrichment started");

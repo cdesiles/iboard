@@ -1,5 +1,5 @@
 //! The app in egui_kittest, run as eframe runs it, its widgets pressed by
-//! label as a pointer does.
+//! label as a pointer does, and the fake agent its AI runs go to.
 
 use egui_kittest::kittest::Queryable;
 use egui_kittest::{Harness, HarnessBuilder};
@@ -47,4 +47,15 @@ pub(super) fn press_nth(harness: &mut Kit, label: &str, nth: usize) {
 pub(super) fn press(harness: &mut Kit, label: &str) {
     harness.get_by_label(label);
     press_nth(harness, label, 0);
+}
+
+/// A configured agent that runs the custom `command`, as no test may start a
+/// real one.
+pub(super) fn fake_agent(command: &str) -> AgentConfig {
+    AgentConfig {
+        tool: agent::Tool::Custom,
+        command: command.to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    }
 }

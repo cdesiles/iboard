@@ -22,7 +22,7 @@ mod select;
 mod settings;
 mod stats;
 mod workspace;
-use kit::{Kit, kittest, kittest_with, press, press_nth};
+use kit::{Kit, fake_agent, kittest, kittest_with, press, press_nth};
 use review::open_issue_with_review;
 
 /// A context with the design system installed, past the first frame so

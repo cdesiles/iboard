@@ -11,12 +11,7 @@ fn refining(tag: &str, command: &str) -> (Scratch, PathBuf, IboardApp) {
     let file = todo.join("01-demo.md");
     std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        command: command.to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent(command);
     app.open_issue(file.clone());
     (dir, file, app)
 }

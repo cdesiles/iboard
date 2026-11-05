@@ -16,13 +16,7 @@ fn board(tag: &str, command: &str) -> (Scratch, IboardApp) {
         std::fs::write(dir.join("issues/ready").join(name), format!("# {title}\n")).unwrap();
     }
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.build_agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: command.to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.build_agent = fake_agent(command);
     (dir, app)
 }
 

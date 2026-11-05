@@ -33,14 +33,9 @@ fn a_review_runs_from_the_issue_project() {
     let file = todo.join("demo.md");
     std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "printf 'RELEVANCE: Pass\\n%s\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' \"$(pwd -P)\" # {prompt}"
-            .to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent(
+        "printf 'RELEVANCE: Pass\\n%s\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' \"$(pwd -P)\" # {prompt}",
+    );
     app.start_review(&file, false);
     assert!(until(|| {
         app.poll_review();
@@ -60,14 +55,9 @@ fn a_review_is_kept_beside_the_issue() {
     let file = todo.join("demo.md");
     std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "printf 'RELEVANCE: Pass\\nok\\nSIZE: Block\\nsplit\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}"
-            .to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent(
+        "printf 'RELEVANCE: Pass\\nok\\nSIZE: Block\\nsplit\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}",
+    );
     app.open_issue(file.clone());
     app.start_review(&file, false);
     assert!(until(|| {
@@ -191,12 +181,7 @@ fn polling_a_running_review_adopts_the_answer() {
 
     let located = discovery::locate(&dir).unwrap();
     let mut app = IboardApp::from_located(located);
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        command: "cat {prompt}".to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent("cat {prompt}");
 
     app.start_review(&file, false);
     assert!(app.review_is_running(&file));
@@ -227,13 +212,7 @@ fn a_deep_review_says_so_and_is_kept_as_deep() {
     let file = todo.join("demo.md");
     std::fs::write(&file, "# Demo\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "grep -q 'read the repository' {prompt} && printf %s {mode}".to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent("grep -q 'read the repository' {prompt} && printf %s {mode}");
     app.start_review_in(&file, false, ReviewMode::Deep);
     assert!(until(|| {
         app.poll_review();
@@ -254,13 +233,7 @@ fn a_margin_comment_reaches_the_review() {
     let file = todo.join("demo.md");
     std::fs::write(&file, "# Demo\n\nThree files over 1,100 lines.\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "grep -q 'Only design.rs matters' {prompt} && printf noted".to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent("grep -q 'Only design.rs matters' {prompt} && printf noted");
     app.open_issue(file.clone());
     let mut harness = kittest(app);
 
@@ -314,16 +287,11 @@ fn a_size_block_splits_the_issue_in_place() {
     }
     let big = todo.join("002-big.md");
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "if grep -q '=== TICKET ===' {prompt}; then \
-                  printf '=== TICKET ===\\n# [refactor] Part A\\nDo a.\\n=== TICKET ===\\n# [refactor] Part B\\nDo b.\\n'; \
-                  else printf 'RELEVANCE: Pass\\nok\\nSIZE: Block\\ntoo big\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE'; fi"
-            .to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent(
+        "if grep -q '=== TICKET ===' {prompt}; then \
+         printf '=== TICKET ===\\n# [refactor] Part A\\nDo a.\\n=== TICKET ===\\n# [refactor] Part B\\nDo b.\\n'; \
+         else printf 'RELEVANCE: Pass\\nok\\nSIZE: Block\\ntoo big\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE'; fi",
+    );
     app.open_issue(big.clone());
     app.start_review(&big, false);
     assert!(until(|| {
@@ -395,13 +363,7 @@ fn reviewing(tag: &str, command: &str) -> (Scratch, PathBuf, Drawn) {
     std::fs::write(&file, "# Demo\n\nContext.\n").unwrap();
     std::fs::write(todo.join("02-other.md"), "# Other\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: command.to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent(command);
     app.session.selected = Some(file.clone());
     (dir, file, kittest(app))
 }
@@ -527,10 +489,13 @@ fn a_failed_review_keeps_the_last_one() {
     assert!(sidecar.review.unwrap().raw.contains("SIZE: Block"));
 }
 
-/// The board runs `tool`'s review, which answers with its arguments.
+/// The board runs `tool`'s review, which answers with its arguments, on a
+/// model of its own rather than the developer's default.
 fn plan_review(tag: &str, tool: agent::Tool) -> (Scratch, PathBuf, Drawn) {
     let (dir, file, mut harness) = reviewing(tag, PASSING);
-    harness.state_mut().1.prefs.agent.tool = tool;
+    let agent = &mut harness.state_mut().1.prefs.agent;
+    agent.tool = tool;
+    agent.model = "m".to_string();
     (dir, file, harness)
 }
 
@@ -627,14 +592,9 @@ fn an_update_rewrites_a_doing_issue_through_the_editor() {
     std::fs::write(&file, "# Migrate\n\nNext: check the dumps.\n").unwrap();
     std::fs::write(dir.join("issues/done/old.md"), "# Old\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "printf 'RELEVANCE: Block\\ndone in %s\\nSIZE: Pass\\nnothing left\\nCLARITY: Challenge\\nstale\\nPROPOSAL:\\n# Migrate\\n\\nDone.' \"$(pwd -P)\" # {prompt}"
-            .to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent(
+        "printf 'RELEVANCE: Block\\ndone in %s\\nSIZE: Pass\\nnothing left\\nCLARITY: Challenge\\nstale\\nPROPOSAL:\\n# Migrate\\n\\nDone.' \"$(pwd -P)\" # {prompt}",
+    );
     assert!(app.updatable(&file));
     assert!(!app.updatable(&dir.join("issues/done/old.md")));
     app.start_update(&file);
@@ -665,13 +625,7 @@ fn cmd_u_starts_and_cancels_an_update() {
     let file = dir.join("issues/doing/migrate.md");
     std::fs::write(&file, "# Migrate\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "sleep 30 # {prompt}".to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent("sleep 30 # {prompt}");
     app.open_issue(file.clone());
     let ctx = themed_ctx();
     let command = egui::Modifiers::COMMAND;
@@ -693,12 +647,10 @@ fn a_long_agent_name_keeps_the_review_panel_in_its_place() {
     std::fs::write(&file, "# Migrate\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
         model: "a-model-whose-name-goes-on-and-on-well-past-the-panel".to_string(),
-        command: "printf 'RELEVANCE: Pass\\nok\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}"
-            .to_string(),
-        configured: true,
-        ..AgentConfig::default()
+        ..fake_agent(
+            "printf 'RELEVANCE: Pass\\nok\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}",
+        )
     };
     app.start_update(&file);
     assert!(until(|| {
@@ -729,14 +681,9 @@ fn a_finished_update_shows_by_itself_and_applies_with_cmd_enter() {
     std::fs::write(&one, "# One\n").unwrap();
     std::fs::write(&two, "# Two\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "printf 'RELEVANCE: Challenge\\nstale\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL:\\n# Updated' # {prompt}"
-            .to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent(
+        "printf 'RELEVANCE: Challenge\\nstale\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL:\\n# Updated' # {prompt}",
+    );
     app.start_update(&two);
     app.open_issue(one.clone());
     app.start_update(&one);
@@ -778,13 +725,7 @@ fn quitting_with_a_run_at_work_asks_first() {
     let file = dir.join("issues/doing/migrate.md");
     std::fs::write(&file, "# Migrate\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "sleep 30 # {prompt}".to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent = fake_agent("sleep 30 # {prompt}");
     app.start_update(&file);
     app.request_quit();
     assert!(matches!(app.session.confirm, Some(Confirm::Quit(1))));
@@ -818,14 +759,8 @@ fn cmd_k_asks_the_agent_about_the_open_issue() {
     let file = dir.join("issues/doing/migrate.md");
     std::fs::write(&file, "# Migrate\n\n- [ ] point 1\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.build_agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "printf 'Did point 1 in %s, as %s' \"$(pwd -P)\" \"$IBOARD_MODE\" # {prompt}"
-            .to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.build_agent =
+        fake_agent("printf 'Did point 1 in %s, as %s' \"$(pwd -P)\" \"$IBOARD_MODE\" # {prompt}");
     app.open_issue(file.clone());
     let ctx = themed_ctx();
     let command = egui::Modifiers::COMMAND;
@@ -866,13 +801,7 @@ fn an_ask_follows_its_issue_through_a_renumber() {
         std::fs::write(todo.join(name), "# Issue\n").unwrap();
     }
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.build_agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "printf done # {prompt}".to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.build_agent = fake_agent("printf done # {prompt}");
     let issue = |name: &str| todo.join(name);
     app.open_issue(issue("001-a.md"));
     app.toggle_ask(&issue("001-a.md"));

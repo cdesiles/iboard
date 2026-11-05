@@ -129,14 +129,8 @@ fn design_panel_drafts_a_component_with_the_agent() {
     app.open_design();
 
     // A fake agent: prints a fenced HTML fragment, ignores the prompt.
-    app.prefs.agent = AgentConfig {
-        tool: agent::Tool::Custom,
-        model: String::new(),
-        command: "printf '```html\\n<button class=\"ib-btn\">Hi</button>\\n```' # {prompt}"
-            .to_string(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    app.prefs.agent =
+        fake_agent("printf '```html\\n<button class=\"ib-btn\">Hi</button>\\n```' # {prompt}");
 
     let mut panel = app.session.design.take().expect("panel open");
     let keep = app.handle_design_action(
