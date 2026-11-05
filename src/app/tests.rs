@@ -36,6 +36,7 @@ fn themed_ctx() -> egui::Context {
 }
 
 /// Polls `done` until it holds, for as long as a loaded machine may need.
+#[must_use]
 fn until(mut done: impl FnMut() -> bool) -> bool {
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(30) {
@@ -1170,21 +1171,13 @@ fn a_ticket_can_show_an_image_from_its_asset_folder() {
 
     // And the loader resolves and decodes it.
     let uri = format!("file://{}", png.display());
-    let mut decoded = false;
-    for _ in 0..100 {
-        match ctx.try_load_image(&uri, egui::load::SizeHint::default()) {
-            Ok(egui::load::ImagePoll::Ready { .. }) => {
-                decoded = true;
-                break;
-            }
-            Ok(egui::load::ImagePoll::Pending { .. }) => {
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            Err(err) => panic!("decode failed: {err:?}"),
-        }
-    }
+    let decoded = || match ctx.try_load_image(&uri, egui::load::SizeHint::default()) {
+        Ok(egui::load::ImagePoll::Ready { .. }) => true,
+        Ok(egui::load::ImagePoll::Pending { .. }) => false,
+        Err(err) => panic!("decode failed: {err:?}"),
+    };
     assert!(
-        decoded,
+        until(decoded),
         "the ticket's image decodes through the file loader"
     );
 }

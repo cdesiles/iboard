@@ -82,27 +82,31 @@ fn a_folder_without_issues_is_an_error() {
     assert!(text(&output.stderr).starts_with("iboard: "));
 }
 
-/// An iboard already running, as a later one finds it through `cache`: it
-/// answers `count` requests, and hands back what they asked.
+/// How long a later iboard gets to leave, and what it asked to come through.
 #[cfg(unix)]
-fn running_iboard(cache: &Path, count: usize) -> std::thread::JoinHandle<Vec<serde_json::Value>> {
+const LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// An iboard already running, as a later one finds it through `cache`: it
+/// answers `count` requests, and hands back what each asked once answered.
+#[cfg(unix)]
+fn running_iboard(cache: &Path, count: usize) -> std::sync::mpsc::Receiver<serde_json::Value> {
     use std::io::{BufRead, Write};
     std::fs::create_dir_all(cache.join("iboard")).unwrap();
     let socket = cache.join("iboard/iboard.sock");
     let listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
+    let (sender, asked) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        (0..count)
-            .map(|_| {
-                let (stream, _) = listener.accept().unwrap();
-                let mut line = String::new();
-                std::io::BufReader::new(&stream)
-                    .read_line(&mut line)
-                    .unwrap();
-                (&stream).write_all(b"ok\n").unwrap();
-                serde_json::from_str(&line).unwrap()
-            })
-            .collect()
-    })
+        for _ in 0..count {
+            let (stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            std::io::BufReader::new(&stream)
+                .read_line(&mut line)
+                .unwrap();
+            (&stream).write_all(b"ok\n").unwrap();
+            let _ = sender.send(serde_json::from_str(&line).unwrap());
+        }
+    });
+    asked
 }
 
 /// iboard on `args`, stopped if it opens a window rather than leaving.
@@ -117,9 +121,7 @@ fn later_iboard(args: &[&str], cache: &Path, config: &Path) -> Output {
         .spawn()
         .unwrap();
     let start = std::time::Instant::now();
-    while child.try_wait().unwrap().is_none()
-        && start.elapsed() < std::time::Duration::from_secs(20)
-    {
+    while matches!(child.try_wait(), Ok(None)) && start.elapsed() < LIMIT {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let _ = child.kill();
@@ -158,8 +160,11 @@ fn a_later_iboard_hands_its_board_to_the_running_one() {
         );
     }
     let project = std::fs::canonicalize(dir.path()).unwrap();
+    let asked: Vec<serde_json::Value> = (0..3)
+        .map_while(|_| running.recv_timeout(LIMIT).ok())
+        .collect();
     assert_eq!(
-        running.join().unwrap(),
+        asked,
         [
             serde_json::json!({ "project": project }),
             serde_json::json!({ "group": "Dev" }),

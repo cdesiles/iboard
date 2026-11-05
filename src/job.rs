@@ -111,20 +111,23 @@ impl<T> Drop for Job<T> {
     }
 }
 
+/// Polls `done` until it holds, for as long as a loaded machine may need.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn eventually(mut done: impl FnMut() -> bool) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(30) {
+        if done() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn eventually(condition: impl Fn() -> bool) -> bool {
-        let start = Instant::now();
-        while start.elapsed() < Duration::from_secs(5) {
-            if condition() {
-                return true;
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        false
-    }
 
     #[test]
     fn a_job_answers_once() {

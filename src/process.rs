@@ -316,6 +316,7 @@ fn errors_drop_terminal_escapes() {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use crate::job::eventually;
 
     fn sh(script: &str) -> Command {
         let mut command = Command::new("sh");
@@ -391,28 +392,20 @@ mod tests {
         let token = cancel.clone();
         let runner =
             std::thread::spawn(move || run(sh(&script), "it", &token, Duration::from_secs(60)));
-        let start = Instant::now();
-        let pid = loop {
-            if let Some(pid) = std::fs::read_to_string(&pid_file)
+        let pid = || {
+            std::fs::read_to_string(&pid_file)
                 .ok()
                 .and_then(|text| text.trim().parse::<i32>().ok())
-            {
-                break pid;
-            }
-            assert!(
-                start.elapsed() < Duration::from_secs(5),
-                "the script never started"
-            );
-            std::thread::sleep(TICK);
         };
+        assert!(eventually(|| pid().is_some()), "the script never started");
+        let pid = pid().unwrap();
         assert!(alive(pid));
 
         cancel.cancel();
         assert_eq!(runner.join().unwrap().unwrap_err(), "it was stopped");
-        let start = Instant::now();
-        while alive(pid) && start.elapsed() < Duration::from_secs(5) {
-            std::thread::sleep(TICK);
-        }
-        assert!(!alive(pid), "the grandchild outlived the cancel");
+        assert!(
+            eventually(|| !alive(pid)),
+            "the grandchild outlived the cancel"
+        );
     }
 }

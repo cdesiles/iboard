@@ -38,21 +38,20 @@ fn enrichment_drafts_an_artifact_for_an_issue() {
 
     let (ctx, raw) = panel_ctx();
     let artifact = todo.join("assets/01-demo/ui.html");
-    until(|| {
+    let drafted = until(|| {
         app.poll_enrichment(&ctx);
         artifact.is_file()
     });
 
-    let html = std::fs::read_to_string(&artifact).unwrap_or_else(|err| {
-        let status = match app.session.enrichment.as_ref().map(|e| &e.status) {
-            Some(EnrichStatus::Failed(why)) => format!("failed: {why}"),
-            Some(EnrichStatus::Running(_)) => "still running".to_string(),
-            Some(EnrichStatus::Rendering(_)) => "rendering".to_string(),
-            Some(EnrichStatus::Done) => "done".to_string(),
-            None => "gone".to_string(),
-        };
-        panic!("no artifact ({err}); the enrichment is {status}")
-    });
+    let status = match app.session.enrichment.as_ref().map(|e| &e.status) {
+        Some(EnrichStatus::Failed(why)) => format!("failed: {why}"),
+        Some(EnrichStatus::Running(_)) => "still running".to_string(),
+        Some(EnrichStatus::Rendering(_)) => "rendering".to_string(),
+        Some(EnrichStatus::Done) => "done".to_string(),
+        None => "gone".to_string(),
+    };
+    assert!(drafted, "no artifact; the enrichment is {status}");
+    let html = std::fs::read_to_string(&artifact).unwrap();
     assert!(html.contains("<h1>Demo</h1>"), "mockup saved: {html}");
 
     // The window renders without a display, loader and all.

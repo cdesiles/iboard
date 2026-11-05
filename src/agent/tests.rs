@@ -112,15 +112,9 @@ fn file_names_never_run_as_shell_code() {
 #[cfg(unix)]
 #[test]
 fn dropping_a_run_stops_the_agent() {
+    use crate::job::eventually;
     // SAFETY: signal 0 only checks that the process exists.
     let alive = |pid: i32| unsafe { libc::kill(pid, 0) == 0 };
-    let eventually = |done: &dyn Fn() -> bool| {
-        let start = std::time::Instant::now();
-        while !done() && start.elapsed() < std::time::Duration::from_secs(5) {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        done()
-    };
     let scratch = tempfile::tempdir().unwrap();
     let dir = scratch.path();
     let pid_file = dir.join("agent.pid");
@@ -134,13 +128,13 @@ fn dropping_a_run_stops_the_agent() {
             .ok()
             .and_then(|text| text.trim().parse::<i32>().ok())
     };
-    assert!(eventually(&|| pid().is_some()), "the agent never started");
+    assert!(eventually(|| pid().is_some()), "the agent never started");
     let pid = pid().unwrap();
     assert!(alive(pid));
 
     drop(job);
 
-    assert!(eventually(&|| !alive(pid)), "the agent outlived its job");
+    assert!(eventually(|| !alive(pid)), "the agent outlived its job");
 }
 
 #[test]

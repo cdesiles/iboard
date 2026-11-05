@@ -154,12 +154,12 @@ fn design_panel_drafts_a_component_with_the_agent() {
 
     let (ctx, _raw) = panel_ctx();
     let preview = dir.join("design/components/Toast/preview.html");
-    until(|| {
+    assert!(until(|| {
         app.poll_design_draft(&ctx);
         std::fs::read_to_string(&preview)
             .unwrap_or_default()
             .contains("ib-btn")
-    });
+    }));
 
     let written = std::fs::read_to_string(&preview).unwrap();
     assert!(

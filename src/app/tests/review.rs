@@ -201,10 +201,10 @@ fn polling_a_running_review_adopts_the_answer() {
     app.start_review(&file, false);
     assert!(app.review_is_running(&file));
 
-    until(|| {
+    assert!(until(|| {
         app.poll_review();
         !app.review_is_running(&file)
-    });
+    }));
 
     let past = &app.past_reviews[&file];
     assert!(
