@@ -9,8 +9,6 @@ use iboard::new_issue;
 pub(super) const TITLE_ID: &str = "composer";
 pub(super) const DESCRIPTION_ID: &str = "composer-description";
 
-/// Nothing of the skeleton shows before this, so a fast answer never flashes.
-const SKELETON_AFTER: Duration = Duration::from_millis(300);
 /// From here the drafting line says it is slow.
 const STILL_WORKING_AFTER: u64 = 20;
 /// The notes pane's narrowest.
@@ -464,7 +462,7 @@ fn sheet(
         });
     }
     let started = composer.drafting.as_ref().map(|run| run.job.elapsed());
-    let skeleton = started.is_some_and(|elapsed| elapsed >= SKELETON_AFTER);
+    let skeleton = started.is_some_and(|elapsed| elapsed >= theme::SKELETON_AFTER);
     let title_pending = composer
         .draft
         .as_ref()
@@ -472,7 +470,7 @@ fn sheet(
         && started.is_some();
     if title_pending {
         if skeleton {
-            bar(ui, 0.6, 12.0);
+            widgets::skeleton_bar(ui, 0.6, 12.0);
         }
     } else {
         title_row(ui, composer, actions);
@@ -644,8 +642,8 @@ fn drafted_body(
             writing_at = Some(rect);
         }
     } else if running && skeleton {
-        bar(ui, 0.9, 10.0);
-        bar(ui, 0.7, 10.0);
+        widgets::skeleton_bar(ui, 0.9, 10.0);
+        widgets::skeleton_bar(ui, 0.7, 10.0);
     }
     let mut headings: Vec<&str> = draft.sections.iter().map(|s| s.heading.as_str()).collect();
     if running {
@@ -689,9 +687,9 @@ fn drafted_body(
             Some(_) => {}
             None if running && skeleton => {
                 section_heading(ui, heading, false);
-                bar(ui, 0.95, 10.0);
-                bar(ui, 0.8, 10.0);
-                bar(ui, 0.5, 10.0);
+                widgets::skeleton_bar(ui, 0.95, 10.0);
+                widgets::skeleton_bar(ui, 0.8, 10.0);
+                widgets::skeleton_bar(ui, 0.5, 10.0);
             }
             None => {}
         }
@@ -730,18 +728,6 @@ fn body_text(
         .rect
     })
     .inner
-}
-
-/// One pulsing Skeleton bar, `share` of the line wide.
-fn bar(ui: &mut egui::Ui, share: f32, height: f32) {
-    let p = theme::palette(ui);
-    let width = ui.available_width() * share;
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
-    ui.painter().rect_filled(
-        rect,
-        CornerRadius::same(theme::RADIUS_SM),
-        theme::skeleton_fill(ui.ctx(), p),
-    );
 }
 
 /// Under the sheet, a ghost tile for each standard section a finished or

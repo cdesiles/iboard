@@ -28,8 +28,7 @@ const TREND_H: f32 = 64.0;
 const TREND_LABEL_W: f32 = 150.0;
 /// Narrower than this, the Refactor watch goes under the trends.
 const SIDE_BY_SIDE: f32 = 760.0;
-/// Placeholders wait this long, and the Thinking mark and clock this long.
-const SKELETON_AFTER: Duration = Duration::from_millis(300);
+/// The Thinking mark and clock wait this long.
 const CLOCK_AFTER: Duration = Duration::from_secs(2);
 
 /// One of the four measures, as a tile and as a trend.
@@ -326,7 +325,7 @@ fn stats_body(ui: &mut egui::Ui, panel: &mut StatsPanel) -> Option<StatsAsk> {
     let pulse = panel
         .run
         .as_ref()
-        .is_none_or(|(job, _)| job.elapsed() >= SKELETON_AFTER);
+        .is_none_or(|(job, _)| job.elapsed() >= theme::SKELETON_AFTER);
     let Some(stats) = panel.stats.as_ref() else {
         skeleton(ui, pulse);
         agenda::agenda_ui(ui, &mut panel.agenda, None);
@@ -406,16 +405,15 @@ fn block_label(ui: &mut egui::Ui, text: &str) {
 }
 
 /// A pulsing placeholder bar, `share` of the width; blank before
-/// [`SKELETON_AFTER`].
+/// [`theme::SKELETON_AFTER`].
 fn placeholder(ui: &mut egui::Ui, share: f32, height: f32, pulse: bool) {
-    let p = theme::palette(ui);
-    let (rect, _) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width() * share, height),
-        Sense::hover(),
-    );
     if pulse {
-        let fill = theme::skeleton_fill(ui.ctx(), p);
-        ui.painter().rect_filled(rect, CornerRadius::same(4), fill);
+        widgets::skeleton_bar(ui, share, height);
+    } else {
+        ui.allocate_exact_size(
+            Vec2::new(ui.available_width() * share, height),
+            Sense::hover(),
+        );
     }
 }
 

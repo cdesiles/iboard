@@ -54,6 +54,18 @@ pub fn thinking(ui: &mut Ui, size: f32) -> Response {
     response
 }
 
+/// One pulsing Skeleton bar, `share` of the line wide.
+pub fn skeleton_bar(ui: &mut Ui, share: f32, height: f32) {
+    let p = theme::palette(ui);
+    let width = ui.available_width() * share;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    ui.painter().rect_filled(
+        rect,
+        CornerRadius::same(theme::RADIUS_SM),
+        theme::skeleton_fill(ui.ctx(), p),
+    );
+}
+
 /// The 14pt checkbox: `accent` fill and an `on-accent` tick when checked.
 pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
     let p = theme::palette(ui);

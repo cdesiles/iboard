@@ -33,4 +33,4 @@ All placeholders on screen pulse together, opacity 1 → 0.5 → 1 over 1.6s, th
 
 A loading block carries `aria-busy="true"`; the page announces "Loading stats" once, not each block. Placeholders are hidden from screen readers.
 
-The consumer provides each block's label and a future per block. In egui, `theme::skeleton_fill` returns the pulsing placeholder colour to paint with.
+The consumer provides each block's label and a future per block. In egui, `widgets::skeleton_bar` draws one bar, `share` of the line wide, and `theme::SKELETON_AFTER` is the 300ms before any shows; `theme::skeleton_fill` returns the pulsing placeholder colour to paint other shapes with.
