@@ -65,6 +65,13 @@ impl IboardApp {
                         );
                         let (rect, caret) =
                             ui.allocate_exact_size(Vec2::new(12.0, 12.0), Sense::click());
+                        caret.widget_info(|| {
+                            egui::WidgetInfo::labeled(
+                                egui::WidgetType::Button,
+                                ui.is_enabled(),
+                                "Switch project",
+                            )
+                        });
                         if ui.is_rect_visible(rect) {
                             theme::paint_icon(ui.painter(), Icon::ChevronDown, rect, p.ink_faint);
                         }

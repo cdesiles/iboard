@@ -14,6 +14,9 @@ pub fn select(ui: &mut Ui, id: egui::Id, value: &str, hint: Option<&str>, open: 
     let response = ui
         .interact(rect, id, Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, ui.is_enabled(), value)
+    });
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         painter.rect(

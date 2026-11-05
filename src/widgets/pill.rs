@@ -57,6 +57,9 @@ pub fn label_pill(ui: &mut Ui, name: &str, color: Option<Rgb>) -> Response {
     let text = galley(ui, &name, FontId::new(11.0, theme::ui_button().family), ink);
     let size = Vec2::new(7.0 + text.size().x + 7.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
+    });
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_PILL), fill);
@@ -78,6 +81,7 @@ pub fn filter_token(ui: &mut Ui, text: &str) -> Response {
         Pos2::new(rect.max.x - 2.0 - remove / 2.0, rect.center().y),
         Vec2::splat(remove),
     );
+    let name = format!("Remove {text}");
     let response = ui
         .interact(
             remove_rect,
@@ -85,7 +89,10 @@ pub fn filter_token(ui: &mut Ui, text: &str) -> Response {
             Sense::click(),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(format!("Remove {text}"));
+        .on_hover_text(name.as_str());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
+    });
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.accent_soft);
@@ -108,6 +115,8 @@ pub fn chip(ui: &mut Ui, text: &str, current: bool) -> Response {
     let size = Vec2::new(7.0 + label.size().x + 7.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text));
     if ui.is_rect_visible(rect) {
         let lit = current || response.hovered();
         let (fill, edge, ink) = if lit {
@@ -149,6 +158,8 @@ pub fn tag(ui: &mut Ui, text: &str, inferred: bool) -> Response {
     let label = galley(ui, text, theme::meta(), ink);
     let size = Vec2::new(6.0 + label.size().x + 6.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text));
     if ui.is_rect_visible(rect) {
         let fill = if response.hovered() && !inferred {
             p.surface_hover

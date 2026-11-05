@@ -23,6 +23,14 @@ pub fn menu_option(ui: &mut Ui, option: MenuOption<'_>) -> Response {
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(width, theme::CONTROL_H), Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Button,
+            ui.is_enabled(),
+            option.checked,
+            option.name,
+        )
+    });
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         let fill = if option.active {

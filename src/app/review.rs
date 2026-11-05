@@ -266,7 +266,11 @@ impl IboardApp {
                 self.open_config();
             }
         }
-        let caret = caret.on_hover_text("Review options");
+        let options = "Review options";
+        let caret = caret.on_hover_text(options);
+        caret.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), options)
+        });
         let runs_with = if configured {
             self.prefs.agent.label()
         } else {

@@ -440,6 +440,9 @@ fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) -> Response {
     let check = 10.0;
     let size = Vec2::new(6.0 + check + 4.0 + text.size().x + 7.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), true, name)
+    });
     if !ui.is_rect_visible(rect) {
         return response;
     }

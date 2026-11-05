@@ -100,7 +100,7 @@ pub(super) fn colors(ui: &mut egui::Ui, system: &DesignSystem) {
             for id in &themes {
                 let value = design::css::token_value_for(token, id).unwrap_or_default();
                 let color = swatch_color(system, token, id).unwrap_or(p.surface_sunken);
-                let swatch = swatch(ui, color).on_hover_text(format!("{id}: {value}"));
+                let swatch = swatch(ui, color, &format!("{id}: {value}"));
                 if swatch.clicked() {
                     ui.ctx().copy_text(value.clone());
                 }
@@ -342,9 +342,13 @@ pub(super) fn files(ui: &mut egui::Ui, files: &[DesignFile]) {
     }
 }
 
-/// A color swatch; a click is the caller's to handle.
-fn swatch(ui: &mut egui::Ui, color: Color32) -> egui::Response {
+/// A color swatch named by its tooltip, `hover`; a click is the caller's to
+/// handle.
+fn swatch(ui: &mut egui::Ui, color: Color32, hover: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), hover)
+    });
     if ui.is_rect_visible(rect) {
         let p = theme::palette(ui);
         ui.painter().rect(
@@ -355,7 +359,9 @@ fn swatch(ui: &mut egui::Ui, color: Color32) -> egui::Response {
             StrokeKind::Inside,
         );
     }
-    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(hover)
 }
 
 /// The colour a token shows in `theme`, its `{references}` resolved in that

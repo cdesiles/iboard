@@ -83,15 +83,22 @@ fn choice_row(ui: &mut egui::Ui, row: &ChoiceRow) -> (bool, bool) {
                 }
             });
         });
-    let clicked = ui
+    let response = ui
         .interact(
             inner.response.rect,
             Id::new(("title-engine", row.engine.key())),
             egui::Sense::click(),
         )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked();
-    (clicked && !fixed, fixed)
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::RadioButton,
+            ui.is_enabled(),
+            row.selected,
+            row.engine.name(),
+        )
+    });
+    (response.clicked() && !fixed, fixed)
 }
 
 /// Opens the Apple Intelligence pane of System Settings.

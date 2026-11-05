@@ -158,6 +158,8 @@ pub fn crumb(ui: &mut Ui, text: &str, font: FontId) -> Response {
     let size = Vec2::new(normal.size().x + 12.0, theme::CONTROL_H);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, ui.is_enabled(), text));
     if ui.is_rect_visible(rect) {
         let text_rect = Rect::from_center_size(rect.center(), normal.size());
         let color = if response.hovered() {
@@ -227,6 +229,9 @@ pub fn ghost_section(ui: &mut Ui, heading: &str, hint: Option<&str>) -> Response
         .max(ui.available_height().min(GHOST_MAX_H));
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), heading)
+    });
     if ui.is_rect_visible(rect) {
         let lit = response.hovered() || response.has_focus();
         let ink = if lit { p.accent } else { p.ink_muted };
@@ -332,5 +337,47 @@ mod tests {
         })
         .textures_delta
         .clear();
+    }
+
+    /// Pills, chips, tags and the select report their role and what they
+    /// show, the token's × its tooltip, so VoiceOver reads them and a test
+    /// finds them by label.
+    #[test]
+    fn pills_and_the_select_are_found_by_their_label() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut harness = egui_kittest::Harness::new_ui_state(
+            |ui, (themed, clicked): &mut (bool, Vec<&'static str>)| {
+                if !std::mem::replace(themed, true) {
+                    theme::install(ui.ctx());
+                    return;
+                }
+                if label_pill(ui, "Bug", None).clicked() {
+                    clicked.push("bug");
+                }
+                if filter_token(ui, "ux").clicked() {
+                    clicked.push("ux");
+                }
+                chip(ui, "feature", false);
+                tag(ui, "on-device", false);
+                select(
+                    ui,
+                    egui::Id::new("tool"),
+                    "Claude Code",
+                    Some("claude"),
+                    false,
+                );
+            },
+            (false, Vec::new()),
+        );
+        harness.get_by_role_and_label(Role::Button, "feature");
+        harness.get_by_role_and_label(Role::Button, "on-device");
+        harness.get_by_role_and_label(Role::ComboBox, "Claude Code");
+
+        harness.get_by_label("bug").click();
+        harness.run();
+        harness.get_by_label("Remove ux").click();
+        harness.run();
+        assert_eq!(harness.state().1, ["bug", "ux"]);
     }
 }
