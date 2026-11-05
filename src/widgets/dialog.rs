@@ -1,6 +1,7 @@
 //! The pieces dialogs and popovers share: their frame, a modal's header and
 //! footer, the focus ring, and form fields with their label and help line.
 
+use egui::epaint::MarginF32;
 use egui::{
     Align, Color32, CornerRadius, FontId, Frame, InnerResponse, Layout, Margin, Rect, Response,
     RichText, Stroke, StrokeKind, Ui, Vec2,
@@ -108,11 +109,11 @@ pub fn confirm(ui: &Ui, ask: &Ask) -> Answer {
     let p = theme::palette(ui);
     let pad = 20.0;
     let mut answer = Answer::Pending;
-    let frame = modal_frame(ui).inner_margin(Margin {
-        left: pad as i8,
-        right: pad as i8,
-        top: pad as i8,
-        bottom: theme::SPACE_5 as i8,
+    let frame = modal_frame(ui).inner_margin(MarginF32 {
+        left: pad,
+        right: pad,
+        top: pad,
+        bottom: theme::SPACE_5,
     });
     let modal = egui::Modal::new(egui::Id::new(ask.id))
         .frame(frame)
@@ -131,7 +132,7 @@ pub fn confirm(ui: &Ui, ask: &Ask) -> Answer {
             Frame::new()
                 .fill(p.surface_sunken)
                 .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-                .inner_margin(Margin::symmetric(10, theme::SPACE_3 as i8))
+                .inner_margin(Vec2::new(10.0, theme::SPACE_3))
                 .show(ui, |ui| {
                     ui.set_width(inner - 20.0);
                     ui.spacing_mut().item_spacing.y = theme::SPACE_1;
@@ -182,11 +183,11 @@ pub fn modal_header(ui: &mut Ui, title: &str, extra: impl FnOnce(&mut Ui)) -> bo
     let p = theme::palette(ui);
     let mut close = false;
     Frame::new()
-        .inner_margin(Margin {
-            left: theme::SPACE_5 as i8,
-            right: theme::SPACE_3 as i8,
-            top: 0,
-            bottom: 0,
+        .inner_margin(MarginF32 {
+            left: theme::SPACE_5,
+            right: theme::SPACE_3,
+            top: 0.0,
+            bottom: 0.0,
         })
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
@@ -243,7 +244,7 @@ pub fn footer_bar<R>(
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> InnerResponse<R> {
     Frame::new()
-        .inner_margin(Margin::symmetric(pad as i8, theme::SPACE_3 as i8))
+        .inner_margin(Vec2::new(pad, theme::SPACE_3))
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
                 Vec2::new(ui.available_width(), theme::CONTROL_H),
@@ -289,7 +290,7 @@ pub fn field_edit<'a>(
     egui::TextEdit::singleline(text)
         .hint_text(RichText::new(hint).color(p.ink_faint))
         .font(font)
-        .margin(Margin::symmetric(theme::SPACE_3 as i8, 4))
+        .margin(Vec2::new(theme::SPACE_3, 4.0))
         .min_size(Vec2::new(0.0, theme::CONTROL_H))
 }
 

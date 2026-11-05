@@ -232,7 +232,7 @@ pub(super) fn shadows(ui: &mut egui::Ui, system: &DesignSystem) {
                         color
                     },
                 })
-                .inner_margin(egui::Margin::same(theme::SPACE_4 as i8))
+                .inner_margin(theme::SPACE_4)
                 .show(ui, |ui| {
                     ui.set_min_width(140.0);
                     ui.label(

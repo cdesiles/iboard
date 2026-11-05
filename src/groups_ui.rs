@@ -5,9 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use egui::{
-    Align, CornerRadius, Frame, Id, Key, Layout, Margin, Modifiers, RichText, Stroke, Vec2,
-};
+use egui::{Align, CornerRadius, Frame, Id, Key, Layout, Modifiers, RichText, Stroke, Vec2};
 
 use crate::project_menu::matches;
 use crate::theme::{self, Icon};
@@ -227,42 +225,29 @@ impl Dialog {
         if !self.conflict && self.save_error.is_none() {
             return None;
         }
-        Frame::new()
-            .inner_margin(Margin::symmetric(
-                theme::SPACE_5 as i8,
-                theme::SPACE_3 as i8,
-            ))
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                if self.conflict {
-                    widgets::help(
-                        ui,
-                        "The file changed on disk. Reload or keep your version.",
-                        p.danger,
-                    );
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                        if widgets::button(ui, ButtonKind::Secondary, None, "Reload", None)
-                            .clicked()
-                        {
-                            action = Some(Action::Reload);
-                        }
-                        if widgets::button(
-                            ui,
-                            ButtonKind::Secondary,
-                            None,
-                            "Keep your version",
-                            None,
-                        )
+        Frame::new().inner_margin(theme::BAND_PAD).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+            if self.conflict {
+                widgets::help(
+                    ui,
+                    "The file changed on disk. Reload or keep your version.",
+                    p.danger,
+                );
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                    if widgets::button(ui, ButtonKind::Secondary, None, "Reload", None).clicked() {
+                        action = Some(Action::Reload);
+                    }
+                    if widgets::button(ui, ButtonKind::Secondary, None, "Keep your version", None)
                         .clicked()
-                        {
-                            action = Some(self.save(true));
-                        }
-                    });
-                } else if let Some(error) = &self.save_error {
-                    widgets::help(ui, error, p.danger);
-                }
-            });
+                    {
+                        action = Some(self.save(true));
+                    }
+                });
+            } else if let Some(error) = &self.save_error {
+                widgets::help(ui, error, p.danger);
+            }
+        });
         action
     }
 
@@ -271,7 +256,7 @@ impl Dialog {
         let response = Frame::new()
             .fill(p.surface_sunken)
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-            .inner_margin(Margin::same(theme::SPACE_5 as i8))
+            .inner_margin(theme::SPACE_5)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.vertical_centered(|ui| {
@@ -302,7 +287,7 @@ impl Dialog {
         Frame::new()
             .stroke(Stroke::new(1.0, edge))
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-            .inner_margin(Margin::same(theme::SPACE_4 as i8))
+            .inner_margin(theme::SPACE_4)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.spacing_mut().item_spacing.y = theme::SPACE_3;
@@ -391,7 +376,7 @@ impl Dialog {
         let response = Frame::new()
             .fill(p.surface_sunken)
             .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-            .inner_margin(Margin::same(theme::SPACE_3 as i8))
+            .inner_margin(theme::SPACE_3)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
@@ -469,7 +454,7 @@ impl Dialog {
         let filterable = fresh.len() > ADD_FILTER_FROM;
         let mut picked: Vec<PathBuf> = Vec::new();
         widgets::popover_frame(ui)
-            .inner_margin(Margin::same(theme::SPACE_1 as i8))
+            .inner_margin(theme::SPACE_1)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = theme::SPACE_1;
                 if !fresh.is_empty() {
@@ -535,29 +520,24 @@ impl Dialog {
 
     fn discard_bar(&mut self, ui: &mut egui::Ui, action: &mut Action) {
         let p = theme::palette(ui);
-        Frame::new()
-            .inner_margin(Margin::symmetric(
-                theme::SPACE_5 as i8,
-                theme::SPACE_3 as i8,
-            ))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    ui.label(
-                        RichText::new("Discard changes to groups?")
-                            .font(theme::ui_strong())
-                            .color(p.ink),
-                    );
-                    if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None).clicked() {
-                        *action = Action::Close;
-                    }
-                    if widgets::button(ui, ButtonKind::Secondary, None, "Keep editing", Some("esc"))
-                        .clicked()
-                    {
-                        self.discarding = false;
-                    }
-                });
+        Frame::new().inner_margin(theme::BAND_PAD).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                ui.label(
+                    RichText::new("Discard changes to groups?")
+                        .font(theme::ui_strong())
+                        .color(p.ink),
+                );
+                if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None).clicked() {
+                    *action = Action::Close;
+                }
+                if widgets::button(ui, ButtonKind::Secondary, None, "Keep editing", Some("esc"))
+                    .clicked()
+                {
+                    self.discarding = false;
+                }
             });
+        });
     }
 
     /// ConfirmDialog over this one: deleting a group always asks.

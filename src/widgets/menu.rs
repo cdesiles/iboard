@@ -4,8 +4,8 @@ use std::ops::Range;
 
 use egui::text::LayoutJob;
 use egui::{
-    Color32, CornerRadius, FontId, Frame, Margin, Painter, Pos2, Rect, Response, RichText, Sense,
-    Stroke, StrokeKind, TextFormat, Ui, Vec2,
+    Color32, CornerRadius, FontId, Frame, Painter, Pos2, Rect, Response, RichText, Sense, Stroke,
+    StrokeKind, TextFormat, Ui, Vec2,
 };
 
 use super::{focus_ring, galley, galley_truncated, help, rule};
@@ -108,7 +108,7 @@ pub fn menu_head(ui: &mut Ui, title: &str, count: &str) {
 pub fn menu_group(ui: &mut Ui, text: &str) {
     ui.add_space(theme::SPACE_2);
     Frame::new()
-        .inner_margin(Margin::symmetric(theme::SPACE_3 as i8, 0))
+        .inner_margin(Vec2::new(theme::SPACE_3, 0.0))
         .show(ui, |ui| menu_head(ui, text, ""));
 }
 
@@ -275,9 +275,6 @@ pub fn menu_separator(ui: &mut Ui) {
 /// A line of text inside a menu: loading, or why the list failed.
 pub fn menu_note(ui: &mut Ui, text: &str, color: Color32) {
     Frame::new()
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_3 as i8,
-            theme::SPACE_2 as i8,
-        ))
+        .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_2))
         .show(ui, |ui| help(ui, text, color));
 }

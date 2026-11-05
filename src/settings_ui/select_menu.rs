@@ -1,7 +1,7 @@
 //! The menu under a Settings select: which one is open, its keyboard
 //! highlight and the model menu's filter.
 
-use egui::{Id, Key, Margin, Modifiers, Vec2};
+use egui::{Id, Key, Modifiers, Vec2};
 
 use crate::theme;
 use crate::widgets;
@@ -98,7 +98,7 @@ impl SelectMenu {
             ui,
             widgets::field_edit(ui, &mut self.filter, hint, theme::ui_body())
                 .id(id)
-                .margin(Margin::symmetric(theme::SPACE_3 as i8, 3))
+                .margin(Vec2::new(theme::SPACE_3, 3.0))
                 .desired_width(f32::INFINITY),
         );
         if std::mem::take(&mut self.focus_filter) {
@@ -128,7 +128,7 @@ impl SelectMenu {
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .gap(theme::SPACE_2)
             .width(anchor.rect.width())
-            .frame(widgets::popover_frame(ui).inner_margin(Margin::same(theme::SPACE_2 as i8)))
+            .frame(widgets::popover_frame(ui).inner_margin(theme::SPACE_2))
             .show(|ui| {
                 ui.set_width(anchor.rect.width() - 2.0 * theme::SPACE_2);
                 ui.spacing_mut().item_spacing = Vec2::ZERO;

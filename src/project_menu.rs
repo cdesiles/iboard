@@ -7,8 +7,8 @@ use std::ops::Range;
 use std::path::PathBuf;
 
 use egui::{
-    Align, CornerRadius, Event, Frame, Id, Key, Layout, Margin, Modifiers, Pos2, Rect, RichText,
-    Stroke, Vec2,
+    Align, CornerRadius, Event, Frame, Id, Key, Layout, Modifiers, Pos2, Rect, RichText, Stroke,
+    Vec2,
 };
 
 use iboard::theme::{self, Icon};
@@ -591,7 +591,7 @@ pub fn matches(name: &str, path: &str, query: &str) -> Option<Option<Range<usize
 
 fn section<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     Frame::new()
-        .inner_margin(Margin::same(theme::SPACE_2 as i8))
+        .inner_margin(theme::SPACE_2)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add(ui)
@@ -602,17 +602,14 @@ fn section<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
 /// A section's [`widgets::menu_head`], "GROUPS 2", in line with its rows.
 fn head(ui: &mut egui::Ui, title: &str, count: &str) {
     Frame::new()
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_3 as i8,
-            theme::SPACE_2 as i8,
-        ))
+        .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_2))
         .show(ui, |ui| widgets::menu_head(ui, title, count));
 }
 
 fn note_line(ui: &mut egui::Ui, text: &str) {
     let p = theme::palette(ui);
     Frame::new()
-        .inner_margin(Margin::symmetric(theme::SPACE_3 as i8, 0))
+        .inner_margin(Vec2::new(theme::SPACE_3, 0.0))
         .show(ui, |ui| {
             ui.add(
                 egui::Label::new(RichText::new(text).font(theme::meta()).color(p.ink_faint)).wrap(),
@@ -625,7 +622,7 @@ fn footer_frame(ui: &egui::Ui) -> Frame {
     let radius = theme::RADIUS_MD;
     Frame::new()
         .fill(p.bg)
-        .inner_margin(Margin::same(theme::SPACE_3 as i8))
+        .inner_margin(theme::SPACE_3)
         .corner_radius(CornerRadius {
             nw: 0,
             ne: 0,

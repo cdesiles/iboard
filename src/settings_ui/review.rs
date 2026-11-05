@@ -1,7 +1,7 @@
 //! Settings › AI review and AI build: which agent runs, and with which model;
 //! for the review, also how far it reads.
 
-use egui::{Frame, Id, Margin};
+use egui::{Frame, Id, Vec2};
 
 use super::select_menu::Menu;
 use super::{Catalog, Dialog};
@@ -92,7 +92,7 @@ fn list_status(ui: &mut egui::Ui, tool: Tool, models: Option<&Models>, unmatched
             menu_separator(ui);
             menu_note(ui, error, p.danger);
             Frame::new()
-                .inner_margin(Margin::symmetric(theme::SPACE_3 as i8, 0))
+                .inner_margin(Vec2::new(theme::SPACE_3, 0.0))
                 .show(ui, |ui| {
                     retry = widgets::button(
                         ui,

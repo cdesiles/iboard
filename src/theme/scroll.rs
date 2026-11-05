@@ -1,6 +1,7 @@
 //! The overlay Scrollbar: a thumb floating 2pt inside the pane's edges that
 //! never takes layout width (see `design/components/Scrollbar`).
 
+use egui::epaint::MarginF32;
 use egui::scroll_area::{ScrollArea, ScrollAreaOutput};
 use egui::style::ScrollStyle;
 use std::sync::Arc;
@@ -25,12 +26,13 @@ pub const SCROLL_CLEAR: f32 = INSET + SCROLL_THUMB_HOVER + 4.0;
 /// and the thumb floats over it: `x` on the left, at least [`SCROLL_CLEAR`]
 /// on the right, `y` above and below.
 pub fn scroll_margin(x: f32, y: f32) -> Margin {
-    Margin {
-        left: x as i8,
-        right: x.max(SCROLL_CLEAR) as i8,
-        top: y as i8,
-        bottom: y as i8,
+    MarginF32 {
+        left: x,
+        right: x.max(SCROLL_CLEAR),
+        top: y,
+        bottom: y,
     }
+    .into()
 }
 
 /// The widths every scroll area is drawn with; [`scroll_area`] adds colours.

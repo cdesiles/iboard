@@ -22,8 +22,8 @@ use crate::labels::Rgb;
 
 use egui::epaint::Shadow;
 use egui::{
-    Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Margin, Rect, Stroke,
-    TextStyle, Theme, Vec2,
+    Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Rect, Stroke, TextStyle,
+    Theme, Vec2,
 };
 
 /// One theme's color tokens.
@@ -189,6 +189,11 @@ pub const SPACE_4: f32 = 12.0;
 pub const SPACE_5: f32 = 16.0;
 pub const SPACE_6: f32 = 24.0;
 pub const SPACE_7: f32 = 32.0;
+/// A band across a modal or a screen, like its footer: `space-5` in from the
+/// sides, `space-3` above and below.
+pub const BAND_PAD: Vec2 = Vec2::new(SPACE_5, SPACE_3);
+/// A row's padding: `space-4` in from the sides, `space-3` above and below.
+pub const ROW_PAD: Vec2 = Vec2::new(SPACE_4, SPACE_3);
 pub const RADIUS_SM: u8 = 4;
 pub const RADIUS_MD: u8 = 6;
 pub const RADIUS_PILL: u8 = 9;
@@ -485,8 +490,8 @@ fn style(theme: Theme, p: &Palette) -> egui::Style {
     spacing.icon_width = 14.0;
     spacing.icon_width_inner = 8.0;
     spacing.icon_spacing = 6.0;
-    spacing.window_margin = Margin::same(SPACE_4 as i8);
-    spacing.menu_margin = Margin::same(SPACE_2 as i8);
+    spacing.window_margin = SPACE_4.into();
+    spacing.menu_margin = SPACE_2.into();
     spacing.scroll = scroll::style();
     style
 }

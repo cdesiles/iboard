@@ -1,6 +1,6 @@
 //! Settings › Titles: which engine names new issues.
 
-use egui::{Align, Color32, CornerRadius, Frame, Id, Layout, Margin, RichText, Stroke, Vec2};
+use egui::{Align, Color32, CornerRadius, Frame, Id, Layout, RichText, Stroke, Vec2};
 
 use super::{Dialog, Tab};
 use crate::theme;
@@ -29,10 +29,7 @@ fn choice_row(ui: &mut egui::Ui, row: &ChoiceRow) -> (bool, bool) {
         } else {
             Color32::TRANSPARENT
         })
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_4 as i8,
-            theme::SPACE_3 as i8,
-        ))
+        .inner_margin(theme::ROW_PAD)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing = Vec2::new(theme::SPACE_3, theme::SPACE_1);

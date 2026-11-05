@@ -1,6 +1,6 @@
 //! Settings › Labels: label colours, renames and new labels.
 
-use egui::{Align, CornerRadius, FontId, Frame, Layout, Margin, Stroke};
+use egui::{Align, CornerRadius, FontId, Frame, Layout, Stroke, Vec2};
 
 use super::Dialog;
 use crate::labels::{self};
@@ -73,7 +73,7 @@ fn label_row(
                 egui::TextEdit::singleline(&mut rename.text)
                     .hint_text("name")
                     .font(FontId::monospace(12.0))
-                    .margin(Margin::symmetric(theme::SPACE_2 as i8, 4))
+                    .margin(Vec2::new(theme::SPACE_2, 4.0))
                     .char_limit(labels::MAX_LABEL_CHARS)
                     .desired_width(140.0),
             );
