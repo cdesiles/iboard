@@ -12,7 +12,7 @@ mod thinking;
 pub use divider::{
     PaneDivider, pane_divider, pane_split, pane_split_id, restore_pane_split, stored_pane_split,
 };
-pub use icons::{ICON_SIZE, Icon, paint_icon};
+pub use icons::{CARD_ACTION_STROKE, ICON_SIZE, Icon, paint_icon, paint_icon_stroked};
 pub use scroll::{SCROLL_CLEAR, scroll_area, scroll_margin, scroll_rows};
 pub use thinking::thinking_mark;
 

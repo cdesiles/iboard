@@ -727,6 +727,12 @@ mod tests {
     }
 
     #[test]
+    fn the_lists_scroll_at_their_specs_heights() {
+        assert_eq!(GROUPS_MAX_H, 168.0);
+        assert_eq!(LIST_MAX_H, 336.0);
+    }
+
+    #[test]
     fn the_arrows_go_round_the_list() {
         assert_eq!(step(None, 3, true), 0);
         assert_eq!(step(None, 3, false), 2);

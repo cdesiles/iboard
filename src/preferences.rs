@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::agenda::{self, Range};
 use crate::agent::{self, AgentConfig, BuildTimeout};
 use crate::filter;
 use crate::general::{self, Appearance};
@@ -47,6 +48,12 @@ pub struct Preferences {
     /// `[splits]`: the right pane's width per pair of panes, in points. The
     /// board writes it as they are resized; Settings does not list it.
     pub splits: BTreeMap<String, u32>,
+    /// `[new_issue]`: a draft keeps your notes under `## Notes`. The modal
+    /// writes it as it is ticked; Settings does not list it.
+    pub keep_notes: bool,
+    /// `[agenda]`: the range the Agenda opens on. It writes it as it changes;
+    /// Settings does not list it.
+    pub agenda_range: Range,
 }
 
 impl Default for Preferences {
@@ -76,6 +83,8 @@ impl Preferences {
             direnv: general::load_direnv(config),
             labels: Labels::load(config),
             splits: config.section(SPLITS),
+            keep_notes: general::load_keep_notes(config),
+            agenda_range: agenda::load_range(config),
         }
     }
 
@@ -149,6 +158,8 @@ mod tests {
             direnv: false,
             labels: Labels::presets(),
             splits: BTreeMap::new(),
+            keep_notes: true,
+            agenda_range: Range::W12,
         };
         assert_eq!(Preferences::default(), defaults);
         let mut empty = UserConfig::default();
@@ -169,7 +180,9 @@ mod tests {
              [idesign]\nenabled = true\n\
              [direnv]\nenabled = true\n\
              [labels]\nspike = \"#123456\"\n\
-             [splits]\nreview = 420\n",
+             [splits]\nreview = 420\n\
+             [new_issue]\nkeep_notes = false\n\
+             [agenda]\nrange = \"26w\"\n",
         );
         let preferences = Preferences::load(&mut config);
         assert!(config.problems.is_empty(), "{:?}", config.problems);
@@ -188,6 +201,8 @@ mod tests {
                 direnv: true,
                 labels: colours("spike", "#123456"),
                 splits: BTreeMap::from([("review".to_string(), 420)]),
+                keep_notes: false,
+                agenda_range: Range::W26,
             }
         );
     }

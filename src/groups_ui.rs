@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use egui::{Align, CornerRadius, Frame, Id, Key, Layout, Modifiers, RichText, Stroke, Vec2};
+use egui::{Align, CornerRadius, Frame, Id, Key, Layout, Modifiers, Rect, RichText, Stroke, Vec2};
 
 use crate::project_menu::matches;
 use crate::theme::{self, Icon};
@@ -20,6 +20,9 @@ const ADD_FILTER_FROM: usize = 8;
 /// The Add project menu's list scrolls after eight two-line rows.
 const ADD_LIST_MAX_H: f32 = 8.0 * 40.0;
 
+/// How long a row already in the group flashes.
+const FLASH_SECONDS: f64 = 1.2;
+
 const HELP: &str = "Each group is a board of its own projects. Removing a project here never touches its issues/ folder.";
 
 /// What the dialog asks of the app this frame.
@@ -33,6 +36,16 @@ pub enum Action {
     Overwrite(Vec<Group>),
     /// Drop the draft and read the groups again.
     Reload,
+}
+
+/// The name field of the `at`th group.
+pub fn name_id(at: usize) -> Id {
+    Id::new(("group-name", at))
+}
+
+/// The `index`th project row of the `at`th group.
+pub fn row_id(at: usize, index: usize) -> Id {
+    Id::new(("group-project", at, index))
 }
 
 pub struct Dialog {
@@ -53,6 +66,14 @@ pub struct Dialog {
     discarding: bool,
     /// The group whose name takes the focus next frame.
     focus_name: Option<usize>,
+    /// The group and project row that take the focus next frame.
+    focus_row: Option<(usize, usize)>,
+    /// A folder picked again, in its group, and when: its row flashes.
+    pub flash: Option<(usize, PathBuf, f64)>,
+    /// Where each group's block was drawn, to tell which one has the focus.
+    blocks: Vec<Rect>,
+    /// A save went out: an error it brings back is scrolled into view.
+    reveal_error: bool,
     home: Option<PathBuf>,
     pick_folders: fn() -> Vec<PathBuf>,
 }
@@ -71,6 +92,10 @@ impl Dialog {
             deleting: None,
             discarding: false,
             focus_name: None,
+            focus_row: None,
+            flash: None,
+            blocks: Vec::new(),
+            reveal_error: false,
             home: crate::settings::home(),
             pick_folders: crate::dialog::pick_folders,
         };
@@ -94,7 +119,9 @@ impl Dialog {
 
     fn save(&mut self, overwrite: bool) -> Action {
         self.discarding = false;
-        match self.draft.validate() {
+        let groups = self.draft.validate();
+        self.reveal_error = groups.is_some();
+        match groups {
             Some(groups) if overwrite => Action::Overwrite(groups),
             Some(groups) => Action::Save(groups),
             None => {
@@ -113,8 +140,17 @@ impl Dialog {
         }
     }
 
+    /// The group the focus is in, as drawn last frame.
+    pub fn focused_group(&self, ctx: &egui::Context) -> Option<usize> {
+        let focused = ctx.read_response(ctx.memory(|m| m.focused())?)?.rect;
+        self.blocks
+            .iter()
+            .position(|block| block.contains_rect(focused))
+    }
+
     /// The keys the dialog owns: the confirmation's first, then an open
-    /// menu's, then its own.
+    /// menu's, then its own. Taken before the fields draw, so `⌘⌫` in a name
+    /// doesn't also clear it.
     fn keys(&mut self, ctx: &egui::Context) -> Action {
         let take = |modifiers, key| ctx.input_mut(|i| i.consume_key(modifiers, key));
         if let Some(at) = self.deleting {
@@ -135,6 +171,12 @@ impl Dialog {
         }
         if take(Modifiers::COMMAND, Key::N) {
             self.new_group();
+            return Action::Keep;
+        }
+        if let Some(at) = self.focused_group(ctx)
+            && take(Modifiers::COMMAND, Key::Backspace)
+        {
+            self.deleting = Some(at);
             return Action::Keep;
         }
         if self.discarding && take(Modifiers::NONE, Key::Escape) {
@@ -170,20 +212,23 @@ impl Dialog {
                     |ui| {
                         widgets::focus_here(ui);
                         self.body(ui, projects);
+                        if let Some(picked) = self.save_problem(ui, config_file) {
+                            action = picked;
+                        }
                     },
                 );
                 widgets::rule(ui);
-                if let Some(picked) = self.error_bar(ui) {
-                    action = picked;
-                }
                 if self.discarding {
                     self.discard_bar(ui, &mut action);
                 }
-                let note = match self.draft.is_dirty() {
-                    true => format!("{config_file} · Unsaved"),
-                    false => config_file.to_string(),
-                };
-                match widgets::modal_footer(ui, &note, "Save") {
+                let p = theme::palette(ui);
+                let dirty = self.draft.is_dirty();
+                let footer = widgets::modal_footer_with(ui, config_file, "Save", |ui| {
+                    if dirty {
+                        widgets::pill(ui, "Unsaved", p.status_doing);
+                    }
+                });
+                match footer {
                     FooterClick::None => {}
                     FooterClick::Primary => action = self.save(self.conflict),
                     FooterClick::Cancel => action = self.cancel(),
@@ -203,6 +248,7 @@ impl Dialog {
             self.no_groups(ui);
         } else {
             widgets::help(ui, HELP, p.ink_muted);
+            self.blocks.clear();
             for at in 0..self.draft.groups.len() {
                 if at < self.draft.groups.len() {
                     self.group_block(ui, at, projects);
@@ -222,37 +268,36 @@ impl Dialog {
         }
     }
 
-    /// Why the last save failed, above the footer so it is always in view:
-    /// a file changed on disk offers Reload and Keep your version.
-    fn error_bar(&mut self, ui: &mut egui::Ui) -> Option<Action> {
+    /// Why the last save failed, at the end of the body: a file changed on
+    /// disk offers Reload and Keep your version. Scrolled into view as it
+    /// comes.
+    fn save_problem(&mut self, ui: &mut egui::Ui, config_file: &str) -> Option<Action> {
         let p = theme::palette(ui);
         let mut action = None;
-        if !self.conflict && self.save_error.is_none() {
+        if self.conflict {
+            let text = format!(
+                "Couldn't save {config_file}: the file changed on disk. Reload or keep your version."
+            );
+            widgets::help(ui, &text, p.danger);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                if widgets::button(ui, ButtonKind::Secondary, None, "Reload", None).clicked() {
+                    action = Some(Action::Reload);
+                }
+                if widgets::button(ui, ButtonKind::Secondary, None, "Keep your version", None)
+                    .clicked()
+                {
+                    action = Some(self.save(true));
+                }
+            });
+        } else if let Some(error) = &self.save_error {
+            widgets::help(ui, error, p.danger);
+        } else {
             return None;
         }
-        Frame::new().inner_margin(theme::BAND_PAD).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            if self.conflict {
-                widgets::help(
-                    ui,
-                    "The file changed on disk. Reload or keep your version.",
-                    p.danger,
-                );
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    if widgets::button(ui, ButtonKind::Secondary, None, "Reload", None).clicked() {
-                        action = Some(Action::Reload);
-                    }
-                    if widgets::button(ui, ButtonKind::Secondary, None, "Keep your version", None)
-                        .clicked()
-                    {
-                        action = Some(self.save(true));
-                    }
-                });
-            } else if let Some(error) = &self.save_error {
-                widgets::help(ui, error, p.danger);
-            }
-        });
+        if std::mem::take(&mut self.reveal_error) {
+            ui.scroll_to_cursor(Some(Align::Max));
+        }
         action
     }
 
@@ -289,7 +334,7 @@ impl Dialog {
             true => p.accent,
             false => p.line_strong,
         };
-        Frame::new()
+        let block = Frame::new()
             .stroke(Stroke::new(1.0, edge))
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
             .inner_margin(theme::SPACE_4)
@@ -326,8 +371,10 @@ impl Dialog {
                     self.add_menu(ui, at, projects);
                 }
             });
+        self.blocks.push(block.response.rect);
     }
 
+    /// The name, the project count, and the trash at the far end.
     fn group_head(&mut self, ui: &mut egui::Ui, at: usize) {
         let p = theme::palette(ui);
         ui.horizontal(|ui| {
@@ -336,43 +383,39 @@ impl Dialog {
                 1 => "1 project".to_string(),
                 n => format!("{n} projects"),
             };
-            let delete = widgets::icon_button(
+            let width = ui.available_width() - 90.0 - widgets::CARD_ACTION - theme::SPACE_3;
+            let name = widgets::text_entry(
                 ui,
-                Icon::Trash,
-                Id::new(("delete-group", at)),
-                "Delete group (asks first)",
-                Tone::Danger,
-            );
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                let width = ui.available_width() - 90.0;
-                let name = widgets::text_entry(
+                widgets::field_edit(
                     ui,
-                    widgets::field_edit(
-                        ui,
-                        &mut self.draft.groups[at].name,
-                        "Group name",
-                        theme::ui_strong(),
-                    )
-                    .desired_width(width),
+                    &mut self.draft.groups[at].name,
+                    "Group name",
+                    theme::ui_strong(),
+                )
+                .id(name_id(at))
+                .desired_width(width),
+            );
+            if self.focus_name == Some(at) && !ui.is_sizing_pass() {
+                name.request_focus();
+                self.focus_name = None;
+            }
+            if name.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                self.add_filter.clear();
+                self.adding = Some(at);
+            }
+            ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let delete = widgets::icon_button(
+                    ui,
+                    Icon::Trash,
+                    Id::new(("delete-group", at)),
+                    "Delete group (asks first)",
+                    Tone::Danger,
                 );
-                if self.focus_name == Some(at) {
-                    name.request_focus();
-                    self.focus_name = None;
-                }
-                if name.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                    self.add_filter.clear();
-                    self.adding = Some(at);
-                }
-                if name.has_focus()
-                    && ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Backspace))
-                {
+                if delete.clicked() {
                     self.deleting = Some(at);
                 }
-                ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
             });
-            if delete.clicked() {
-                self.deleting = Some(at);
-            }
         });
     }
 
@@ -405,46 +448,129 @@ impl Dialog {
     }
 
     fn project_rows(&mut self, ui: &mut egui::Ui, at: usize) {
-        let p = theme::palette(ui);
         let mut removed = None;
-        for (index, repo) in self.draft.groups[at].repos.iter().enumerate() {
+        for index in 0..self.draft.groups[at].repos.len() {
             if index > 0 {
                 widgets::rule(ui);
             }
-            let row = ui.horizontal(|ui| {
-                let remove = widgets::icon_button(
-                    ui,
-                    Icon::Close,
-                    Id::new(("remove-project", at, index)),
-                    "Remove from this group. The folder is not touched.",
-                    Tone::Plain,
-                );
-                ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                    ui.spacing_mut().item_spacing.y = theme::SPACE_1;
-                    let name = repo.file_name().map_or_else(
-                        || repo.display().to_string(),
-                        |n| n.to_string_lossy().into_owned(),
-                    );
-                    ui.label(RichText::new(name).font(theme::ui_strong()).color(p.ink));
-                    let path = config::contract(repo, self.home.as_deref());
-                    let (path, color) = match has_issues_dir(repo) {
-                        true => (path, p.ink_muted),
-                        false => (format!("{path} · no issues/ folder"), p.status_doing),
-                    };
-                    ui.add(
-                        egui::Label::new(RichText::new(path).font(theme::meta()).color(color))
-                            .truncate(),
-                    );
-                });
-                remove.clicked()
-            });
-            if row.inner {
-                removed = Some(index);
+            let repo = self.draft.groups[at].repos[index].clone();
+            if let Some(by_key) = self.project_row(ui, at, index, &repo) {
+                removed = Some((index, by_key));
             }
         }
-        if let Some(index) = removed {
+        if let Some((index, by_key)) = removed {
             self.draft.remove_project(at, index);
+            let left = self.draft.groups[at].repos.len();
+            if by_key && left > 0 {
+                self.focus_row = Some((at, index.min(left - 1)));
+            }
         }
+    }
+
+    /// One project: its name and path, and × on hover or focus. `tab` stops
+    /// on the row, where `Del` removes it. `Some` when it asks to go, saying
+    /// whether by key.
+    fn project_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        at: usize,
+        index: usize,
+        repo: &Path,
+    ) -> Option<bool> {
+        let p = theme::palette(ui);
+        let name = repo.file_name().map_or_else(
+            || repo.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        let path = config::contract(repo, self.home.as_deref());
+        let size = Vec2::new(ui.available_width(), widgets::MENU_ROW_H);
+        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+        let row = ui.interact(rect, row_id(at, index), egui::Sense::click());
+        row.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{name}, {path}"))
+        });
+        if row.clicked() {
+            row.request_focus();
+        }
+        if self.focus_row == Some((at, index)) {
+            self.focus_row = None;
+            row.request_focus();
+        }
+        let remove_id = Id::new(("remove-project", at, index));
+        let focused = row.has_focus() || ui.memory(|m| m.has_focus(remove_id));
+        let hovered = ui.rect_contains_pointer(rect);
+        if hovered || focused {
+            ui.painter()
+                .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_hover);
+        }
+        self.paint_flash(ui, at, repo, rect);
+        widgets::focus_ring(ui, &row, theme::RADIUS_SM);
+        let inner = rect.shrink2(Vec2::new(theme::SPACE_2, 0.0));
+        let mut line = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(inner)
+                .layout(Layout::right_to_left(Align::Center)),
+        );
+        line.style_mut().interaction.selectable_labels = false;
+        let remove = (hovered || focused).then(|| {
+            widgets::icon_button(
+                &mut line,
+                Icon::Close,
+                remove_id,
+                "Remove from this group. The folder is not touched. (Del)",
+                Tone::Plain,
+            )
+        });
+        line.with_layout(Layout::top_down(Align::Min), |ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_1;
+            ui.add_space(theme::SPACE_1);
+            ui.add(
+                egui::Label::new(RichText::new(&name).font(theme::ui_strong()).color(p.ink))
+                    .truncate(),
+            );
+            let (path, color) = match has_issues_dir(repo) {
+                true => (path.clone(), p.ink_muted),
+                false => (format!("{path} · no issues/ folder"), p.status_doing),
+            };
+            ui.add(
+                egui::Label::new(RichText::new(path).font(theme::meta()).color(color)).truncate(),
+            );
+        });
+        let by_key = focused
+            && ui.input_mut(|i| {
+                i.consume_key(Modifiers::NONE, Key::Delete)
+                    || i.consume_key(Modifiers::NONE, Key::Backspace)
+            });
+        if by_key {
+            Some(true)
+        } else {
+            remove
+                .is_some_and(|remove| remove.clicked())
+                .then_some(false)
+        }
+    }
+
+    /// The `accent` flash of a row whose folder was picked again.
+    fn paint_flash(&mut self, ui: &egui::Ui, at: usize, repo: &Path, rect: Rect) {
+        let Some((group, folder, since)) = &self.flash else {
+            return;
+        };
+        if *group != at || folder != repo {
+            return;
+        }
+        let left = 1.0 - (ui.input(|i| i.time) - since) / FLASH_SECONDS;
+        if left <= 0.0 {
+            self.flash = None;
+            return;
+        }
+        let p = theme::palette(ui);
+        ui.painter().rect_stroke(
+            rect,
+            CornerRadius::same(theme::RADIUS_SM),
+            Stroke::new(1.5, p.accent.gamma_multiply(left as f32)),
+            egui::StrokeKind::Inside,
+        );
+        ui.ctx().request_repaint();
     }
 
     /// The Add project menu under the group's button: the user's projects
@@ -512,14 +638,17 @@ impl Dialog {
                     picked.extend((self.pick_folders)());
                 }
             });
+        let now = ui.input(|i| i.time);
         for dir in picked {
-            self.add(at, &dir);
+            self.add_picked(at, &dir, now);
         }
     }
 
-    fn add(&mut self, at: usize, dir: &Path) {
+    /// Adds a folder picked at `now`: one already in the group flashes its row.
+    pub fn add_picked(&mut self, at: usize, dir: &Path, now: f64) {
         if self.draft.add_project(at, dir, has_issues_dir) == Added::AlreadyThere {
             self.draft.groups[at].notice = None;
+            self.flash = Some((at, dir.to_path_buf(), now));
         }
     }
 

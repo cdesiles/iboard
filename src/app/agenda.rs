@@ -26,7 +26,7 @@ const FOLD_W: f32 = 8.0;
 const DAY_PANEL_W: f32 = 260.0;
 const SIDE_BY_SIDE: f32 = 640.0;
 /// The commits listed for a day before "N more".
-const DAY_COMMITS: usize = 8;
+const DAY_COMMITS: usize = 5;
 /// The block's height, so a failure keeps its size.
 const AGENDA_H: f32 = 332.0;
 /// The narrowest the grid's pane goes, to hold its head and legend.

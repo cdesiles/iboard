@@ -110,6 +110,23 @@ fn the_stats_panel_measures_the_history_and_walks_the_agenda() {
     assert!(harness.state().1.session.stats.is_none());
 }
 
+#[test]
+fn the_agendas_range_is_remembered() {
+    let (dir, located) = project("stats-range");
+    let file = dir.join("user.toml");
+    let mut app = IboardApp::from_located(located);
+    app.config_file = Some(file.clone());
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.key_press(Key::Num3);
+    harness.run_steps(2);
+    let mut config = UserConfig::load(Some(&file));
+    let remembered = Preferences::load(&mut config).agenda_range;
+    assert_eq!(remembered, iboard::agenda::Range::W26);
+    assert_eq!(harness.state().1.prefs.agenda_range, remembered);
+}
+
 /// Once the history is in, the screen stops asking for frames, and the
 /// Agenda still draws its days.
 #[test]

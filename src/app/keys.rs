@@ -285,6 +285,7 @@ impl IboardApp {
     /// the double-click that edits.
     fn screen_keys(&mut self, ctx: &egui::Context, confirming: bool) {
         if !confirming {
+            self.project_trigger_keys(ctx);
             self.escape_keys(ctx);
             self.paste_images(ctx);
         }

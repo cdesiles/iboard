@@ -2,6 +2,7 @@
 //! the user configuration, and how the board on screen follows.
 
 use super::*;
+use crate::groups_ui;
 use egui_kittest::kittest::Queryable;
 
 /// Projects `app` and `site`, a folder `bare` without `issues/`, and a user
@@ -226,6 +227,7 @@ fn reloading_a_file_saved_mid_edit_keeps_the_groups() {
     std::fs::write(&config, "[[workspace.group]]\nname = \n").unwrap();
     dialog(&mut harness).draft.groups[1].name = "Alone".into();
     press(&mut harness, "Save");
+    harness.run_steps(2);
     press(&mut harness, "Reload");
 
     let names: Vec<String> = dialog(&mut harness)
@@ -236,4 +238,119 @@ fn reloading_a_file_saved_mid_edit_keeps_the_groups() {
         .collect();
     assert_eq!(names, ["Clients", "Solo"]);
     assert_eq!(harness.state().1.board.name(), "Clients");
+}
+
+#[test]
+fn the_dialog_opens_with_the_focus_in_a_name() {
+    let (_scratch, _config, mut app) = configured("groups-focus");
+    app.open_groups(false);
+    let harness = kittest(app);
+    assert!(harness.ctx.memory(|m| m.has_focus(groups_ui::name_id(0))));
+
+    let (_scratch, _config, mut app) = configured("groups-focus-new");
+    app.open_groups(true);
+    let harness = kittest(app);
+    assert!(harness.ctx.memory(|m| m.has_focus(groups_ui::name_id(2))));
+}
+
+#[test]
+fn del_removes_the_focused_project_and_moves_to_the_next_row() {
+    let (_scratch, _config, mut app) = configured("groups-del");
+    app.open_groups(false);
+    let mut harness = kittest(app);
+    let remove = "Remove from this group. The folder is not touched. (Del)";
+    harness.get_by_label_contains("Clients").hover();
+    assert_eq!(
+        harness.query_all_by_label(remove).count(),
+        0,
+        "× shows on hover or focus only"
+    );
+
+    harness
+        .ctx
+        .memory_mut(|m| m.request_focus(groups_ui::row_id(0, 0)));
+    harness.run_steps(2);
+    harness.get_by_label(remove);
+    harness.key_press(Key::Delete);
+    harness.run_steps(2);
+    let repos = &dialog(&mut harness).draft.groups[0].repos;
+    assert_eq!(repos.len(), 1);
+    assert!(repos[0].ends_with("site"));
+    assert!(
+        harness.ctx.memory(|m| m.has_focus(groups_ui::row_id(0, 0))),
+        "site's row, now the first"
+    );
+
+    harness.key_press(Key::Delete);
+    harness.run_steps(2);
+    assert!(dialog(&mut harness).draft.groups[0].repos.is_empty());
+    harness.get_by_label("No projects in this group yet —");
+}
+
+#[test]
+fn cmd_backspace_inside_a_group_asks_first_and_leaves_its_name() {
+    let (_scratch, _config, mut app) = configured("groups-cmd-delete");
+    app.open_groups(false);
+    let mut harness = kittest(app);
+    let delete = |harness: &mut Kit| {
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, Key::Backspace);
+        harness.run_steps(2);
+        harness.get_by_role_and_label(egui::accesskit::Role::AlertDialog, "Delete this group?");
+        harness.key_press(Key::Escape);
+        harness.run_steps(2);
+    };
+    delete(&mut harness);
+    assert_eq!(
+        dialog(&mut harness).draft.groups[0].name,
+        "Clients",
+        "from the name, which keeps its text"
+    );
+
+    harness
+        .ctx
+        .memory_mut(|m| m.request_focus(groups_ui::row_id(1, 0)));
+    harness.run_steps(2);
+    let ctx = harness.ctx.clone();
+    assert_eq!(dialog(&mut harness).focused_group(&ctx), Some(1));
+    delete(&mut harness);
+}
+
+#[test]
+fn a_change_shows_the_unsaved_pill() {
+    let (_scratch, _config, mut app) = configured("groups-unsaved");
+    app.open_groups(false);
+    let mut harness = kittest(app);
+    assert_eq!(harness.query_all_by_label("Unsaved").count(), 0);
+    dialog(&mut harness).draft.groups[1].name = "Alone".into();
+    harness.run_steps(2);
+    harness.get_by_label("Unsaved");
+}
+
+#[test]
+fn a_folder_already_in_the_group_is_skipped_and_its_row_flashes() {
+    let (parent, _config, mut app) = configured("groups-flash");
+    app.open_groups(false);
+    let mut harness = kittest(app);
+    let app_dir = parent.join("app");
+    let (at, flash) = {
+        let dialog = dialog(&mut harness);
+        dialog.add_picked(0, &app_dir, 1.0);
+        (dialog.draft.groups[0].repos.len(), dialog.flash.clone())
+    };
+    assert_eq!(at, 2, "skipped");
+    assert_eq!(flash, Some((0, app_dir, 1.0)));
+}
+
+#[test]
+fn a_conflict_ends_the_body_and_names_the_file() {
+    let (_scratch, config, mut app) = configured("groups-conflict-text");
+    app.open_groups(false);
+    let mut harness = kittest(app);
+    std::fs::write(&config, "[ai]\ntool = \"claude\"\n").unwrap();
+    dialog(&mut harness).draft.groups[1].name = "Alone".into();
+    press(&mut harness, "Save");
+    harness.get_by_label(&format!(
+        "Couldn't save {}: the file changed on disk. Reload or keep your version.",
+        display_path(&config)
+    ));
 }

@@ -166,7 +166,7 @@ impl IboardApp {
             let dir = &self.located.project_dir;
             let measures = Arc::new(Measures::new(dir));
             let source = Source::new(dir, &self.located.root, 0, measures);
-            self.session.stats = Some(StatsPanel::new(source, 0, self.session.agenda_range));
+            self.session.stats = Some(StatsPanel::new(source, 0, self.prefs.agenda_range));
         }
     }
 
@@ -272,7 +272,11 @@ impl IboardApp {
         {
             panel.history = None;
         }
-        self.session.agenda_range = panel.agenda.range;
+        let range = panel.agenda.range;
+        if range != self.prefs.agenda_range {
+            self.prefs.agenda_range = range;
+            self.remember_section(iboard::agenda::range_section(range));
+        }
         if let Some(ask) = ask {
             self.stats_ask(ask);
         }

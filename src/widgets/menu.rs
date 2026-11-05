@@ -112,8 +112,11 @@ pub fn menu_group(ui: &mut Ui, text: &str) {
         .show(ui, |ui| menu_head(ui, text, ""));
 }
 
+/// A lifted row's slight tilt, as the design system draws it.
+const LIFTED_TILT_DEG: f32 = -0.6;
+
 /// Height of a two-line [`menu_row`].
-pub const MENU_ROW_H: f32 = 38.0;
+pub const MENU_ROW_H: f32 = 40.0;
 
 /// What sets a [`menu_row`] apart.
 #[derive(Clone, Default)]
@@ -175,8 +178,8 @@ pub fn menu_row(ui: &mut Ui, width: f32, title: &str, detail: &str, look: RowLoo
     response
 }
 
-/// The [`menu_row`] being dragged, raised under the pointer like a dragged
-/// card.
+/// The [`menu_row`] being dragged, raised and tilted under the pointer like a
+/// dragged card.
 pub fn menu_row_lifted(ui: &Ui, (title, detail): (&str, &str), pointer: Pos2) {
     let p = theme::palette(ui);
     let width = ui.max_rect().width();
@@ -200,6 +203,7 @@ pub fn menu_row_lifted(ui: &Ui, (title, detail): (&str, &str), pointer: Pos2) {
         ..RowLook::default()
     };
     paint_row(ui, &painter, rect, (title, detail), &look, true);
+    super::tilt_layer(ui.ctx(), layer, rect.center(), LIFTED_TILT_DEG);
     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
 }
 

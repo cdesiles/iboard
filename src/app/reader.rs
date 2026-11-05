@@ -160,13 +160,18 @@ impl IboardApp {
                 changed = true;
             }
         }
-        if !changed {
-            return;
+        if changed {
+            self.remember_section(preferences::splits_section(&self.prefs.splits));
         }
+    }
+
+    /// Writes view state, what iboard keeps for you between runs: a file that
+    /// cannot be written just keeps the old one.
+    pub(super) fn remember_section(&mut self, section: Result<settings::Section, String>) {
         let Some(file) = self.config_file.clone() else {
             return;
         };
-        if let Ok(section) = preferences::splits_section(&self.prefs.splits)
+        if let Ok(section) = section
             && settings::save(&file, &[section]).is_ok()
         {
             self.config_stamp = groups::modified(&file);

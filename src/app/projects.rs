@@ -111,6 +111,21 @@ impl IboardApp {
         self.project_menu = Some(project_menu::Menu::new(&self.menu_entries()));
     }
 
+    /// `↓` or `↩` on the focused trigger opens the menu, before the board's
+    /// own use of those keys.
+    pub(super) fn project_trigger_keys(&mut self, ctx: &egui::Context) {
+        if !ctx.memory(|m| m.has_focus(iboard::widgets::project_trigger_id())) {
+            return;
+        }
+        let opens = ctx.input_mut(|i| {
+            i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)
+                || i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+        });
+        if opens {
+            self.toggle_project_menu(ctx);
+        }
+    }
+
     /// The menu owns the keyboard while it is open.
     pub(super) fn project_menu_keys(&mut self, ctx: &egui::Context) {
         let entries = self.menu_entries();

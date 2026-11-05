@@ -222,6 +222,16 @@ pub enum FooterClick {
 /// A modal's footer: `note` on the left, Cancel and the `primary` button
 /// (`⌘↩`) on the right.
 pub fn modal_footer(ui: &mut Ui, note: &str, primary: &str) -> FooterClick {
+    modal_footer_with(ui, note, primary, |_| {})
+}
+
+/// A [`modal_footer`] with `beside` between its note and its buttons.
+pub fn modal_footer_with(
+    ui: &mut Ui,
+    note: &str,
+    primary: &str,
+    beside: impl FnOnce(&mut Ui),
+) -> FooterClick {
     let p = theme::palette(ui);
     let mut click = FooterClick::None;
     footer_bar(ui, theme::SPACE_5, |ui| {
@@ -231,6 +241,7 @@ pub fn modal_footer(ui: &mut Ui, note: &str, primary: &str) -> FooterClick {
         if button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc")).clicked() {
             click = FooterClick::Cancel;
         }
+        beside(ui);
         ui.add(
             egui::Label::new(RichText::new(note).font(theme::meta()).color(p.ink_muted)).truncate(),
         );

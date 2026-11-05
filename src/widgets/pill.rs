@@ -9,16 +9,17 @@ use crate::labels::Rgb;
 use crate::theme::{self, Icon};
 
 /// An 18pt pill with a dot and a word, outlined in its state color.
-pub fn pill(ui: &mut Ui, text: &str, color: Color32) -> Response {
+pub fn pill(ui: &mut Ui, word: &str, color: Color32) -> Response {
     let p = theme::palette(ui);
     let text = galley(
         ui,
-        text,
+        word,
         FontId::new(11.0, theme::ui_button().family),
         color,
     );
     let size = Vec2::new(7.0 + 6.0 + 4.0 + text.size().x + 7.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, word));
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         painter.rect(

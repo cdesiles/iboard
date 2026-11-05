@@ -259,7 +259,7 @@ impl IboardApp {
     /// issue pane shows it.
     fn composed_text(&self, composer: &Composer, title: &str, notes: &str) -> String {
         let draft = composer.draft.as_ref().map(|d| &d.draft);
-        new_issue::render(title, notes, draft, self.keep_notes)
+        new_issue::render(title, notes, draft, self.prefs.keep_notes)
     }
 
     /// Writes `content` to a new file in `dir` named after `title`. Returns
@@ -322,6 +322,20 @@ impl IboardApp {
             }
         } else {
             self.write_composed(&tagged(&titles::first_line_title(&description)), edit);
+        }
+    }
+
+    /// A section's ghost tile: adds the issue, then opens the Editor with the
+    /// `at`th standard section under the caret.
+    pub(super) fn submit_for_section(&mut self, at: usize) {
+        let Some(section) = self.board.reader_sections.get(at).cloned() else {
+            return;
+        };
+        self.submit_composer(true);
+        if self.session.composer.is_none()
+            && let Some(path) = self.session.selected.clone()
+        {
+            self.add_section(&path, &section);
         }
     }
 

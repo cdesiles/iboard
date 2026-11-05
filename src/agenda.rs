@@ -6,8 +6,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use chrono::{Datelike, Duration as Days, Local, NaiveDate};
+use serde::{Deserialize, Serialize};
 
 use crate::git;
+use crate::settings::{Section, UserConfig};
 
 /// How many days the agenda reads, up to today: as many as its widest range
 /// shows.
@@ -104,6 +106,38 @@ impl Range {
     }
 }
 
+/// The `[agenda]` section of the user configuration.
+#[derive(Default, Deserialize, Serialize)]
+struct RawAgenda {
+    range: Option<String>,
+}
+
+/// The range the Agenda opens on; 12w unless `[agenda]` says otherwise.
+pub fn load_range(config: &mut UserConfig) -> Range {
+    let Some(name) = config.section::<RawAgenda>("agenda").range else {
+        return Range::default();
+    };
+    match Range::ALL.iter().find(|(_, known)| *known == name.trim()) {
+        Some((range, _)) => *range,
+        None => {
+            config.problem(format!(
+                "[agenda]: range = \"{name}\" is not 4w, 12w, 26w or 1y"
+            ));
+            Range::default()
+        }
+    }
+}
+
+/// The `[agenda]` section that stores `range`.
+pub fn range_section(range: Range) -> Result<Section, String> {
+    Section::new(
+        "agenda",
+        &RawAgenda {
+            range: Some(range.name().to_string()),
+        },
+    )
+}
+
 /// The Agenda's range and the day it shows.
 pub struct Agenda {
     pub range: Range,
@@ -149,7 +183,7 @@ impl Agenda {
     }
 
     /// The grid's columns, oldest first, with long runs of empty weeks
-    /// folded in the wider ranges.
+    /// folded in the wider ranges. The current week stays: it holds today.
     pub fn weeks(&self, days: &BTreeMap<NaiveDate, Vec<DayCommit>>) -> Vec<Week> {
         let fold = matches!(self.range, Range::W26 | Range::Y1);
         let mondays: Vec<NaiveDate> = (0..self.range.weeks())
@@ -158,11 +192,11 @@ impl Agenda {
         let mut weeks = Vec::new();
         let mut at = 0;
         while at < mondays.len() {
-            let quiet = mondays[at..]
+            let quiet = mondays[at..mondays.len() - 1]
                 .iter()
                 .take_while(|&&monday| week_commits(days, monday) == 0)
                 .count();
-            if fold && quiet >= FOLD_WEEKS && at + quiet < mondays.len() {
+            if fold && quiet >= FOLD_WEEKS {
                 weeks.push(Week::Folded(
                     mondays[at],
                     mondays[at + quiet - 1] + Days::days(6),
@@ -266,6 +300,44 @@ mod tests {
         let short = agenda(Range::W12, "2026-10-20").weeks(&log);
         assert_eq!(short.len(), 12);
         assert!(short.iter().all(|w| matches!(w, Week::Days(_))));
+    }
+
+    #[test]
+    fn trailing_empty_weeks_fold_up_to_the_current_week() {
+        let log = days(&[("2026-05-04", 1)]);
+        let weeks = agenda(Range::W26, "2026-10-20").weeks(&log);
+        assert_eq!(
+            weeks[weeks.len() - 2..],
+            [
+                Week::Folded(day("2026-05-11"), day("2026-10-18")),
+                Week::Days(day("2026-10-19")),
+            ],
+        );
+        let short_run = days(&[("2026-09-28", 1)]);
+        let weeks = agenda(Range::W26, "2026-10-20").weeks(&short_run);
+        assert!(
+            weeks[weeks.len() - 3..]
+                .iter()
+                .all(|week| matches!(week, Week::Days(_))),
+            "three empty weeks stay: {weeks:?}"
+        );
+    }
+
+    #[test]
+    fn the_range_is_read_from_its_section_and_written_back() {
+        let parse = |text: &str| UserConfig::parse(text, Path::new("iboard.toml"));
+        assert_eq!(load_range(&mut parse("")), Range::W12);
+        assert_eq!(
+            load_range(&mut parse("[agenda]\nrange = \"1y\"\n")),
+            Range::Y1
+        );
+        let mut wrong = parse("[agenda]\nrange = \"2w\"\n");
+        assert_eq!(load_range(&mut wrong), Range::W12);
+        assert_eq!(
+            wrong.problems,
+            ["[agenda]: range = \"2w\" is not 4w, 12w, 26w or 1y"]
+        );
+        assert!(range_section(Range::W26).is_ok());
     }
 
     #[test]

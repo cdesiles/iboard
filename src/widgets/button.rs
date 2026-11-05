@@ -412,7 +412,12 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
             );
         }
         let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_SIZE));
-        theme::paint_icon(&unfaded_painter(ui), icon, icon_rect, ink);
+        let painter = unfaded_painter(ui);
+        if size == CARD_ACTION {
+            theme::paint_icon_stroked(&painter, icon, icon_rect, ink, theme::CARD_ACTION_STROKE);
+        } else {
+            theme::paint_icon(&painter, icon, icon_rect, ink);
+        }
     }
     focus_ring(ui, &response, theme::RADIUS_SM);
     response

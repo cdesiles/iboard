@@ -189,8 +189,6 @@ pub struct IboardApp {
     reader: Reader,
     /// The filter field in the header, and the filter it holds.
     filter_bar: FilterBar,
-    /// NewIssueModal keeps your notes under `## Notes` after a draft.
-    keep_notes: bool,
     /// The Settings tab `⌘,` reopens.
     settings_tab: settings_ui::Tab,
     /// The last action that failed, until it is dismissed.
@@ -344,8 +342,6 @@ struct Session {
     agent_log: Option<agent_log::LogView>,
     /// The project stats panel, from Tools › Project Stats….
     stats: Option<stats::StatsPanel>,
-    /// The Agenda's range, kept between openings of the stats panel.
-    agenda_range: iboard::agenda::Range,
 }
 
 impl Default for Session {
@@ -388,7 +384,6 @@ impl Default for Session {
             agents: 1,
             agent_log: None,
             stats: None,
-            agenda_range: iboard::agenda::Range::default(),
         }
     }
 }
@@ -499,7 +494,6 @@ impl IboardApp {
             board,
             reader: Reader::default(),
             filter_bar: FilterBar::default(),
-            keep_notes: true,
             settings_tab: settings_ui::Tab::General,
             error: None,
             uninitialised: None,

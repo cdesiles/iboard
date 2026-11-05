@@ -11,7 +11,7 @@ use super::{
     RichText, Sense, Shape, Stroke, Vec2, files, labels, sheet, theme, titles, widgets,
 };
 use crate::theme::Icon;
-use iboard::new_issue;
+use iboard::{general, new_issue};
 
 pub(super) const TITLE_ID: &str = "composer";
 pub(super) const DESCRIPTION_ID: &str = "composer-description";
@@ -25,7 +25,11 @@ const FOOT_H: f32 = 40.0;
 /// What a click or a key in the modal asked for.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum ComposeAction {
-    Submit { edit: bool },
+    Submit {
+        edit: bool,
+    },
+    /// Add it and open the Editor on this standard section, by its place.
+    SubmitForSection(usize),
     Close,
     Discard,
     Draft,
@@ -66,6 +70,7 @@ impl IboardApp {
         let dir = self.compose_preview(&todo).unwrap_or(todo);
         let folder = self.compose_folder(&dir);
         let blocked = self.draft_blocked();
+        let keep_notes = self.prefs.keep_notes;
         let size = theme::modal_size(theme::ModalSize::Xl, ui.ctx().content_rect());
         let Some(composer) = self.session.composer.as_mut() else {
             return;
@@ -77,7 +82,7 @@ impl IboardApp {
             dir: Some(dir.as_path()).filter(|dir| dir.is_dir()),
             sections: &self.board.reader_sections,
             labels: &self.prefs.labels,
-            keep_notes: &mut self.keep_notes,
+            keep_notes: &mut self.prefs.keep_notes,
             blocked,
         };
         let cache = &mut self.reader.cache;
@@ -86,6 +91,9 @@ impl IboardApp {
                 modal_ui(ui, size, composer, &mut view, cache)
             })
             .inner;
+        if self.prefs.keep_notes != keep_notes {
+            self.remember_section(general::keep_notes_section(self.prefs.keep_notes));
+        }
         for action in actions {
             self.compose_action(action);
         }
@@ -94,6 +102,7 @@ impl IboardApp {
     pub(super) fn compose_action(&mut self, action: ComposeAction) {
         match action {
             ComposeAction::Submit { edit } => self.submit_composer(edit),
+            ComposeAction::SubmitForSection(at) => self.submit_for_section(at),
             ComposeAction::Close => self.close_composer(),
             ComposeAction::Discard => self.discard_composer(),
             ComposeAction::Draft => self.start_draft(),
@@ -769,8 +778,8 @@ fn body_text(
 }
 
 /// Under the sheet, a ghost tile for each standard section a finished or
-/// stopped draft left unwritten; a click adds the issue and opens the
-/// Editor.
+/// stopped draft left unwritten; a click adds the issue and opens the Editor
+/// on that section.
 fn unwritten(
     ui: &mut egui::Ui,
     composer: &Composer,
@@ -799,8 +808,10 @@ fn unwritten(
         let width = ((ui.available_width() - theme::SPACE_3) / 2.0).max(160.0);
         for heading in missing {
             ui.allocate_ui(Vec2::new(width, 64.0), |ui| {
-                if widgets::ghost_section(ui, heading, Some(hint)).clicked() {
-                    actions.push(ComposeAction::Submit { edit: true });
+                if widgets::ghost_section(ui, heading, Some(hint)).clicked()
+                    && let Some(at) = view.sections.iter().position(|s| s == heading)
+                {
+                    actions.push(ComposeAction::SubmitForSection(at));
                 }
             });
         }

@@ -12,6 +12,13 @@
 //! enabled = true   # false: no reload from disk, no saving as you type
 //! ```
 //!
+//! NewIssueModal writes its Keep my notes as it is ticked:
+//!
+//! ```toml
+//! [new_issue]
+//! keep_notes = true  # false: a draft drops your notes
+//! ```
+//!
 //! Beta features stay off unless their section turns them on, and Settings
 //! does not list them:
 //!
@@ -67,6 +74,31 @@ pub fn auto_section(enabled: bool) -> Result<Section, String> {
         "auto",
         &RawEnabled {
             enabled: Some(enabled),
+        },
+    )
+}
+
+/// The `[new_issue]` section of the user configuration.
+#[derive(Default, Deserialize, Serialize)]
+struct RawNewIssue {
+    keep_notes: Option<bool>,
+}
+
+/// Whether NewIssueModal keeps your notes under a draft; on unless
+/// `[new_issue]` says otherwise.
+pub fn load_keep_notes(config: &mut UserConfig) -> bool {
+    config
+        .section::<RawNewIssue>("new_issue")
+        .keep_notes
+        .unwrap_or(true)
+}
+
+/// The `[new_issue]` section that stores `keep_notes`.
+pub fn keep_notes_section(keep_notes: bool) -> Result<Section, String> {
+    Section::new(
+        "new_issue",
+        &RawNewIssue {
+            keep_notes: Some(keep_notes),
         },
     )
 }

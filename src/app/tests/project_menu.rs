@@ -67,6 +67,20 @@ fn the_menu_lists_the_projects_and_its_three_actions() {
 }
 
 #[test]
+fn down_on_the_focused_trigger_opens_the_menu_and_leaves_the_board_alone() {
+    let (_scratch, _config, _projects, app) = three_projects("menu-down");
+    let mut harness = kittest(app);
+    harness
+        .ctx
+        .memory_mut(|m| m.request_focus(widgets::project_trigger_id()));
+    harness.run_steps(2);
+    key(&mut harness, Modifiers::NONE, Key::ArrowDown);
+    let app = &harness.state().1;
+    assert!(app.project_menu.is_some());
+    assert!(app.session.selected.is_none(), "no card stepped to");
+}
+
+#[test]
 fn typing_filters_and_return_opens_the_first_match() {
     let (_scratch, _config, _projects, app) = three_projects("menu-type");
     let mut harness = kittest(app);

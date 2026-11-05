@@ -26,9 +26,9 @@ pub use button::{
 };
 pub use dialog::{
     Answer, Ask, FooterClick, confirm, confirm_buttons, dashed_rect, discard_bar, enter_confirms,
-    field_edit, field_label, focus_halo, focus_ring, footer_bar, help, modal_footer, modal_frame,
-    modal_header, paint_focus_halo, paint_focus_ring, popover_frame, rule, segmented, text_entry,
-    text_field,
+    field_edit, field_label, focus_halo, focus_ring, footer_bar, help, modal_footer,
+    modal_footer_with, modal_frame, modal_header, paint_focus_halo, paint_focus_ring,
+    popover_frame, rule, segmented, text_entry, text_field,
 };
 pub use key_hints::{key_hints, key_hints_shown, sliding_hints, sliding_kbd};
 pub use menu::{
@@ -219,6 +219,11 @@ pub fn hint(ui: &mut Ui, key: &str, action: &str) {
 /// a separator adds it, so the trail reads evenly.
 pub const CRUMB_PAD: f32 = 6.0;
 
+/// The id of [`project_trigger`], for the keys that open its menu.
+pub fn project_trigger_id() -> egui::Id {
+    egui::Id::new("project-trigger")
+}
+
 /// The project menu's trigger: the project's name, its path and a chevron.
 /// Transparent at rest; `surface-hover` and a `line-strong` edge on hover and
 /// while the menu is open. The path truncates into the width left.
@@ -242,7 +247,7 @@ pub fn project_trigger(ui: &mut Ui, project: &str, path: &str, open: bool) -> Re
     });
     let rect = row.response.rect.with_max_x(row.response.rect.max.x + PAD);
     let response = ui
-        .interact(rect, ui.id().with("project-trigger"), Sense::click())
+        .interact(rect, project_trigger_id(), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Switch project")
@@ -261,6 +266,30 @@ pub fn project_trigger(ui: &mut Ui, project: &str, path: &str, open: bool) -> Re
     }
     focus_ring(ui, &response, theme::RADIUS_SM);
     response
+}
+
+/// Rotates what a layer painted this frame about `origin`, to lift something
+/// off the page. Rects and text can't turn in epaint, so each shape becomes a
+/// mesh first.
+pub fn tilt_layer(ctx: &egui::Context, layer: egui::LayerId, origin: egui::Pos2, degrees: f32) {
+    let font_size = ctx.fonts(|fonts| fonts.font_image_size());
+    let options = ctx.tessellation_options(|options| *options);
+    let mut tessellator =
+        egui::epaint::Tessellator::new(ctx.pixels_per_point(), options, font_size, Vec::new());
+    let rotation = egui::emath::Rot2::from_angle(degrees.to_radians());
+    ctx.graphics_mut(|graphics| {
+        let list = graphics.entry(layer);
+        for index in 0..list.next_idx().0 {
+            list.mutate_shape(egui::layers::ShapeIdx(index), |clipped| {
+                let mut mesh = egui::epaint::Mesh::default();
+                let shape = std::mem::replace(&mut clipped.shape, egui::Shape::Noop);
+                tessellator.tessellate_shape(shape, &mut mesh);
+                mesh.rotate(rotation, origin);
+                clipped.shape = egui::Shape::mesh(mesh);
+                clipped.clip_rect = Rect::EVERYTHING;
+            });
+        }
+    });
 }
 
 /// A breadcrumb segment that links back: `ink-muted`, `surface-hover` on hover.
@@ -438,6 +467,25 @@ mod tests {
         })
         .textures_delta
         .clear();
+    }
+
+    #[test]
+    fn a_lifted_row_is_tilted() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            menu_row_lifted(ui, ("moon-cull", "~/code"), egui::pos2(100.0, 100.0));
+        });
+        output.textures_delta.clear();
+        let meshes = output
+            .shapes
+            .iter()
+            .filter(|clipped| matches!(clipped.shape, egui::Shape::Mesh(_)))
+            .count();
+        assert!(meshes >= 2, "rect and text turned into meshes: {meshes}");
     }
 
     #[test]

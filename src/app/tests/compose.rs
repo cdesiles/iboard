@@ -4,6 +4,7 @@
 use super::*;
 use crate::app::compose::{ComposerField, TitleStage};
 use crate::app::dock::IssueDrag;
+use crate::app::new_issue_ui::ComposeAction;
 
 /// Bug: a new ticket is renumbered to position 1 a moment after it shows,
 /// so a quick click on it, or on its Add label action, held the old name:
@@ -372,6 +373,56 @@ fn review_drafts_the_issue_and_add_writes_the_draft() {
         std::fs::read_to_string(todo.join("export-the-board-as-checklists.md")).unwrap(),
         "# [feat] Export the board as checklists\n\nOne checklist per column.\n\n\
          ## Context\n\nPeople print boards.\n\n## Notes\n\nExport the board. One per column.\n"
+    );
+}
+
+#[test]
+fn a_ghost_tile_adds_the_issue_and_opens_the_editor_on_its_section() {
+    let answer = r#"'{"title":"Exports"}' '{"section":"Context","text":"People print boards."}'"#;
+    let (_dir, todo, mut app) = drafting("compose-ghost", answer);
+    app.start_draft();
+    assert!(until(|| {
+        app.poll_draft();
+        app.session.composer.as_ref().unwrap().drafting.is_none()
+    }));
+    let at = app
+        .board
+        .reader_sections
+        .iter()
+        .position(|section| section == "Out of scope")
+        .unwrap();
+    app.compose_action(ComposeAction::SubmitForSection(at));
+
+    assert!(app.session.composer.is_none(), "added");
+    assert!(todo.join("exports.md").exists());
+    let editor = app.session.editor.as_ref().unwrap();
+    assert!(editor.path.ends_with("exports.md"));
+    assert!(
+        editor.text.ends_with("## Out of scope\n\n"),
+        "{}",
+        editor.text
+    );
+    assert!(app.session.focus_editor, "the caret under the heading");
+}
+
+#[test]
+fn keep_my_notes_is_remembered() {
+    let answer = r#"'{"title":"Exports"}'"#;
+    let (dir, _todo, mut app) = drafting("compose-keep", answer);
+    let file = dir.join("user.toml");
+    app.config_file = Some(file.clone());
+    app.start_draft();
+    assert!(until(|| {
+        app.poll_draft();
+        app.session.composer.as_ref().unwrap().drafting.is_none()
+    }));
+    let mut harness = kittest(app);
+    press(&mut harness, "Keep my notes under ## Notes");
+    assert!(!harness.state().1.prefs.keep_notes);
+    let mut config = UserConfig::load(Some(&file));
+    assert!(
+        !Preferences::load(&mut config).keep_notes,
+        "for the next run"
     );
 }
 

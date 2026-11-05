@@ -5,7 +5,7 @@ use super::labelling::{label_picker_open, set_label_anchor};
 use super::review::ReviewPill;
 use super::{
     Align, Color32, CornerRadius, Duration, Frame, Icon, Instant, Issue, Labels, Layout, LayoutJob,
-    Pos2, Rect, RichText, Sense, Shape, Stroke, StrokeKind, Vec2, stopwatch, theme, widgets,
+    Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2, stopwatch, theme, widgets,
 };
 
 /// An issue action available from a card or the detail header.
@@ -324,34 +324,16 @@ fn drag_ghost(ui: &egui::Ui, issue: &Issue, width: f32, labels: &Labels, at: Pos
             );
         });
     let response = ghost.response;
-    tilt_layer(ui.ctx(), response.layer_id, response.rect.center());
+    widgets::tilt_layer(
+        ui.ctx(),
+        response.layer_id,
+        response.rect.center(),
+        GHOST_TILT_DEG,
+    );
 }
 
 /// The lifted card's tilt, as the design system draws it.
 const GHOST_TILT_DEG: f32 = -1.5;
-
-/// Rotates what a layer painted this frame about `origin`. Rects and text
-/// can't turn in epaint, so each shape becomes a mesh first.
-fn tilt_layer(ctx: &egui::Context, layer: egui::LayerId, origin: Pos2) {
-    let font_size = ctx.fonts(|fonts| fonts.font_image_size());
-    let options = ctx.tessellation_options(|options| *options);
-    let mut tessellator =
-        egui::epaint::Tessellator::new(ctx.pixels_per_point(), options, font_size, Vec::new());
-    let rotation = egui::emath::Rot2::from_angle(GHOST_TILT_DEG.to_radians());
-    ctx.graphics_mut(|graphics| {
-        let list = graphics.entry(layer);
-        for index in 0..list.next_idx().0 {
-            list.mutate_shape(egui::layers::ShapeIdx(index), |clipped| {
-                let mut mesh = egui::epaint::Mesh::default();
-                let shape = std::mem::replace(&mut clipped.shape, Shape::Noop);
-                tessellator.tessellate_shape(shape, &mut mesh);
-                mesh.rotate(rotation, origin);
-                clipped.shape = Shape::mesh(mesh);
-                clipped.clip_rect = Rect::EVERYTHING;
-            });
-        }
-    });
-}
 
 /// What `card_body` drew: the action a child button asked for, and the rects
 /// those buttons cover.

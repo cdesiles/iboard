@@ -4,8 +4,8 @@ use egui::{Color32, CornerRadius, Painter, Pos2, Rect, Stroke, Vec2};
 
 use super::thinking;
 
-/// The line icons of the design system, drawn on a 14pt box with a 1.6pt
-/// stroke so they need no icon font.
+/// The line icons of the design system, drawn on a 14pt box with round caps
+/// and joins so they need no icon font.
 #[derive(Clone, Copy)]
 pub enum Icon {
     Plus,
@@ -53,13 +53,22 @@ pub enum Icon {
 }
 
 pub const ICON_SIZE: f32 = 14.0;
+/// The stroke in buttons and drop zones.
+const ICON_STROKE: f32 = 1.6;
+/// The stroke in the 22×22 card actions.
+pub const CARD_ACTION_STROKE: f32 = 1.5;
 
 pub fn paint_icon(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
+    paint_icon_stroked(painter, icon, rect, color, ICON_STROKE);
+}
+
+/// [`paint_icon`] with a pen `width` wide.
+pub fn paint_icon_stroked(painter: &Painter, icon: Icon, rect: Rect, color: Color32, width: f32) {
     let grid = Grid {
         painter,
         rect,
         scale: rect.width() / 24.0,
-        stroke: Stroke::new(1.6, color),
+        stroke: Stroke::new(width, color),
     };
     match icon {
         Icon::Plus
@@ -102,17 +111,34 @@ impl Grid<'_> {
         points.iter().map(|&(x, y)| self.at(x, y)).collect()
     }
 
+    /// epaint's lines end square and meet mitred: a dot of the pen's width on
+    /// each point rounds them. A see-through pen would show the overlap.
+    fn round(&self, points: &[Pos2]) {
+        if !self.stroke.color.is_opaque() || self.painter.opacity() < 1.0 {
+            return;
+        }
+        for point in points {
+            self.painter
+                .circle_filled(*point, self.stroke.width / 2.0, self.stroke.color);
+        }
+    }
+
     fn line(&self, points: &[(f32, f32)]) {
-        self.painter.line(self.points(points), self.stroke);
+        let points = self.points(points);
+        self.round(&points);
+        self.painter.line(points, self.stroke);
     }
 
     fn closed(&self, points: &[(f32, f32)]) {
-        let shape = egui::Shape::closed_line(self.points(points), self.stroke);
-        self.painter.add(shape);
+        let points = self.points(points);
+        self.round(&points);
+        self.painter
+            .add(egui::Shape::closed_line(points, self.stroke));
     }
 
     fn segment(&self, (x0, y0): (f32, f32), (x1, y1): (f32, f32)) {
         let points = [self.at(x0, y0), self.at(x1, y1)];
+        self.round(&points);
         self.painter.line_segment(points, self.stroke);
     }
 
@@ -158,12 +184,14 @@ fn basic_icon(g: &Grid, icon: Icon) {
                 })
                 .collect();
             let end = *points.last().unwrap_or(&center);
+            g.round(&[points[0], end]);
             g.painter.line(points, g.stroke);
             let direction = Vec2::new(-end_angle.sin(), end_angle.cos());
             let head = 5.0 * g.scale;
             let barb = |angle: f32| {
                 end - head * (egui::emath::Rot2::from_angle(angle.to_radians()) * direction)
             };
+            g.round(&[barb(40.0), barb(-40.0)]);
             g.painter.line(vec![barb(40.0), end, barb(-40.0)], g.stroke);
         }
         Icon::Close => {
@@ -338,5 +366,41 @@ fn project_icon(g: &Grid, icon: Icon) {
             (9.5, 12.0),
         ]),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::epaint::Shape;
+
+    fn dots(width: f32, color: Color32) -> Vec<f32> {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(ICON_SIZE));
+            paint_icon_stroked(ui.painter(), Icon::Close, rect, color, width);
+        });
+        output.textures_delta.clear();
+        output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                Shape::Circle(circle) => Some(circle.radius),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_line_ends_round_at_the_pens_width() {
+        assert_eq!(
+            dots(CARD_ACTION_STROKE, Color32::WHITE),
+            [0.75; 4],
+            "both ends of the cross's two strokes"
+        );
+        assert!(
+            dots(ICON_STROKE, Color32::WHITE.gamma_multiply(0.5)).is_empty(),
+            "a see-through pen would show the overlap"
+        );
     }
 }
