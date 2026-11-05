@@ -6,8 +6,8 @@ Where a new issue gets written: a large modal over the board, with your notes on
 
 - The QuickAdd composer lives in the Todo column: 280 to 420pt wide, capped at 8 lines. That's fine for one sentence. It falls apart once you talk at length to the agent: your notes scroll inside a small box, and what the agent writes is cut short with "…", so you can't see what will land in the file.
 - "The file is the truth" should hold *before* the file exists. The right pane shows the exact markdown that `↩` will write, at reading size, never truncated.
-- **The one-sentence path doesn't get slower.** `⌘N`, type, `↩`, `↩` works exactly as before, with the same keys and the same title states. The only cost is a 160ms fade.
-- **There is still one composer.** Keeping the inline composer and adding an "expand" button would mean two places with the same six states, and you'd have to decide how long your note will be before you start typing.
+- **The one-sentence path doesn't get slower.** `⌘N`, type, `↩` writes the file and closes at once, and the title lands in the background, so tickets can be written one after another. The only cost is a 160ms fade.
+- **There is still one composer.** Keeping the inline composer and adding an "expand" button would mean two places with the same states, and you'd have to decide how long your note will be before you start typing.
 
 ## Layout (Modal XL)
 
@@ -22,8 +22,8 @@ Where a new issue gets written: a large modal over the board, with your notes on
 | State | Notes pane | Issue pane | Foot |
 | --- | --- | --- | --- |
 | **Empty** | Focused, with the placeholder | Sheet head `todo/` named on save; title placeholder "Title is named from your notes" in `ink-faint`; empty body | Draft with Review disabled until the notes have text |
-| **Writing** | Text grows; word count | **Mirror**: the body is your notes, rendered as markdown, live | `↩ name, then add` · `⇧↩ new line` · `⌘↩ add & edit` |
-| **Naming / Inferred / Manual / Failed** | Unchanged | The title row on the sheet takes QuickAdd's title states: "Naming…", then the inferred title selected with the **Inferred** tag; the slug appears in the sheet head in `status-done` | As QuickAdd |
+| **Writing** | Text grows; word count | **Mirror**: the body is your notes, rendered as markdown, live | `↩ add` · `⇧↩ new line` · `⌘↩ add & edit` |
+| **Manual** | Unchanged | The title row on the sheet takes QuickAdd's Manual state | As QuickAdd |
 | **Drafting** | Read-only, with the label "Your notes · read-only while Review drafts" | Streaming in place, see below. Sheet head right: small Thinking i + "Review is drafting · 9s" | Draft button reads "Drafting…" (disabled); hint `esc stop, keep what arrived`; Add to Todo stays available and adds what is shown |
 | **Drafted** | Editable again | Receipt: **Drafted by Review** from your notes · `tool · model · 14s` · Undo draft `⌘Z`. Title selected (typing renames). Full draft. | Redraft, Keep my notes, Add to Todo |
 | **Notes changed** | Edited after the draft | Receipt turns `surface-sunken` with **Your notes changed since this draft** in `status-doing` and a Redraft button. The draft stays as it is. | Same |
@@ -45,7 +45,7 @@ This is the core of the change: you watch the ticket being written, at full size
 
 ## What gets written
 
-`↩` writes exactly what the sheet shows:
+`↩` writes exactly what the sheet shows, under the title you typed or the one Review drafted. With neither, the file is `unnamed-ticket-xxxx` until the title lands in the background: see QuickAdd's "When the title lands".
 
 - **No draft**: `# <title>`, a blank line, then your notes. This is QuickAdd's rule, unchanged.
 - **Drafted**: `# [Label] <title>`, the summary paragraph, then each written section as `## <Section>`. With "Keep my notes" on, a final `## Notes` section holds your notes verbatim, so nothing you said is lost.
@@ -62,7 +62,7 @@ This is the core of the change: you watch the ticket being written, at full size
 | Key | Action |
 | --- | --- |
 | `⌘N` | Open (anywhere; from the Reader or Editor the board shows behind it) |
-| `↩` | Name the issue if it has no title, else add it to Todo |
+| `↩` | Add it to Todo and close; without a title, it is named in the background |
 | `⇧↩` | New line in the notes |
 | `⌘↩` | Add and open the Editor |
 | `⌘⇧R` | Draft with Review, or Redraft |
@@ -73,13 +73,13 @@ This is the core of the change: you watch the ticket being written, at full size
 
 ## Interaction model
 
-The modal works on a **NewIssueDraft** read model: `{ notes, title, title_source: none | typed | inferred | drafted, labels, body: mirror | draft { summary, sections[], partial, notes_hash }, keep_notes, state }`. Nothing touches `todo/` until IssueCreated.
+The modal works on a **NewIssueDraft** read model: `{ notes, title, title_source: none | typed | drafted, labels, body: mirror | draft { summary, sections[], partial, notes_hash }, keep_notes, state }`. Nothing touches `todo/` until IssueCreated.
 
 | Screen | Command (user) | Event | Next screen / read model |
 | --- | --- | --- | --- |
 | Any | New issue (`⌘N`, header button, Todo `+`) | NewIssueOpened (with ParkedDraftRestored if one exists) | NewIssueModal; focus in the notes |
 | NewIssueModal | Type in the notes | NotesChanged | Mirror updated; a draft's `notes_hash` no longer matches, so the receipt shows "changed" |
-| NewIssueModal | `↩` with no title | TitleInferenceRequested → TitleInferred / TitleInferenceFailed | Title selected and tagged Inferred / cursor in the title |
+| NewIssueModal | `↩` with no title | IssueCreated, TitleInferenceRequested → TitleInferred / TitleInferenceFailed | Board; the card reads "Naming…", then takes its title / stays `unnamed-ticket-xxxx` |
 | NewIssueModal | Type in the title | TitleEdited | Tag drops; slug updates |
 | NewIssueModal | Draft with Review (`⌘⇧R`) | DraftRequested | Notes read-only; sheet skeleton with the known headings |
 | (agent) | — | DraftTitleReceived, DraftLabelsReceived, DraftSectionStarted, DraftTextAppended, DraftSectionCompleted | Text fills in place; the writing section is marked |

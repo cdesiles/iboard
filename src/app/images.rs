@@ -1,7 +1,6 @@
 //! Images in an issue: pasted or dropped into the composer or the editor,
 //! shown by the reader, and carried through renames, deletes and splits.
 
-use super::compose::TitleStage;
 use super::editor::{AUTOSAVE_AFTER, EDITOR_ID};
 use super::new_issue_ui::{DESCRIPTION_ID, TITLE_ID};
 use super::{
@@ -120,11 +119,12 @@ impl IboardApp {
         if editing && focused(EDITOR_ID) {
             return Some(Target::Editor);
         }
-        let composing =
-            matches!(self.session.screen, Screen::Board)
-                && self.session.composer.as_ref().is_some_and(|c| {
-                    c.open && c.stage != TitleStage::Naming && c.drafting.is_none()
-                });
+        let composing = matches!(self.session.screen, Screen::Board)
+            && self
+                .session
+                .composer
+                .as_ref()
+                .is_some_and(|c| c.open && c.drafting.is_none());
         (composing && (focused(TITLE_ID) || focused(DESCRIPTION_ID))).then_some(Target::Composer)
     }
 

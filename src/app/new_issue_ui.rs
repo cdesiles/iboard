@@ -94,9 +94,9 @@ impl IboardApp {
         }
     }
 
-    /// The modal's keys outside its fields: `esc` (stop, skip naming, or
-    /// close and park), `⌘⇧R` (draft), `⌘Z` (undo the draft), `End`
-    /// (follow the draft), and `↩` / `⌘↩` from a button.
+    /// The modal's keys outside its fields: `esc` (stop, or close and park),
+    /// `⌘⇧R` (draft), `⌘Z` (undo the draft), `End` (follow the draft), and
+    /// `↩` / `⌘↩` from a button.
     pub(super) fn new_issue_keys(&mut self, ctx: &egui::Context) {
         let in_notes = ctx.memory(|m| m.has_focus(egui::Id::new(DESCRIPTION_ID)));
         let typing = ctx.memory(|m| m.focused().is_some());
@@ -220,7 +220,7 @@ fn head(
     }
 }
 
-/// `↩` names or adds from either field, `⌘↩` adds and opens the Editor, and
+/// `↩` adds from either field, `⌘↩` adds and opens the Editor, and
 /// `⇧↩` is the notes' new line (or a step down from the title). Taken
 /// before the fields see the key.
 fn composer_enter(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<ComposeAction>) {
@@ -261,12 +261,6 @@ fn composer_enter(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<
             _ => true,
         })
     });
-    if composer.stage == TitleStage::Naming {
-        if edit {
-            actions.push(ComposeAction::Submit { edit: true });
-        }
-        return;
-    }
     if add || edit {
         actions.push(ComposeAction::Submit { edit });
     }
@@ -280,7 +274,6 @@ fn composer_enter(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<
 fn notes_pane(ui: &mut egui::Ui, composer: &mut Composer, height: f32) {
     let p = theme::palette(ui);
     let drafting = composer.drafting.is_some();
-    let locked = drafting || composer.stage == TitleStage::Naming;
     let (fill, ink) = if drafting {
         (p.surface_sunken, p.ink_muted)
     } else {
@@ -328,7 +321,7 @@ fn notes_pane(ui: &mut egui::Ui, composer: &mut Composer, height: f32) {
                 |ui| {
                     let rows = (room / 22.0).floor().max(3.0) as usize;
                     ui.add_enabled(
-                        !locked,
+                        !drafting,
                         egui::TextEdit::multiline(&mut composer.description)
                             .id(egui::Id::new(DESCRIPTION_ID))
                             .font(theme::read_body())
@@ -350,7 +343,7 @@ fn notes_pane(ui: &mut egui::Ui, composer: &mut Composer, height: f32) {
                     )
                 },
             );
-            if composer.focus == Some(ComposerField::Description) && !locked {
+            if composer.focus == Some(ComposerField::Description) && !drafting {
                 composer.focus = None;
                 scroll.inner.request_focus();
             }
@@ -517,7 +510,7 @@ fn sheet_head(ui: &mut egui::Ui, composer: &Composer, view: &ComposeView) {
             };
             let color = if taken {
                 p.status_doing
-            } else if matches!(composer.stage, TitleStage::Inferred | TitleStage::Drafted) {
+            } else if composer.stage == TitleStage::Drafted {
                 p.status_done
             } else {
                 p.ink_muted
@@ -764,37 +757,26 @@ fn unwritten(
     });
 }
 
-/// The title row on the sheet, in `read-h1`, with QuickAdd's title states:
-/// the title (or "Naming…"), the character count near the limit, and its
-/// tag (Inferred, Drafted), over a rule that says how it will be named.
+/// The title row on the sheet, in `read-h1`: the title, the character count
+/// near the limit, and the Drafted tag, over a rule that says how it will be
+/// named.
 fn title_row(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<ComposeAction>) {
     let p = theme::palette(ui);
     let width = ui.available_width();
     let (row, _) = ui.allocate_exact_size(Vec2::new(width, 34.0), Sense::hover());
     let rule_y = row.max.y - 0.5;
     let rule = [Pos2::new(row.min.x, rule_y), Pos2::new(row.max.x, rule_y)];
-    let suggested = matches!(composer.stage, TitleStage::Inferred | TitleStage::Drafted);
-    let manual = !suggested && !composer.title.trim().is_empty();
-    let engine = if manual { None } else { composer.engine };
-    match (composer.stage, engine) {
-        (TitleStage::Failed | TitleStage::Skipped, _) => {
-            ui.painter()
-                .line_segment(rule, Stroke::new(1.0, p.status_doing));
-        }
-        (TitleStage::Drafted, _) => {
-            ui.painter().line_segment(rule, Stroke::new(1.0, p.line));
-        }
-        (_, None) => {
-            ui.painter().extend(Shape::dashed_line(
-                &rule,
-                Stroke::new(1.0, p.line_strong),
-                4.0,
-                3.0,
-            ));
-        }
-        _ => {
-            ui.painter().line_segment(rule, Stroke::new(1.0, p.line));
-        }
+    let drafted = composer.stage == TitleStage::Drafted;
+    let inferred = composer.title.trim().is_empty() && composer.engine.is_some();
+    if drafted || inferred {
+        ui.painter().line_segment(rule, Stroke::new(1.0, p.line));
+    } else {
+        ui.painter().extend(Shape::dashed_line(
+            &rule,
+            Stroke::new(1.0, p.line_strong),
+            4.0,
+            3.0,
+        ));
     }
     let mut row_ui = ui.new_child(
         egui::UiBuilder::new()
@@ -802,13 +784,8 @@ fn title_row(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<Compo
             .layout(Layout::right_to_left(Align::Center)),
     );
     row_ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-    let tag = match composer.stage {
-        TitleStage::Inferred => Some("Inferred"),
-        TitleStage::Drafted => Some("Drafted"),
-        _ => None,
-    };
-    if let Some(tag) = tag {
-        widgets::tag(&mut row_ui, tag, true);
+    if drafted {
+        widgets::tag(&mut row_ui, "Drafted", true);
     }
     let chars = composer.title.chars().count();
     if chars >= titles::MAX_TITLE_CHARS - 10 {
@@ -818,35 +795,8 @@ fn title_row(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<Compo
                 .color(p.ink_muted),
         );
     }
-    if composer.stage == TitleStage::Naming {
-        row_ui.with_layout(Layout::left_to_right(Align::Center), naming_dot);
-    } else {
-        title_field(&mut row_ui, composer);
-    }
+    title_field(&mut row_ui, composer);
     let _ = actions;
-}
-
-/// "Naming…" with its pulsing `status-doing` dot, steady with reduced motion.
-fn naming_dot(ui: &mut egui::Ui) {
-    let p = theme::palette(ui);
-    ui.spacing_mut().item_spacing.x = 6.0;
-    let (dot, _) = ui.allocate_exact_size(Vec2::splat(6.0), Sense::hover());
-    let pulse = if theme::reduced_motion(ui.ctx()) {
-        1.0
-    } else {
-        (ui.input(|i| i.time) * std::f64::consts::TAU).sin() as f32
-    };
-    ui.painter().circle_filled(
-        dot.center(),
-        3.0,
-        p.status_doing.gamma_multiply(0.65 + 0.35 * pulse),
-    );
-    ui.label(
-        RichText::new("Naming…")
-            .font(theme::read_h1())
-            .color(p.ink_muted),
-    );
-    ui.ctx().request_repaint();
 }
 
 /// The title's text field; focused on request, with the whole suggestion
@@ -854,10 +804,9 @@ fn naming_dot(ui: &mut egui::Ui) {
 fn title_field(row: &mut egui::Ui, composer: &mut Composer) {
     let p = theme::palette(row);
     let title_id = egui::Id::new(TITLE_ID);
-    let hint = match (composer.stage, composer.engine) {
-        (TitleStage::Failed | TitleStage::Skipped, _) => "Type a title",
-        (_, None) => "Add a title",
-        _ => "Title is named from your notes",
+    let hint = match composer.engine {
+        None => "Add a title",
+        Some(_) => "Title is named from your notes",
     };
     let width = row.available_width();
     let mut output = egui::TextEdit::singleline(&mut composer.title)
@@ -885,11 +834,9 @@ fn title_field(row: &mut egui::Ui, composer: &mut Composer) {
             output.state.store(row.ctx(), title_id);
         }
     }
-    // Editing a suggestion makes it the user's own title.
-    if output.response.changed()
-        && matches!(composer.stage, TitleStage::Inferred | TitleStage::Drafted)
-    {
-        composer.stage = TitleStage::Skipped;
+    // Editing a draft's title makes it the user's own.
+    if output.response.changed() {
+        composer.stage = TitleStage::Idle;
     }
 }
 
@@ -959,12 +906,6 @@ fn foot(
                             &[("esc", "stop, keep what arrived")]
                         } else if composer.description.trim().is_empty() {
                             &[("↩", "add"), ("esc", "close")]
-                        } else if composer.title.trim().is_empty() {
-                            &[
-                                ("↩", "name, then add"),
-                                ("⇧↩", "new line"),
-                                ("⌘↩", "add & edit"),
-                            ]
                         } else {
                             &[("↩", "add"), ("⇧↩", "new line"), ("⌘↩", "add & edit")]
                         };

@@ -4,6 +4,7 @@ use super::build::{self, Builds, card_build};
 use super::card::{CardAction, CardExtras, CardLook, issue_card};
 use super::dock::{DOCK_H, IssueDrag};
 use super::intent::Intent;
+use super::naming::{Naming, is_naming};
 use super::{
     ARCHIVE_DIR, Align, Board, Color32, Column, CornerRadius, Duration, Filter, Frame, IboardApp,
     Icon, Issue, Labels, Layout, LayoutJob, MarginF32, Palette, Path, PathBuf, Pos2, Rect,
@@ -92,6 +93,7 @@ impl IboardApp {
                                 runs: &self.session.review_runs,
                             },
                             can_review: self.prefs.agent.configured(),
+                            namings: &self.session.namings,
                             builds: Builds {
                                 running: &running,
                                 agents,
@@ -175,6 +177,8 @@ struct ColumnView<'a> {
     reviews: review::CardReviews<'a>,
     /// An agent is set up, so the selected Todo card offers Review.
     can_review: bool,
+    /// The new issues whose titles are still to land.
+    namings: &'a [Naming],
     /// The issues the build agents work on, and how many may.
     builds: Builds<'a>,
 }
@@ -503,6 +507,7 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
         build: card_build(view.column, issue, view.builds),
         labelling: discovery::is_editable_column(&view.column.dir),
         active_labels: &view.filter.tokens,
+        naming: is_naming(view.namings, &issue.path),
     };
     issue_card(ui, issue, view.width, look, view.labels, extras)
 }

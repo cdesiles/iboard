@@ -230,7 +230,7 @@ impl IboardApp {
             self.poll_review(),
             self.poll_refinement(),
             self.poll_split(),
-            self.poll_naming(),
+            self.poll_namings(ctx),
             self.poll_draft(),
             self.poll_design_draft(),
             self.poll_enrichment(),

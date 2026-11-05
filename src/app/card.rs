@@ -63,6 +63,8 @@ pub(super) struct CardExtras<'a> {
     pub(super) labelling: bool,
     /// The labels the board is filtered by: they show as active.
     pub(super) active_labels: &'a [String],
+    /// Its title is still to land.
+    pub(super) naming: bool,
 }
 
 /// How a card stands out from the others.
@@ -527,6 +529,13 @@ fn card_meta(
         build_timer(ui, issue, since);
     }
     card_date_label(ui, issue);
+    if extras.naming {
+        ui.label(
+            RichText::new("Naming…")
+                .font(theme::meta())
+                .color(p.status_doing),
+        );
+    }
     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
         ui.add(
             egui::Label::new(

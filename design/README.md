@@ -77,7 +77,7 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 - **Two entry points, one composer.** The "New issue" button in the board header (primary, `⌘N`) and the `+` icon button in the Todo column header both open the same **NewIssueModal**, an XL modal over the board. `⌘N` works from every screen.
 - **Notes left, the file right.** You write (or dictate) in the notes pane; the right pane is a Reader sheet showing exactly what `↩` will write, at reading size and never cut short. The title states (naming, inferred, manual, failed) are QuickAdd's, shown on the sheet's title row.
 - **Draft with Review (`⌘⇧R`) fills the sheet in place.** The known section headings appear at once with Skeleton bars, the section being written carries a `review` rule and caret, and the sheet follows the writing line. `esc` stops and keeps what arrived. The agent never writes the file. See NewIssueModal.
-- **`↩` names, then adds.** With an empty title, `↩` infers one from the description and stops on it, selected and tagged Inferred, so you can rename it by typing. `↩` again writes `todo/<slug>.md` (`# <title>`, then the notes, or the draft when there is one) and closes the modal. A title you typed yourself skips the stop.
+- **`↩` adds, and never waits.** It writes `todo/<slug>.md` (`# <title>`, then the notes, or the draft when there is one) and closes the modal. With an empty title the file is `unnamed-ticket-xxxx` until the engine's title lands in the background, within 15s, renaming the file and setting its heading; the card reads "Naming…" meanwhile.
 - **`⌘↩` names, adds and opens the Editor** in one go. `⇧↩` is a new line in the description.
 - **Never blocked.** With the engine Off, unavailable, failing or too slow, the first line of the description becomes the title.
 - **Long notes** have the whole notes pane; nothing is capped or truncated.
@@ -121,11 +121,11 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | NewIssueModal | Draft with Review (`⌘⇧R`) | DraftRequested → DraftSectionStarted / DraftTextAppended … → DraftCompleted / DraftFailed | The sheet fills in place, section by section |
 | NewIssueModal | `esc` while drafting | DraftStopped | Partial draft kept; unwritten sections become ghost tiles |
 | NewIssueModal | Close, `esc` | NewIssueParked / NewIssueClosed | Board; Todo `+` shows a parked dot |
-| NewIssueModal | Describe, `↩` (no title yet) | TitleInferenceRequested → TitleInferred | Sheet title row shows the selected title, tagged Inferred |
-| NewIssueModal | `↩` while naming fails or times out | TitleInferenceFailed | Notes kept, cursor in the title |
-| Board | Type in the title row | TitleEdited | Inferred tag drops; meta shows the new file name |
-| NewIssueModal | `↩` with a title (or the first line as fallback) | IssueCreated | Board, new card flashes at the top of Todo |
-| Board | `⌘↩` | (TitleInferred →) IssueCreated → EditStarted | Editor on the new file |
+| NewIssueModal | Describe, `↩` (no title yet) | IssueCreated, TitleInferenceRequested | Board; the card, `unnamed-ticket-xxxx`, flashes at the top of Todo and reads "Naming…" |
+| Board | The engine answers | TitleInferred | The file is renamed and its heading set, unless renamed or retitled meanwhile |
+| Board | The engine fails or times out | TitleInferenceFailed | The issue stays `unnamed-ticket-xxxx` |
+| NewIssueModal | `↩` with a title (or the first line, with no engine) | IssueCreated | Board, new card flashes at the top of Todo |
+| NewIssueModal | `⌘↩` | IssueCreated → EditStarted (title as for `↩`, landing once the Editor closes) | Editor on the new file |
 | Reader | Click description, `E`, `↩` | EditStarted | Editor, cursor at click point |
 | Reader | Click a ghost section or an "Add a section" chip | SectionAddRequested → EditStarted | Editor with `## <Section>` appended, cursor under it |
 | Reader | Click the empty sheet below the text | EditStarted | Editor, cursor at the end of the file |

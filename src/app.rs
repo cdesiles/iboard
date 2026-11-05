@@ -64,6 +64,7 @@ mod intent;
 mod keys;
 mod labelling;
 mod moves;
+mod naming;
 mod nav;
 mod new_issue_ui;
 mod projects;
@@ -281,6 +282,8 @@ struct Session {
     screen: Screen,
     editor: Option<EditorState>,
     composer: Option<Composer>,
+    /// The new issues whose titles are still to land.
+    namings: Vec<naming::Naming>,
     /// A new issue discarded, for `⌘Z` in the next [`compose::DISCARD_UNDO`].
     discarded: Option<(Composer, Instant)>,
     /// The issue the composer just wrote, highlighted for a moment.
@@ -377,6 +380,7 @@ impl Default for Session {
             label_picker: None,
             commits: None,
             pending_front: None,
+            namings: Vec::new(),
             notice: None,
             undo: None,
             design: None,

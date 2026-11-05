@@ -1,9 +1,10 @@
-//! NewIssueModal's logic: opening and parking it, naming the issue, Draft
-//! with Review, and writing the issue to Todo. Its look is `new_issue_ui`.
+//! NewIssueModal's logic: opening and parking it, Draft with Review, and
+//! writing the issue to Todo, its title landing later (`naming`). Its look is
+//! `new_issue_ui`.
 
 use super::{
     Duration, Engine, HashMap, IboardApp, Instant, Job, Leave, Path, PathBuf, Screen, agent,
-    atomic_write, images, job, prompts, titles,
+    atomic_write, images, prompts, titles,
 };
 use iboard::new_issue::{self, Parked};
 
@@ -21,11 +22,10 @@ pub(super) struct Composer {
     /// Shown over the board; closed, it holds the parked notes.
     pub(super) open: bool,
     /// The engine that names issues, checked when the composer opened;
-    /// `None` when it is Off or unavailable, so titles are typed (Manual).
+    /// `None` when it is Off or unavailable: the first line names an untitled
+    /// issue (Manual).
     pub(super) engine: Option<Engine>,
     pub(super) stage: TitleStage,
-    /// The engine's answer while naming.
-    pub(super) naming: Option<NamingRun>,
     /// The field to give keyboard focus on the next frame.
     pub(super) focus: Option<ComposerField>,
     /// Select the whole title when it gets focus, so typing replaces it.
@@ -74,30 +74,14 @@ pub(super) enum ComposerField {
     Description,
 }
 
-/// Where the composer's title stands while the user has not typed one.
+/// Where the composer's title comes from.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum TitleStage {
-    /// Named on save, if an engine is ready.
+    /// Typed, or named once the issue is written, if an engine is ready.
     #[default]
     Idle,
-    /// Waiting for the engine.
-    Naming,
-    /// The engine's suggestion, untouched.
-    Inferred,
     /// The title Review drafted, untouched.
     Drafted,
-    /// The engine failed or was too slow: the first line names the issue.
-    Failed,
-    /// `esc` while naming: the user types the title.
-    Skipped,
-}
-
-pub(super) struct NamingRun {
-    pub(super) answer: Job<Result<String, String>>,
-    /// `⌘↩`: write and open the Editor as soon as the title is in.
-    then_edit: bool,
-    /// When the composer stops waiting for the title.
-    pub(super) deadline: Instant,
 }
 
 impl IboardApp {
@@ -162,11 +146,6 @@ impl IboardApp {
             title_before: (String::new(), TitleStage::Idle),
         });
         Some(Composer {
-            stage: if parked.title.trim().is_empty() {
-                TitleStage::Idle
-            } else {
-                TitleStage::Skipped
-            },
             title: parked.title,
             description: parked.notes,
             draft,
@@ -181,10 +160,6 @@ impl IboardApp {
         let Some(composer) = self.session.composer.as_mut() else {
             return;
         };
-        composer.naming = None;
-        if composer.stage == TitleStage::Naming {
-            composer.stage = TitleStage::Idle;
-        }
         let parked = Parked {
             title: composer.title.clone(),
             notes: composer.description.clone(),
@@ -209,7 +184,6 @@ impl IboardApp {
             return;
         };
         composer.drafting = None;
-        composer.naming = None;
         composer.open = false;
         if let Some(path) = self.park_file() {
             let _ = new_issue::clear(&path);
@@ -259,10 +233,11 @@ impl IboardApp {
         }
     }
 
-    /// `↩`: with no title yet and an engine ready, it names the issue first
-    /// and stops on the suggestion; otherwise it writes the issue. `⌘↩`
-    /// (`edit`) never stops: it names if needed, writes, and opens the
-    /// Editor. While Review drafts, it adds what is shown.
+    /// `↩`: writes the issue and closes, never waiting. A title you typed is
+    /// used as it is; with none, it lands as `unnamed-ticket-xxxx` while an
+    /// engine names it, or takes the first line when no engine is ready.
+    /// `⌘↩` (`edit`) also opens the Editor. While Review drafts, it adds what
+    /// is shown.
     pub(super) fn submit_composer(&mut self, edit: bool) {
         if self
             .session
@@ -272,61 +247,49 @@ impl IboardApp {
         {
             self.stop_draft();
         }
-        let Some(composer) = self.session.composer.as_mut() else {
+        let Some(composer) = self.session.composer.as_ref() else {
             return;
         };
-        if composer.stage == TitleStage::Naming {
-            if edit && let Some(run) = composer.naming.as_mut() {
-                run.then_edit = true;
-            }
-            return;
-        }
         let typed = composer.title.trim().to_string();
         let description = composer.description.clone();
+        let engine = composer.engine;
         if typed.is_empty() && description.trim().is_empty() {
             return;
         }
-        let title = if !typed.is_empty() {
-            typed
-        } else if let (Some(engine), TitleStage::Idle | TitleStage::Inferred) =
-            (composer.engine, composer.stage)
-        {
-            composer.naming = Some(NamingRun {
-                answer: titles::start(engine, &self.prefs.agent, &description),
-                then_edit: edit,
-                deadline: Instant::now() + titles::TIMEOUT,
-            });
-            composer.stage = TitleStage::Naming;
-            composer.error = None;
-            return;
+        if !typed.is_empty() {
+            self.write_composed(&typed, edit);
+        } else if let Some(engine) = engine {
+            let placeholder = self.unnamed_title();
+            if self.write_composed(&placeholder, edit) {
+                self.start_naming(engine, placeholder, &description);
+            }
         } else {
-            titles::first_line_title(&description)
-        };
-        self.write_composed(&title, edit);
+            self.write_composed(&titles::first_line_title(&description), edit);
+        }
     }
 
     /// Writes the new issue to Todo; on success the modal closes and the
     /// card flashes at the top of Todo, on failure it keeps everything and
-    /// says why.
-    pub(super) fn write_composed(&mut self, title: &str, edit: bool) {
+    /// says why. True when the issue was written.
+    pub(super) fn write_composed(&mut self, title: &str, edit: bool) -> bool {
         let Some(column_dir) = self.board.todo_column().map(|c| c.dir.clone()) else {
-            return;
+            return false;
         };
         let dir = match self.compose_dir(&column_dir) {
             Ok(dir) => dir,
             Err(err) => {
                 self.error = Some(err);
-                return;
+                return false;
             }
         };
         let Some(composer) = self.session.composer.as_ref() else {
-            return;
+            return false;
         };
         let (name, _) = crate::issue::new_file_name(&dir, title.trim());
         let notes = composer.description.clone();
         let notes = self.adopt_pending_images(&name, &notes);
         let Some(composer) = self.session.composer.as_ref() else {
-            return;
+            return false;
         };
         let content = self.composed_text(composer, title, &notes);
         match self.create_issue(&dir, title, &content) {
@@ -345,63 +308,22 @@ impl IboardApp {
                 if edit {
                     self.start_editing(&path);
                 }
+                true
             }
             Err(err) => {
                 if let Some(composer) = self.session.composer.as_mut() {
                     composer.error = Some(err);
                     composer.focus = Some(ComposerField::Description);
                 }
+                false
             }
         }
     }
 
-    /// Adopts the engine's title when it lands, or gives up after
-    /// [`titles::TIMEOUT`], when the user types it or the first line names it.
-    pub(super) fn poll_naming(&mut self) -> Option<Duration> {
-        let run = self
-            .session
-            .composer
-            .as_ref()
-            .and_then(|c| c.naming.as_ref())?;
-        let result = match run.answer.answer() {
-            Some(result) => result,
-            None if Instant::now() < run.deadline => return Some(job::POLL_EVERY),
-            None => Err("the engine took too long".to_string()),
-        };
-        let composer = self.session.composer.as_mut()?;
-        let then_edit = composer.naming.take().is_some_and(|run| run.then_edit);
-        let description = composer.description.clone();
-        match result {
-            Ok(title) if then_edit => self.write_composed(&title, true),
-            Ok(title) => {
-                composer.title = title;
-                composer.stage = TitleStage::Inferred;
-                composer.select_title = true;
-                composer.focus = Some(ComposerField::Title);
-            }
-            // `⌘↩` never stops: the first line names it.
-            Err(_) if then_edit => {
-                let title = titles::first_line_title(&description);
-                self.write_composed(&title, true);
-            }
-            Err(_) => {
-                composer.stage = TitleStage::Failed;
-                composer.focus = Some(ComposerField::Title);
-            }
-        }
-        None
-    }
-
-    /// `esc`: stops Review and keeps what arrived; while naming, stops and
-    /// lets you type the title; otherwise closes and parks.
+    /// `esc`: stops Review and keeps what arrived; otherwise closes and parks.
     pub(super) fn composer_escape(&mut self) {
         match self.session.composer.as_mut() {
             Some(composer) if composer.drafting.is_some() => self.stop_draft(),
-            Some(composer) if composer.stage == TitleStage::Naming => {
-                composer.naming = None;
-                composer.stage = TitleStage::Skipped;
-                composer.focus = Some(ComposerField::Title);
-            }
             _ => self.close_composer(),
         }
     }
@@ -445,7 +367,6 @@ impl IboardApp {
             Some(drafted) => drafted.title_before,
             None => (composer.title.clone(), composer.stage),
         };
-        composer.naming = None;
         composer.draft = Some(Drafted {
             draft: new_issue::Draft::default(),
             notes_hash: new_issue::notes_hash(&notes),

@@ -10,7 +10,7 @@ use iboard::format::{display_path, thousands};
 use iboard::stats::{self, Limits, Measures, Snapshot, Source, Stats};
 
 use super::agenda;
-use super::compose::{Composer, TitleStage};
+use super::compose::Composer;
 use super::{
     Align, ButtonKind, Color32, CornerRadius, Duration, Frame, IboardApp, Icon, Instant, Job, Key,
     Layout, Pos2, Rect, RichText, Sense, Shape, Stroke, Vec2, job, theme, widgets,
@@ -252,7 +252,6 @@ impl IboardApp {
         if composer.is_empty() {
             composer.title = title;
             composer.description = description;
-            composer.stage = TitleStage::Skipped;
         }
         self.open_composer();
     }

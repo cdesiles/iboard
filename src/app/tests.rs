@@ -17,6 +17,7 @@ mod kit;
 mod labelling;
 mod modals;
 mod moves;
+mod naming;
 mod panes;
 mod project_menu;
 mod refine;
