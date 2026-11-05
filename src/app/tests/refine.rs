@@ -157,6 +157,17 @@ fn command_r_refines_and_command_shift_r_reviews() {
     assert!(app.board.find(&file).is_some());
 }
 
+#[test]
+fn the_inline_divider_takes_the_whole_gutter() {
+    let (_dir, file, mut app) = refining("refine-divider", "printf 'Why?' # {prompt}");
+    app.start_refinement(&file);
+    assert!(until(|| {
+        app.poll_refinement();
+        turns(&app) == 1
+    }));
+    panes::drags_from_right_half(&themed_ctx(), &mut app, "refine");
+}
+
 /// The panel sits over the page: Hide tucks it away and keeps the
 /// conversation, the pill at the foot brings it back, End refining ends it.
 #[test]

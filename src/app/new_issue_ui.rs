@@ -153,7 +153,7 @@ fn modal_ui(
             let panes = Rect::from_min_size(ui.cursor().min, body);
             let default = (body.x * 0.6).round();
             let range = 360.0..=(body.x - NOTES_MIN);
-            let split = egui::Id::new("pane-split-new-issue");
+            let split = theme::pane_split_id("new-issue");
             let issue_w = theme::pane_split(ui.ctx(), split, default)
                 .clamp(*range.start(), range.end().max(*range.start()));
             let notes_w = body.x - issue_w;
@@ -162,28 +162,25 @@ fn modal_ui(
                 Layout::top_down(Align::Min),
                 |ui| notes_pane(ui, composer, body.y),
             );
-            let issue = ui
-                .allocate_ui_with_layout(
-                    Vec2::new(issue_w, body.y),
-                    Layout::top_down(Align::Min),
-                    |ui| {
-                        issue_pane(
-                            ui,
-                            Vec2::new(issue_w, body.y),
-                            composer,
-                            view,
-                            cache,
-                            &mut actions,
-                        )
-                    },
-                )
-                .response
-                .rect;
-            let gutter = Rect::from_x_y_ranges(
-                issue.min.x - theme::SPACE_3..=issue.min.x + theme::SPACE_3,
-                issue.y_range(),
+            let x = ui.cursor().min.x;
+            let gutter =
+                Rect::from_x_y_ranges(x - theme::SPACE_3..=x + theme::SPACE_3, panes.y_range());
+            let divider = theme::pane_divider(ui, split, panes, gutter, range, default, false);
+            ui.allocate_ui_with_layout(
+                Vec2::new(issue_w, body.y),
+                Layout::top_down(Align::Min),
+                |ui| {
+                    issue_pane(
+                        ui,
+                        Vec2::new(issue_w, body.y),
+                        composer,
+                        view,
+                        cache,
+                        &mut actions,
+                    )
+                },
             );
-            theme::pane_divider(ui, split, panes, gutter, range, default, false);
+            divider.paint(ui);
         });
     }
     widgets::rule(ui);
@@ -327,7 +324,7 @@ fn notes_pane(ui: &mut egui::Ui, composer: &mut Composer, height: f32) {
                     .id_salt("new-issue-notes")
                     .max_height(room)
                     .auto_shrink([false, false]),
-                true,
+                false,
                 |ui| {
                     let rows = (room / 22.0).floor().max(3.0) as usize;
                     ui.add_enabled(

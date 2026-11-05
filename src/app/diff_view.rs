@@ -393,7 +393,7 @@ fn file_list(ui: &mut egui::Ui, view: &mut DiffView) {
                     .id_salt("diff-files")
                     .content_margin(theme::scroll_margin(0.0, 0.0))
                     .auto_shrink([false, false]),
-                true,
+                false,
                 |ui| {
                     for (at, row) in view.rows.iter().enumerate() {
                         let Row::File(c, f) = *row else {

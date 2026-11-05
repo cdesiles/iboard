@@ -125,6 +125,9 @@ confirm = true      # false: delete without asking, with ⌘Z undo
 enabled = false     # true: agents run through `direnv exec` in projects with an .envrc
 ```
 
+The board also writes a `[splits]` section there: the widths you resized pairs
+of panes to, so they come back after a restart.
+
 Issues labelled `manual` (a quote, an email: work that is not code) stay in
 Ready when Play hands the column to the build agent.
 

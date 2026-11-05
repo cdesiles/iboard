@@ -2,12 +2,21 @@
 //! (`~/.config/iboard/iboard.toml`): the sections Settings keeps, the
 //! filter's pinned suggestions, and the switches Settings does not list.
 
+use std::collections::BTreeMap;
+
 use crate::agent::{self, AgentConfig, BuildTimeout};
 use crate::filter;
 use crate::general::{self, Appearance};
 use crate::labels::{self, Labels};
 use crate::settings::{Section, UserConfig};
 use crate::titles::{self, Engine};
+
+const SPLITS: &str = "splits";
+
+/// The `[splits]` section that stores `splits`.
+pub fn splits_section(splits: &BTreeMap<String, u32>) -> Result<Section, String> {
+    Section::new(SPLITS, splits)
+}
 
 /// The preferences the user configuration sets, each from its own section.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +44,9 @@ pub struct Preferences {
     pub direnv: bool,
     /// `[labels]`: the label colours over the presets.
     pub labels: Labels,
+    /// `[splits]`: the right pane's width per pair of panes, in points. The
+    /// board writes it as they are resized; Settings does not list it.
+    pub splits: BTreeMap<String, u32>,
 }
 
 impl Default for Preferences {
@@ -63,6 +75,7 @@ impl Preferences {
             idesign: general::load_idesign(config),
             direnv: general::load_direnv(config),
             labels: Labels::load(config),
+            splits: config.section(SPLITS),
         }
     }
 
@@ -135,6 +148,7 @@ mod tests {
             idesign: false,
             direnv: false,
             labels: Labels::presets(),
+            splits: BTreeMap::new(),
         };
         assert_eq!(Preferences::default(), defaults);
         let mut empty = UserConfig::default();
@@ -154,7 +168,8 @@ mod tests {
              [auto]\nenabled = false\n\
              [idesign]\nenabled = true\n\
              [direnv]\nenabled = true\n\
-             [labels]\nspike = \"#123456\"\n",
+             [labels]\nspike = \"#123456\"\n\
+             [splits]\nreview = 420\n",
         );
         let preferences = Preferences::load(&mut config);
         assert!(config.problems.is_empty(), "{:?}", config.problems);
@@ -172,6 +187,7 @@ mod tests {
                 idesign: true,
                 direnv: true,
                 labels: colours("spike", "#123456"),
+                splits: BTreeMap::from([("review".to_string(), 420)]),
             }
         );
     }
@@ -179,7 +195,8 @@ mod tests {
     #[test]
     fn what_cannot_be_used_falls_back_and_is_reported_in_reading_order() {
         let mut config = parse(
-            "[labels]\nbug = \"red\"\n\
+            "[splits]\nreview = \"wide\"\n\
+             [labels]\nbug = \"red\"\n\
              [direnv]\nenabled = \"yes\"\n\
              [idesign]\nenabled = \"yes\"\n\
              [auto]\nenabled = \"no\"\n\
@@ -209,8 +226,33 @@ mod tests {
                 "[idesign]",
                 "[direnv]",
                 "[labels]",
+                "[splits]",
             ]
         );
+    }
+
+    #[test]
+    fn splits_are_saved_on_their_own_and_read_back() {
+        let scratch = tempfile::tempdir().unwrap();
+        let file = scratch.path().join("iboard.toml");
+        let mine = "[delete]\nconfirm = false\n";
+        std::fs::write(&file, mine).unwrap();
+        let before = Preferences::load(&mut UserConfig::load(Some(&file)));
+        let splits = BTreeMap::from([("log".to_string(), 512), ("review".to_string(), 400)]);
+        let moved = Preferences {
+            splits: splits.clone(),
+            ..before.clone()
+        };
+        assert!(
+            moved.sections_since(&before).unwrap().is_empty(),
+            "Settings never rewrites [splits]"
+        );
+        settings::save(&file, &[splits_section(&splits).unwrap()]).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            format!("{mine}\n[splits]\nlog = 512\nreview = 400\n")
+        );
+        assert_eq!(Preferences::load(&mut UserConfig::load(Some(&file))), moved);
     }
 
     #[test]

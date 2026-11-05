@@ -219,6 +219,7 @@ impl IboardApp {
         }
         self.autosave();
         self.rescan(ctx);
+        self.remember_splits(ctx);
     }
 
     /// Adopts the background work's answers as soon as they land. Each poll

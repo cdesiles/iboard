@@ -451,7 +451,7 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
             theme::scroll_area(
                 ui,
                 egui::ScrollArea::vertical()
-                    .id_salt("editor_scroll")
+                    .id_salt(("editor_scroll", &editor.path))
                     .content_margin(theme::scroll_margin(20.0, theme::SPACE_5))
                     .auto_shrink([false, false]),
                 true,

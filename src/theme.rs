@@ -9,7 +9,9 @@ mod icons;
 mod scroll;
 mod thinking;
 
-pub use divider::{pane_divider, pane_split};
+pub use divider::{
+    PaneDivider, pane_divider, pane_split, pane_split_id, restore_pane_split, stored_pane_split,
+};
 pub use icons::{ICON_SIZE, Icon, paint_icon};
 pub use scroll::{SCROLL_CLEAR, scroll_area, scroll_margin, scroll_rows};
 pub use thinking::thinking_mark;

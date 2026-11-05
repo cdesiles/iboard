@@ -453,7 +453,7 @@ fn refine_ui(
             let panes = Rect::from_min_size(ui.cursor().min, Vec2::new(size.x, pane_h));
             let default = (size.x * 0.38).clamp(*PICK_WIDTH.start(), *PICK_WIDTH.end());
             let range = *PICK_WIDTH.start()..=(size.x - WHY_MIN).min(*PICK_WIDTH.end());
-            let split = egui::Id::new("pane-split-refine");
+            let split = theme::pane_split_id("refine");
             let pick_w =
                 theme::pane_split(ui.ctx(), split, default).clamp(*range.start(), *range.end());
             let why = ui.allocate_ui_with_layout(
@@ -466,7 +466,7 @@ fn refine_ui(
                             .id_salt("refine-why")
                             .max_height(pane_h)
                             .auto_shrink([false, false]),
-                        true,
+                        false,
                         |ui| why_pane(ui, refine, cache, false),
                     )
                     .inner
@@ -474,7 +474,11 @@ fn refine_ui(
             );
             unfold = why.inner;
             ui.add_space(SCROLL_STEP_IN);
-            let pick = ui.allocate_ui_with_layout(
+            let x = ui.cursor().min.x;
+            let hit = egui::Rangef::new(x - INLINE_HIT / 2.0, x + INLINE_HIT / 2.0);
+            let gutter = Rect::from_x_y_ranges(hit, why.response.rect.y_range());
+            let divider = theme::pane_divider(ui, split, panes, gutter, range, default, true);
+            ui.allocate_ui_with_layout(
                 Vec2::new(pick_w, pane_h),
                 Layout::top_down(Align::Min),
                 |ui| {
@@ -489,12 +493,7 @@ fn refine_ui(
                     );
                 },
             );
-            let rect = pick.response.rect;
-            let gutter = Rect::from_x_y_ranges(
-                rect.min.x - INLINE_HIT / 2.0..=rect.min.x + INLINE_HIT / 2.0,
-                rect.y_range(),
-            );
-            theme::pane_divider(ui, split, panes, gutter, range, default, true);
+            divider.paint(ui);
         });
     }
     if unfold {

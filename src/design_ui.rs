@@ -361,7 +361,7 @@ impl Panel {
         if self.components_open {
             main.disable();
         }
-        theme::scroll_area(&mut main, filling("rail-main-scroll"), true, |ui| {
+        theme::scroll_area(&mut main, filling("rail-main-scroll"), false, |ui| {
             self.categories(ui, system);
         });
 
@@ -374,7 +374,7 @@ impl Panel {
         }
         components.add_space(theme::SPACE_2);
         let rows = filling("rail-components-scroll");
-        theme::scroll_area(&mut components, rows, true, |ui| {
+        theme::scroll_area(&mut components, rows, false, |ui| {
             self.component_rows(ui, system);
         });
     }

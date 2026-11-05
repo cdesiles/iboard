@@ -4,19 +4,31 @@ use std::ops::Range;
 
 use super::board::status_color;
 use super::comments::{NoteAction, Notes, block_notes, outdated_notes};
+use super::groups;
 use super::intent::Intent;
 use super::{
     Align, ButtonKind, Color32, CommonMarkCache, CommonMarkViewer, CornerRadius, Frame, HashSet,
     IboardApp, Icon, Labels, Layout, Path, PathBuf, Pos2, Rect, RichText, Sense, Stroke,
-    StrokeKind, Vec2, images, relative_time, sheet, theme, widgets,
+    StrokeKind, Vec2, images, relative_time, settings, sheet, theme, widgets,
 };
-use iboard::markdown;
+use iboard::{markdown, preferences};
 
 /// The narrowest a pane beside the Reader leaves it (`column-min`).
 const PANE_MIN: f32 = 280.0;
 
 /// Width of the AI review panel beside the reader or editor page.
 pub(super) const REVIEW_PANEL_WIDTH: f32 = 360.0;
+
+/// The pairs of panes whose split is kept in `[splits]`.
+const PANE_SPLITS: [&str; 4] = ["review", "log", "refine", "new-issue"];
+
+/// A child of `ui` filling and clipped to `rect`, whose scroll offsets stay
+/// the same wherever `rect` is.
+fn pane_ui(ui: &mut egui::Ui, salt: &str, rect: Rect) -> egui::Ui {
+    let mut pane = ui.new_child(egui::UiBuilder::new().id_salt(salt).max_rect(rect));
+    pane.shrink_clip_rect(rect);
+    pane
+}
 
 /// The reader's own state.
 pub(super) struct Reader {
@@ -63,38 +75,93 @@ impl IboardApp {
             .as_ref()
             .is_some_and(|refine| refine.path == path);
         let logged = self.agent_log_open(path);
-        if reviewed || logged {
-            let p = theme::palette(ui);
-            let panes = ui.max_rect();
-            let widest = (panes.width() - PANE_MIN).max(REVIEW_PANEL_WIDTH);
-            let range = REVIEW_PANEL_WIDTH..=widest;
-            let split = egui::Id::new(("pane-split", if reviewed { "review" } else { "log" }));
+        let panes = ui.max_rect();
+        let side = reviewed || logged;
+        let stacked = side && panes.width() < PANE_MIN + REVIEW_PANEL_WIDTH;
+        let widest = (panes.width() - PANE_MIN).max(REVIEW_PANEL_WIDTH);
+        let range = REVIEW_PANEL_WIDTH..=widest;
+        let split = theme::pane_split_id(if reviewed { "review" } else { "log" });
+        let (issue_rect, side_rect) = if stacked {
+            panes.split_top_bottom_at_fraction(0.5)
+        } else if side {
             let width = theme::pane_split(ui.ctx(), split, REVIEW_PANEL_WIDTH)
                 .clamp(*range.start(), *range.end());
+            panes.split_left_right_at_x(panes.right() - width)
+        } else {
+            (panes, Rect::NOTHING)
+        };
+
+        // Each pane in its own Ui, the same one with or without a side panel,
+        // so opening one keeps the issue's scroll offset. The issue comes
+        // first: tab goes from its content to the divider to the panel.
+        let mut issue_ui = pane_ui(ui, "issue-pane", issue_rect);
+        if self.session.editing().is_some() {
+            self.detail_edit(&mut issue_ui, path);
+        } else {
+            self.detail_preview(&mut issue_ui, path);
+        }
+        if side {
             let gutter = theme::SPACE_5;
-            let panel = egui::Panel::right("review")
-                .exact_size(width)
-                .resizable(false)
-                .frame(Frame::new().fill(p.bg).inner_margin(gutter))
-                .show(ui, |ui| {
+            let divider = (!stacked).then(|| {
+                let strip = side_rect.with_max_x(side_rect.left() + gutter);
+                theme::pane_divider(ui, split, panes, strip, range, REVIEW_PANEL_WIDTH, false)
+            });
+            let mut side_ui = pane_ui(ui, "side-pane", side_rect);
+            Frame::new()
+                .fill(theme::palette(ui).bg)
+                .inner_margin(gutter)
+                .show(&mut side_ui, |ui| {
+                    ui.set_min_size(ui.available_size());
                     if reviewed {
                         self.review_panel(ui);
                     } else {
                         self.agent_log_panel(ui);
                     }
                 });
-            let edge = panel.response.rect;
-            let strip = Rect::from_x_y_ranges(edge.left()..=edge.left() + gutter, edge.y_range());
-            theme::pane_divider(ui, split, panes, strip, range, REVIEW_PANEL_WIDTH, false);
-        }
-
-        if self.session.editing().is_some() {
-            self.detail_edit(ui, path);
-        } else {
-            self.detail_preview(ui, path);
+            if let Some(divider) = divider {
+                divider.paint(ui);
+            }
         }
         if refined {
             self.refine_popin(ui);
+        }
+    }
+
+    /// Puts the splits a previous run saved back in place.
+    pub(super) fn restore_splits(&self, ctx: &egui::Context) {
+        for (name, width) in &self.prefs.splits {
+            theme::restore_pane_split(ctx, theme::pane_split_id(name), *width as f32);
+        }
+    }
+
+    /// Saves a split that changed in `[splits]`, once the mouse lets go. It
+    /// is view state: a file that cannot be written just keeps the old one.
+    pub(super) fn remember_splits(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        let mut changed = false;
+        for name in PANE_SPLITS {
+            let id = theme::pane_split_id(name);
+            let Some(width) = theme::stored_pane_split(ctx, id) else {
+                continue;
+            };
+            let width = width.round() as u32;
+            if self.prefs.splits.get(name) != Some(&width) {
+                self.prefs.splits.insert(name.to_string(), width);
+                changed = true;
+            }
+        }
+        if !changed {
+            return;
+        }
+        let Some(file) = self.config_file.clone() else {
+            return;
+        };
+        if let Ok(section) = preferences::splits_section(&self.prefs.splits)
+            && settings::save(&file, &[section]).is_ok()
+        {
+            self.config_stamp = groups::modified(&file);
         }
     }
 

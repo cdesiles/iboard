@@ -4,8 +4,8 @@
 use std::ops::RangeInclusive;
 
 use egui::{
-    Align2, Context, CornerRadius, CursorIcon, Id, Key, Modifiers, Pos2, Rect, Response, Sense,
-    Stroke, StrokeKind, Ui, Vec2, WidgetInfo, WidgetType,
+    Align2, Context, CornerRadius, CursorIcon, EventFilter, Id, Key, Modifiers, Pos2, Rect,
+    Response, Sense, Stroke, StrokeKind, Ui, Vec2, WidgetInfo, WidgetType,
 };
 
 use super::{RADIUS_PILL, RADIUS_SM, meta, motion, palette};
@@ -17,16 +17,57 @@ const HOVER_DELAY: f64 = 0.15;
 const STEP: f32 = 16.0;
 const BIG_STEP: f32 = 80.0;
 
+/// The id the split of the pair of panes `name` is remembered under.
+pub fn pane_split_id(name: &str) -> Id {
+    Id::new(("pane-split", name))
+}
+
 /// The right pane's width for the pair of panes `id`, as last set by its
 /// [`pane_divider`]; `default` until then.
 pub fn pane_split(ctx: &Context, id: Id, default: f32) -> f32 {
-    ctx.data(|d| d.get_temp(id)).unwrap_or(default)
+    stored_pane_split(ctx, id).unwrap_or(default)
 }
 
-/// Paints and handles the divider in `gutter`, the strip between two panes
-/// laid out side by side in `panes`. It sets the right pane's width, kept in
-/// `range` and remembered under `id` for [`pane_split`]. `inline` is the
-/// variant inside one card: a 1pt `line` that thickens under the pointer.
+/// The width a divider or [`restore_pane_split`] set for `id`.
+pub fn stored_pane_split(ctx: &Context, id: Id) -> Option<f32> {
+    ctx.data(|d| d.get_temp(id))
+}
+
+/// Sets `id`'s split as a previous run left it.
+pub fn restore_pane_split(ctx: &Context, id: Id, width: f32) {
+    ctx.data_mut(|d| d.insert_temp(id, width));
+}
+
+/// A divider handled this frame, to [`paint`](Self::paint) once the right
+/// pane's background is down.
+#[must_use]
+pub struct PaneDivider {
+    response: Response,
+    panes: Rect,
+    gutter: Rect,
+    width: f32,
+    inline: bool,
+}
+
+impl PaneDivider {
+    /// The dot grip, its rule and the readout.
+    pub fn paint(&self, ui: &Ui) {
+        let Self {
+            response,
+            panes,
+            gutter,
+            width,
+            inline,
+        } = self;
+        paint(ui, response, *panes, *gutter, *width, *inline);
+    }
+}
+
+/// Handles the divider in `gutter`, the strip between two panes laid out side
+/// by side in `panes`. Call it between the panes, as tab goes through widgets
+/// in that order. It sets the right pane's width, kept in `range` and
+/// remembered under `id` for [`pane_split`]. `inline` is the variant inside
+/// one card: a 1pt `line` that thickens under the pointer.
 pub fn pane_divider(
     ui: &mut Ui,
     id: Id,
@@ -35,7 +76,7 @@ pub fn pane_divider(
     range: RangeInclusive<f32>,
     default: f32,
     inline: bool,
-) -> Response {
+) -> PaneDivider {
     let ctx = ui.ctx().clone();
     let clamp = |width: f32| width.clamp(*range.start(), range.end().max(*range.start()));
     let mut width = clamp(pane_split(&ctx, id, default));
@@ -59,6 +100,12 @@ pub fn pane_divider(
         width = default;
     }
     if response.has_focus() {
+        // egui would otherwise take `← →` as moving focus to the next widget.
+        let filter = EventFilter {
+            horizontal_arrows: true,
+            ..EventFilter::default()
+        };
+        ctx.memory_mut(|m| m.set_focus_lock_filter(id, filter));
         width = keys(&ctx, width, default);
     }
     let width = clamp(width);
@@ -69,8 +116,13 @@ pub fn pane_divider(
     if response.hovered() || response.dragged() {
         ctx.set_cursor_icon(CursorIcon::ResizeColumn);
     }
-    paint(ui, &response, panes, gutter, width, inline);
-    response
+    PaneDivider {
+        response,
+        panes,
+        gutter,
+        width,
+        inline,
+    }
 }
 
 /// `← →` move the divider 16pt, with `⇧` 80pt; `↩` puts it back.
@@ -187,7 +239,9 @@ mod tests {
                 }
                 let panes = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 400.0));
                 let gutter = Rect::from_x_y_ranges(400.0..=416.0, 0.0..=400.0);
-                pane_divider(ui, id, panes, gutter, 300.0..=480.0, 384.0, false);
+                let _ = ui.button("Before");
+                pane_divider(ui, id, panes, gutter, 300.0..=480.0, 384.0, false).paint(ui);
+                let _ = ui.button("After");
             },
             false,
         );
@@ -196,9 +250,19 @@ mod tests {
         harness.run();
         let split = |harness: &Harness<bool>| pane_split(&harness.ctx, id, 384.0);
 
+        let focused = |harness: &Harness<bool>| harness.ctx.memory(|m| m.has_focus(id));
+
         harness.key_press(Key::ArrowLeft);
         harness.run();
         assert_eq!(split(&harness), 400.0);
+        assert!(focused(&harness), "← stays on the divider");
+        harness.key_press(Key::ArrowRight);
+        harness.run();
+        assert_eq!(split(&harness), 384.0);
+        assert!(focused(&harness), "→ stays on the divider");
+        harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowLeft);
+        harness.run();
+        assert_eq!(split(&harness), 464.0);
         harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowLeft);
         harness.run();
         assert_eq!(split(&harness), 480.0, "kept in its range");

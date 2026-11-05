@@ -477,6 +477,7 @@ impl IboardApp {
         });
         let mut config = UserConfig::load(app.config_file.as_deref());
         app.prefs = Preferences::load(&mut config);
+        app.restore_splits(&cc.egui_ctx);
         agent::set_direnv(app.prefs.direnv);
         theme::apply(&cc.egui_ctx, app.prefs.appearance);
         app.workspace = workspace::load(&mut config);
