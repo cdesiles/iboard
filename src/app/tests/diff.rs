@@ -3,39 +3,28 @@
 use egui_kittest::kittest::Queryable;
 
 use super::*;
+use crate::scratch_git::git;
 
 /// A repository whose last commit closes `done/fixed.md`, changing
 /// `src/lib.rs`; its board, the issue, and that commit's short hash.
 fn closed_issue(tag: &str) -> (Scratch, PathBuf, String) {
     let dir = scratch_dir(tag);
-    let git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&*dir)
-            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-            .args(["-c", "commit.gpgsign=false"])
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    };
     let done = dir.join("issues/done");
     std::fs::create_dir_all(&done).unwrap();
     std::fs::create_dir_all(dir.join("src")).unwrap();
     let issue = done.join("fixed.md");
     std::fs::write(&issue, "# Fixed\n").unwrap();
     std::fs::write(dir.join("src/lib.rs"), "fn old() {}\n").unwrap();
-    git(&["init", "-q"]);
-    git(&["add", "."]);
-    git(&["commit", "-q", "-m", "Start"]);
+    git(&dir, &["init", "-q"]);
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "Start"]);
     std::fs::write(
         dir.join("src/lib.rs"),
         "fn old() {}\nfn needle() {}\nfn needle_again() {}\n",
     )
     .unwrap();
-    git(&["commit", "-q", "-am", "Fix it\n\ncloses fixed.md"]);
-    let hash = git(&["rev-parse", "--short", "HEAD"]);
+    git(&dir, &["commit", "-q", "-am", "Fix it\n\ncloses fixed.md"]);
+    let hash = git(&dir, &["rev-parse", "--short", "HEAD"]);
     (dir, issue, hash)
 }
 
@@ -145,18 +134,6 @@ fn a_done_card_opens_its_diff() {
 fn an_issue_kept_elsewhere_finds_the_commits_of_its_project() {
     let scratch = scratch_dir("diff-symlink");
     let (code, tickets) = (scratch.join("code"), scratch.join("tickets"));
-    let git = |dir: &Path, args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-            .args(["-c", "commit.gpgsign=false"])
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    };
     std::fs::create_dir_all(tickets.join("done")).unwrap();
     std::fs::write(tickets.join("done/fixed.md"), "# Fixed\n").unwrap();
     git(&tickets, &["init", "-q"]);

@@ -280,7 +280,7 @@ fn hunk_ranges(header: &str) -> ((u32, u32), (u32, u32)) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
+    use crate::scratch_git::git;
 
     const SHOW: &str = "\
 abc1234\tFix the parser
@@ -412,31 +412,13 @@ rename to new name.rs
     fn a_real_commit_is_shown() {
         let scratch = tempfile::tempdir().unwrap();
         let dir = scratch.path();
-        let git = |args: &[&str]| {
-            let status = Command::new("git")
-                .arg("-C")
-                .arg(dir)
-                .args([
-                    "-c",
-                    "user.name=t",
-                    "-c",
-                    "user.email=t@t",
-                    "-c",
-                    "commit.gpgsign=false",
-                ])
-                .args(args)
-                .output()
-                .unwrap();
-            assert!(status.status.success(), "{status:?}");
-            String::from_utf8_lossy(&status.stdout).trim().to_string()
-        };
-        git(&["init", "-q"]);
+        git(dir, &["init", "-q"]);
         std::fs::write(dir.join("a.txt"), "one\ntwo\n").unwrap();
-        git(&["add", "."]);
-        git(&["commit", "-q", "-m", "First"]);
+        git(dir, &["add", "."]);
+        git(dir, &["commit", "-q", "-m", "First"]);
         std::fs::write(dir.join("a.txt"), "one\nthree\n").unwrap();
-        git(&["commit", "-q", "-am", "Second"]);
-        let hash = git(&["rev-parse", "--short", "HEAD"]);
+        git(dir, &["commit", "-q", "-am", "Second"]);
+        let hash = git(dir, &["rev-parse", "--short", "HEAD"]);
 
         let diffs = show(dir, std::slice::from_ref(&hash), &Cancel::default()).unwrap();
         assert_eq!(diffs[0].hash, hash);

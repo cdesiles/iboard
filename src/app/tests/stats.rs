@@ -3,30 +3,20 @@
 use egui_kittest::kittest::Queryable;
 
 use super::*;
+use crate::scratch_git::git;
 
 /// A board in a repository of three commits, each adding code.
 fn project(tag: &str) -> (Scratch, Located) {
     let dir = scratch_dir(tag);
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     std::fs::create_dir_all(dir.join("src")).unwrap();
-    let git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&*dir)
-            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-            .args(["-c", "commit.gpgsign=false"])
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-    };
-    git(&["init", "-q"]);
+    git(&dir, &["init", "-q"]);
     let mut code = String::new();
     for name in ["one", "two", "three"] {
         code.push_str(&format!("fn {name}() {{}}\n"));
         std::fs::write(dir.join("src/lib.rs"), &code).unwrap();
-        git(&["add", "."]);
-        git(&["commit", "-q", "-m", name]);
+        git(&dir, &["add", "."]);
+        git(&dir, &["commit", "-q", "-m", name]);
     }
     let located = discovery::locate(&dir).unwrap();
     (dir, located)

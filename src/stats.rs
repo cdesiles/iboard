@@ -462,33 +462,20 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use std::process::{Command, Stdio};
+    use crate::scratch_git::{git, git_env, git_stdin};
 
     fn repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        run(dir.path(), &["init", "-q"]);
+        git(dir.path(), &["init", "-q"]);
         dir
-    }
-
-    fn run(dir: &Path, args: &[&str]) {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-            .args(["-c", "commit.gpgsign=false"])
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
     }
 
     fn commit(dir: &Path, file: &str, text: &str, message: &str) {
         let path = dir.join(file);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, text).unwrap();
-        run(dir, &["add", "."]);
-        run(dir, &["commit", "-q", "-m", message]);
+        git(dir, &["add", "."]);
+        git(dir, &["commit", "-q", "-m", message]);
     }
 
     fn import(dir: &Path, commits: &[(&str, Option<(&str, &str)>)]) {
@@ -501,23 +488,8 @@ mod tests {
                 stream += &format!("M 644 inline {path}\ndata {}\n{text}\n", text.len());
             }
         }
-        let mut child = Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(["fast-import", "--quiet"])
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(stream.as_bytes())
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(output.status.success(), "{output:?}");
-        run(dir, &["reset", "-q", "--hard", "main"]);
+        git_stdin(dir, &stream, &["fast-import", "--quiet"]);
+        git(dir, &["reset", "-q", "--hard", "main"]);
     }
 
     #[test]
@@ -560,16 +532,7 @@ mod tests {
     fn a_closed_issue_takes_from_its_first_commit_to_its_closing_one() {
         let dir = repo();
         let at = |date: &str, args: &[&str]| {
-            let output = Command::new("git")
-                .arg("-C")
-                .arg(dir.path())
-                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-                .args(["-c", "commit.gpgsign=false"])
-                .args(args)
-                .env("GIT_COMMITTER_DATE", date)
-                .output()
-                .unwrap();
-            assert!(output.status.success(), "{output:?}");
+            git_env(dir.path(), &[("GIT_COMMITTER_DATE", date)], args);
         };
         let issues = dir.path().join("issues");
         std::fs::create_dir_all(issues.join("todo")).unwrap();

@@ -41,6 +41,8 @@ pub mod priority;
 pub mod process;
 pub mod prompts;
 pub mod reviews;
+#[cfg(test)]
+mod scratch_git;
 pub mod settings;
 pub mod sheet;
 pub mod stats;

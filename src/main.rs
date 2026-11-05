@@ -8,6 +8,8 @@ mod instance;
 mod label_picker;
 mod project_menu;
 mod recents;
+#[cfg(test)]
+mod scratch_git;
 mod settings_ui;
 
 // The shared modules live in the `iboard` library. Re-export them at this crate

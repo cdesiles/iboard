@@ -104,47 +104,17 @@ fn parse_line(line: &str) -> Option<Commit> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
+    use crate::scratch_git::git;
 
     #[test]
     fn a_file_is_found_by_its_whole_name_only() {
         let scratch = tempfile::tempdir().unwrap();
         let dir = scratch.path();
-        let git = |args: &[&str]| {
-            let status = Command::new("git")
-                .arg("-C")
-                .arg(dir)
-                .args([
-                    "-c",
-                    "user.name=t",
-                    "-c",
-                    "user.email=t@t",
-                    "-c",
-                    "commit.gpgsign=false",
-                ])
-                .args(["-c", "core.hooksPath=/dev/null"])
-                .args(args)
-                .output()
-                .unwrap()
-                .status;
-            assert!(status.success(), "git {args:?}");
-        };
-        git(&["init", "-q"]);
-        git(&[
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "Data\n\ncloses data.md",
-        ]);
-        git(&["commit", "-q", "--allow-empty", "-m", "Mine\n\ncloses a.md"]);
-        git(&[
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "Anyone\n\ncloses aXmd",
-        ]);
+        let commit = |message: &str| git(dir, &["commit", "-q", "--allow-empty", "-m", message]);
+        git(dir, &["init", "-q"]);
+        commit("Data\n\ncloses data.md");
+        commit("Mine\n\ncloses a.md");
+        commit("Anyone\n\ncloses aXmd");
 
         let subjects: Vec<String> = run(dir, "a.md").into_iter().map(|c| c.subject).collect();
 
