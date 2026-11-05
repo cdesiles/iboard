@@ -234,6 +234,20 @@ pub fn button(
     response
 }
 
+/// A [`button`] with no icon that puts `action` in `picked` when clicked.
+pub fn action_button<A>(
+    ui: &mut Ui,
+    picked: &mut Option<A>,
+    kind: ButtonKind,
+    label: &str,
+    shortcut: Option<&str>,
+    action: A,
+) {
+    if button(ui, kind, None, label, shortcut).clicked() {
+        *picked = Some(action);
+    }
+}
+
 /// Width of the caret half of a [`split_button`].
 const SPLIT_CARET_W: f32 = 22.0;
 

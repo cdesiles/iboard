@@ -377,20 +377,13 @@ impl IboardApp {
                             );
                         }
                     });
-                Frame::new()
-                    .inner_margin(Margin::symmetric(
-                        theme::SPACE_4 as i8,
-                        theme::SPACE_3 as i8,
-                    ))
-                    .show(ui, |ui| {
-                        let kept = drafts
-                            .iter()
-                            .flatten()
-                            .filter(|draft| draft.include)
-                            .count();
-                        let asked = !follow_up.trim().is_empty();
-                        action = review_footer(ui, review, asked, kept).or(action.take());
-                    });
+                let kept = drafts
+                    .iter()
+                    .flatten()
+                    .filter(|draft| draft.include)
+                    .count();
+                let asked = !follow_up.trim().is_empty();
+                action = review_footer(ui, review, asked, kept).or(action.take());
             });
 
         if let Some(review) = self.session.review.as_mut() {
@@ -830,76 +823,90 @@ fn review_footer(
     kept: usize,
 ) -> Option<PanelAction> {
     let mut action = None;
-    ui.allocate_ui_with_layout(
-        Vec2::new(ui.available_width(), theme::CONTROL_H),
-        Layout::right_to_left(Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-            let mut button = |ui: &mut egui::Ui, kind, label: &str, key, picked| {
-                if widgets::button(ui, kind, None, label, key).clicked() {
-                    action = Some(picked);
-                }
+    widgets::footer_bar(ui, theme::SPACE_4, |ui| match &review.split {
+        Some(Split::Cutting { .. }) => {
+            widgets::action_button(
+                ui,
+                &mut action,
+                ButtonKind::Secondary,
+                "Cancel",
+                Some("esc"),
+                PanelAction::Cancel,
+            );
+        }
+        Some(Split::Ready(_)) => {
+            let create = format!("Create {kept} tickets");
+            let kind = if kept > 0 {
+                ButtonKind::Primary
+            } else {
+                ButtonKind::Disabled
             };
-            match &review.split {
-                Some(Split::Cutting { .. }) => {
-                    button(
-                        ui,
-                        ButtonKind::Secondary,
-                        "Cancel",
-                        Some("esc"),
-                        PanelAction::Cancel,
-                    );
-                }
-                Some(Split::Ready(_)) => {
-                    let create = format!("Create {kept} tickets");
-                    let kind = if kept > 0 {
-                        ButtonKind::Primary
-                    } else {
-                        ButtonKind::Disabled
-                    };
-                    button(ui, kind, &create, None, PanelAction::CreateSplit);
-                    button(
-                        ui,
-                        ButtonKind::Secondary,
-                        "Back to review",
-                        None,
-                        PanelAction::BackToReview,
-                    );
-                    button(ui, ButtonKind::Ghost, "Dismiss", None, PanelAction::Dismiss);
-                }
-                None | Some(Split::Failed(_)) => {
-                    ui.add_enabled_ui(review.proposal().is_some(), |ui| {
-                        button(
-                            ui,
-                            ButtonKind::Primary,
-                            "Apply to draft",
-                            Some("⌘↩"),
-                            PanelAction::Apply,
-                        );
-                    });
-                    if matches!(review.split, Some(Split::Failed(_))) {
-                        button(ui, ButtonKind::Secondary, "Retry", None, PanelAction::Retry);
-                    }
-                    if asked {
-                        button(
-                            ui,
-                            ButtonKind::Secondary,
-                            "Ask again",
-                            None,
-                            PanelAction::Again,
-                        );
-                    }
-                    button(
-                        ui,
-                        ButtonKind::Ghost,
-                        "Dismiss",
-                        Some("esc"),
-                        PanelAction::Dismiss,
-                    );
-                }
+            widgets::action_button(
+                ui,
+                &mut action,
+                kind,
+                &create,
+                None,
+                PanelAction::CreateSplit,
+            );
+            widgets::action_button(
+                ui,
+                &mut action,
+                ButtonKind::Secondary,
+                "Back to review",
+                None,
+                PanelAction::BackToReview,
+            );
+            widgets::action_button(
+                ui,
+                &mut action,
+                ButtonKind::Ghost,
+                "Dismiss",
+                None,
+                PanelAction::Dismiss,
+            );
+        }
+        None | Some(Split::Failed(_)) => {
+            ui.add_enabled_ui(review.proposal().is_some(), |ui| {
+                widgets::action_button(
+                    ui,
+                    &mut action,
+                    ButtonKind::Primary,
+                    "Apply to draft",
+                    Some("⌘↩"),
+                    PanelAction::Apply,
+                );
+            });
+            if matches!(review.split, Some(Split::Failed(_))) {
+                widgets::action_button(
+                    ui,
+                    &mut action,
+                    ButtonKind::Secondary,
+                    "Retry",
+                    None,
+                    PanelAction::Retry,
+                );
             }
-        },
-    );
+            if asked {
+                widgets::action_button(
+                    ui,
+                    &mut action,
+                    ButtonKind::Secondary,
+                    "Ask again",
+                    None,
+                    PanelAction::Again,
+                );
+            }
+            widgets::action_button(
+                ui,
+                &mut action,
+                ButtonKind::Ghost,
+                "Dismiss",
+                Some("esc"),
+                PanelAction::Dismiss,
+            );
+        }
+    });
     action
 }
 

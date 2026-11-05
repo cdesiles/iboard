@@ -951,49 +951,40 @@ fn refine_keys(ui: &mut egui::Ui, refine: &mut Refinement) -> Option<RefineActio
 /// goes out), then Hide and End refining.
 fn refine_footer(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction> {
     let p = theme::palette(ui);
-    let mut action = None;
-    let foot = Frame::new()
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_5 as i8,
-            theme::SPACE_3 as i8,
-        ))
-        .show(ui, |ui| {
-            ui.allocate_ui_with_layout(
-                Vec2::new(ui.available_width(), theme::CONTROL_H),
-                Layout::right_to_left(Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    action = footer_buttons(ui, refine);
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                        footer_hints(ui, refine);
-                    });
-                },
-            );
+    let foot = widgets::footer_bar(ui, theme::SPACE_5, |ui| {
+        let action = footer_buttons(ui, refine);
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+            footer_hints(ui, refine);
         });
+        action
+    });
     let rect = foot.response.rect;
     ui.painter()
         .hline(rect.x_range(), rect.min.y, egui::Stroke::new(1.0, p.line));
-    action
+    foot.inner
 }
 
 /// The footer's buttons, right to left: the main action first.
 fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction> {
     let mut action = None;
-    let mut button = |ui: &mut egui::Ui, kind, label: &str, key, picked| {
-        if widgets::button(ui, kind, None, label, key).clicked() {
-            action = Some(picked);
-        }
-    };
     if refine.is_running() {
-        button(
+        widgets::action_button(
             ui,
+            &mut action,
             ButtonKind::Disabled,
             "Send",
             Some("⌘↩"),
             RefineAction::Send,
         );
-        button(ui, ButtonKind::Ghost, "Cancel", None, RefineAction::Stop);
+        widgets::action_button(
+            ui,
+            &mut action,
+            ButtonKind::Ghost,
+            "Cancel",
+            None,
+            RefineAction::Stop,
+        );
         return action;
     }
     let send = if refine.answer().is_some() {
@@ -1001,16 +992,18 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
     } else {
         ButtonKind::Disabled
     };
-    button(
+    widgets::action_button(
         ui,
+        &mut action,
         send,
         &refine.send_label(),
         Some("⌘↩"),
         RefineAction::Send,
     );
     if matches!(refine.next, Some(NextTurn::Failed(_))) {
-        button(
+        widgets::action_button(
             ui,
+            &mut action,
             ButtonKind::Secondary,
             "Retry",
             None,
@@ -1018,23 +1011,26 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
         );
     }
     if refine.proposal().is_some() {
-        button(
+        widgets::action_button(
             ui,
+            &mut action,
             ButtonKind::Review,
             "Apply to draft",
             None,
             RefineAction::Apply,
         );
     }
-    button(
+    widgets::action_button(
         ui,
+        &mut action,
         ButtonKind::Secondary,
         "Hide",
         Some("esc"),
         RefineAction::Hide,
     );
-    button(
+    widgets::action_button(
         ui,
+        &mut action,
         ButtonKind::Ghost,
         "End refining",
         None,

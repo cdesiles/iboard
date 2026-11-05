@@ -2,8 +2,8 @@
 //! footer, the focus ring, and form fields with their label and help line.
 
 use egui::{
-    Align, Color32, CornerRadius, FontId, Frame, Layout, Margin, Rect, Response, RichText, Stroke,
-    StrokeKind, Ui, Vec2,
+    Align, Color32, CornerRadius, FontId, Frame, InnerResponse, Layout, Margin, Rect, Response,
+    RichText, Stroke, StrokeKind, Ui, Vec2,
 };
 
 use super::{ButtonKind, button};
@@ -220,33 +220,41 @@ pub enum FooterClick {
 pub fn modal_footer(ui: &mut Ui, note: &str, primary: &str) -> FooterClick {
     let p = theme::palette(ui);
     let mut click = FooterClick::None;
+    footer_bar(ui, theme::SPACE_5, |ui| {
+        if button(ui, ButtonKind::Primary, None, primary, Some("⌘↩")).clicked() {
+            click = FooterClick::Primary;
+        }
+        if button(ui, ButtonKind::Secondary, None, "Cancel", None).clicked() {
+            click = FooterClick::Cancel;
+        }
+        ui.add(
+            egui::Label::new(RichText::new(note).font(theme::meta()).color(p.ink_muted)).truncate(),
+        );
+    });
+    click
+}
+
+/// The band a footer's buttons sit in, `pad` in from the sides: a
+/// right-to-left row `CONTROL_H` tall, `SPACE_3` between its controls and
+/// `SPACE_3` above and below it.
+pub fn footer_bar<R>(
+    ui: &mut Ui,
+    pad: f32,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> InnerResponse<R> {
     Frame::new()
-        .inner_margin(Margin::symmetric(
-            theme::SPACE_5 as i8,
-            theme::SPACE_3 as i8,
-        ))
+        .inner_margin(Margin::symmetric(pad as i8, theme::SPACE_3 as i8))
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
                 Vec2::new(ui.available_width(), theme::CONTROL_H),
                 Layout::right_to_left(Align::Center),
                 |ui| {
                     ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    if button(ui, ButtonKind::Primary, None, primary, Some("⌘↩")).clicked() {
-                        click = FooterClick::Primary;
-                    }
-                    if button(ui, ButtonKind::Secondary, None, "Cancel", None).clicked() {
-                        click = FooterClick::Cancel;
-                    }
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(note).font(theme::meta()).color(p.ink_muted),
-                        )
-                        .truncate(),
-                    );
+                    add_contents(ui)
                 },
-            );
-        });
-    click
+            )
+            .inner
+        })
 }
 
 /// The `line` rule between a modal's header, body and footer.

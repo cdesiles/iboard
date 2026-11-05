@@ -18,10 +18,10 @@ mod menu;
 mod pill;
 mod select;
 
-pub use button::{ButtonKind, CARD_ACTION, Tone, button, icon_button, split_button};
+pub use button::{ButtonKind, CARD_ACTION, Tone, action_button, button, icon_button, split_button};
 pub use dialog::{
     Answer, Ask, FooterClick, confirm, dashed_rect, field_edit, field_label, focus_halo,
-    focus_ring, help, modal, modal_footer, modal_frame, modal_header, paint_focus_halo,
+    focus_ring, footer_bar, help, modal, modal_footer, modal_frame, modal_header, paint_focus_halo,
     paint_focus_ring, popover_frame, rule, segmented, text_entry, text_field,
 };
 pub use key_hints::{key_hints, key_hints_shown};
