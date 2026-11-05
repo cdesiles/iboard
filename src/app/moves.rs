@@ -35,12 +35,6 @@ impl IboardApp {
         }
         match std::fs::rename(path, &target) {
             Ok(()) => {
-                // Keep the reader/editor pointed at the issue's new home.
-                if let Some(editor) = self.session.editor.as_mut()
-                    && editor.path == path
-                {
-                    editor.path = target.clone();
-                }
                 self.apply_renames(&[(path.to_path_buf(), target.clone())]);
                 self.refresh();
                 Some(target)
@@ -150,7 +144,8 @@ impl IboardApp {
     }
 
     /// Follows renamed files in everything that holds an issue: the
-    /// selection, the reader and editor, and every panel open on one.
+    /// selection, the reader and editor, every panel open on one, and the
+    /// reviews, asks and builds at work on one.
     pub(super) fn apply_renames(&mut self, renames: &[(PathBuf, PathBuf)]) {
         for (old, new) in renames {
             let follow = |path: &mut PathBuf| {
@@ -159,6 +154,15 @@ impl IboardApp {
                 }
             };
             self.session.review_runs.rename(old, new);
+            if let Some(ask) = self.session.asks.remove(old) {
+                self.session.asks.insert(new.clone(), ask);
+            }
+            if let Some(build) = self.session.build.as_mut() {
+                build.rename(old, new);
+            }
+            if let Some(watch) = self.session.watch.as_mut() {
+                watch.rename(old, new);
+            }
             if let Some(selected) = self.session.selected.as_mut() {
                 follow(selected);
             }
@@ -189,6 +193,8 @@ impl IboardApp {
                     .enrichment
                     .as_mut()
                     .map(|enrichment| &mut enrichment.path),
+                self.session.ask_draft.as_mut().map(|draft| &mut draft.path),
+                self.session.agent_log.as_mut().map(|log| &mut log.path),
             ];
             for path in paths.into_iter().flatten() {
                 follow(path);
@@ -318,20 +324,6 @@ impl IboardApp {
     ) -> Option<(Option<PathBuf>, Option<images::TrashedImages>)> {
         self.session.confirm = None;
         self.session.undo = None;
-        if self
-            .session
-            .review
-            .as_ref()
-            .is_some_and(|review| review.path == path)
-            || self
-                .session
-                .refine
-                .as_ref()
-                .is_some_and(|refine| refine.path == path)
-        {
-            self.close_review();
-        }
-        self.cancel_review_run(path);
         match self.trash.delete(path) {
             Ok(trashed) => {
                 let images = self.trash_images(path);
@@ -383,20 +375,6 @@ impl IboardApp {
     /// without reading the board again. Returns where it went; `None`, with
     /// the reason in `self.error`, when it could not.
     pub(super) fn move_to_archive(&mut self, path: &Path) -> Option<PathBuf> {
-        if self
-            .session
-            .review
-            .as_ref()
-            .is_some_and(|review| review.path == path)
-            || self
-                .session
-                .refine
-                .as_ref()
-                .is_some_and(|refine| refine.path == path)
-        {
-            self.close_review();
-        }
-        self.cancel_review_run(path);
         let archive = self.board.root_of(path).join(ARCHIVE_DIR);
         if let Err(err) = std::fs::create_dir_all(&archive) {
             self.error = Some(format!(
@@ -414,15 +392,33 @@ impl IboardApp {
         Some(target)
     }
 
-    /// Lets go of an issue that left the board: the selections, the editor
-    /// and the reader.
+    /// Lets go of an issue that left the board: the selections, the editor,
+    /// the reader, the review, refinement or agent log open on it, and its
+    /// review run. An ask or a build at work on it runs on.
     fn let_go(&mut self, path: &Path) {
+        if self
+            .session
+            .review
+            .as_ref()
+            .is_some_and(|review| review.path == path)
+            || self
+                .session
+                .refine
+                .as_ref()
+                .is_some_and(|refine| refine.path == path)
+        {
+            self.close_review();
+        }
+        self.cancel_review_run(path);
         if self.session.selected.as_deref() == Some(path) {
             self.session.selected = None;
         }
         self.session.picked.retain(|picked| picked != path);
         if self.session.editor.as_ref().is_some_and(|e| e.path == path) {
             self.session.editor = None;
+        }
+        if self.agent_log_open(path) {
+            self.session.agent_log = None;
         }
         if matches!(&self.session.screen, Screen::Detail(open, _) if open == path) {
             self.session.screen = Screen::Board;

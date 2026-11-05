@@ -33,6 +33,16 @@ impl Build {
             failed: false,
         }
     }
+
+    /// Follows an issue renamed from `old` to `new`, queued or at work.
+    pub(super) fn rename(&mut self, old: &Path, new: &Path) {
+        let runs = self.runs.iter_mut().map(|run| &mut run.issue);
+        for issue in self.queue.iter_mut().chain(runs) {
+            if issue == old {
+                *issue = new.to_path_buf();
+            }
+        }
+    }
 }
 
 /// Play stays pressed until Stop: an issue that arrives in Ready, dropped
@@ -42,6 +52,16 @@ pub(super) struct Watch {
     ready: HashSet<PathBuf>,
     /// The board generation `ready` was read from.
     generation: u64,
+}
+
+impl Watch {
+    /// Follows an issue renamed from `old` to `new`: a Ready issue
+    /// renumbered does not arrive again.
+    pub(super) fn rename(&mut self, old: &Path, new: &Path) {
+        if self.ready.remove(old) {
+            self.ready.insert(new.to_path_buf());
+        }
+    }
 }
 
 /// One agent at work on one issue.

@@ -237,6 +237,31 @@ fn the_agent_log_shows_what_the_build_did_on_the_issue() {
     );
 }
 
+/// Bug: a renumber in Ready closed the agent log open beside one of its
+/// issues. Deleting the issue closes it.
+#[test]
+fn the_agent_log_follows_its_issue() {
+    let (dir, mut app) = board("build-log-renumber", "true # {prompt}");
+    let ready_dir = dir.join("issues/ready");
+    let (a, b) = (ready_dir.join("001-a.md"), ready_dir.join("002-b.md"));
+    let log = build_log::path(&app.board.root, &a);
+    std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+    std::fs::write(&log, "built it\n").unwrap();
+    app.apply(vec![Intent::AgentLog(a.clone())]);
+    app.place_issue(&b, &ready_dir, Some(a));
+    let a = ready_dir.join("002-a.md");
+    assert!(
+        app.agent_log_open(&a),
+        "it stays beside the renumbered issue"
+    );
+    draw(&themed_ctx(), &mut app, vec![]);
+    assert_eq!(app.session.agent_log.as_ref().unwrap().text, "built it\n");
+
+    app.prefs.confirm_delete = false;
+    app.request_delete(a);
+    assert!(app.session.agent_log.is_none(), "and goes with it");
+}
+
 #[test]
 fn two_agents_build_two_issues_at_once() {
     let (dir, mut app) = board("build-two", "sleep 30 # {prompt}");
@@ -356,6 +381,25 @@ fn stop_stops_watching_ready() {
     assert!(app.session.build.is_none());
     assert_eq!(in_column(&dir, "ready"), ["002-b.md", "003-c.md"]);
     stop_agents(&mut app, &dir, 1);
+}
+
+/// Bug: a renumber in Ready dropped the build's queued issues and queued
+/// them again at the end, as new arrivals.
+#[test]
+fn a_queued_issue_keeps_its_place_through_a_renumber() {
+    let (dir, mut app) = board("build-renumber", "sleep 30 # {prompt}");
+    let ready_dir = dir.join("issues/ready");
+    std::fs::write(ready_dir.join("003-c.md"), "# C\n").unwrap();
+    app.refresh();
+    app.apply(vec![Intent::Build(ready(&app))]);
+    let (b, c) = (ready_dir.join("002-b.md"), ready_dir.join("003-c.md"));
+    app.place_issue(&b, &ready_dir, Some(c));
+    assert_eq!(in_column(&dir, "ready"), ["001-b.md", "002-c.md"]);
+    app.poll_build(&themed_ctx());
+    app.apply(vec![Intent::Agents(2)]);
+    app.apply(vec![Intent::StopAgent(dir.join("issues/doing/a.md"))]);
+    assert_eq!(app.build_place(), Some((2, 3)), "B is second of three");
+    stop_agents(&mut app, &dir, 2);
 }
 
 #[test]

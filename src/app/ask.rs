@@ -9,7 +9,7 @@ use crate::build_log;
 
 /// The Ask AI dialog, open on an issue.
 pub(super) struct AskDraft {
-    path: PathBuf,
+    pub(super) path: PathBuf,
     pub(super) request: String,
     read_only: bool,
     no_commit: bool,

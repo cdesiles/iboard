@@ -895,3 +895,46 @@ fn cmd_k_asks_the_agent_about_the_open_issue() {
     );
     assert!(app.has_agent_log(&file));
 }
+
+/// Bug: a renumber in Todo left the Ask dialog and the ask at work on the
+/// issue's old name: Send found no issue, and the answer missed the reader.
+#[test]
+fn an_ask_follows_its_issue_through_a_renumber() {
+    let dir = scratch_dir("ask-renumber");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    for name in ["001-a.md", "002-b.md", "003-c.md"] {
+        std::fs::write(todo.join(name), "# Issue\n").unwrap();
+    }
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.prefs.build_agent = AgentConfig {
+        tool: agent::Tool::Custom,
+        model: String::new(),
+        command: "printf done # {prompt}".to_string(),
+        configured: true,
+        ..AgentConfig::default()
+    };
+    let issue = |name: &str| todo.join(name);
+    app.open_issue(issue("001-a.md"));
+    app.toggle_ask(&issue("001-a.md"));
+    app.session.ask_draft.as_mut().unwrap().request = "Take care of it".to_string();
+    app.place_issue(&issue("002-b.md"), &todo, Some(issue("001-a.md")));
+    app.send_ask();
+    assert!(
+        app.asking(&issue("002-a.md")),
+        "Send asks under the new name"
+    );
+
+    app.place_issue(&issue("003-c.md"), &todo, Some(issue("002-a.md")));
+    let a = issue("003-a.md");
+    assert!(app.asking(&a), "the ask follows the issue");
+    let ctx = themed_ctx();
+    assert!(until(|| {
+        app.poll_asks(&ctx);
+        !app.asking(&a)
+    }));
+    assert!(
+        app.agent_log_open(&a),
+        "its answer opens the agent log beside it"
+    );
+}
