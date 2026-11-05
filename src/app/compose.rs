@@ -7,9 +7,6 @@ use super::{
 };
 use iboard::new_issue::{self, Parked};
 
-/// How long the composer waits for a title before the user types one.
-const NAMING_BUDGET: Duration = Duration::from_secs(3);
-
 /// How long `⌘Z` can bring back a discarded new issue.
 pub(super) const DISCARD_UNDO: Duration = Duration::from_secs(10);
 
@@ -99,6 +96,8 @@ pub(super) struct NamingRun {
     pub(super) answer: Job<Result<String, String>>,
     /// `⌘↩`: write and open the Editor as soon as the title is in.
     then_edit: bool,
+    /// When the composer stops waiting for the title.
+    pub(super) deadline: Instant,
 }
 
 impl IboardApp {
@@ -295,6 +294,7 @@ impl IboardApp {
             composer.naming = Some(NamingRun {
                 answer: titles::start(engine, &self.prefs.agent, &description),
                 then_edit: edit,
+                deadline: Instant::now() + titles::TIMEOUT,
             });
             composer.stage = TitleStage::Naming;
             composer.error = None;
@@ -356,7 +356,7 @@ impl IboardApp {
     }
 
     /// Adopts the engine's title when it lands, or gives up after
-    /// [`NAMING_BUDGET`] and lets the user type it.
+    /// [`titles::TIMEOUT`], when the user types it or the first line names it.
     pub(super) fn poll_naming(&mut self) -> Option<Duration> {
         let run = self
             .session
@@ -365,7 +365,7 @@ impl IboardApp {
             .and_then(|c| c.naming.as_ref())?;
         let result = match run.answer.answer() {
             Some(result) => result,
-            None if run.answer.elapsed() < NAMING_BUDGET => return Some(job::POLL_EVERY),
+            None if Instant::now() < run.deadline => return Some(job::POLL_EVERY),
             None => Err("the engine took too long".to_string()),
         };
         let composer = self.session.composer.as_mut()?;

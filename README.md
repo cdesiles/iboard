@@ -110,6 +110,11 @@ tool = "opencode"   # "opencode", "claude" or "custom"
 model = "default"   # or a model ID from the tool's list
 command = ""        # custom only, e.g. "llm -m {model} < {prompt}"
 
+[build]             # the agent that implements Ready issues; [ai]'s without one
+tool = "opencode"
+model = "default"
+timeout = "10m"     # builds and asks: "5m", "10m", "20m", "30m", "60m", "180m" or "none"
+
 [titles]
 engine = "apple"    # "apple" (on-device), "agent" or "manual"
 

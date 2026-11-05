@@ -155,6 +155,7 @@ impl IboardApp {
                 &prompt,
                 &preview,
                 Some(&self.board.project_dir),
+                agent::DESIGN_TIMEOUT,
             ),
         });
     }

@@ -335,6 +335,52 @@ fn a_failed_name_falls_back_to_the_first_line() {
     );
 }
 
+/// Stands in for the on-device model, which ignores the cancel.
+fn silent_engine_past_its_deadline(app: &mut IboardApp) {
+    let composer = app.session.composer.as_mut().unwrap();
+    let run = composer.naming.as_mut().expect("naming started");
+    run.answer = Job::spawn(|_| {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        Err("never heard".to_string())
+    });
+    run.deadline = Instant::now();
+}
+
+#[test]
+fn naming_waits_for_the_engine_until_its_deadline() {
+    let (_dir, todo, mut app) = composer_with_engine("compose-deadline");
+
+    app.submit_composer(false);
+    let composer = app.session.composer.as_ref().unwrap();
+    let left = composer.naming.as_ref().unwrap().deadline - Instant::now();
+    assert!(left > std::time::Duration::from_secs(14), "15s, not 3s");
+
+    silent_engine_past_its_deadline(&mut app);
+    app.poll_naming();
+    let composer = app.session.composer.as_ref().unwrap();
+    assert!(composer.stage == TitleStage::Failed, "it stops waiting");
+
+    app.submit_composer(false);
+    assert!(
+        todo.join("when-i-export-the-board-i-want-a-checklist.md")
+            .exists(),
+        "↩ uses the first line"
+    );
+}
+
+#[test]
+fn command_enter_past_the_deadline_writes_with_the_first_line() {
+    let (_dir, todo, mut app) = composer_with_engine("compose-deadline-edit");
+
+    app.submit_composer(true);
+    silent_engine_past_its_deadline(&mut app);
+    app.poll_naming();
+    assert!(
+        todo.join("when-i-export-the-board-i-want-a-checklist.md")
+            .exists()
+    );
+}
+
 #[test]
 fn command_enter_while_naming_writes_once_named() {
     let (_dir, todo, mut app) = composer_with_engine("compose-name-edit");

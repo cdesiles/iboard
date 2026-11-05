@@ -241,6 +241,7 @@ impl IboardApp {
                         configured: true,
                         ..dialog.build_form.clone()
                     };
+                    prefs.build_timeout = dialog.build_timeout;
                 }
                 // `[labels]` is rewritten only once its tab was looked at.
                 if dialog.labels_seen {

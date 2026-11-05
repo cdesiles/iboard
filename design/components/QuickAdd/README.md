@@ -17,7 +17,7 @@ An inline composer at the top of the Todo column. You describe the issue; iboard
 | --- | --- | --- | --- |
 | Idle | Placeholder "Title is named from the description" in `ink-faint`, and a `meta` tag naming the engine (`on-device` or `review agent`). Clicking the row lets you type a title yourself. | Focused, placeholder "Describe the issue". | `todo/` + "named on save" in `ink-faint`; `↩ add`, `esc close`. |
 | Typing | Unchanged. | Grows from 3 to 8 lines. | `↩ add`, `⇧↩ new line`. |
-| Naming | "Naming…" in `ink-muted` with a pulsing 6pt `status-doing` dot. A beat, never a dialog; budget 3s. | Read-only, `ink-muted`. | `todo/naming`; `esc` stops and puts the cursor in the title. |
+| Naming | "Naming…" in `ink-muted` with a pulsing 6pt `status-doing` dot. A beat, never a dialog; it stops at 15s, with either engine, and goes to Failed. | Read-only, `ink-muted`. | `todo/naming`; `esc` stops and puts the cursor in the title. |
 | Inferred | The suggested title in `ink`, fully selected so typing replaces it, and an **Inferred** tag (`accent` on `accent-soft`). Editing it drops the tag. | Unchanged. | The final file name in `status-done`; `↩ add`, `⌘↩ edit`. |
 | Manual | Engine Off or unavailable. An empty line with a dashed `line-strong` rule, placeholder "Add a title", tag "auto title off". | Unchanged. | "empty title uses the first line". |
 | Failed | Revealed with the cursor in it, placeholder "Type a title", rule in `status-doing`. | Kept as typed. | `status-doing` "Couldn't name it · ↩ uses the first line". |

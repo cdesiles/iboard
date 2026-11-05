@@ -5,8 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use super::{
-    ANSWER_TIMEOUT, AgentConfig, Purpose, Tool, Workspace, command, default_model, final_answer,
-    stream_error,
+    AgentConfig, Purpose, Tool, Workspace, command, default_model, final_answer, stream_error,
 };
 use crate::files;
 use crate::job::{Cancel, Job};
@@ -59,7 +58,7 @@ fn run_draft(
         command.current_dir(dir.dir);
     }
     let mut partial = false;
-    let output = process::run_with(command, what, cancel, ANSWER_TIMEOUT, |line| {
+    let output = process::run_with(command, what, cancel, Purpose::Draft.timeout(), |line| {
         let piece = if custom {
             Some(format!("{line}\n"))
         } else {

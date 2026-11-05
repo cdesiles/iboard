@@ -66,6 +66,7 @@ impl IboardApp {
                 &prompt,
                 path,
                 Some(self.board.project_of(path)),
+                agent::DESIGN_TIMEOUT,
             )),
             refine: String::new(),
             texture: None,
@@ -105,6 +106,7 @@ impl IboardApp {
             &prompt,
             &path,
             Some(self.board.project_of(&path)),
+            agent::DESIGN_TIMEOUT,
         );
         if let Some(enrichment) = self.session.enrichment.as_mut() {
             enrichment.status = EnrichStatus::Running(answer);

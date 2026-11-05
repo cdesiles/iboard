@@ -83,16 +83,17 @@ pub fn run(
     cancel: &Cancel,
     timeout: Duration,
 ) -> Result<Output, String> {
-    run_with(command, what, cancel, timeout, |_| {})
+    run_with(command, what, cancel, Some(timeout), |_| {})
 }
 
 /// [`run`], handing each line of standard output to `on_line` as it comes,
-/// for a tool that reports its steps while it works.
+/// for a tool that reports its steps while it works. Without a `timeout` only
+/// `cancel` stops it.
 pub fn run_with(
     mut command: Command,
     what: &str,
     cancel: &Cancel,
-    timeout: Duration,
+    timeout: Option<Duration>,
     mut on_line: impl FnMut(&str),
 ) -> Result<Output, String> {
     command
@@ -115,7 +116,7 @@ pub fn run_with(
             stop(&mut child);
             return Err(format!("{what} was stopped"));
         }
-        if started.elapsed() >= timeout {
+        if let Some(timeout) = timeout.filter(|timeout| started.elapsed() >= *timeout) {
             stop(&mut child);
             return Err(format!("{what} gave no answer within {}", span(timeout)));
         }
@@ -337,7 +338,7 @@ mod tests {
             sh(script),
             "it",
             &Cancel::default(),
-            Duration::from_secs(60),
+            Some(Duration::from_secs(60)),
             |line| lines.push(line.to_string()),
         )
         .unwrap();
@@ -381,6 +382,13 @@ mod tests {
         .unwrap_err();
         assert_eq!(error, "it gave no answer within 200 ms");
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn without_a_deadline_a_process_runs_to_its_end() {
+        let script = sh("sleep 0.2; echo done");
+        let output = run_with(script, "it", &Cancel::default(), None, |_| {});
+        assert_eq!(output.unwrap().stdout, "done\n");
     }
 
     #[test]

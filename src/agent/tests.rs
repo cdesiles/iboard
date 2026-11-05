@@ -61,6 +61,7 @@ fn a_custom_command_reads_the_prompt_file_and_answers() {
         "hello there",
         Path::new("todo/a.md"),
         None,
+        REVIEW_TIMEOUT,
     );
     let answer = job.wait().expect("the job answers").expect("cat succeeds");
     assert_eq!(answer, "hello there");
@@ -69,7 +70,14 @@ fn a_custom_command_reads_the_prompt_file_and_answers() {
 #[test]
 fn a_failing_command_reports_its_error_instead_of_panicking() {
     let config = custom("echo nope >&2; exit 3 # {prompt}");
-    let error = run(&config, "x", Path::new("a.md"), None, &Cancel::default());
+    let error = run(
+        &config,
+        "x",
+        Path::new("a.md"),
+        None,
+        &Cancel::default(),
+        REVIEW_TIMEOUT,
+    );
     assert_eq!(error, Err("nope".to_string()));
 }
 
@@ -84,6 +92,7 @@ fn an_agent_runs_from_its_project() {
         Path::new("a.md"),
         Some(&project),
         &Cancel::default(),
+        REVIEW_TIMEOUT,
     );
     assert_eq!(answer, Ok(project.display().to_string()));
 }
@@ -103,7 +112,14 @@ fn file_names_never_run_as_shell_code() {
         "printf %s \"{issue}\" # {prompt}",
         "printf %s '{issue}' # {prompt}",
     ] {
-        let answer = run(&custom(template), "x", &issue, None, &Cancel::default());
+        let answer = run(
+            &custom(template),
+            "x",
+            &issue,
+            None,
+            &Cancel::default(),
+            REVIEW_TIMEOUT,
+        );
         assert_eq!(answer, Ok(issue.display().to_string()), "{template}");
     }
     assert!(!planted.exists(), "a file name ran as code");
@@ -122,7 +138,13 @@ fn dropping_a_run_stops_the_agent() {
         "echo $$ > '{}'; sleep 30; echo late # {{prompt}}",
         pid_file.display()
     );
-    let job = start(&custom(&script), "x", Path::new("a.md"), None);
+    let job = start(
+        &custom(&script),
+        "x",
+        Path::new("a.md"),
+        None,
+        REVIEW_TIMEOUT,
+    );
     let pid = || {
         std::fs::read_to_string(&pid_file)
             .ok()
@@ -151,7 +173,7 @@ fn each_tool_gets_its_one_shot_arguments() {
         "PROMPT",
         file,
         issue,
-        Purpose::Answer,
+        Purpose::Answer(REVIEW_TIMEOUT),
     );
     assert_eq!(args(&built), ["run", "--model", "vendor/model", "PROMPT"]);
     let built = command(
@@ -171,7 +193,14 @@ fn each_tool_gets_its_one_shot_arguments() {
         tool: Tool::Claude,
         ..AgentConfig::default()
     };
-    let built = command(&claude, "", "PROMPT", file, issue, Purpose::Answer);
+    let built = command(
+        &claude,
+        "",
+        "PROMPT",
+        file,
+        issue,
+        Purpose::Answer(REVIEW_TIMEOUT),
+    );
     assert_eq!(args(&built), ["-p", "PROMPT"]);
     let stream = ["-p", "--output-format", "stream-json", "--verbose"];
     let quick = Purpose::Review {
@@ -189,7 +218,14 @@ fn each_tool_gets_its_one_shot_arguments() {
     };
     let built = command(&claude, "", "PROMPT", file, issue, deep);
     assert_eq!(args(&built), [&stream[..], &["PROMPT"]].concat());
-    let built = command(&claude, "", "PROMPT", file, issue, Purpose::Build);
+    let built = command(
+        &claude,
+        "",
+        "PROMPT",
+        file,
+        issue,
+        Purpose::Build(BuildTimeout::default()),
+    );
     assert_eq!(
         args(&built),
         [&stream[..], &["--permission-mode", "acceptEdits", "PROMPT"]].concat()
@@ -268,7 +304,14 @@ fn an_agent_failing_in_its_stream_reports_its_own_error() {
     let config = custom(
         "printf '%s\\n' '{\"type\":\"error\",\"error\":{\"message\":\"no credits\"}}'; exit 1 # {prompt}",
     );
-    let error = run(&config, "x", Path::new("a.md"), None, &Cancel::default());
+    let error = run(
+        &config,
+        "x",
+        Path::new("a.md"),
+        None,
+        &Cancel::default(),
+        REVIEW_TIMEOUT,
+    );
     assert_eq!(error, Err("no credits".to_string()));
 }
 
@@ -324,6 +367,7 @@ fn opencode_and_claude_review_in_plan_mode() {
         Path::new("a.md"),
         None,
         &Cancel::default(),
+        REVIEW_TIMEOUT,
     );
     let answer = answer.unwrap();
     assert_eq!(answer, "-p\n--model\nm\nPROMPT", "only reviews plan");
@@ -414,13 +458,75 @@ fn only_the_review_section_stores_the_scope() {
     };
     let scratch = tempfile::tempdir().unwrap();
     let file = scratch.path().join("iboard.toml");
-    let sections = [section(&config).unwrap(), build_section(&config).unwrap()];
+    let sections = [
+        section(&config).unwrap(),
+        build_section(&config, BuildTimeout::NONE).unwrap(),
+    ];
     settings::save(&file, &sections).unwrap();
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
         "[ai]\ntool = \"claude\"\nmodel = \"default\"\nscope = \"project\"\n\n\
-         [build]\ntool = \"claude\"\nmodel = \"default\"\n"
+         [build]\ntool = \"claude\"\nmodel = \"default\"\ntimeout = \"none\"\n"
     );
+}
+
+#[test]
+fn each_purpose_has_its_limit() {
+    let minutes = |minutes: u64| Some(Duration::from_secs(minutes * 60));
+    let review = |mode| Purpose::Review { mode, plan: true };
+    assert_eq!(
+        review(ReviewMode::Quick).timeout(),
+        Some(Duration::from_secs(120))
+    );
+    assert_eq!(
+        review(ReviewMode::Deep).timeout(),
+        Some(Duration::from_secs(120))
+    );
+    assert_eq!(Purpose::Draft.timeout(), minutes(10));
+    let answer = Purpose::Answer(DESIGN_TIMEOUT);
+    assert_eq!(answer.timeout(), Some(DESIGN_TIMEOUT));
+    let leash = Leash {
+        edits: true,
+        commits: false,
+        deploys: false,
+    };
+    let build = BuildTimeout::default();
+    assert_eq!(Purpose::Build(build).timeout(), minutes(10));
+    assert_eq!(Purpose::Ask(leash, build).timeout(), minutes(10));
+    let build = BuildTimeout::NONE;
+    assert_eq!(Purpose::Build(build).timeout(), None);
+    assert_eq!(Purpose::Ask(leash, build).timeout(), None);
+}
+
+#[test]
+fn an_answer_past_its_limit_is_stopped() {
+    let error = run(
+        &custom("sleep 30 # {prompt}"),
+        "x",
+        Path::new("a.md"),
+        None,
+        &Cancel::default(),
+        Duration::from_millis(200),
+    );
+    assert_eq!(
+        error,
+        Err("the custom command gave no answer within 200 ms".to_string())
+    );
+}
+
+#[test]
+fn the_build_timeout_comes_from_its_section() {
+    let read = |text: &str| {
+        let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
+        (load_build_timeout(&mut config), config.problems.len())
+    };
+    assert_eq!(read(""), (BuildTimeout::default(), 0));
+    for timeout in BuildTimeout::ALL {
+        let text = format!("[build]\ntimeout = \"{}\"\n", timeout.key());
+        assert_eq!(read(&text), (timeout, 0));
+    }
+    let unknown = "[build]\ntimeout = \"7m\"\n";
+    assert_eq!(read(unknown), (BuildTimeout::default(), 1));
 }
 
 #[test]
@@ -646,7 +752,14 @@ fn asked(config: &AgentConfig, leash: Leash) -> String {
     let scratch = tempfile::tempdir().unwrap();
     let log = scratch.path().join("ask.log");
     let ends = (scratch.path(), log.as_path());
-    let (job, _) = start_ask(config, "PROMPT", Path::new("a.md"), ends, leash);
+    let (job, _) = start_ask(
+        config,
+        "PROMPT",
+        Path::new("a.md"),
+        ends,
+        leash,
+        BuildTimeout::default(),
+    );
     job.wait().unwrap().unwrap()
 }
 

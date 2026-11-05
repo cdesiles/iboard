@@ -2,7 +2,7 @@
 
 The *AI review* tab of the Settings dialog: which agent runs the AI review, and with which model. It opens from `⌘,` or from the menu on the Review button, and saves to `~/.config/iboard/iboard.toml`. The other tabs are *General* (GeneralSettings), *AI build*, *Titles* (TitleSettings) and *Labels*.
 
-The *AI build* tab has the same Tool, Command and Model fields, for the agent that implements Ready issues (Ready's play, see Column). It is saved as `[build]`; until it is, the build uses the AI review's agent. A custom command runs from the project folder and may edit it; Claude Code runs with `--permission-mode acceptEdits`.
+The *AI build* tab has the same Tool, Command and Model fields and a Timeout, for the agent that implements Ready issues (Ready's play, see Column). It is saved as `[build]`; until it is, the build uses the AI review's agent. A custom command runs from the project folder and may edit it; Claude Code runs with `--permission-mode acceptEdits`.
 
 ## Layout
 
@@ -38,6 +38,12 @@ A select with three options, always in this order:
 - Ticket + project context lets the agent also read the repository and its design system to check what the issue claims.
 - "Review this issue" (`⌘⇧R`) and the card's Review run in this scope; the Review button's menu offers the other one as a one-off (*Deep review* or *Quick review*).
 
+## Timeout
+
+- AI build only, under Model: a select with **5**, **10**, **20**, **30**, **60** and **180 minutes**, then **No limit** with `∞` in `meta`. The default is 10 minutes.
+- It stops a build and an Ask, read-only or not. No limit leaves stopping to the user.
+- The other runs have a fixed limit: a review, the Challenger's rounds and a split stop at 120s (see Thinking), a title at 15s (see QuickAdd), and a new-issue draft, a design mockup and a component's preview at 10 minutes.
+
 ## Behaviour
 
 - `⌘,` opens it from any screen; `esc` or Cancel closes without saving; `⌘↩` or Save writes the file and closes.
@@ -57,6 +63,11 @@ tool = "opencode"        # "opencode" | "claude" | "custom"
 model = "default"        # or a model ID from the tool's list
 command = ""             # custom only, e.g. "llm -m {model} < {prompt}"
 scope = "ticket"         # "ticket" | "project"; absent means "ticket"
+
+[build]
+tool = "opencode"        # the same keys, without scope
+model = "default"
+timeout = "10m"          # "5m" | "10m" | "20m" | "30m" | "60m" | "180m" | "none"; absent means "10m"
 ```
 
 The key names are a suggestion; keep whatever the app already writes.

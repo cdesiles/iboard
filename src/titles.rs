@@ -12,6 +12,9 @@
 //! Intelligence), reached through the Swift shim in `macos/titles.swift`;
 //! `agent` asks the tool configured for AI review. Neither is ever required:
 //! without a title, [`first_line_title`] names the issue from the description.
+//! An engine has [`TIMEOUT`] to answer.
+
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +25,11 @@ use crate::settings::{Section, UserConfig};
 
 /// The longest title the composer accepts.
 pub const MAX_TITLE_CHARS: usize = 80;
+
+/// How long naming an issue may take, with either engine. An agent is stopped
+/// then; the on-device model cannot be, so the composer stops waiting and its
+/// thread ends when the model answers.
+pub const TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Engine {
@@ -135,7 +143,8 @@ pub fn prewarm(engine: Engine) {
 }
 
 /// Names `description` on a background thread, the answer already cleaned.
-/// Dropping the job stops an agent still thinking.
+/// Dropping the job stops an agent still thinking; the on-device model works
+/// on until it answers, and nobody hears it.
 pub fn start(
     engine: Engine,
     agent: &AgentConfig,
@@ -153,7 +162,8 @@ pub fn start(
                 let file = files::temp_path("title", "md");
                 std::fs::write(&file, &description)
                     .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
-                let result = agent::run(&agent, &agent_prompt(&description), &file, None, cancel);
+                let prompt = agent_prompt(&description);
+                let result = agent::run(&agent, &prompt, &file, None, cancel, TIMEOUT);
                 let _ = std::fs::remove_file(&file);
                 result.and_then(|raw| clean(&raw))
             })

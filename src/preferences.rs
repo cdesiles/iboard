@@ -2,7 +2,7 @@
 //! (`~/.config/iboard/iboard.toml`): the sections Settings keeps, the
 //! filter's pinned suggestions, and the switches Settings does not list.
 
-use crate::agent::{self, AgentConfig};
+use crate::agent::{self, AgentConfig, BuildTimeout};
 use crate::filter;
 use crate::general::{self, Appearance};
 use crate::labels::{self, Labels};
@@ -16,6 +16,8 @@ pub struct Preferences {
     pub agent: AgentConfig,
     /// `[build]`: the agent that implements Ready issues; `agent` without one.
     pub build_agent: AgentConfig,
+    /// `[build]`: how long a build or an ask may work.
+    pub build_timeout: BuildTimeout,
     /// `[filter]`: the labels the filter suggests; `None` suggests the
     /// board's most used.
     pub suggestions: Option<Vec<String>>,
@@ -52,6 +54,7 @@ impl Preferences {
         Self {
             agent,
             build_agent,
+            build_timeout: agent::load_build_timeout(config),
             suggestions: filter::load_suggestions(config),
             title_engine: titles::load_engine(config),
             confirm_delete: general::load_confirm_delete(config),
@@ -71,8 +74,8 @@ impl Preferences {
         if self.agent != before.agent {
             sections.push(agent::section(&self.agent)?);
         }
-        if self.build_agent != before.build_agent {
-            sections.push(agent::build_section(&self.build_agent)?);
+        if self.build_agent != before.build_agent || self.build_timeout != before.build_timeout {
+            sections.push(agent::build_section(&self.build_agent, self.build_timeout)?);
         }
         if self.title_engine != before.title_engine {
             sections.push(titles::section(self.title_engine)?);
@@ -123,6 +126,7 @@ mod tests {
         let defaults = Preferences {
             agent: AgentConfig::default(),
             build_agent: AgentConfig::default(),
+            build_timeout: BuildTimeout::default(),
             suggestions: None,
             title_engine: Engine::Apple,
             confirm_delete: true,
@@ -142,7 +146,7 @@ mod tests {
     fn each_preference_comes_from_its_section() {
         let mut config = parse(
             "[ai]\ntool = \"claude\"\nmodel = \"opus\"\n\
-             [build]\ntool = \"opencode\"\n\
+             [build]\ntool = \"opencode\"\ntimeout = \"none\"\n\
              [filter]\nsuggestions = [\"Bug\"]\n\
              [titles]\nengine = \"manual\"\n\
              [delete]\nconfirm = false\n\
@@ -159,6 +163,7 @@ mod tests {
             Preferences {
                 agent: configured(Tool::Claude, "opus"),
                 build_agent: configured(Tool::OpenCode, ""),
+                build_timeout: BuildTimeout::NONE,
                 suggestions: Some(vec!["bug".to_string()]),
                 title_engine: Engine::Manual,
                 confirm_delete: false,
@@ -237,6 +242,7 @@ mod tests {
                 ..configured(Tool::Claude, "opus")
             },
             build_agent: configured(Tool::OpenCode, ""),
+            build_timeout: BuildTimeout::ALL[0],
             title_engine: Engine::Agent,
             confirm_delete: false,
             appearance: Appearance::Dark,
@@ -251,7 +257,7 @@ mod tests {
             format!(
                 "{mine}\n\
                  [ai]\ntool = \"claude\"\nmodel = \"opus\"\nscope = \"project\"\n\n\
-                 [build]\ntool = \"opencode\"\nmodel = \"default\"\n\n\
+                 [build]\ntool = \"opencode\"\nmodel = \"default\"\ntimeout = \"5m\"\n\n\
                  [titles]\nengine = \"agent\"\n\n\
                  [delete]\nconfirm = false\n\n\
                  [appearance]\ntheme = \"dark\"\n\n\

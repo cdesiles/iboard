@@ -16,7 +16,7 @@ mod titles;
 
 use egui::{Key, Modifiers, Vec2};
 
-use crate::agent::AgentConfig;
+use crate::agent::{AgentConfig, BuildTimeout};
 use crate::general::Appearance;
 use crate::job;
 use crate::theme;
@@ -61,6 +61,8 @@ pub struct Dialog {
     /// The AI build agent being edited. The AI build tab edits it through
     /// the AI review tab's fields, swapped into `form` while it draws.
     pub build_form: AgentConfig,
+    /// Settings › AI build: how long a build or an ask may work.
+    pub build_timeout: BuildTimeout,
     /// The title engine being chosen.
     pub engine: Engine,
     /// Settings › General: deleting an issue asks first.
@@ -105,6 +107,7 @@ impl Dialog {
             form: prefs.agent.clone(),
             build_seen: false,
             build_form: prefs.build_agent.clone(),
+            build_timeout: prefs.build_timeout,
             engine: prefs.title_engine,
             confirm_delete: prefs.confirm_delete,
             appearance: prefs.appearance,
@@ -357,13 +360,18 @@ mod tests {
         };
         let mut catalog = Catalog::default();
         for tool in Tool::ALL {
-            for menu in [None, Some(Menu::Tool), Some(Menu::Model)] {
+            for (menu, tab) in [
+                (None, Tab::Review),
+                (Some(Menu::Tool), Tab::Review),
+                (Some(Menu::Model), Tab::Review),
+                (Some(Menu::Timeout), Tab::Build),
+            ] {
                 let mut dialog = Dialog::new(
                     &with_agent(AgentConfig {
                         tool,
                         ..AgentConfig::default()
                     }),
-                    Tab::Review,
+                    tab,
                 );
                 if let Some(menu) = menu {
                     dialog.menu.open(menu);

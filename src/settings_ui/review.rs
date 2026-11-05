@@ -1,11 +1,11 @@
 //! Settings › AI review and AI build: which agent runs, and with which model;
-//! for the review, also how far it reads.
+//! for the review, also how far it reads, and for the build how long it works.
 
 use egui::{Frame, Id, Vec2};
 
 use super::select_menu::Menu;
 use super::{Catalog, Dialog};
-use crate::agent::{Detected, Models, ReviewMode, Tool};
+use crate::agent::{BuildTimeout, Detected, Models, ReviewMode, Tool};
 use crate::format::display_path;
 use crate::theme::{self, Icon};
 use crate::widgets::{
@@ -143,9 +143,11 @@ impl Dialog {
         }
         ui.add_space(theme::SPACE_5);
         self.model_field(ui, catalog);
+        ui.add_space(theme::SPACE_5);
         if self.tab == super::Tab::Review {
-            ui.add_space(theme::SPACE_5);
             self.scope_field(ui);
+        } else {
+            self.timeout_field(ui);
         }
         if let Some(error) = &self.save_error {
             ui.add_space(theme::SPACE_5);
@@ -244,6 +246,57 @@ impl Dialog {
             }
         };
         help(ui, text, p.ink_muted);
+    }
+
+    fn timeout_field(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette(ui);
+        field_label(ui, "Timeout");
+        let current = self.build_timeout;
+        let open = self.menu.is_open(Menu::Timeout);
+        let response = widgets::select(
+            ui,
+            Id::new("build-timeout"),
+            &current.name(),
+            current.hint(),
+            open,
+        );
+        self.menu.toggle_on(&response, Menu::Timeout);
+
+        if self.menu.is_open(Menu::Timeout) {
+            let options = BuildTimeout::ALL;
+            let picked = self.menu.keyboard(ui, options.len());
+            let mut picked = picked.map(|index| options[index]);
+            self.menu.popup(ui, &response, Menu::Timeout, |menu, ui| {
+                for (index, option) in options.into_iter().enumerate() {
+                    if widgets::menu_option(
+                        ui,
+                        MenuOption {
+                            name: &option.name(),
+                            mono: false,
+                            muted: false,
+                            meta: option.hint().unwrap_or_default(),
+                            checked: option == current,
+                            active: index == menu.highlight,
+                        },
+                    )
+                    .clicked()
+                    {
+                        picked = Some(option);
+                    }
+                }
+            });
+            if let Some(option) = picked {
+                self.build_timeout = option;
+                self.menu.close();
+            }
+        }
+
+        ui.add_space(theme::SPACE_2);
+        help(
+            ui,
+            "A build or an Ask is stopped after this long.",
+            p.ink_muted,
+        );
     }
 
     fn command_field(&mut self, ui: &mut egui::Ui) {

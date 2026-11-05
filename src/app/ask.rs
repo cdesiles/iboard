@@ -96,7 +96,14 @@ impl IboardApp {
         let project = self.board.project_of(&draft.path).to_path_buf();
         let log = build_log::path(self.board.root_of(&draft.path), &draft.path);
         let ends = (project.as_path(), log.as_path());
-        let (answer, _) = agent::start_ask(&config, &prompt, &draft.path, ends, leash);
+        let (answer, _) = agent::start_ask(
+            &config,
+            &prompt,
+            &draft.path,
+            ends,
+            leash,
+            self.prefs.build_timeout,
+        );
         self.session.asks.insert(draft.path, AskRun { answer });
     }
 

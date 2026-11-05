@@ -11,6 +11,7 @@ use crate::widgets;
 pub(super) enum Menu {
     Tool,
     Model,
+    Timeout,
 }
 
 /// The dialog's selects share one menu, so opening one closes the other.

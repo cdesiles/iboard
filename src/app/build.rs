@@ -313,8 +313,14 @@ impl IboardApp {
         let prompt = prompts::build_prompt(&self.relative(&issue), &content);
         let project = self.board.project_of(&issue).to_path_buf();
         let log = build_log::path(self.board.root_of(&issue), &issue);
-        let (answer, _) =
-            agent::start_build(&self.prefs.build_agent, &prompt, &issue, &project, &log);
+        let (answer, _) = agent::start_build(
+            &self.prefs.build_agent,
+            &prompt,
+            &issue,
+            &project,
+            &log,
+            self.prefs.build_timeout,
+        );
         Some(Run {
             issue,
             answer,

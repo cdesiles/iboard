@@ -42,6 +42,39 @@ fn the_settings_dialog_saves_with_command_enter() {
     assert!(app.session.review.is_some(), "and leaves the review alone");
 }
 
+/// Settings › AI build: the Timeout select opens on 10 minutes, and picking
+/// from it is saved with `[build]`.
+#[test]
+fn the_build_timeout_is_picked_and_saved_with_the_build_section() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, _file, mut app) = open_issue_with_review("build-timeout");
+    let config = dir.join("iboard.toml");
+    app.config_file = Some(config.clone());
+    app.open_settings(settings_ui::Tab::Build);
+    let mut harness = kittest(app);
+
+    harness.get_by_label("10 minutes").click();
+    harness.run_steps(2);
+    harness.get_by_label("No limit").click();
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().1.settings.as_ref().unwrap().build_timeout,
+        agent::BuildTimeout::NONE
+    );
+
+    harness.get_by_label("Save").click();
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().1.prefs.build_timeout,
+        agent::BuildTimeout::NONE
+    );
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert!(
+        text.contains("[build]") && text.contains("timeout = \"none\""),
+        "{text}"
+    );
+}
+
 /// The same flow through egui_kittest: widgets found by their label, as a
 /// screen reader sees them.
 #[test]

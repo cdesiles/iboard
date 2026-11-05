@@ -13,7 +13,8 @@
 //! ```
 //!
 //! A `[build]` section, of the same shape, names the agent that implements
-//! Ready issues; without one, the review's agent does.
+//! Ready issues; without one, the review's agent does. Its `timeout` limits
+//! builds and asks: see [`BuildTimeout`].
 //!
 //! `default` is the tool's first favorite model, so it follows the tool's own
 //! settings. [`start`] runs the tool non-interactively against the issue text
@@ -181,6 +182,7 @@ impl AgentConfig {
                 String::new()
             },
             scope: self.scope.scope_key().to_string(),
+            timeout: String::new(),
         }
     }
 }
@@ -196,6 +198,8 @@ struct RawAgent {
     command: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     scope: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    timeout: String,
 }
 
 /// The agent in the `[ai]` section; unconfigured when there is none, or when
@@ -240,20 +244,99 @@ pub fn section(config: &AgentConfig) -> Result<Section, String> {
     Section::new("ai", &config.to_raw())
 }
 
-/// The `[build]` section that stores `config`.
-pub fn build_section(config: &AgentConfig) -> Result<Section, String> {
+/// The `timeout` of the `[build]` section; an unknown one is reported.
+pub fn load_build_timeout(config: &mut UserConfig) -> BuildTimeout {
+    let raw: RawBuildTimeout = config.section("build");
+    let Some(key) = raw.timeout else {
+        return BuildTimeout::default();
+    };
+    BuildTimeout::from_key(key.trim()).unwrap_or_else(|| {
+        config.problem(format!(
+            "[build]: timeout \"{key}\" is not 5m, 10m, 20m, 30m, 60m, 180m or none"
+        ));
+        BuildTimeout::default()
+    })
+}
+
+#[derive(Default, Deserialize)]
+struct RawBuildTimeout {
+    timeout: Option<String>,
+}
+
+/// The `[build]` section that stores `config` and `timeout`.
+pub fn build_section(config: &AgentConfig, timeout: BuildTimeout) -> Result<Section, String> {
     let raw = RawAgent {
         scope: String::new(),
+        timeout: timeout.key(),
         ..config.to_raw()
     };
     Section::new("build", &raw)
 }
 
-/// How long an agent may work on an answer before it is stopped.
-pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+/// How long a review may take, Quick or Deep, the Challenger's rounds and a
+/// split included: `design/components/Thinking`.
+const REVIEW_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// How long an agent may work on implementing an issue.
-pub const BUILD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+/// How long a new issue's draft may take.
+const DRAFT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// How long a design mockup or a component's preview may take: unlike a
+/// review, the agent writes a whole page.
+pub const DESIGN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// How long a build or an ask may work: Settings › AI build's Timeout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildTimeout(Option<u64>);
+
+impl Default for BuildTimeout {
+    fn default() -> Self {
+        BuildTimeout(Some(10))
+    }
+}
+
+impl BuildTimeout {
+    pub const NONE: BuildTimeout = BuildTimeout(None);
+
+    /// What the select offers, in its order.
+    pub const ALL: [BuildTimeout; 7] = [
+        BuildTimeout(Some(5)),
+        BuildTimeout(Some(10)),
+        BuildTimeout(Some(20)),
+        BuildTimeout(Some(30)),
+        BuildTimeout(Some(60)),
+        BuildTimeout(Some(180)),
+        BuildTimeout::NONE,
+    ];
+
+    /// The limit it sets; `None` lets the agent work until it is stopped.
+    pub fn limit(self) -> Option<Duration> {
+        self.0.map(|minutes| Duration::from_secs(minutes * 60))
+    }
+
+    /// The name in the select.
+    pub fn name(self) -> String {
+        match self.0 {
+            Some(minutes) => format!("{minutes} minutes"),
+            None => "No limit".to_string(),
+        }
+    }
+
+    /// The select's note beside the name.
+    pub fn hint(self) -> Option<&'static str> {
+        self.0.is_none().then_some("∞")
+    }
+
+    fn key(self) -> String {
+        match self.0 {
+            Some(minutes) => format!("{minutes}m"),
+            None => "none".to_string(),
+        }
+    }
+
+    fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|timeout| timeout.key() == key)
+    }
+}
 
 /// The shell variables a custom command's placeholders become.
 const PLACEHOLDERS: [(&str, &str); 4] = [
@@ -363,13 +446,13 @@ impl Leash {
 /// its author asked on a leash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Purpose {
-    Answer,
+    Answer(Duration),
     Review {
         mode: ReviewMode,
         plan: bool,
     },
-    Build,
-    Ask(Leash),
+    Build(BuildTimeout),
+    Ask(Leash, BuildTimeout),
     /// A new issue drafted from its author's notes, its text streamed.
     Draft,
 }
@@ -378,17 +461,27 @@ impl Purpose {
     /// A custom command's `{mode}`.
     fn key(self) -> &'static str {
         match self {
-            Purpose::Answer => "",
+            Purpose::Answer(_) => "",
             Purpose::Review { mode, .. } => mode.key(),
-            Purpose::Build => "build",
-            Purpose::Ask(_) => "ask",
+            Purpose::Build(_) => "build",
+            Purpose::Ask(..) => "ask",
             Purpose::Draft => "draft",
         }
     }
 
-    /// Whether the run works on the repository, with a build's time to do it.
+    /// Whether the run works on the repository.
     fn works(self) -> bool {
-        matches!(self, Purpose::Build | Purpose::Ask(_))
+        matches!(self, Purpose::Build(_) | Purpose::Ask(..))
+    }
+
+    /// When the run is stopped; `None` when only the user stops it.
+    fn timeout(self) -> Option<Duration> {
+        match self {
+            Purpose::Answer(timeout) => Some(timeout),
+            Purpose::Review { .. } => Some(REVIEW_TIMEOUT),
+            Purpose::Build(timeout) | Purpose::Ask(_, timeout) => timeout.limit(),
+            Purpose::Draft => Some(DRAFT_TIMEOUT),
+        }
     }
 }
 
@@ -436,7 +529,7 @@ fn command(
             // can say what the agent is doing; a quick review gets no built-in
             // tools, a build may edit files.
             match (tool, purpose) {
-                (_, Purpose::Answer) => {}
+                (_, Purpose::Answer(_)) => {}
                 (Tool::OpenCode, _) => {
                     command.args(["--format", "json"]);
                 }
@@ -452,19 +545,19 @@ fn command(
                         } => {
                             command.args(["--tools", ""]);
                         }
-                        Purpose::Build | Purpose::Ask(Leash { edits: true, .. }) => {
+                        Purpose::Build(_) | Purpose::Ask(Leash { edits: true, .. }, _) => {
                             command.args(["--permission-mode", "acceptEdits"]);
                         }
                         _ => {}
                     }
                 }
             }
-            if let Purpose::Review { plan: true, .. } | Purpose::Ask(Leash { edits: false, .. }) =
-                purpose
+            if let Purpose::Review { plan: true, .. }
+            | Purpose::Ask(Leash { edits: false, .. }, _) = purpose
             {
                 command.args(tool.plan_args());
             }
-            if let (Tool::Claude, Purpose::Ask(leash)) = (tool, purpose) {
+            if let (Tool::Claude, Purpose::Ask(leash, _)) = (tool, purpose) {
                 let denied = leash.denied();
                 if !denied.is_empty() {
                     command.arg("--disallowedTools").arg(denied.join(","));
@@ -498,7 +591,7 @@ fn shell_script(command: &str) -> String {
 
 /// Runs the agent on `prompt` and waits for its answer, on this thread. The
 /// tool runs without a terminal, which is what one-shot modes need; it is
-/// stopped when `cancel` says so, or after [`ANSWER_TIMEOUT`]. `issue` is the
+/// stopped when `cancel` says so, or after `timeout`. `issue` is the
 /// file the prompt is about, a custom command's `{issue}`; the agent runs
 /// from `project` when set.
 pub fn run(
@@ -507,9 +600,10 @@ pub fn run(
     issue: &Path,
     project: Option<&Path>,
     cancel: &Cancel,
+    timeout: Duration,
 ) -> Result<String, String> {
     let workspace = project.map(Workspace::of);
-    let purpose = Purpose::Answer;
+    let purpose = Purpose::Answer(timeout);
     run_with(
         config,
         prompt,
@@ -573,13 +667,8 @@ fn run_with(
     let mut log = workspace
         .and_then(|workspace| workspace.log)
         .and_then(|log| build_log::open(log).ok());
-    let timeout = if purpose.works() {
-        BUILD_TIMEOUT
-    } else {
-        ANSWER_TIMEOUT
-    };
     let streams = progress.filter(|_| !custom);
-    let output = process::run_with(command, what, cancel, timeout, |line| {
+    let output = process::run_with(command, what, cancel, purpose.timeout(), |line| {
         if let Some(progress) = streams
             && let Some(step) = step_of(line)
         {
@@ -617,10 +706,20 @@ pub fn start(
     prompt: &str,
     issue: &Path,
     project: Option<&Path>,
+    timeout: Duration,
 ) -> Job<Result<String, String>> {
     let (config, prompt, issue) = (config.clone(), prompt.to_string(), issue.to_path_buf());
     let project = project.map(Path::to_path_buf);
-    Job::spawn(move |cancel| run(&config, &prompt, &issue, project.as_deref(), cancel))
+    Job::spawn(move |cancel| {
+        run(
+            &config,
+            &prompt,
+            &issue,
+            project.as_deref(),
+            cancel,
+            timeout,
+        )
+    })
 }
 
 /// A review's answer, and whether the agent gave it in plan mode.
@@ -736,8 +835,10 @@ pub fn start_build(
     issue: &Path,
     project: &Path,
     log: &Path,
+    timeout: BuildTimeout,
 ) -> (Job<Result<String, String>>, Progress) {
-    start_logged(config, prompt, issue, (project, log), Purpose::Build)
+    let purpose = Purpose::Build(timeout);
+    start_logged(config, prompt, issue, (project, log), purpose)
 }
 
 /// [`start_build`] for what the author of `issue` asked, within `leash`.
@@ -747,8 +848,10 @@ pub fn start_ask(
     issue: &Path,
     (project, log): (&Path, &Path),
     leash: Leash,
+    timeout: BuildTimeout,
 ) -> (Job<Result<String, String>>, Progress) {
-    start_logged(config, prompt, issue, (project, log), Purpose::Ask(leash))
+    let purpose = Purpose::Ask(leash, timeout);
+    start_logged(config, prompt, issue, (project, log), purpose)
 }
 
 fn start_logged(
