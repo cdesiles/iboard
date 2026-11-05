@@ -20,6 +20,7 @@ mod moves;
 mod naming;
 mod panes;
 mod project_menu;
+mod reading;
 mod refine;
 mod review;
 mod select;

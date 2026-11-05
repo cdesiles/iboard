@@ -68,6 +68,7 @@ mod naming;
 mod nav;
 mod new_issue_ui;
 mod projects;
+mod prose;
 mod quitting;
 mod reader;
 mod refine;

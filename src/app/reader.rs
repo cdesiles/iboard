@@ -6,12 +6,13 @@ use super::board::status_color;
 use super::comments::{NoteAction, Notes, block_notes, outdated_notes};
 use super::groups;
 use super::intent::Intent;
+use super::prose as prose_ui;
 use super::{
     Align, ButtonKind, Color32, CommonMarkCache, CommonMarkViewer, CornerRadius, Frame, HashSet,
     IboardApp, Icon, Labels, Layout, Path, PathBuf, Pos2, Rect, RichText, Sense, Stroke,
     StrokeKind, Vec2, images, relative_time, settings, sheet, theme, widgets,
 };
-use iboard::{markdown, preferences};
+use iboard::{markdown, preferences, prose};
 
 /// The narrowest a pane beside the Reader leaves it (`column-min`).
 const PANE_MIN: f32 = 280.0;
@@ -315,7 +316,7 @@ impl IboardApp {
                         styles.insert(egui::TextStyle::Body, theme::read_body());
                         styles.insert(egui::TextStyle::Heading, theme::read_h1());
                         styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.5));
-                        ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+                        ui.spacing_mut().item_spacing.y = 0.0;
                         let drawn = issue_blocks(ui, cache, path, sheet.text, notes.as_mut());
                         outcome.edits = drawn.edits;
                         outcome.missing = drawn.missing;
@@ -474,6 +475,8 @@ fn label_row(ui: &mut egui::Ui, sheet: &SheetView, labels: &Labels) -> Option<St
         return None;
     }
     let mut clicked = None;
+    // The row sits closer to the rule than the title does without labels.
+    ui.add_space(-theme::SPACE_3);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
         for name in names.iter().filter(|name| !name.starts_with("group:")) {
@@ -488,6 +491,7 @@ fn label_row(ui: &mut egui::Ui, sheet: &SheetView, labels: &Labels) -> Option<St
             }
         }
     });
+    ui.add_space(theme::SPACE_3 - ui.spacing().item_spacing.y);
     clicked
 }
 
@@ -544,36 +548,33 @@ fn issue_blocks(
     let mut edits = Vec::new();
     let mut actions = Vec::new();
     let mut missing = Vec::new();
+    let mut below: f32 = 0.0;
     for (index, range) in blocks.iter().enumerate() {
-        // Drawn together, the viewer would put a blank line between blocks.
+        let block = &text[range.clone()];
+        let parsed = prose::parse(block);
+        let (top, bottom) = parsed
+            .as_ref()
+            .and_then(|parsed| parsed.first())
+            .map_or((theme::SPACE_3, theme::SPACE_3), prose_ui::margins);
         if index > 0 {
-            ui.add_space(ui.text_style_height(&egui::TextStyle::Body));
+            ui.add_space(below.max(top));
         }
-        let mut block = text[range.clone()].to_string();
-        let broken = images::missing_images(path, &block);
-        let table = markdown::is_table(&block);
+        below = bottom;
         let shown = ui
-            .push_id(("block", index), |ui| {
-                let mut draw = |ui: &mut egui::Ui| {
-                    let viewer =
-                        CommonMarkViewer::new().default_implicit_uri_scheme(image_base_uri(path));
-                    if broken.is_empty() {
-                        viewer.show_mut(ui, cache, &mut block).response
-                    } else {
-                        let placeheld = images::with_placeholders(&block, &broken);
-                        viewer.show(ui, cache, &placeheld).response
+            .push_id(("block", index), |ui| match &parsed {
+                Some(parsed) => {
+                    let mut ticked = None;
+                    let drawn = ui.vertical(|ui| prose_ui::show(ui, parsed, &mut ticked));
+                    BlockDrawn {
+                        rect: drawn.response.rect,
+                        edited: prose_ui::apply(block, ticked),
                     }
-                };
-                // Table cells do not wrap: a wide table scrolls within the page.
-                match table {
-                    true => egui::ScrollArea::horizontal().show(ui, draw).inner,
-                    false => draw(ui),
                 }
+                None => viewer_block(ui, cache, path, block, &mut missing),
             })
             .inner;
-        missing.extend(broken.into_iter().map(|link| link.url));
-        if shown.changed() {
-            edits.push((range.clone(), block));
+        if let Some(edited) = shown.edited {
+            edits.push((range.clone(), edited));
         }
         if let Some(notes) = notes.as_deref_mut() {
             let anchor = text[range.clone()].trim();
@@ -588,6 +589,46 @@ fn issue_blocks(
         edits,
         actions,
         missing,
+    }
+}
+
+/// Where a block was drawn, and its text when a ticked box changed it.
+struct BlockDrawn {
+    rect: Rect,
+    edited: Option<String>,
+}
+
+/// A block that is more than prose, drawn by the markdown viewer: its lines
+/// keep the viewer's height. `missing` receives the images it could not show.
+fn viewer_block(
+    ui: &mut egui::Ui,
+    cache: &mut CommonMarkCache,
+    path: &Path,
+    block: &str,
+    missing: &mut Vec<String>,
+) -> BlockDrawn {
+    ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+    let mut edited = block.to_string();
+    let broken = images::missing_images(path, block);
+    let table = markdown::is_table(block);
+    let mut draw = |ui: &mut egui::Ui| {
+        let viewer = CommonMarkViewer::new().default_implicit_uri_scheme(image_base_uri(path));
+        if broken.is_empty() {
+            viewer.show_mut(ui, cache, &mut edited).response
+        } else {
+            let placeheld = images::with_placeholders(block, &broken);
+            viewer.show(ui, cache, &placeheld).response
+        }
+    };
+    // Table cells do not wrap: a wide table scrolls within the page.
+    let shown = match table {
+        true => egui::ScrollArea::horizontal().show(ui, draw).inner,
+        false => draw(ui),
+    };
+    missing.extend(broken.into_iter().map(|link| link.url));
+    BlockDrawn {
+        rect: shown.rect,
+        edited: shown.changed().then_some(edited),
     }
 }
 

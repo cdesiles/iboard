@@ -438,21 +438,27 @@ fn conflict_row(ui: &mut egui::Ui, editor: &EditorState) -> (bool, bool) {
 /// The editor's text field.
 pub(super) const EDITOR_ID: &str = "editor_body";
 
-/// The text itself, in a `focus`-edged sheet with its halo, filling the window. A freshly
-/// created issue gets the caret after its title.
+/// The `accent` frame that says "you are editing".
+const FRAME_W: f32 = 2.0;
+
+/// The text itself, in a 2pt `accent` frame filling the window, inset as far as
+/// the Reader's text. A freshly created issue gets the caret after its title.
 fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
     let p = theme::palette(ui);
-    let rows = ((ui.available_height() - 2.0 * theme::SPACE_5) / 20.0).max(8.0) as usize;
-    let sheet = Frame::new()
+    let rows = ((ui.available_height() - 2.0 * theme::SPACE_6) / 20.0).max(8.0) as usize;
+    Frame::new()
         .fill(p.surface)
-        .stroke(Stroke::new(1.0, p.accent))
+        .stroke(Stroke::new(FRAME_W, p.accent))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .show(ui, |ui| {
             theme::scroll_area(
                 ui,
                 egui::ScrollArea::vertical()
                     .id_salt(("editor_scroll", &editor.path))
-                    .content_margin(theme::scroll_margin(20.0, theme::SPACE_5))
+                    .content_margin(theme::scroll_margin(
+                        theme::SPACE_7 + 1.0 - FRAME_W,
+                        theme::SPACE_6 + 1.0 - FRAME_W,
+                    ))
                     .auto_shrink([false, false]),
                 true,
                 |ui| {
@@ -482,7 +488,6 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                 },
             );
         });
-    widgets::paint_focus_halo(ui, sheet.response.rect, theme::RADIUS_MD);
 }
 
 /// The editor's save state as a pill word and its colour.
