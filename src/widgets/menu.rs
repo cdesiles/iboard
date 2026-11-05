@@ -1,6 +1,8 @@
 //! Menus: their options, group heads, two-line rows, separators and notes.
 
-use egui::{Color32, CornerRadius, FontId, Frame, Margin, Pos2, Rect, Response, Sense, Ui, Vec2};
+use egui::{
+    Color32, CornerRadius, FontId, Frame, Margin, Pos2, Rect, Response, RichText, Sense, Ui, Vec2,
+};
 
 use super::{focus_ring, galley, galley_truncated, help, rule};
 use crate::theme::{self, Icon};
@@ -79,19 +81,31 @@ pub fn menu_option(ui: &mut Ui, option: MenuOption<'_>) -> Response {
     response
 }
 
-/// The uppercase heading of a group of menu options: "FAVORITES".
-pub fn menu_group(ui: &mut Ui, text: &str) {
+/// A menu's group head, "PROJECTS 12": the title in uppercase `ui-label`,
+/// then the count, if any, in `meta`, both `ink-muted`.
+pub fn menu_head(ui: &mut Ui, title: &str, count: &str) {
     let p = theme::palette(ui);
+    let title = RichText::new(title.to_uppercase())
+        .font(theme::ui_label())
+        .color(p.ink_muted);
+    if count.is_empty() {
+        ui.label(title);
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+        ui.label(title);
+        ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
+    });
+}
+
+/// The [`menu_head`] of a group of menu options, in line with their names:
+/// "FAVORITES".
+pub fn menu_group(ui: &mut Ui, text: &str) {
     ui.add_space(theme::SPACE_2);
-    egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(theme::SPACE_3 as i8, 0))
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(text.to_uppercase())
-                    .font(theme::ui_label())
-                    .color(p.ink_muted),
-            );
-        });
+    Frame::new()
+        .inner_margin(Margin::symmetric(theme::SPACE_3 as i8, 0))
+        .show(ui, |ui| menu_head(ui, text, ""));
 }
 
 /// Height of a two-line [`menu_row`].

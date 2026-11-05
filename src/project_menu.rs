@@ -587,25 +587,14 @@ fn section<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
         .inner
 }
 
-/// "GROUPS 2": the section's name in `ui-label`, its count in `meta`.
+/// A section's [`widgets::menu_head`], "GROUPS 2", in line with its rows.
 fn head(ui: &mut egui::Ui, title: &str, count: &str) {
-    let p = theme::palette(ui);
     Frame::new()
         .inner_margin(Margin::symmetric(
             theme::SPACE_3 as i8,
             theme::SPACE_2 as i8,
         ))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                ui.label(
-                    RichText::new(title.to_uppercase())
-                        .font(theme::ui_label())
-                        .color(p.ink_muted),
-                );
-                ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
-            });
-        });
+        .show(ui, |ui| widgets::menu_head(ui, title, count));
 }
 
 fn note_line(ui: &mut egui::Ui, text: &str) {

@@ -164,7 +164,7 @@ pub fn show(
                         .iter()
                         .filter(|name| typed.as_deref().is_none_or(|text| name.contains(text)))
                         .collect();
-                    group_head(ui, shown.len());
+                    widgets::menu_head(ui, "On this board", &shown.len().to_string());
                     let pill_ids = if board.is_empty() {
                         ui.label(
                             egui::RichText::new("No labels on this board yet. Type one above.")
@@ -305,23 +305,6 @@ fn hint_line(
         }
     }
     ui.label(job);
-}
-
-/// The group head: "ON THIS BOARD", and how many labels show under it.
-fn group_head(ui: &mut egui::Ui, count: usize) {
-    let p = theme::palette(ui);
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new("ON THIS BOARD")
-                .font(theme::ui_label())
-                .color(p.ink_muted),
-        );
-        ui.label(
-            egui::RichText::new(count.to_string())
-                .font(theme::meta())
-                .color(p.ink_muted),
-        );
-    });
 }
 
 /// The labels, wrapping, scrolling after five rows. Returns the ids of the

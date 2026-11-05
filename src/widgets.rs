@@ -26,7 +26,7 @@ pub use dialog::{
 };
 pub use key_hints::{key_hints, key_hints_shown};
 pub use menu::{
-    MenuOption, menu_group, menu_note, menu_option, menu_quiet, menu_row, menu_separator,
+    MenuOption, menu_group, menu_head, menu_note, menu_option, menu_quiet, menu_row, menu_separator,
 };
 pub use pill::{chip, filter_token, label_pill, pill, tag};
 pub use select::select;
