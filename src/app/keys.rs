@@ -14,19 +14,42 @@ struct KeyContext {
     typing: bool,
     /// The delete confirmation is up.
     confirming: bool,
-    board: bool,
-    /// The issue open in the reader or the editor.
-    open: Option<PathBuf>,
-    editing: bool,
-    composer: bool,
-    /// The card selected on the board, and whether it is done.
-    selected: Option<(PathBuf, bool)>,
+    place: Place,
     /// The open issue's text can be edited.
     editable: bool,
     /// The open issue is in Todo, so it can be refined and reviewed.
     refinable: bool,
     /// The review panel shows a proposal to apply.
     proposal: bool,
+}
+
+/// The screen the keys act on.
+enum Place {
+    /// The board, and the card selected on it with whether it is done.
+    Board(Option<(PathBuf, bool)>),
+    /// The issue open in the reader or the editor.
+    Issue(PathBuf, DetailMode),
+    /// The Diff screen, or an issue no longer on the board.
+    Elsewhere,
+}
+
+impl Place {
+    fn open(&self) -> Option<&PathBuf> {
+        match self {
+            Place::Issue(path, _) => Some(path),
+            _ => None,
+        }
+    }
+
+    /// What `⌘U`, `⌘K` and `Del` act on: the card selected on the board, or
+    /// the issue the reader shows.
+    fn target(&self) -> Option<&PathBuf> {
+        match self {
+            Place::Board(selected) => selected.as_ref().map(|(path, _)| path),
+            Place::Issue(path, DetailMode::Preview) => Some(path),
+            _ => None,
+        }
+    }
 }
 
 /// One thing a key asked for.
@@ -66,65 +89,19 @@ enum Command {
 /// The shortcuts that fire for `input` where the keyboard is.
 fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     let pressed = |key: Key| input.key_pressed(key);
-    let command = |key: Key| input.modifiers.command && pressed(key);
     let plain = input.modifiers.is_none();
-    let mut out = Vec::new();
-    if command(Key::N) {
-        out.push(Command::Compose);
-    }
-    if cx.board && command(Key::F) {
-        out.push(Command::FocusFilter);
-    }
-    if cx.board && !cx.typing && command(Key::I) {
-        out.push(Command::Stats);
-    }
-    if cx.proposal && !cx.typing && command(Key::Enter) {
-        out.push(Command::ApplyReview);
-    }
-    let target = match cx.board {
-        true => cx.selected.as_ref().map(|(path, _)| path),
-        false => cx.open.as_ref().filter(|_| !cx.editing),
-    };
-    if !cx.typing && command(Key::U) {
-        out.extend(target.map(|path| Command::Update(path.clone())));
-    }
-    if !cx.typing && command(Key::K) {
-        out.extend(target.map(|path| Command::Ask(path.clone())));
-    }
-    if command(Key::R) && !input.modifiers.shift {
-        out.push(match cx.open.as_ref().filter(|_| cx.refinable) {
-            Some(path) => Command::Refine(path.clone()),
-            None => Command::Refresh,
-        });
-    }
-    // In a text field `⌘Z` stays the field's own undo.
-    if cx.board && !cx.typing && command(Key::Z) {
-        out.push(Command::Undo);
-    }
-    if command(Key::Comma) {
-        out.push(Command::Settings);
-    }
-    if command(Key::R)
-        && input.modifiers.shift
-        && let Some(path) = &cx.open
+    let mut out = command_keys(input, cx);
+    if let Place::Board(selected) = &cx.place
+        && !cx.typing
+        && !cx.confirming
     {
-        out.push(Command::ToggleReview(path.clone()));
-    }
-    if command(Key::OpenBracket) && !cx.board {
-        out.push(Command::Back);
-    }
-    if command(Key::S) {
-        out.push(Command::Save);
-    }
-    if cx.board && !cx.typing && !cx.confirming {
-        out.extend(board_keys(input, cx));
+        out.extend(board_keys(input, selected.clone()));
     }
     let ctrl = input.modifiers.ctrl && !input.modifiers.mac_cmd && !input.modifiers.alt;
-    if cx.board && !cx.composer && !cx.confirming && ctrl && pressed(Key::Tab) {
+    if matches!(cx.place, Place::Board(_)) && !cx.confirming && ctrl && pressed(Key::Tab) {
         out.push(Command::SwitchProject(!input.modifiers.shift));
     }
-    let reading = cx.open.as_ref().filter(|_| !cx.editing);
-    if let Some(path) = reading
+    if let Place::Issue(path, DetailMode::Preview) = &cx.place
         && !cx.typing
         && !cx.confirming
         && plain
@@ -140,19 +117,54 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     // reader shows. In the editor the key belongs to the text.
     let delete = plain && (pressed(Key::Delete) || pressed(Key::Backspace));
     if delete && !cx.typing && !cx.confirming {
-        let target = if cx.board {
-            cx.selected.as_ref().map(|(path, _)| path)
-        } else {
-            reading
-        };
-        out.extend(target.map(|path| Command::Delete(path.clone())));
+        out.extend(cx.place.target().cloned().map(Command::Delete));
     }
     out
 }
 
+/// The `⌘` shortcuts, in the order they run: `⇧` only tells `⌘R` from `⌘⇧R`.
+fn command_keys(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
+    if !input.modifiers.command {
+        return Vec::new();
+    }
+    let board = matches!(cx.place, Place::Board(_));
+    let shift = input.modifiers.shift;
+    let target = cx.place.target().filter(|_| !cx.typing);
+    let open = cx.place.open();
+    let refine = open.filter(|_| cx.refinable).cloned();
+    [
+        (Key::N, Some(Command::Compose)),
+        (Key::F, board.then_some(Command::FocusFilter)),
+        (Key::I, (board && !cx.typing).then_some(Command::Stats)),
+        (
+            Key::Enter,
+            (cx.proposal && !cx.typing).then_some(Command::ApplyReview),
+        ),
+        (Key::U, target.cloned().map(Command::Update)),
+        (Key::K, target.cloned().map(Command::Ask)),
+        (
+            Key::R,
+            (!shift).then(|| refine.map_or(Command::Refresh, Command::Refine)),
+        ),
+        // In a text field `⌘Z` stays the field's own undo.
+        (Key::Z, (board && !cx.typing).then_some(Command::Undo)),
+        (Key::Comma, Some(Command::Settings)),
+        (
+            Key::R,
+            open.filter(|_| shift).cloned().map(Command::ToggleReview),
+        ),
+        (Key::OpenBracket, (!board).then_some(Command::Back)),
+        (Key::S, Some(Command::Save)),
+    ]
+    .into_iter()
+    .filter(|(key, _)| input.key_pressed(*key))
+    .filter_map(|(_, command)| command)
+    .collect()
+}
+
 /// On the board, the arrow keys select a card; `↩` opens it, `⌘↩` moves it
 /// to the next column, `E` edits, `A` archives a done one, `L` labels it.
-fn board_keys(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
+fn board_keys(input: &egui::InputState, selected: Option<(PathBuf, bool)>) -> Vec<Command> {
     let plain = input.modifiers.is_none();
     let mut out: Vec<Command> = [
         Key::ArrowUp,
@@ -164,10 +176,10 @@ fn board_keys(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     .filter(|key| plain && input.key_pressed(*key))
     .map(Command::Step)
     .collect();
-    let Some((path, done)) = cx.selected.clone() else {
+    let Some((path, done)) = selected else {
         return out;
     };
-    let command_enter = !cx.composer && input.modifiers.command && input.key_pressed(Key::Enter);
+    let command_enter = input.modifiers.command && input.key_pressed(Key::Enter);
     out.extend(if plain && input.key_pressed(Key::Enter) {
         Some(Command::Open(path))
     } else if command_enter {
@@ -253,7 +265,7 @@ impl IboardApp {
         }
         let cx = self.key_context(ctx, confirming || self.refinement_shown());
         let mut commands = ctx.input(|i| keymap(i, &cx));
-        if !cx.confirming && !cx.board && self.swiped_back(ctx) {
+        if !cx.confirming && !matches!(cx.place, Place::Board(_)) && self.swiped_back(ctx) {
             commands.push(Command::Back);
         }
         for command in commands {
@@ -267,9 +279,8 @@ impl IboardApp {
         }
         // A double-click on the page (not the header) edits, as `E` does.
         if cx.editable
-            && !cx.editing
             && !self.writing_note()
-            && let Some(path) = cx.open
+            && let Place::Issue(path, DetailMode::Preview) = cx.place
             && ctx.input(|i| {
                 i.pointer
                     .button_double_clicked(egui::PointerButton::Primary)
@@ -436,27 +447,27 @@ impl IboardApp {
     }
 
     fn key_context(&self, ctx: &egui::Context, confirming: bool) -> KeyContext {
-        let open = match &self.session.screen {
-            Screen::Detail(path, _) if self.board.find(path).is_some() => Some(path.clone()),
-            _ => None,
-        };
-        KeyContext {
-            typing: ctx.memory(|m| m.focused().is_some()),
-            confirming,
-            board: matches!(self.session.screen, Screen::Board),
-            editable: open.as_deref().is_some_and(|path| self.can_edit(path)),
-            refinable: open.as_deref().is_some_and(|path| self.is_todo_issue(path)),
-            proposal: self.proposal_shown() && !self.refinement_shown(),
-            open,
-            editing: self.session.editing().is_some(),
-            composer: self.composer_open(),
-            selected: self.selected_issue().map(|path| {
+        let place = match &self.session.screen {
+            Screen::Board => Place::Board(self.selected_issue().map(|path| {
                 let done = self
                     .board
                     .find(&path)
                     .is_some_and(|issue| issue.done_at.is_some());
                 (path, done)
-            }),
+            })),
+            Screen::Detail(path, mode) if self.board.find(path).is_some() => {
+                Place::Issue(path.clone(), *mode)
+            }
+            _ => Place::Elsewhere,
+        };
+        let open = place.open();
+        KeyContext {
+            typing: ctx.memory(|m| m.focused().is_some()),
+            confirming,
+            editable: open.is_some_and(|path| self.can_edit(path)),
+            refinable: open.is_some_and(|path| self.is_todo_issue(path)),
+            proposal: self.proposal_shown() && !self.refinement_shown(),
+            place,
         }
     }
 
