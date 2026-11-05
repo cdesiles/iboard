@@ -1,7 +1,10 @@
 //! NewIssueModal's logic: opening and parking it, naming the issue, Draft
 //! with Review, and writing the issue to Todo. Its look is `new_issue_ui`.
 
-use super::*;
+use super::{
+    Duration, Engine, HashMap, IboardApp, Instant, Job, Leave, Path, PathBuf, Screen, agent,
+    atomic_write, images, job, prompts, titles,
+};
 use iboard::new_issue::{self, Parked};
 
 /// How long the composer waits for a title before the user types one.

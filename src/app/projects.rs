@@ -1,7 +1,10 @@
 //! The user's projects in their own order, and the ProjectMenu that lists
 //! them under the board header's project name.
 
-use super::*;
+use super::{
+    IboardApp, Instant, Path, PathBuf, Rect, UserConfig, all, display_path, file_name, groups,
+    recents, settings, workspace,
+};
 use crate::project_menu::{self, Action, Entries, GroupRow, Pick, ProjectRow};
 use crate::workspace::config;
 

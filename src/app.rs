@@ -2,7 +2,7 @@
 //! rendered markdown reader, and an editor with debounced autosave. Its look
 //! follows the design system in `design/` (see `theme.rs`).
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -79,20 +79,17 @@ mod update;
 mod windows;
 
 use all::Source;
-use board::*;
-use card::*;
 use compose::Composer;
 use design_panel::DraftJob;
 use editor::EditorState;
 use enrich::Enrichment;
-use filter_bar::*;
-use intent::Intent;
-use labelling::*;
-use new_issue_ui::*;
+use filter_bar::FilterBar;
 pub use quitting::on_signals;
-use reader::*;
+use reader::Reader;
 use review::{PastReview, ReviewState};
 use windows::{CommitHash, CommitsPanel};
+#[cfg(test)]
+use {filter_bar::filter_id, intent::Intent, reader::image_base_uri};
 
 #[cfg(target_os = "macos")]
 const ABOUT: &str = "**iboard** is an opinionated issue tracker that lives entirely as Markdown \

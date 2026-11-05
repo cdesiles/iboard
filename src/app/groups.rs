@@ -2,7 +2,10 @@
 //! back to the user configuration, and keeping the board on screen when the
 //! groups change, from the dialog or from an edit outside iboard.
 
-use super::*;
+use super::{
+    Duration, Group, IboardApp, Instant, Path, UserConfig, Workspace, display_path, labels,
+    settings, workspace,
+};
 use crate::groups_ui;
 use crate::workspace::config::{self, SaveError};
 

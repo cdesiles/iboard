@@ -1,7 +1,7 @@
 //! The panel beside an issue's page, the review's or the agent log's: one
 //! `surface` card under a `review-soft` head.
 
-use super::*;
+use super::{Align, CornerRadius, Frame, Layout, RichText, Stroke, Vec2, theme};
 
 /// How much of the head its detail may take: it truncates past it, so the
 /// panel never widens under the issue.

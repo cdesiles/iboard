@@ -1,6 +1,10 @@
 //! The header bar: the breadcrumb, the project menu and the toolbar.
 
-use super::*;
+use super::labelling::set_label_anchor;
+use super::{
+    ARCHIVE_DIR, Align, ButtonKind, Column, IboardApp, Icon, Layout, Path, PathBuf, Pos2, RichText,
+    Screen, Sense, Stroke, UNIFIED_TITLEBAR, Vec2, display_path, file_name, theme, widgets,
+};
 
 /// The Move to… menu: column names only.
 const MOVE_MENU_WIDTH: f32 = 180.0;

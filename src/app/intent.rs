@@ -2,7 +2,7 @@
 //! one place once the frame's drawing is done.
 
 use super::card::CardAction;
-use super::*;
+use super::{IboardApp, Path, PathBuf};
 
 /// One thing a view asked for.
 pub(super) enum Intent {

@@ -1,6 +1,9 @@
 //! The dock that rises while a card is dragged, to archive or delete it.
 
-use super::*;
+use super::board::dashed_rect;
+use super::{
+    CornerRadius, IboardApp, Icon, PathBuf, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, theme,
+};
 
 /// An issue being dragged across the board. The payload is the issue's file,
 /// which a drop moves into the target column's directory, or hands to one of
@@ -98,7 +101,7 @@ impl IboardApp {
 
 /// One of the DropZones in the dock.
 #[derive(Clone, Copy)]
-pub(super) enum DropZone {
+enum DropZone {
     /// Moves the issue to `.archive/`. Only shown while a Done card is dragged.
     Archive,
     /// Asks to confirm, then deletes.
@@ -109,12 +112,7 @@ pub(super) enum DropZone {
 /// dashed at rest, a solid 2pt edge on a soft fill while a card is over it.
 /// Every zone drawn accepts the drop; the dock simply does not draw the zones
 /// that would refuse it.
-pub(super) fn drop_zone(
-    ui: &mut egui::Ui,
-    rect: Rect,
-    zone: DropZone,
-    asks: bool,
-) -> Option<PathBuf> {
+fn drop_zone(ui: &mut egui::Ui, rect: Rect, zone: DropZone, asks: bool) -> Option<PathBuf> {
     let p = theme::palette(ui);
     let id = match zone {
         DropZone::Archive => "drop_zone_archive",

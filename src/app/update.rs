@@ -4,7 +4,7 @@
 //! opens the editor with the update, and saving it is the accept.
 
 use super::review::ReviewTarget;
-use super::*;
+use super::{ButtonKind, IboardApp, Icon, Path, ReviewMode, prompts, widgets};
 
 impl IboardApp {
     /// Whether `path` can be updated: on the board, past Todo (whose review

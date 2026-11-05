@@ -1,9 +1,14 @@
 //! The board: its columns of cards.
 
-use super::build::{Builds, card_build};
-use super::card::{CardAction, CardExtras, CardLook};
+use super::build::{self, Builds, card_build};
+use super::card::{CardAction, CardExtras, CardLook, issue_card};
 use super::dock::{DOCK_H, IssueDrag};
-use super::*;
+use super::intent::Intent;
+use super::{
+    ARCHIVE_DIR, Align, Board, Color32, Column, CornerRadius, Duration, Filter, Frame, IboardApp,
+    Icon, Issue, Labels, Layout, LayoutJob, MarginF32, Palette, Path, PathBuf, Pos2, Rect,
+    RichText, Sense, Stroke, StrokeKind, Vec2, discovery, review, theme, widgets,
+};
 
 /// The start of the gutter after a column, where its thumb floats clear of
 /// the cards.
@@ -136,7 +141,7 @@ fn column_title(ui: &mut egui::Ui, name: &str) {
 }
 
 /// Everything `column_ui` needs to know about one column.
-pub(super) struct ColumnView<'a> {
+struct ColumnView<'a> {
     column: &'a Column,
     index: usize,
     filter: &'a Filter,
@@ -165,7 +170,7 @@ pub(super) struct ColumnView<'a> {
     builds: Builds<'a>,
 }
 
-pub(super) fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
+fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
     let column = view.column;
     let mut intents = Vec::new();
     let visible: Vec<&Issue> = column

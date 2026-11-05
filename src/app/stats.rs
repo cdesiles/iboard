@@ -6,12 +6,15 @@
 use std::sync::Arc;
 
 use iboard::agenda::{Agenda, Range};
-use iboard::format::thousands;
+use iboard::format::{display_path, stopwatch, thousands};
 use iboard::stats::{self, Limits, Progress, Snapshot, Stats};
 
 use super::agenda;
-use super::compose::TitleStage;
-use super::*;
+use super::compose::{Composer, TitleStage};
+use super::{
+    Align, ButtonKind, Color32, CornerRadius, Duration, Frame, IboardApp, Icon, Instant, Job, Key,
+    Layout, Path, Pos2, Rect, RichText, Sense, Shape, Stroke, Vec2, job, theme, widgets,
+};
 
 mod files;
 mod tiles;

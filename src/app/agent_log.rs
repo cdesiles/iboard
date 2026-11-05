@@ -2,7 +2,10 @@
 //! runs, and what it did once it is done.
 
 use super::side_panel::side_panel;
-use super::*;
+use super::{
+    ButtonKind, CommonMarkCache, CommonMarkViewer, IboardApp, Instant, Path, PathBuf, RichText,
+    file_name, stopwatch, theme, widgets,
+};
 use crate::build_log::{self, Entry};
 
 /// The log open beside the reader, read again whenever its file grows.

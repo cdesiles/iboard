@@ -1,8 +1,12 @@
 //! The AI review: running it, its panel, and applying its proposal.
 
 use super::side_panel::side_panel;
-use super::split::Split;
-use super::*;
+use super::split::{self, Split};
+use super::{
+    Align, ButtonKind, Color32, Duration, Frame, HashMap, HashSet, IboardApp, Icon, Job, Layout,
+    Palette, Path, PathBuf, Pos2, Report, ReviewMode, RichText, Sense, Vec2, agent, file_name, job,
+    prompts, reviews, theme, widgets,
+};
 
 impl IboardApp {
     /// The text an agent should read: the saved file, or the editor draft when

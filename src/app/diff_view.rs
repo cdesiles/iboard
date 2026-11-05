@@ -7,7 +7,10 @@ use egui::text::{LayoutJob, TextFormat};
 use iboard::diff::{self, CommitDiff, FileDiff, FileStatus, Line, LineKind};
 
 use super::diff_syntax::{self, FileColours, Span};
-use super::*;
+use super::{
+    Align, Color32, DetailMode, Frame, IboardApp, Job, Key, Layout, Path, PathBuf, Pos2, Rect,
+    RichText, Screen, Sense, Stroke, Vec2, job, theme, widgets,
+};
 
 /// Every row of the diff is this tall, so only the visible ones are drawn.
 const ROW_H: f32 = 18.0;

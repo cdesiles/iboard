@@ -2,7 +2,11 @@
 //! The shortcuts are a keymap: the input and where the keyboard is give a
 //! list of [`Command`]s, applied in order.
 
-use super::*;
+use super::editor::EditorState;
+use super::{
+    Confirm, DetailMode, IboardApp, Instant, Job, Key, LeaveChoice, PathBuf, RESCAN_EVERY, Screen,
+    Vec2, job, quitting, scan,
+};
 
 /// How far two fingers swipe right, in points, to go back.
 const SWIPE_BACK: f32 = 120.0;

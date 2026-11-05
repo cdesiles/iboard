@@ -1,8 +1,11 @@
 //! Comments in the reader's margin: a note on one block of the issue, kept in
 //! its sidecar and sent to the next review.
 
-use super::*;
-use crate::reviews::Comment;
+use super::{
+    Align, ButtonKind, CornerRadius, Frame, IboardApp, Icon, Key, Layout, Path, PathBuf, Pos2,
+    Rect, RichText, Sense, Stroke, Vec2, theme, widgets,
+};
+use crate::reviews::{self, Comment};
 
 /// The comments of the issue in the reader.
 pub(super) struct Notes {

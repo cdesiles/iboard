@@ -1,9 +1,12 @@
 //! The Trends of Project stats: the four measures over the page, a small
 //! multiple each, under one shared crosshair.
 
-use iboard::stats::Cycles;
+use iboard::stats::{Cycles, Limits, Stats};
 
-use super::*;
+use super::{
+    Align, Layout, Measure, Pos2, Rect, RichText, Sense, Shape, Stroke, TREND_H, TREND_LABEL_W,
+    Vec2, block, block_label, theme,
+};
 
 /// The strip at a chart's right that holds its axis bounds.
 const AXIS_W: f32 = 56.0;
@@ -258,7 +261,7 @@ fn runs(values: &[Option<f32>], point: &impl Fn(usize, f32) -> Pos2) -> Vec<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iboard::stats::Cycle;
+    use iboard::stats::{Cycle, Snapshot};
 
     fn snapshot(short: &str, code: usize, complexity: usize, test_code: usize) -> Snapshot {
         Snapshot {

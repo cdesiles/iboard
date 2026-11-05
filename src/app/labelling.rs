@@ -1,6 +1,8 @@
 //! Labels on an issue: the LabelPicker, and adding, removing and renaming them.
 
-use super::*;
+use super::{
+    DetailMode, IboardApp, LabelPicker, Path, PathBuf, Rect, Screen, filter, label_picker, labels,
+};
 
 impl IboardApp {
     /// Opens the LabelPicker on `path`, or closes it when it is already open

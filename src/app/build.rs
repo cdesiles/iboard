@@ -2,10 +2,14 @@
 //! each moved to the next column while an agent works on it. Doing's header
 //! sets how many agents work at once.
 
+use std::collections::{HashSet, VecDeque};
+
 use super::card::CardBuild;
-use super::*;
+use super::{
+    Column, Duration, IboardApp, Instant, Issue, Job, Path, PathBuf, agent, discovery, file_name,
+    job, prompts, settings_ui,
+};
 use crate::build_log;
-use std::collections::HashSet;
 
 /// The most agents an AI build runs at once.
 pub(super) const MAX_AGENTS: usize = 16;

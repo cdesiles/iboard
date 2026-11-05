@@ -1,6 +1,6 @@
 //! Where the user is: the screens, leaving the editor, and moving the selection.
 
-use super::*;
+use super::{DetailMode, IboardApp, Key, Leave, LeaveChoice, Path, PathBuf, Screen, process};
 
 impl IboardApp {
     /// Opens an issue in the reader. Editing is a separate step, entered from

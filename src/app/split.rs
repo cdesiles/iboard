@@ -2,7 +2,10 @@
 //! preview in the review panel, writing them in the original's place, and
 //! taking it all back.
 
-use super::*;
+use super::{
+    Duration, IboardApp, Instant, Job, Path, PathBuf, RichText, Undo, agent, atomic_write,
+    discovery, file_name, job, prompts, reviews, theme, widgets,
+};
 use crate::priority;
 
 /// One proposed ticket, as the panel lets the user trim it.

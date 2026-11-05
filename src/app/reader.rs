@@ -2,8 +2,14 @@
 
 use std::ops::Range;
 
+use super::board::status_color;
 use super::comments::{NoteAction, Notes, block_notes, outdated_notes};
-use super::*;
+use super::intent::Intent;
+use super::{
+    Align, ButtonKind, Color32, CommonMarkCache, CommonMarkViewer, CornerRadius, Frame, HashSet,
+    IboardApp, Icon, Labels, Layout, Path, PathBuf, Pos2, Rect, RichText, Sense, Stroke,
+    StrokeKind, Vec2, images, relative_time, sheet, theme, widgets,
+};
 use iboard::markdown;
 
 /// The narrowest a pane beside the Reader leaves it (`column-min`).
@@ -543,7 +549,7 @@ pub(super) fn page_column<R>(
 const GHOST_TILE_H: f32 = 72.0;
 
 /// What the "Not written yet" block asked for.
-pub(super) enum NotWritten {
+enum NotWritten {
     Section(String),
     Review,
 }
@@ -551,7 +557,7 @@ pub(super) enum NotWritten {
 /// The "Not written yet" block under the reader sheet: its own `surface`
 /// card. With nothing written, a head row (label, Draft with Review) over a
 /// grid of ghost tiles; once some sections exist, one line of chips.
-pub(super) fn not_written_block(
+fn not_written_block(
     ui: &mut egui::Ui,
     rect: Rect,
     missing: &[String],
@@ -685,7 +691,7 @@ pub(super) fn page<R>(
 
 /// What the reader sheet's head strip shows.
 #[derive(Clone, Copy)]
-pub(super) struct SheetHead<'a> {
+struct SheetHead<'a> {
     column: &'a str,
     status: Color32,
     path: &'a str,
@@ -698,7 +704,7 @@ pub(super) struct SheetHead<'a> {
 /// The sheet's `meta` head: the column as a status mark and the file path on
 /// the left, "modified 1h ago" and checklist progress (or the word count) on
 /// the right, over a `line` rule.
-pub(super) fn sheet_head(ui: &mut egui::Ui, head: SheetHead) {
+fn sheet_head(ui: &mut egui::Ui, head: SheetHead) {
     let p = theme::palette(ui);
     let meta = |text: String, color: Color32| {
         egui::Label::new(RichText::new(text).font(theme::meta()).color(color))

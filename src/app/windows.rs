@@ -1,6 +1,10 @@
 //! Windows over the board: the delete confirmation, an issue's commits, Settings.
 
-use super::*;
+use super::{
+    AgentConfig, Align, ButtonKind, CornerRadius, IboardApp, Instant, Job, Labels, Layout,
+    MarginF32, Path, PathBuf, Preferences, RichText, Sense, Vec2, commits, display_path, file_name,
+    job, labels, settings, settings_ui, theme, trash, widgets,
+};
 
 /// The newest commit naming one issue's file, for the board it was looked up
 /// on.

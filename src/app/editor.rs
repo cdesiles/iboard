@@ -1,6 +1,12 @@
 //! The editor: autosave, a file changed on disk meanwhile, and its page.
 
-use super::*;
+use super::reader::page_column;
+use super::{
+    Align, ButtonKind, CCursor, CCursorRange, Color32, CornerRadius, DetailMode, Duration, Frame,
+    IboardApp, Instant, Layout, LeaveChoice, Margin, Palette, Path, PathBuf, RichText, Screen,
+    Stroke, Vec2, atomic_write, discovery, file_name, files, normalize_file_name, sheet, theme,
+    widgets,
+};
 
 /// How long after the last keystroke an edit is written to disk.
 pub(super) const AUTOSAVE_AFTER: Duration = Duration::from_millis(800);

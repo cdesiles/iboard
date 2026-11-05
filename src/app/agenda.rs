@@ -7,7 +7,10 @@ use std::collections::BTreeMap;
 use chrono::{Datelike, Duration as Days, NaiveDate};
 use iboard::agenda::{Agenda, DayCommit, Range, Week, commits_on, day_label, streak};
 
-use super::*;
+use super::{
+    Align, ButtonKind, Color32, CornerRadius, Frame, IboardApp, Key, Layout, MarginF32, Pos2, Rect,
+    RichText, Sense, Shape, Stroke, StrokeKind, Vec2, theme, widgets,
+};
 
 /// A day's square, and the gap between squares.
 const DAY: f32 = 18.0;

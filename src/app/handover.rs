@@ -1,7 +1,7 @@
 //! A later `iboard` hands this window the board to show, or only asks it to
 //! come forward, rather than opening a window of its own.
 
-use super::*;
+use super::{IboardApp, Leave, Request, all, recents};
 
 impl IboardApp {
     /// Shows what the iboards started since the last frame asked for, once

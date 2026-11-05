@@ -2,7 +2,10 @@
 
 use super::compose::DISCARD_UNDO;
 use super::dock::IssueDrag;
-use super::*;
+use super::{
+    Align, ButtonKind, Frame, IboardApp, Layout, NOTICE_FOR, Path, RichText, Screen, UNDO_FOR,
+    Undo, file_name, relative_time, theme, widgets,
+};
 
 impl IboardApp {
     /// The 24pt bottom strip: where you are on the left and, while ⌘ is held,

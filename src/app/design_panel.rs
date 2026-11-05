@@ -1,6 +1,8 @@
 //! The Design panel, and agents drafting a component's preview.
 
-use super::*;
+use super::{
+    DesignSystem, Duration, IboardApp, Instant, Job, agent, design, design_ui, job, prompts,
+};
 
 /// A component whose preview an agent is drafting.
 pub(super) struct DraftJob {

@@ -1,6 +1,9 @@
 //! The filter field in the header bar, and its keys.
 
-use super::*;
+use super::{
+    Align, Board, CornerRadius, Filter, Frame, IboardApp, Icon, Key, Layout, Margin, Pos2, Rect,
+    RichText, Sense, Stroke, StrokeKind, Vec2, filter, theme, widgets,
+};
 
 /// The filter's width at rest, and while in use or filtering.
 const FILTER_REST: f32 = 220.0;

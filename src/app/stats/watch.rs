@@ -1,9 +1,12 @@
 //! The Refactor watch's painting: its verdict, the signals behind it and the
 //! draft it offers; its rules are in `src/stats/watch.rs`.
 
-use iboard::stats::Signal;
+use iboard::stats::{self, Limits, Signal, Stats};
 
-use super::*;
+use super::{
+    ButtonKind, CornerRadius, Frame, Icon, RichText, Sense, StatsAsk, Vec2, block, block_label,
+    theme, widgets,
+};
 
 /// The verdict, the four signals behind it, and the draft it offers.
 pub(super) fn watch(ui: &mut egui::Ui, stats: &Stats, limits: &Limits) -> Option<StatsAsk> {

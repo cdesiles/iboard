@@ -1,8 +1,12 @@
 //! An issue's card on the board.
 
 use super::dock::IssueDrag;
+use super::labelling::{label_picker_open, set_label_anchor};
 use super::review::ReviewPill;
-use super::*;
+use super::{
+    Align, Color32, CornerRadius, Duration, Frame, Icon, Instant, Issue, Labels, Layout, LayoutJob,
+    Pos2, Rect, RichText, Sense, Shape, Stroke, StrokeKind, Vec2, stopwatch, theme, widgets,
+};
 
 /// An issue action available from a card or the detail header.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -336,14 +340,14 @@ fn tilt_layer(ctx: &egui::Context, layer: egui::LayerId, origin: Pos2) {
 
 /// What `card_body` drew: the action a child button asked for, and the rects
 /// those buttons cover.
-pub(super) struct CardBody {
+struct CardBody {
     action: Option<CardAction>,
     action_rects: Vec<Rect>,
 }
 
 /// What the slot for a card's icon buttons holds.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Actions {
+enum Actions {
     /// Nothing: the lifted copy while dragging.
     Ghost,
     /// The buttons, invisible and disabled so a click there opens the card;
@@ -358,7 +362,7 @@ pub(super) enum Actions {
 /// `accent-soft`. The meta row ends with a slot for the icon buttons, filled
 /// as `actions` says. The slot is always reserved so the file name and date
 /// never move when the buttons appear.
-pub(super) fn card_body(
+fn card_body(
     ui: &mut egui::Ui,
     issue: &Issue,
     width: f32,

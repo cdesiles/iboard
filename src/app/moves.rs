@@ -1,6 +1,9 @@
 //! Moving, reordering, deleting and archiving issue files, and undoing a delete.
 
-use super::*;
+use super::{
+    ARCHIVE_DIR, Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Screen, UNDO_FOR, Undo,
+    atomic_write, discovery, file_name, images, trash, unique_name,
+};
 use crate::priority;
 
 impl IboardApp {

@@ -4,7 +4,7 @@
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::*;
+use super::{Confirm, Duration, IboardApp, Leave, process};
 
 /// How long the app has to quit on a signal before the agents are stopped
 /// without it.

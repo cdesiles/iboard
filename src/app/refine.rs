@@ -1,8 +1,16 @@
 //! Refinement: a conversation with an agent that challenges an issue until it
 //! is a clear spec worth building, or plainly not worth building.
 
-use super::*;
+use super::{
+    Align, ButtonKind, CommonMarkCache, CommonMarkViewer, CornerRadius, Duration, Frame, IboardApp,
+    Job, Key, Layout, Margin, Path, PathBuf, Pos2, Rect, ReviewMode, RichText, Screen, Sense,
+    Stroke, Vec2, agent, job, prompts, side_panel, theme, widgets,
+};
 use iboard::markdown;
+
+mod thinking;
+
+use thinking::{thinking_pick, thinking_why};
 
 /// Under this width the panes stack and the reasoning folds under the TL;DR.
 const NARROW_BELOW: f32 = theme::MODAL_XL_STACK_BELOW;
@@ -18,9 +26,6 @@ const INLINE_HIT: f32 = 9.0;
 
 /// The reasoning's scrollbar keeps this far from the divider.
 const SCROLL_STEP_IN: f32 = 4.0;
-
-/// Past this many seconds the waiting line says it is slow.
-const SLOW_SECS: u64 = 20;
 
 /// About 68 characters of `read-body`: the longest line worth reading.
 const MEASURE: f32 = 560.0;
@@ -1047,99 +1052,4 @@ fn footer_hints(ui: &mut egui::Ui, refine: &Refinement) {
         widgets::hint(ui, "tab", "note");
     }
     widgets::hint(ui, "esc", "hide");
-}
-
-/// The status line while the challenger works: the mark, what it waits for
-/// and the whole seconds spent; past 20s, that it is slow and how to leave.
-fn thinking_line(ui: &mut egui::Ui, elapsed: std::time::Duration, first: bool) {
-    let p = theme::palette(ui);
-    let seconds = elapsed.as_secs();
-    let slow = seconds >= SLOW_SECS;
-    let line = match (slow, first) {
-        (true, _) => "Still working",
-        (false, true) => "Challenger is reading the issue",
-        (false, false) => "Challenger is weighing your answer",
-    };
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
-        widgets::thinking(ui, 28.0);
-        ui.label(RichText::new(line).font(theme::ui_button()).color(p.ink));
-        ui.label(
-            RichText::new(format!("{seconds}s"))
-                .font(theme::meta())
-                .color(p.ink_muted),
-        );
-    });
-    if slow {
-        widgets::help(
-            ui,
-            "Longer issues can take up to a minute. esc cancels and keeps your answer.",
-            p.ink_muted,
-        );
-    }
-}
-
-/// The pick pane while the challenger works: the status line, four
-/// placeholder choices and the note, not yet open.
-fn thinking_pick(ui: &mut egui::Ui, elapsed: std::time::Duration, first: bool) {
-    let p = theme::palette(ui);
-    thinking_line(ui, elapsed, first);
-    for key in 1..=4 {
-        Frame::new()
-            .fill(p.surface)
-            .stroke(Stroke::new(1.0, p.line))
-            .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-            .inner_margin(Margin::symmetric(12, 10))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = 10.0;
-                    ui.label(
-                        RichText::new(key.to_string())
-                            .font(theme::meta())
-                            .color(p.ink_faint),
-                    );
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 7.0;
-                        skeleton(ui, 0.55, 10.0);
-                        skeleton(ui, 0.85, 8.0);
-                    });
-                });
-            });
-    }
-    ui.add_space(theme::SPACE_2);
-    ui.label(
-        RichText::new("Available once the Challenger answers")
-            .font(theme::ui_small())
-            .color(p.ink_muted),
-    );
-}
-
-/// The why pane while the challenger works: bars where the TL;DR and two
-/// paragraphs will land, so nothing jumps when they do.
-fn thinking_why(ui: &mut egui::Ui) {
-    ui.scope(|ui| {
-        ui.set_max_width(MEASURE);
-        ui.spacing_mut().item_spacing.y = 9.0;
-        skeleton(ui, 0.96, 12.0);
-        skeleton(ui, 0.70, 12.0);
-        ui.add_space(10.0);
-        for widths in [&[0.98, 0.94, 0.97, 0.60][..], &[0.95, 0.99, 0.42]] {
-            for &width in widths {
-                skeleton(ui, width, 8.0);
-            }
-            ui.add_space(10.0);
-        }
-    });
-}
-
-/// A placeholder bar, `share` of the width: `surface-sunken`, no shimmer.
-fn skeleton(ui: &mut egui::Ui, share: f32, height: f32) {
-    let width = ui.available_width() * share;
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
-    ui.painter().rect_filled(
-        rect,
-        CornerRadius::same((height / 2.0) as u8),
-        theme::palette(ui).surface_sunken,
-    );
 }

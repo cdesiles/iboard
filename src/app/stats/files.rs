@@ -3,7 +3,10 @@
 
 use iboard::stats::FileStat;
 
-use super::*;
+use super::{
+    Align, ButtonKind, Color32, CornerRadius, FileSort, Icon, Layout, Pos2, Rect, Sense, Vec2,
+    block, block_label, theme, thousands, widgets,
+};
 
 /// The files listed before "Show all".
 const FILES_SHOWN: usize = 8;

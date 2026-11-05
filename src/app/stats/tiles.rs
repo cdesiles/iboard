@@ -1,7 +1,9 @@
 //! The four tiles atop Project stats: each figure at the page's newest
 //! commit, with its change since the page's oldest.
 
-use super::*;
+use iboard::stats::{self, Snapshot, Stats};
+
+use super::{Color32, Measure, RichText, block, block_label, theme, thousands};
 
 /// Which way a measure going up goes.
 #[derive(Clone, Copy)]

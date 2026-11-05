@@ -3,7 +3,11 @@
 
 use super::compose::TitleStage;
 use super::editor::{AUTOSAVE_AFTER, EDITOR_ID};
-use super::*;
+use super::new_issue_ui::{DESCRIPTION_ID, TITLE_ID};
+use super::{
+    CCursor, CCursorRange, IboardApp, Key, Path, PathBuf, Screen, atomic_write, display_path,
+    file_name, reviews, trash,
+};
 use crate::assets::{self, Carry};
 
 /// Where a pasted image comes from.

@@ -2,8 +2,12 @@
 //! file, exactly as `↩` will write it, on the right. See
 //! `design/components/NewIssueModal`.
 
-use super::compose::{ComposerField, Drafted, TitleStage};
-use super::*;
+use super::compose::{Composer, ComposerField, Drafted, TitleStage};
+use super::{
+    Align, ButtonKind, CCursor, CCursorRange, Color32, CommonMarkCache, CommonMarkViewer,
+    CornerRadius, Engine, Frame, IboardApp, Key, Labels, Layout, Margin, Path, Pos2, Rect,
+    RichText, Sense, Shape, Stroke, Vec2, files, sheet, theme, titles, widgets,
+};
 use iboard::new_issue;
 
 pub(super) const TITLE_ID: &str = "composer";

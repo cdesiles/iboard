@@ -3,8 +3,11 @@
 //! deploy. The agent works in the issue's project as a build does, its steps
 //! in the agent log, and brings the issue up to date.
 
-use super::*;
-use crate::agent::Leash;
+use super::{
+    Align, ButtonKind, Duration, IboardApp, Icon, Instant, Job, Key, Layout, Path, PathBuf,
+    RichText, Screen, file_name, job, prompts, theme, widgets,
+};
+use crate::agent::{self, Leash};
 use crate::build_log;
 
 /// The Ask AI dialog, open on an issue.

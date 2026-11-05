@@ -1,6 +1,9 @@
 //! Draft design: an agent's mockup of an issue, rendered beside it.
 
-use super::*;
+use super::{
+    ButtonKind, Column, DesignSystem, Duration, IboardApp, Job, Path, PathBuf, RichText, agent,
+    design, design_ui, job, prompts, theme, widgets,
+};
 
 /// A UX enrichment of one issue: the agent's mockup, its preview, and the
 /// refinement the user is typing.

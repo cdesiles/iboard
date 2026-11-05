@@ -2,8 +2,8 @@
 //! opened from the project menu or, for the first group, at launch outside
 //! any project.
 
-use super::*;
-use crate::discovery::Repo;
+use super::{Group, IboardApp, Path, PathBuf, file_name, labels, recents, workspace};
+use crate::discovery::{self, Located, Repo};
 use crate::priority;
 
 /// What the board shows: one project, or every project of a group.
