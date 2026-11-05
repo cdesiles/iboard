@@ -225,6 +225,21 @@ fn page_strips<R>(ui: &Ui, output: &ScrollAreaOutput<R>, overflow: Vec2b) -> Vec
     page
 }
 
+/// The thumb's width and colour, in `ui`'s style.
+fn style_thumb(ui: &mut Ui, thumb: Color32, widened: f32) {
+    let scroll = &mut ui.spacing_mut().scroll;
+    scroll.floating_width = lerp(SCROLL_THUMB..=SCROLL_THUMB_HOVER, widened);
+    let widgets = &mut ui.visuals_mut().widgets;
+    for visuals in [
+        &mut widgets.inactive,
+        &mut widgets.hovered,
+        &mut widgets.active,
+    ] {
+        visuals.fg_stroke.color = thumb;
+        visuals.corner_radius = CornerRadius::same(RADIUS_PILL);
+    }
+}
+
 /// Runs `show` with the thumb's widths and colours in the scroll area's
 /// style; `show` hands the content back the style it had.
 fn themed<R>(
@@ -275,17 +290,7 @@ fn themed<R>(
     };
     let output = ui
         .scope(|ui| {
-            let scroll = &mut ui.spacing_mut().scroll;
-            scroll.floating_width = lerp(SCROLL_THUMB..=SCROLL_THUMB_HOVER, widened);
-            let widgets = &mut ui.visuals_mut().widgets;
-            for visuals in [
-                &mut widgets.inactive,
-                &mut widgets.hovered,
-                &mut widgets.active,
-            ] {
-                visuals.fg_stroke.color = thumb;
-                visuals.corner_radius = CornerRadius::same(RADIUS_PILL);
-            }
+            style_thumb(ui, thumb, widened);
             // The rail is only known once shown: last frame's, moved to where
             // this frame starts, and redrawn below if its size changed.
             let area = match seen {
