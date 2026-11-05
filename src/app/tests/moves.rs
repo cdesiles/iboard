@@ -211,7 +211,7 @@ fn with_asking_off_delete_is_immediate_and_command_z_restores() {
         dir.join("Trash/files/sidebar.md").is_file(),
         "the test's own Trash"
     );
-    assert!(app.can_undo());
+    assert!(app.session.undo.is_some());
 
     app.undo_last();
     assert_eq!(
@@ -221,7 +221,48 @@ fn with_asking_off_delete_is_immediate_and_command_z_restores() {
     );
     assert!(app.board.find(&file).is_some(), "and on the board");
     assert_eq!(app.session.selected.as_deref(), Some(file.as_path()));
-    assert!(!app.can_undo(), "once");
+    assert!(app.session.undo.is_none(), "once");
+}
+
+/// `⌘Z` waits for as long as nothing else happens; a key or a click ends it.
+#[test]
+fn undo_lasts_until_the_next_action() {
+    let dir = scratch_dir("undo-until-next-action");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("sidebar.md");
+    std::fs::write(&file, "# Sidebar\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.prefs.confirm_delete = false;
+    let ctx = themed_ctx();
+    let trash = |app: &mut IboardApp| {
+        std::fs::write(&file, "# Sidebar\n").unwrap();
+        app.refresh();
+        app.request_delete(file.clone());
+    };
+
+    trash(&mut app);
+    frame(&ctx, &mut app, vec![moved(egui::pos2(5.0, 5.0))]);
+    assert!(
+        app.session.undo.is_some(),
+        "the pointer moving is no action"
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(Key::ArrowDown, egui::Modifiers::NONE)],
+    );
+    assert!(app.session.undo.is_none(), "a key press is");
+
+    trash(&mut app);
+    frame(&ctx, &mut app, vec![button(egui::pos2(5.0, 5.0), true)]);
+    assert!(app.session.undo.is_none(), "a click too");
+
+    trash(&mut app);
+    let command = egui::Modifiers::COMMAND;
+    let undo = vec![egui::Event::ModifiersChanged(command), key(Key::Z, command)];
+    frame(&ctx, &mut app, undo);
+    assert!(file.exists(), "⌘Z still reaches it");
 }
 
 /// The delete icon is its own click target: using it must not open the

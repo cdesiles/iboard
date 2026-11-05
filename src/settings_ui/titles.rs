@@ -145,7 +145,7 @@ impl Dialog {
                         (Engine::Agent, Availability::Ready) => {
                             Some((self.form.label(), p.status_done))
                         }
-                        (Engine::Manual, _) => None,
+                        (Engine::Off, _) => None,
                         (_, Availability::Unavailable { state, fixable, .. }) => Some((
                             state.to_string(),
                             if *fixable {

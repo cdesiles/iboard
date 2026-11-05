@@ -201,7 +201,7 @@ fn saving_settings_never_loses_the_users_file() {
     let broken = "[titles\nengine = \"agent\"\n";
     std::fs::write(&config, broken).unwrap();
     app.open_title_settings();
-    app.settings.as_mut().unwrap().engine = Engine::Manual;
+    app.settings.as_mut().unwrap().engine = Engine::Off;
     save(&mut app);
     let error = app
         .settings
@@ -288,7 +288,7 @@ fn a_focused_title_engine_shows_its_ring_and_space_picks_it() {
     let (_dir, _file, mut app) = open_issue_with_review("titles-focus");
     app.open_title_settings();
     let mut harness = kittest(app);
-    harness.state_mut().1.settings.as_mut().unwrap().engine = titles::Engine::Manual;
+    harness.state_mut().1.settings.as_mut().unwrap().engine = titles::Engine::Off;
     let row = harness
         .get_all_by_label(titles::Engine::Agent.name())
         .map(|node| node.rect())

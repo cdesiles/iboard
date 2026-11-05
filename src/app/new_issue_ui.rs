@@ -218,7 +218,7 @@ fn head(
         );
         let tag = match composer.engine {
             Some(engine) => engine.tag(),
-            None => Engine::Manual.tag(),
+            None => Engine::Off.tag(),
         };
         if widgets::tag(ui, tag)
             .on_hover_cursor(egui::CursorIcon::PointingHand)

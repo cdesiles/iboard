@@ -3,8 +3,8 @@
 use super::compose::DISCARD_UNDO;
 use super::dock::IssueDrag;
 use super::{
-    Align, ButtonKind, Frame, IboardApp, Layout, NOTICE_FOR, Path, RichText, Screen, UNDO_FOR,
-    Undo, file_name, relative_time, theme, widgets,
+    Align, ButtonKind, Frame, IboardApp, Layout, NOTICE_FOR, Path, RichText, Screen, Undo,
+    file_name, relative_time, theme, widgets,
 };
 
 impl IboardApp {
@@ -88,7 +88,7 @@ impl IboardApp {
                 .request_repaint_after(DISCARD_UNDO.saturating_sub(at.elapsed()));
             return vec![("⌘Z", "undo"), ("⌘N", "new")];
         }
-        if let Some(undo) = self.session.undo.as_ref().filter(|_| self.can_undo()) {
+        if let Some(undo) = self.session.undo.as_ref() {
             let text = match undo {
                 Undo::Deleted(deleted) => self.trashed_notice(deleted),
                 Undo::Split(split) => format!(
@@ -98,8 +98,6 @@ impl IboardApp {
                 ),
             };
             ui.label(RichText::new(text).font(theme::meta()).color(p.ink));
-            ui.ctx()
-                .request_repaint_after(UNDO_FOR.saturating_sub(undo.at().elapsed()));
             return vec![("⌘Z", "undo"), ("⌘,", "settings")];
         }
         if let Some((text, at)) = notice {

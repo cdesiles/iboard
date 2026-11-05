@@ -87,7 +87,7 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 - **The engine** (On-device Apple by default, Review agent, or Off) is chosen in Settings › Titles (`⌘,`).
 - New issues always land in Todo. Creating directly in Doing or Done is not offered; move the card afterwards.
 - **A new Todo issue lands at position 1**, at the top of Todo: the column is file-name ordered, so the files are renumbered (`001-…`) once the click that created it has settled.
-- **Editing is open in Todo and Ready only.** Doing and Done tickets open read-only: no Edit button, no `E`, no click-to-edit. A Done ticket's Reader header instead offers **Commits**, with the newest hash shown beside it.
+- **Editing is open in Todo and Ready only.** Doing and Done tickets open read-only: no Edit button, no `E`, no double-click to edit. A Done ticket's Reader header instead offers **Commits**, with the newest hash shown beside it.
 
 | Key | Board | Reader | Editor |
 | --- | --- | --- | --- |
@@ -126,7 +126,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Board | The engine fails or times out | TitleInferenceFailed | The issue stays `unnamed-ticket-xxxx` |
 | NewIssueModal | `↩` with a title (or the first line, with no engine) | IssueCreated | Board, new card flashes at the top of Todo |
 | NewIssueModal | `⌘↩` | IssueCreated → EditStarted (title as for `↩`, landing once the Editor closes) | Editor on the new file |
-| Reader | Click description, `E`, `↩` | EditStarted | Editor, cursor at click point |
+| Reader | Double-click description, `E`, `↩` | EditStarted | Editor |
 | Reader | Click a ghost section or an "Add a section" chip | SectionAddRequested → EditStarted | Editor with `## <Section>` appended, cursor under it |
 | Reader | Click the empty sheet below the text | EditStarted | Editor, cursor at the end of the file |
 | Reader | Draft them with Review | ReviewRequested → ReviewReceived | Review panel; proposed sections apply to the draft |
@@ -152,7 +152,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Board, Reader, Editor | Any delete, with asking off | DeleteRequested → IssueDeleted | Board; status bar "Moved … to the Trash", `⌘Z` undo |
 | Board | `⌘Z` after a delete | IssueRestored | Board; file and card back in place |
 | ConfirmDialog | Delete (`↩`) / Cancel (`esc`) | IssueDeleted / DeleteCancelled | Board |
-| Reader, Editor | Review (`⌘⇧R`) | ReviewRequested → ReviewReceived | Review panel opens beside the page |
+| Reader, Editor (Todo) | Review (`⌘⇧R`) | ReviewRequested → ReviewReceived | Review panel opens beside the page |
 | Any | Settings (`⌘,`, Review menu, new issue engine tag) | SettingsOpened | Settings dialog on the matching tab |
 | Settings › AI review | Pick tool, pick model, Save (`⌘↩`) | ReviewToolChosen, ReviewModelChosen → SettingsSaved | Back to the screen; Review menu shows the new tool and model |
 | Settings › General | Pick a theme, Save (`⌘↩`) | ThemeChosen → SettingsSaved | Back to the screen, drawn in the new theme |
@@ -190,7 +190,7 @@ The Review button asks an agent (OpenCode, Claude, or any command the user
 configures in `~/.config/iboard/iboard.toml`, from `⌘,`) to challenge the open
 issue. The tool and model are chosen in the ReviewSettings dialog: a Tool select (OpenCode, Claude Code, Custom command) and a Model select whose first option, Default, uses the tool's first favorite model:
 
-- **Placement**: the rightmost control of the header on Reader and Editor screens, after Refresh; always labelled "Review", with `review` text and border on `surface`. The Board's selected-card hover row is still to come.
+- **Placement**: the rightmost control of the header on Reader and Editor screens of Todo issues, after Refresh; always labelled "Review", with `review` text and border on `surface`. The Board's selected-card hover row is still to come.
 - **What it returns**: three findings, always in this order, each with a verdict pill and one or two sentences.
   - *Relevance*: is this still worth doing, does it duplicate another issue?
   - *Size*: can one person or one agent finish it in one sitting, or should it split? It proposes the split.

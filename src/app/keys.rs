@@ -208,6 +208,7 @@ impl IboardApp {
         if let Some(title) = self.pending_title.take() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
+        self.forget_undo_on_action(ctx);
         self.poll_jobs(ctx);
         self.window_requests(ctx);
         let confirming = self.confirm_keys(ctx);

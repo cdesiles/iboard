@@ -158,22 +158,10 @@ enum LeaveChoice {
 
 /// How long a status bar notice ("Archived …") stays up.
 const NOTICE_FOR: Duration = Duration::from_secs(4);
-/// How long `⌘Z` can bring back an issue deleted without asking.
-const UNDO_FOR: Duration = Duration::from_secs(10);
-
-/// What `⌘Z` on the board can still take back.
+/// What `⌘Z` on the board can still take back, until the next action.
 enum Undo {
     Deleted(Vec<Deleted>),
     Split(split::SplitDone),
-}
-
-impl Undo {
-    fn at(&self) -> Instant {
-        match self {
-            Undo::Deleted(deleted) => deleted.first().map_or_else(Instant::now, |d| d.at),
-            Undo::Split(split) => split.at,
-        }
-    }
 }
 
 /// An issue deleted without asking, kept so `⌘Z` can put it back.
@@ -185,7 +173,6 @@ struct Deleted {
     content: Vec<u8>,
     /// Its images, when they went to the Trash with it.
     images: Option<images::TrashedImages>,
-    at: Instant,
 }
 
 pub struct IboardApp {
@@ -531,7 +518,7 @@ impl IboardApp {
             pending_title: None,
             handovers: None,
             prefs: Preferences {
-                title_engine: Engine::Manual,
+                title_engine: Engine::Off,
                 ..Preferences::default()
             },
             config_file: None,

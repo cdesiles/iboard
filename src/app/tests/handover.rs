@@ -109,7 +109,6 @@ fn opening_another_project_rebuilds_the_board_and_remembers_it() {
         trashed: None,
         content: Vec::new(),
         images: None,
-        at: Instant::now(),
     }]));
     app.session.notice = Some(("Archived a.md".to_string(), Instant::now()));
     app.session.pending_front = Some((alpha.join("issues/todo"), a.clone()));

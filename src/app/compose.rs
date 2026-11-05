@@ -26,7 +26,7 @@ pub(super) struct Composer {
     pub(super) open: bool,
     /// The engine that names issues, checked when the composer opened;
     /// `None` when it is Off or unavailable: the first line names an untitled
-    /// issue (Manual).
+    /// issue.
     pub(super) engine: Option<Engine>,
     pub(super) stage: TitleStage,
     /// The field to give keyboard focus on the next frame.
@@ -145,7 +145,7 @@ impl IboardApp {
         // Checked on every open: Apple Intelligence or an agent may have been
         // set up meanwhile.
         let engine = Some(self.prefs.title_engine).filter(|engine| {
-            *engine != Engine::Manual && titles::availability(*engine, &self.prefs.agent).is_ready()
+            *engine != Engine::Off && titles::availability(*engine, &self.prefs.agent).is_ready()
         });
         if let Some(engine) = engine {
             titles::prewarm(engine);

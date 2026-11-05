@@ -8,7 +8,7 @@ The rendered markdown of one issue, laid out as a **sheet**: a `surface` page up
    - On the left, the column as a status mark: an 8pt dot in the column's status colour and the word in `ui-label`, then the file path, which truncates with an ellipsis when space runs out.
    - On the right, "modified 1h ago" and either the word count, or checklist progress when the issue has checkboxes: a 48pt `status-done` meter with "2/5 done".
 2. **Labels and title**: the labels from the title's `[Brackets]` as a row of Label tags, then the first `#` heading without them in `read-h1`. Clicking a label goes back to the board filtered by it.
-3. **Body** in `read-body`, at most 68ch per line. Links in `accent`, code on `surface-sunken`, `- [ ]` rendered as read-only checkboxes.
+3. **Body** in `read-body`, at most 68ch per line. Links in `accent`, code on `surface-sunken`, `- [ ]` rendered as live checkboxes: ticking one writes the file.
 4. **The rest of the sheet** stays empty and clickable. At its foot, `ink-faint` reads "Click below the text to keep writing E". A click there opens the Editor with the cursor at the end of the file.
 
 Under the sheet, 12pt apart, comes the **Not written yet** block, only when standard sections are missing (see below). Together the two blocks fill the window minus the header, the status bar and the 16pt gutters: the sheet takes the spare height, so the block sits at the bottom of the window. On a longer issue the page scrolls and the block stays docked at the bottom edge (sticky), always one glance away.
@@ -26,11 +26,11 @@ iboard checks the issue for the standard headings `## Context`, `## Acceptance c
 - On hover, a ghost tile turns solid `accent` on `accent-soft`. A click opens the Editor with `## <Section>` and an empty line (`- [ ] ` for Acceptance criteria) appended, with the cursor ready.
 - The Review button in the block head reads "Draft with Review ⌘⇧R", using the reserved `review` hue because it calls the agent. It asks Review to propose those sections, and they land in the Editor unsaved, as Apply to draft already does.
 - **Some sections written**: the block shrinks to one 40pt line: "Not written yet" followed by `+ Out of scope` and `+ Open questions` chips.
-- **Done issues**, or nothing missing: no block at all, and the sheet takes the whole height.
+- **Ready, Doing and Done issues**, or nothing missing: no block at all, and the sheet takes the whole height. Only Todo issues are still being written.
 
 ## Behaviour
 
-- The whole body is still one edit target: hovering shows the `line-strong` outline and the hint "Click to edit E"; clicking opens the Editor at the clicked line.
+- The whole body is still one edit target, in Todo and Ready: hovering shows the `line-strong` outline and the hint "Double-click to edit E"; a double-click opens the Editor, as `E` does. A single click stays free for the checkboxes, links and labels.
 - `esc` or `⌘[` returns to the board with the same card selected.
 
 The consumer provides the parsed markdown, the column, the path, the modified time, the checkbox counts and the list of missing sections. Emits EditStarted, SectionAddRequested, ReviewRequested.

@@ -304,7 +304,14 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 
 /* Labels: read from [Brackets] at the start of the issue title */
 .ib-labels{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
-.ib-lbl{display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface-sunken);color:var(--ink-muted);font:500 11px/14px var(--font-mono);white-space:nowrap;cursor:pointer}
+.ib-lbl{--lbl-keep:86%;--lbl-ink:var(--lbl);display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid transparent;border-radius:var(--radius-pill);background:var(--surface-sunken);color:var(--ink-muted);font:500 11px/14px var(--font-sans);white-space:nowrap;cursor:pointer}
+[data-theme="dark"] .ib-lbl{--lbl-keep:80%;--lbl-ink:var(--ink)}
+.ib-lbl[title$=" discovery"]{--lbl:#0b6076}
+.ib-lbl[title$=" bug"]{--lbl:#b12f22}
+.ib-lbl[title$=" feature"]{--lbl:#1a6e42}
+.ib-lbl[title$=" chore"]{--lbl:#5b6472}
+.ib-lbl[title$=" question"]{--lbl:#8a5006}
+.ib-lbl:is([title$=" discovery"],[title$=" bug"],[title$=" feature"],[title$=" chore"],[title$=" question"]){background:color-mix(in srgb,var(--surface) var(--lbl-keep),var(--lbl));color:var(--lbl-ink)}
 .ib-lbl:hover,.ib-lbl.is-hover,.ib-lbl.is-active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
 .ib-sheet .ib-labels{margin:-8px 0 8px}
 .ib-src{font:12px/17px var(--font-mono);color:var(--ink)}

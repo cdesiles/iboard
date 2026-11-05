@@ -5,7 +5,7 @@
 //!
 //! ```toml
 //! [titles]
-//! engine = "apple"   # "apple" | "agent" | "manual"
+//! engine = "apple"   # "apple" | "agent" | "off"
 //! ```
 //!
 //! `apple` is the on-device model (Foundation Models, macOS 26+ with Apple
@@ -39,22 +39,25 @@ pub enum Engine {
     /// The tool and model configured for AI review.
     Agent,
     /// The user types every title.
-    Manual,
+    Off,
 }
 
 impl Engine {
-    pub const ALL: [Engine; 3] = [Engine::Apple, Engine::Agent, Engine::Manual];
+    pub const ALL: [Engine; 3] = [Engine::Apple, Engine::Agent, Engine::Off];
 
     pub fn key(self) -> &'static str {
         match self {
             Engine::Apple => "apple",
             Engine::Agent => "agent",
-            Engine::Manual => "manual",
+            Engine::Off => "off",
         }
     }
 
     fn from_key(key: &str) -> Option<Self> {
-        Engine::ALL.into_iter().find(|engine| engine.key() == key)
+        Engine::ALL
+            .into_iter()
+            .find(|engine| engine.key() == key)
+            .or((key == "manual").then_some(Engine::Off))
     }
 
     /// The name in Settings › Titles.
@@ -62,16 +65,16 @@ impl Engine {
         match self {
             Engine::Apple => "On-device (Apple)",
             Engine::Agent => "Review agent",
-            Engine::Manual => "Manual",
+            Engine::Off => "Off",
         }
     }
 
-    /// The composer's tag for a working engine.
+    /// The composer's tag.
     pub fn tag(self) -> &'static str {
         match self {
             Engine::Apple => "on-device",
             Engine::Agent => "review agent",
-            Engine::Manual => "manual",
+            Engine::Off => "auto title off",
         }
     }
 
@@ -81,9 +84,7 @@ impl Engine {
             Engine::Agent => {
                 "Uses the tool and model from AI review. Any OS; needs that tool set up and a network."
             }
-            Engine::Manual => {
-                "You type every title. The title line is always shown in the composer."
-            }
+            Engine::Off => "You type every title. The title line is always shown in the composer.",
         }
     }
 }
@@ -118,7 +119,7 @@ pub fn availability(engine: Engine, agent: &AgentConfig) -> Availability {
             why: "No tool is set up for AI review yet.".to_string(),
             fixable: true,
         },
-        Engine::Manual => Availability::Ready,
+        Engine::Off => Availability::Ready,
     }
 }
 
@@ -168,7 +169,7 @@ pub fn start(
                 result.and_then(|raw| clean(&raw))
             })
         }
-        Engine::Manual => Job::done(Err("automatic titles are off".to_string())),
+        Engine::Off => Job::done(Err("automatic titles are off".to_string())),
     }
 }
 
@@ -245,7 +246,7 @@ pub fn load_engine(config: &mut UserConfig) -> Engine {
     };
     Engine::from_key(key.trim()).unwrap_or_else(|| {
         config.problem(format!(
-            "[titles]: engine \"{key}\" is not apple, agent or manual"
+            "[titles]: engine \"{key}\" is not apple, agent or off"
         ));
         Engine::default()
     })
@@ -462,15 +463,18 @@ mod tests {
         let engine = || load_engine(&mut UserConfig::load(Some(&file)));
         std::fs::write(&file, "[ai]\ntool = \"claude\"\n").unwrap();
         assert_eq!(engine(), Engine::Apple);
-        crate::settings::save(&file, &[section(Engine::Manual).unwrap()]).unwrap();
-        assert_eq!(engine(), Engine::Manual);
+        crate::settings::save(&file, &[section(Engine::Off).unwrap()]).unwrap();
+        assert_eq!(engine(), Engine::Off);
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(
             text.contains("tool = \"claude\""),
             "other sections stay: {text}"
         );
-        // An unknown one, the pre-0.1 `off` included, is reported.
-        let mut config = UserConfig::parse("[titles]\nengine = \"off\"\n", &file);
+        assert!(text.contains("engine = \"off\""), "{text}");
+        let mut config = UserConfig::parse("[titles]\nengine = \"manual\"\n", &file);
+        assert_eq!(load_engine(&mut config), Engine::Off, "the old name");
+        assert!(config.problems.is_empty(), "{:?}", config.problems);
+        let mut config = UserConfig::parse("[titles]\nengine = \"nope\"\n", &file);
         assert_eq!(load_engine(&mut config), Engine::Apple);
         assert_eq!(config.problems.len(), 1);
     }
@@ -478,7 +482,7 @@ mod tests {
     #[test]
     fn off_is_always_ready_and_an_unset_agent_is_not() {
         let agent = AgentConfig::default();
-        assert!(availability(Engine::Manual, &agent).is_ready());
+        assert!(availability(Engine::Off, &agent).is_ready());
         assert!(!availability(Engine::Agent, &agent).is_ready());
     }
 }

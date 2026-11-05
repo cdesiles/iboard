@@ -17,12 +17,12 @@ The dialog where a refinement agent (the Challenger) pushes back on an issue and
 
 ## Layout
 
-- A `surface` panel, `line-strong` edge, `radius-md`, `shadow-popover`, up to 1080pt wide, centred over the Reader like the screenshot's version.
+- A Modal of size XL: `surface`, `line-strong` edge, `radius-md`, `shadow-modal`, the window minus `modal-inset`, at most 1200 × 900, with a fixed height so nothing jumps while the answer arrives.
 - **Head** (36pt, `review-soft`): "Refining `todo/002-toolbar.md`", the role pill (Challenger), and `tool · model` at the right, truncating first.
-- **Why pane**: TL;DR, then the agent's paragraphs. Inline code on `surface-sunken`. Scrolls on its own past 520pt.
+- **Why pane**: TL;DR, then the agent's paragraphs. Inline code on `surface-sunken`. Scrolls on its own.
 - **Pick pane** (320 to 420pt): the question head in `ui-label` ("How should we resolve it?", count in `meta`), the choice cards 8pt apart, then the note field.
 - **Foot**: key hints on the left, then End refining, Hide, Send.
-- **Narrow** (panel under 820pt, or inside a 720pt Reader): one column. The reasoning folds under the TL;DR behind "Show the reasoning (N paragraphs)", so the choices sit right under the summary.
+- **Narrow** (panel under 900pt): one column. The reasoning folds under the TL;DR behind "Show the reasoning (N paragraphs)", so the choices sit right under the summary.
 
 ## Choice titles
 

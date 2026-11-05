@@ -6,7 +6,7 @@ The *AI build* tab has the same Tool, Command and Model fields and a Timeout, fo
 
 ## Layout
 
-- 440pt wide on `surface` with a `line-strong` edge, `radius-md` and `shadow-popover`. The body keeps one height on every tab, 420pt, and scrolls when a tab needs more.
+- A Modal of size M: `modal-m` (480pt) wide on `surface` with a `line-strong` edge, `radius-md` and `shadow-modal`. The body fits its tab and scrolls past 520pt.
 - Header: "Settings" in `ui-title`, left-aligned, then the tabs (*General*, *AI review*, *AI build*, *Titles*, *Labels*) and a ghost close button. No tinted header bar.
 - Body: one column of fields, label above control (`ui-strong` 12pt), `space-5` between fields, one line of `ui-small` help under each.
 - Footer: the config path in `meta` on the left, Cancel and Save (primary, `⌘↩`) on the right.

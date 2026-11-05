@@ -116,7 +116,7 @@ model = "default"
 timeout = "10m"     # builds and asks: "5m", "10m", "20m", "30m", "60m", "180m" or "none"
 
 [titles]
-engine = "apple"    # "apple" (on-device), "agent" or "manual"
+engine = "apple"    # "apple" (on-device), "agent" or "off"
 
 [delete]
 confirm = true      # false: delete without asking, with ⌘Z undo

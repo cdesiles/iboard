@@ -35,7 +35,6 @@ pub(super) struct SplitDone {
     content: String,
     archived: PathBuf,
     pub(super) children: Vec<PathBuf>,
-    pub(super) at: Instant,
 }
 
 impl IboardApp {
@@ -215,7 +214,6 @@ impl IboardApp {
             content,
             archived,
             children,
-            at: Instant::now(),
         }));
     }
 

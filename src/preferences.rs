@@ -180,7 +180,7 @@ mod tests {
                 build_agent: configured(Tool::OpenCode, ""),
                 build_timeout: BuildTimeout::NONE,
                 suggestions: Some(vec!["bug".to_string()]),
-                title_engine: Engine::Manual,
+                title_engine: Engine::Off,
                 confirm_delete: false,
                 appearance: Appearance::System,
                 auto: false,
@@ -202,7 +202,7 @@ mod tests {
              [auto]\nenabled = \"no\"\n\
              [appearance]\ntheme = \"sepia\"\n\
              [delete]\nconfirm = \"no\"\n\
-             [titles]\nengine = \"off\"\n\
+             [titles]\nengine = \"nope\"\n\
              [filter]\nsuggestions = \"bug\"\n\
              [build]\ntool = \"codex\"\n\
              [ai]\ntool = \"codex\"\n",

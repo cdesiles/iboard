@@ -18,6 +18,6 @@
 
 ## Files
 
-In this folder's `files/` and in the project folder `design-system/logo/`: `iboard-icon.svg` (1024 master), `iboard-icon-small.svg` (16–32), `iboard-glyph-light|dark.svg`, `iboard-wordmark-light|dark.svg`, PNGs from 16 to 1024 and `iboard.icns` for the bundle.
+In this folder's `files/`: `iboard-icon.svg` (1024 master), `iboard-icon-small.svg` (16–32), `iboard-glyph-light|dark.svg`, `iboard-wordmark-light|dark.svg` and `iboard-1024.png`.
 
-In egui, load `iboard-256.png` into `egui::IconData` and pass it to `ViewportBuilder::with_icon`; the `.icns` goes in the `.app` bundle (`cargo-bundle` reads it from `[package.metadata.bundle] icon`).
+In egui, `assets/iboard-256.png` loads into `egui::IconData` and goes to `ViewportBuilder::with_icon`. `macos/bundle.sh` builds the `.app` bundle's `.icns` from `iboard-1024.png`, and the About window reads that PNG and the wordmarks.

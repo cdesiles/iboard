@@ -1,8 +1,8 @@
 //! Moving, reordering, deleting and archiving issue files, and undoing a delete.
 
 use super::{
-    ARCHIVE_DIR, Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Screen, UNDO_FOR, Undo,
-    atomic_write, discovery, file_name, images, trash, unique_name,
+    ARCHIVE_DIR, Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Screen, Undo, atomic_write,
+    discovery, file_name, images, trash, unique_name,
 };
 use crate::priority;
 
@@ -233,7 +233,6 @@ impl IboardApp {
                     trashed,
                     content,
                     images,
-                    at: Instant::now(),
                 })
             })
             .collect();
@@ -261,12 +260,7 @@ impl IboardApp {
     /// `⌘Z` on the board: takes back the last delete made without asking,
     /// or the last split.
     pub(super) fn undo_last(&mut self) {
-        match self
-            .session
-            .undo
-            .take()
-            .filter(|undo| undo.at().elapsed() < UNDO_FOR)
-        {
+        match self.session.undo.take() {
             Some(Undo::Deleted(deleted)) => deleted
                 .into_iter()
                 .for_each(|deleted| self.undo_delete(deleted)),
@@ -310,12 +304,24 @@ impl IboardApp {
         }
     }
 
-    /// Whether `⌘Z` can still take something back.
-    pub(super) fn can_undo(&self) -> bool {
-        self.session
-            .undo
-            .as_ref()
-            .is_some_and(|undo| undo.at().elapsed() < UNDO_FOR)
+    /// A press, of a key or the pointer, is the next action: what `⌘Z` could
+    /// take back goes with it, before this frame's action sets its own.
+    pub(super) fn forget_undo_on_action(&mut self, ctx: &egui::Context) {
+        let acted = ctx.input(|i| {
+            i.events.iter().any(|event| match event {
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => !(*key == egui::Key::Z && modifiers.command),
+                egui::Event::PointerButton { pressed: true, .. } => true,
+                _ => false,
+            })
+        });
+        if acted {
+            self.session.undo = None;
+        }
     }
 
     /// Deletes an issue's file and its images to `self.trash` and lets the

@@ -7,7 +7,7 @@ Buttons are 24pt-tall verbs with a `line-strong` edge, so they stay visible whil
 - Danger outline: `surface` fill, `danger` border and label, `danger-soft` on hover. For Delete in the Reader and Editor header: trash icon, "Delete", key `Del`. It always opens the ConfirmDialog, so the filled Danger button is kept for that dialog's final "Delete".
 - Danger: `danger` fill, `on-danger` label. Only as the confirm button inside ConfirmDialog.
 - Back: a secondary button with a leading chevron, "Board" and its key `esc` in `ink-muted`. Always bordered; navigation that people use constantly must not hide.
-- Ghost: no border, `ink-muted` label. Only for icon buttons inside a row of other buttons (dialog close, column `+`), never for navigation.
+- Ghost: no border, `ink-muted` label. For the quiet action beside a louder one: icon buttons inside a row of other buttons (dialog close), and labelled secondary actions (Cancel in a comment, Resolve, Reset, Discard, End refining, Undo draft, Dismiss, Refresh and paging on the Stats screen). Never for going back to another screen, which is the Back button's.
 - At rest a button shows its label alone. While ⌘ is held (see Kbd), its key hint slides out after the label in mono 11pt, in the label colour (`Edit E`, `Delete Del`), and the button grows to fit it.
 - Icon-only buttons are 24×24 and need an accessible name and a tooltip with the shortcut.
 - Label in `ui-strong` at 12pt; icon 14pt line, 6pt gap.
