@@ -134,6 +134,22 @@ impl IboardApp {
         }
     }
 
+    /// Asks for folders and opens the first; those with an issues directory
+    /// join the user's order. False when the user cancelled.
+    pub(super) fn add_picked_projects(&mut self) -> bool {
+        let picked = (self.folder_picker)();
+        for project in picked.iter().rev() {
+            if config::has_issues_dir(project) {
+                self.add_to_order(project);
+            }
+        }
+        let Some(first) = picked.first() else {
+            return false;
+        };
+        self.open_project(first.clone());
+        true
+    }
+
     fn project_menu_action(&mut self, action: Action) {
         match action {
             Action::SaveOrder(order) => {
@@ -145,15 +161,8 @@ impl IboardApp {
             Action::Open(Pick::Project(path)) => self.open_project(path),
             Action::EditGroups => self.open_groups(false),
             Action::Add => {
-                let picked = (self.folder_picker)();
-                for project in picked.iter().rev() {
-                    if config::has_issues_dir(project) {
-                        self.add_to_order(project);
-                    }
-                }
-                match picked.first() {
-                    Some(first) => self.open_project(first.clone()),
-                    None => return,
+                if !self.add_picked_projects() {
+                    return;
                 }
             }
         }

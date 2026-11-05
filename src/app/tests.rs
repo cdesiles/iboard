@@ -26,6 +26,7 @@ mod review;
 mod select;
 mod settings;
 mod stats;
+mod welcome;
 mod workspace;
 use kit::{Kit, fake_agent, kittest, kittest_with, press, press_nth};
 use review::open_issue_with_review;

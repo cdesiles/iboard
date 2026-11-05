@@ -59,7 +59,8 @@ fn main() -> eframe::Result {
     }
 
     // A bare `iboard` brings the running one forward, or opens the latest project.
-    if path.is_none() && !(init || list || all) {
+    let bare = path.is_none() && !(init || list || all);
+    if bare {
         if handed_over(&Request::Focus) {
             return Ok(());
         }
@@ -87,11 +88,13 @@ fn main() -> eframe::Result {
         }
     }
 
-    // Outside any project, a workspace opens instead of failing.
+    // Outside any project, a workspace or the welcome screen opens instead of
+    // failing, unless a path or a command asked for a project.
     let located = match discovery::locate(&start) {
         _ if all => None,
         Ok(located) => Some(located),
         Err(_) if !init && has_workspace() => None,
+        Err(_) if bare => return open_window(None, "iboard".to_string()),
         Err(err) => {
             eprintln!("iboard: {err}");
             std::process::exit(1);
@@ -124,8 +127,7 @@ fn main() -> eframe::Result {
     run_app(Some(located), app_title)
 }
 
-/// Opens the window on `located`, or on the board of the group `app_title`
-/// names, unless an iboard already running takes it.
+/// [`open_window`], unless an iboard already running takes the board.
 fn run_app(located: Option<discovery::Located>, app_title: String) -> eframe::Result {
     let request = match &located {
         Some(located) => Request::Project(located.project_dir.clone()),
@@ -134,6 +136,12 @@ fn run_app(located: Option<discovery::Located>, app_title: String) -> eframe::Re
     if handed_over(&request) {
         return Ok(());
     }
+    open_window(located, app_title)
+}
+
+/// Opens the window on `located`, or with none on the first group's board, or
+/// the welcome screen when there is no group.
+fn open_window(located: Option<discovery::Located>, app_title: String) -> eframe::Result {
     app::on_signals();
     let listener = instance::socket().and_then(|socket| instance::listen(&socket));
     let mut viewport = egui::ViewportBuilder::default()

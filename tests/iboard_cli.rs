@@ -77,9 +77,12 @@ fn init_creates_the_four_columns() {
 #[test]
 fn a_folder_without_issues_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
-    let output = iboard(&["--list", dir.path().to_str().unwrap()]);
-    assert_eq!(output.status.code(), Some(1));
-    assert!(text(&output.stderr).starts_with("iboard: "));
+    let path = dir.path().to_str().unwrap();
+    for args in [vec!["--list", path], vec![path]] {
+        let output = iboard(&args);
+        assert_eq!(output.status.code(), Some(1), "{args:?}");
+        assert!(text(&output.stderr).starts_with("iboard: "), "{args:?}");
+    }
 }
 
 /// How long a later iboard gets to leave, and what it asked to come through.

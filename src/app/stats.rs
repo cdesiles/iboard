@@ -154,6 +154,9 @@ impl IboardApp {
     /// Opens the stats panel on the project, measuring its newest commits.
     /// Stats measure one history: a group's board has none to show.
     pub(super) fn open_stats(&mut self) {
+        if self.welcoming() {
+            return;
+        }
         if self.showing_group() {
             let notice = "Stats measure one project: open it from the project menu";
             self.session.notice = Some((notice.to_string(), Instant::now()));

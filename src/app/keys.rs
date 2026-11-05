@@ -214,11 +214,14 @@ impl IboardApp {
         if self.settings.is_none() {
             self.watch_config();
         }
-        if !self.modal_keys(ctx, confirming) {
+        let welcoming = self.welcoming();
+        if !self.modal_keys(ctx, confirming) && !welcoming {
             self.screen_keys(ctx, confirming);
         }
         self.autosave();
-        self.rescan(ctx);
+        if !welcoming {
+            self.rescan(ctx);
+        }
         self.remember_splits(ctx);
     }
 

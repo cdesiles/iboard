@@ -1,5 +1,5 @@
-//! The OS folder picker: Add project… in the project menu, and Choose
-//! folders… in the groups dialog.
+//! The OS folder picker: Add project… in the project menu, Choose folders…
+//! in the groups dialog, and the WelcomeScreen's actions.
 //!
 //! macOS answers with an `NSOpenPanel` restricted to directories. Everywhere
 //! else there is no picker yet, so the call reports that the user cancelled and
@@ -37,10 +37,8 @@ mod macos {
         panel.setCanChooseDirectories(true);
         panel.setAllowsMultipleSelection(true);
         panel.setResolvesAliases(true);
-        panel.setMessage(Some(&NSString::from_str(
-            "Choose a project containing an issues/ folder",
-        )));
-        panel.setPrompt(Some(&NSString::from_str("Open")));
+        panel.setMessage(Some(&NSString::from_str("Choose a project folder")));
+        panel.setPrompt(Some(&NSString::from_str("Choose")));
         if panel.runModal() != NSModalResponseOK {
             return Vec::new();
         }

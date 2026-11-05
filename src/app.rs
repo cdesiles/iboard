@@ -78,6 +78,7 @@ mod split;
 mod stats;
 mod status;
 mod update;
+mod welcome;
 mod windows;
 
 use all::Source;
@@ -433,8 +434,9 @@ impl Session {
 impl IboardApp {
     /// `window_title` names the window in Mission Control and the Window menu;
     /// see `main.rs` for why it is set here rather than at startup.
-    /// `located` is `None` for the first group's board. `listener` is where the
-    /// iboards started later hand this window their board.
+    /// `located` is `None` for the first group's board, or for the welcome
+    /// screen when there is no group. `listener` is where the iboards started
+    /// later hand this window their board.
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         located: Option<Located>,
@@ -455,12 +457,7 @@ impl IboardApp {
             iboard::pasteboard::watch(cc.egui_ctx.clone());
         }
         let all = located.is_none();
-        let located = located.unwrap_or_else(|| Located {
-            project_dir: workspace::virtual_root(""),
-            root: workspace::virtual_root(""),
-            config: None,
-        });
-        let mut app = Self::from_located(located);
+        let mut app = Self::from_located(located.unwrap_or_else(welcome::nowhere));
         quitting::watch(&cc.egui_ctx);
         let ctx = cc.egui_ctx.clone();
         app.handovers =
@@ -493,7 +490,7 @@ impl IboardApp {
         let first = app.workspace.as_ref().and_then(|w| w.groups.first());
         if let (true, Some(first)) = (all, first.map(|group| group.name.clone())) {
             app.open_group(&first);
-        } else {
+        } else if !app.welcoming() {
             let project = app.located.project_dir.clone();
             app.remember(&project);
         }
@@ -652,6 +649,10 @@ impl IboardApp {
 
     /// Draws the whole window: header bar, the current screen, status bar.
     fn draw(&mut self, ui: &mut egui::Ui) {
+        if self.welcoming() {
+            self.welcome_ui(ui);
+            return;
+        }
         let p = theme::palette(ui);
         let gutter = theme::SPACE_5;
         let header_left = if UNIFIED_TITLEBAR {
