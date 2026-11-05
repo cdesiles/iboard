@@ -14,6 +14,8 @@ mod review;
 mod select_menu;
 mod titles;
 
+use std::collections::HashMap;
+
 use egui::{Key, Modifiers, Vec2};
 
 use crate::agent::{AgentConfig, BuildTimeout};
@@ -23,6 +25,7 @@ use crate::theme;
 use crate::titles::{Availability, Engine};
 use crate::widgets::{self, FooterClick};
 pub use catalog::Catalog;
+use iboard::labels::Rgb;
 use iboard::preferences::Preferences;
 use select_menu::SelectMenu;
 
@@ -89,6 +92,9 @@ pub struct Dialog {
     pub renames: Vec<(String, String)>,
     /// The row whose name is being edited, if any.
     rename: Option<labels::Rename>,
+    /// Each row's last valid colour, which its chip keeps while the hex field
+    /// holds something else.
+    last_colours: HashMap<String, Rgb>,
     new_label: String,
     new_hex: String,
     label_error: Option<String>,
@@ -129,6 +135,7 @@ impl Dialog {
             labels_seen: false,
             renames: Vec::new(),
             rename: None,
+            last_colours: HashMap::new(),
             new_label: String::new(),
             new_hex: String::new(),
             label_error: None,
@@ -152,7 +159,7 @@ impl Dialog {
                 rows.push((name, String::new()));
             }
         }
-        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        labels::sort_rows(rows);
         self
     }
 

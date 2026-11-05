@@ -1,11 +1,14 @@
 //! Settings › Titles: which engine names new issues.
 
-use egui::{Align, Color32, CornerRadius, Frame, Id, Layout, RichText, Stroke, Vec2};
+use egui::{Align, Color32, CornerRadius, Frame, Layout, Rect, RichText, Stroke, UiBuilder, Vec2};
 
 use super::{Dialog, Tab};
 use crate::theme;
 use crate::titles::{Availability, Engine};
 use crate::widgets::{self, ButtonKind, field_label, help};
+
+/// Width of a row's radio.
+const RADIO_W: f32 = 14.0;
 
 /// One engine in the Titles radio list.
 struct ChoiceRow<'a> {
@@ -18,74 +21,34 @@ struct ChoiceRow<'a> {
     languages: Option<(String, String)>,
 }
 
-/// Draws a radio row; returns whether it was picked, and whether its fix
-/// button was pressed.
-fn choice_row(ui: &mut egui::Ui, row: &ChoiceRow) -> (bool, bool) {
+/// Draws a radio row; returns its response, and whether its fix button was
+/// pressed. The row senses before its content, so the button stays on top.
+fn choice_row(ui: &mut egui::Ui, row: &ChoiceRow) -> (egui::Response, bool) {
     let p = theme::palette(ui);
     let mut fixed = false;
-    let inner = Frame::new()
-        .fill(if row.selected {
-            p.accent_soft
-        } else {
-            Color32::TRANSPARENT
-        })
-        .inner_margin(theme::ROW_PAD)
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing = Vec2::new(theme::SPACE_3, theme::SPACE_1);
-            ui.horizontal(|ui| {
-                let (dot, _) = ui.allocate_exact_size(Vec2::splat(14.0), egui::Sense::hover());
-                let edge = if row.selected {
-                    p.accent
-                } else {
-                    p.line_strong
-                };
-                ui.painter()
-                    .circle(dot.center(), 6.5, p.surface, Stroke::new(1.0, edge));
-                if row.selected {
-                    ui.painter().circle_filled(dot.center(), 3.5, p.accent);
-                }
-                ui.label(
-                    RichText::new(row.engine.name())
-                        .font(theme::ui_strong())
-                        .color(p.ink),
-                );
-                if let Some((state, color)) = &row.state {
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new(state).font(theme::meta()).color(*color));
-                        let (dot, _) =
-                            ui.allocate_exact_size(Vec2::splat(6.0), egui::Sense::hover());
-                        ui.painter().circle_filled(dot.center(), 3.0, *color);
-                    });
-                }
+    let builder = UiBuilder::new()
+        .id_salt(("title-engine", row.engine.key()))
+        .sense(egui::Sense::click());
+    let inner = ui.scope_builder(builder, |ui| {
+        Frame::new()
+            .fill(if row.selected {
+                p.accent_soft
+            } else {
+                Color32::TRANSPARENT
+            })
+            .inner_margin(theme::ROW_PAD)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing = Vec2::new(theme::SPACE_3, theme::SPACE_1);
+                row_title(ui, row);
+                ui.horizontal(|ui| {
+                    ui.add_space(RADIO_W + theme::SPACE_3);
+                    ui.vertical(|ui| fixed = row_details(ui, row));
+                });
             });
-            ui.indent("help", |ui| {
-                help(ui, row.engine.help(), p.ink_muted);
-                if let Some((line, all)) = &row.languages {
-                    ui.label(RichText::new(line).font(theme::meta()).color(p.ink_muted))
-                        .on_hover_text(all);
-                }
-                if let Availability::Unavailable { why, fixable, .. } = row.availability {
-                    help(ui, why, p.ink);
-                    let fix = match (row.engine, fixable) {
-                        (Engine::Apple, true) => Some("Open System Settings"),
-                        (Engine::Agent, true) => Some("Set up AI review"),
-                        _ => None,
-                    };
-                    if let Some(fix) = fix {
-                        ui.add_space(theme::SPACE_2);
-                        fixed =
-                            widgets::button(ui, ButtonKind::Secondary, None, fix, None).clicked();
-                    }
-                }
-            });
-        });
-    let response = ui
-        .interact(
-            inner.response.rect,
-            Id::new(("title-engine", row.engine.key())),
-            egui::Sense::click(),
-        )
+    });
+    let response = inner
+        .response
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
         egui::WidgetInfo::selected(
@@ -95,7 +58,58 @@ fn choice_row(ui: &mut egui::Ui, row: &ChoiceRow) -> (bool, bool) {
             row.engine.name(),
         )
     });
-    (response.clicked() && !fixed, fixed)
+    (response, fixed)
+}
+
+/// A row's radio, its name and its state.
+fn row_title(ui: &mut egui::Ui, row: &ChoiceRow) {
+    let p = theme::palette(ui);
+    ui.horizontal(|ui| {
+        let (dot, _) = ui.allocate_exact_size(Vec2::splat(RADIO_W), egui::Sense::hover());
+        let edge = if row.selected {
+            p.accent
+        } else {
+            p.line_strong
+        };
+        ui.painter()
+            .circle(dot.center(), 6.5, p.surface, Stroke::new(1.0, edge));
+        if row.selected {
+            ui.painter().circle_filled(dot.center(), 3.5, p.accent);
+        }
+        ui.label(
+            RichText::new(row.engine.name())
+                .font(theme::ui_strong())
+                .color(p.ink),
+        );
+        if let Some((state, color)) = &row.state {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(RichText::new(state).font(theme::meta()).color(*color));
+                let (dot, _) = ui.allocate_exact_size(Vec2::splat(6.0), egui::Sense::hover());
+                ui.painter().circle_filled(dot.center(), 3.0, *color);
+            });
+        }
+    });
+}
+
+/// A row's lines under its name, and its fix; true when the fix was pressed.
+fn row_details(ui: &mut egui::Ui, row: &ChoiceRow) -> bool {
+    let p = theme::palette(ui);
+    help(ui, row.engine.help(), p.ink_muted);
+    if let Some((line, all)) = &row.languages {
+        ui.label(RichText::new(line).font(theme::meta()).color(p.ink_muted))
+            .on_hover_text(all);
+    }
+    let Availability::Unavailable { why, fixable, .. } = row.availability else {
+        return false;
+    };
+    help(ui, why, p.ink);
+    let fix = match (row.engine, fixable) {
+        (Engine::Apple, true) => "Open System Settings",
+        (Engine::Agent, true) => "Set up AI review",
+        _ => return false,
+    };
+    ui.add_space(theme::SPACE_2);
+    widgets::button(ui, ButtonKind::Secondary, None, fix, None).clicked()
 }
 
 /// Opens the Apple Intelligence pane of System Settings.
@@ -114,6 +128,7 @@ impl Dialog {
         field_label(ui, "Name new issues with");
         let mut picked = None;
         let mut fix: Option<Engine> = None;
+        let mut focused: Option<Rect> = None;
         Frame::new()
             .stroke(Stroke::new(1.0, p.line_strong))
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
@@ -150,15 +165,21 @@ impl Dialog {
                         availability,
                         languages,
                     };
-                    let (clicked, fixed) = choice_row(ui, &row);
-                    if clicked {
+                    let (response, fixed) = choice_row(ui, &row);
+                    if response.clicked() {
                         picked = Some(*engine);
+                    }
+                    if response.has_focus() {
+                        focused = Some(response.rect);
                     }
                     if fixed {
                         fix = Some(*engine);
                     }
                 }
             });
+        if let Some(rect) = focused {
+            widgets::paint_focus_ring(ui, rect, theme::RADIUS_SM);
+        }
         if let Some(engine) = picked {
             self.engine = engine;
         }

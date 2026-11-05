@@ -242,3 +242,81 @@ fn the_review_scope_is_saved_with_the_review_agent() {
         format!("{mine}scope = \"project\"\n")
     );
 }
+
+/// The fix under an unavailable engine sits inside its radio row, and the
+/// click goes to the button.
+#[test]
+fn the_titles_fix_button_takes_its_click_from_the_row() {
+    let (_dir, _file, mut app) = open_issue_with_review("titles-fix");
+    app.prefs.agent = AgentConfig::default();
+    app.open_title_settings();
+    let mut harness = kittest(app);
+    let engine = harness.state().1.settings.as_ref().unwrap().engine;
+
+    press(&mut harness, "Set up AI review");
+
+    let settings = harness.state().1.settings.as_ref().unwrap();
+    assert_eq!(settings.tab, settings_ui::Tab::Review);
+    assert_eq!(settings.engine, engine, "the row stays unpicked");
+}
+
+/// A row's lines start under its name, not on an indent of their own.
+#[test]
+fn a_title_engines_help_lines_up_with_its_name() {
+    let (_dir, _file, mut app) = open_issue_with_review("titles-indent");
+    app.open_title_settings();
+    let harness = kittest(app);
+    let painted_x = |line: &str| {
+        harness
+            .output()
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.text() == line => Some(text.pos.x),
+                _ => None,
+            })
+    };
+    let name = painted_x(titles::Engine::Agent.name());
+    assert!(name.is_some());
+    assert_eq!(name, painted_x(titles::Engine::Agent.help()));
+}
+
+/// `tab` reaches a Titles row, which shows the focus ring, and `space` picks it.
+#[test]
+fn a_focused_title_engine_shows_its_ring_and_space_picks_it() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, _file, mut app) = open_issue_with_review("titles-focus");
+    app.open_title_settings();
+    let mut harness = kittest(app);
+    harness.state_mut().1.settings.as_mut().unwrap().engine = titles::Engine::Manual;
+    let row = harness
+        .get_all_by_label(titles::Engine::Agent.name())
+        .map(|node| node.rect())
+        .max_by(|a, b| a.width().total_cmp(&b.width()))
+        .unwrap();
+
+    let mut reached = false;
+    for _ in 0..40 {
+        harness.key_press(egui::Key::Tab);
+        harness.run_steps(2);
+        let focused = harness.ctx.memory(|m| m.focused());
+        reached = focused
+            .and_then(|id| harness.ctx.read_response(id))
+            .is_some_and(|response| response.rect == row);
+        if reached {
+            break;
+        }
+    }
+    assert!(reached, "tab reaches the row");
+    assert!(harness.output().shapes.iter().any(|clipped| {
+        matches!(&clipped.shape, egui::Shape::Rect(shape)
+            if shape.stroke.width == 2.0 && shape.rect == row.expand(2.0))
+    }));
+
+    harness.key_press(egui::Key::Space);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().1.settings.as_ref().unwrap().engine,
+        titles::Engine::Agent
+    );
+}

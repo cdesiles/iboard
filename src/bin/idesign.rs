@@ -107,7 +107,10 @@ fn main() -> ExitCode {
         if design::catalog::available()
             && let Ok(system) = DesignSystem::discover(&start)
         {
-            return match design::catalog::show(&system, "light") {
+            let file = iboard::settings::config_file();
+            let mut config = iboard::settings::UserConfig::load(file.as_deref());
+            let theme = iboard::general::load_appearance(&mut config).catalog_theme();
+            return match design::catalog::show(&system, theme) {
                 Ok(path) => {
                     println!("{}", path.display());
                     ExitCode::SUCCESS
@@ -457,9 +460,9 @@ impl IDesignApp {
                 design_ui::Action::Close => {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
-                design_ui::Action::OpenCatalog => {
+                design_ui::Action::OpenCatalog { theme } => {
                     if let Some(system) = self.system.as_ref() {
-                        self.panel.status = Some(match design::catalog::show(system, "light") {
+                        self.panel.status = Some(match design::catalog::show(system, theme) {
                             Ok(path) => format!("Opened {}", path.display()),
                             Err(err) => err,
                         });

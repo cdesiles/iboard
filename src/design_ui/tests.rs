@@ -1,5 +1,8 @@
 use super::pages::{parse_color, parse_shadow, swatch_color};
 use super::*;
+use crate::general::Appearance;
+use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 
 fn repo() -> DesignSystem {
     DesignSystem::discover(Path::new(env!("CARGO_MANIFEST_DIR"))).expect("repo design")
@@ -27,6 +30,131 @@ fn frame(panel: &mut Panel, system: &DesignSystem, render_available: bool) -> Ac
     });
     output.textures_delta.clear();
     action
+}
+
+type PanelKit = Harness<'static, (bool, Panel, DesignSystem, Option<&'static str>)>;
+
+/// The panel in a kittest harness, keeping the theme of the catalog it asks for.
+fn kit(panel: Panel, appearance: Appearance) -> PanelKit {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(980.0, 640.0))
+        .build_ui_state(
+            move |ui, (themed, panel, system, catalog): &mut (bool, _, DesignSystem, _)| {
+                if !*themed {
+                    crate::theme::install(ui.ctx());
+                    crate::theme::apply(ui.ctx(), appearance);
+                    *themed = true;
+                    return;
+                }
+                let action: Action = Panel::body(panel, ui, Some(system), None, false, false);
+                if let Action::OpenCatalog { theme } = action {
+                    *catalog = Some(theme);
+                }
+            },
+            (false, panel, repo(), None),
+        );
+    harness.run_steps(2);
+    harness
+}
+
+/// Clicks a widget the way a pointer does: over it for a frame first.
+fn press(harness: &mut PanelKit, label: &str) {
+    harness.get_by_label(label).hover();
+    harness.run_steps(1);
+    harness.get_by_label(label).click();
+    harness.run_steps(2);
+}
+
+#[test]
+fn a_rail_row_shows_its_whole_focus_ring() {
+    let mut harness = kit(Panel::default(), Appearance::Light);
+    let row = harness.get_by_label("Colors").rect();
+    let mut reached = false;
+    for _ in 0..20 {
+        harness.key_press(egui::Key::Tab);
+        harness.run_steps(2);
+        let focused = harness.ctx.memory(|m| m.focused());
+        reached = focused
+            .and_then(|id| harness.ctx.read_response(id))
+            .is_some_and(|response| response.rect == row);
+        if reached {
+            break;
+        }
+    }
+    assert!(reached, "tab reaches the row");
+    let ring = row.expand(2.0);
+    assert!(harness.output().shapes.iter().any(|clipped| {
+        matches!(&clipped.shape, egui::Shape::Rect(shape)
+            if shape.stroke.width == 2.0 && shape.rect == ring)
+            && clipped.clip_rect.contains_rect(ring.expand(2.0))
+    }));
+
+    harness.key_press(egui::Key::Space);
+    harness.run_steps(2);
+    assert_eq!(harness.state().1.category, Category::Colors);
+}
+
+#[test]
+fn search_lists_hits_with_their_category_at_either_level_and_clears() {
+    let panel = Panel {
+        category: Category::Components,
+        components_open: true,
+        selected: Some("Button".to_string()),
+        search: "space-".to_string(),
+        ..Panel::default()
+    };
+    let mut harness = kit(panel, Appearance::Light);
+    let hits = search(&harness.state().2, "space-");
+    assert!(hits.len() > 1);
+    let categories = harness
+        .output()
+        .shapes
+        .iter()
+        .filter(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Text(text) if text.galley.text() == "Spacing")
+        })
+        .count();
+    assert!(categories >= hits.len(), "{categories} category tags");
+
+    let first = hits[0].label.clone();
+    press(&mut harness, &first);
+
+    let panel = &harness.state().1;
+    assert_eq!(panel.category, Category::Spacing);
+    assert!(!panel.components_open, "the rail is back on the categories");
+    assert!(panel.search.is_empty());
+}
+
+#[test]
+fn the_status_sits_under_the_toolbar_in_every_category() {
+    let panel = Panel {
+        status: Some("Opened the catalog".to_string()),
+        ..Panel::default()
+    };
+    let harness = kit(panel, Appearance::Light);
+    let status = harness.get_by_label("Opened the catalog").rect();
+    assert!(status.min.y >= harness.get_by_label("Close").rect().max.y);
+    assert!(status.max.y <= harness.get_by_label("Overview").rect().min.y);
+}
+
+#[test]
+fn the_live_catalog_opens_in_the_theme_the_panel_draws() {
+    for (appearance, theme) in [(Appearance::Dark, "dark"), (Appearance::Light, "light")] {
+        let mut harness = kit(Panel::default(), appearance);
+        press(&mut harness, "Live catalog");
+        assert_eq!(harness.state().3, Some(theme));
+    }
+}
+
+#[test]
+fn a_preview_card_is_as_tall_as_it_declares() {
+    let card = |height| CardMeta {
+        height,
+        ..CardMeta::default()
+    };
+    assert_eq!(card_height(&card(Some(56))), 56.0);
+    assert_eq!(card_height(&card(Some(1200))), 1200.0);
+    assert_eq!(card_height(&card(None)), UNDECLARED_CARD_H);
 }
 
 #[test]

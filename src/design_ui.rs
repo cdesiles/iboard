@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use egui::{Align2, Color32, CornerRadius, Rect, Stroke, StrokeKind, pos2};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
-use crate::design::{self, Asset, Component, DesignFile, DesignSystem, Token};
+use crate::design::{self, Asset, CardMeta, Component, DesignFile, DesignSystem, Token};
 use crate::job::{self, Job};
 
 use crate::theme;
@@ -34,6 +34,9 @@ const SIDEBAR_W: f32 = 200.0;
 /// How long the rail slides between its two levels, in seconds.
 const RAIL_SLIDE_SECS: f32 = 0.22;
 
+/// How tall a preview card is when its `@dsCard` declares no height.
+const UNDECLARED_CARD_H: f32 = 480.0;
+
 /// What the panel asks the app to do after a frame.
 pub enum Action {
     Keep,
@@ -48,8 +51,11 @@ pub enum Action {
     },
     /// Render a component's preview to a PNG, lazily, when its card is in view.
     Render(String),
-    /// Write the catalog page and show it in a live webview.
-    OpenCatalog,
+    /// Write the catalog page and show it in a live webview, in the theme the
+    /// panel draws in.
+    OpenCatalog {
+        theme: &'static str,
+    },
 }
 
 /// One section of the browser, mirroring Claude Design's sidebar.
@@ -102,7 +108,6 @@ impl Category {
 struct Hit {
     category: Category,
     label: String,
-    detail: String,
 }
 
 /// The state of one component's preview.
@@ -280,10 +285,19 @@ impl Panel {
                     )
                     .clicked()
                 {
-                    action = Action::OpenCatalog;
+                    action = Action::OpenCatalog {
+                        theme: if ui.visuals().dark_mode {
+                            "dark"
+                        } else {
+                            "light"
+                        },
+                    };
                 }
             });
         });
+        if let Some(status) = &self.status {
+            muted(ui, status);
+        }
 
         let Some(system) = system else {
             ui.separator();
@@ -334,6 +348,14 @@ impl Panel {
         );
         ui.add_space(theme::SPACE_3);
 
+        let query = self.search.trim().to_lowercase();
+        if !query.is_empty() {
+            theme::scroll_area(ui, filling("rail-hits"), false, |ui| {
+                self.search_hits(ui, system, &query);
+            });
+            return;
+        }
+
         // 0 = categories, 1 = the component list; the pages stay a width apart.
         let target = if self.components_open { 1.0 } else { 0.0 };
         let secs = theme::motion(ui.ctx(), RAIL_SLIDE_SECS);
@@ -379,31 +401,31 @@ impl Panel {
         });
     }
 
-    fn categories(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
-        let p = theme::palette(ui);
-        let query = self.search.trim().to_lowercase();
-        if !query.is_empty() {
-            let hits = search(system, &query);
-            if hits.is_empty() {
-                ui.label(
-                    egui::RichText::new("No matches")
-                        .color(p.ink_faint)
-                        .size(11.0),
-                );
-            }
-            for hit in hits {
-                if nav_row(ui, &hit.label, Some(&hit.detail), false).clicked() {
-                    if hit.category == Category::Components {
-                        self.open_components(system, Some(hit.label));
-                    } else {
-                        self.category = hit.category;
-                    }
-                    self.search.clear();
-                }
-            }
-            return;
+    /// The rail while searching, at either level: what matches, each with its
+    /// category; picking one opens it and clears the search.
+    fn search_hits(&mut self, ui: &mut egui::Ui, system: &DesignSystem, query: &str) {
+        let hits = search(system, query);
+        if hits.is_empty() {
+            ui.label(
+                egui::RichText::new("No matches")
+                    .color(theme::palette(ui).ink_faint)
+                    .size(11.0),
+            );
         }
+        for hit in hits {
+            if nav_row(ui, &hit.label, Some(hit.category.label()), false).clicked() {
+                if hit.category == Category::Components {
+                    self.open_components(system, Some(hit.label));
+                } else {
+                    self.category = hit.category;
+                    self.components_open = false;
+                }
+                self.search.clear();
+            }
+        }
+    }
 
+    fn categories(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
         for category in Category::ALL {
             let meta = match category {
                 Category::Files => Some(self.disk.files.len().to_string()),
@@ -428,18 +450,12 @@ impl Panel {
     }
 
     fn component_rows(&mut self, ui: &mut egui::Ui, system: &DesignSystem) {
-        let p = theme::palette(ui);
-        let list = system.components_by_name(self.search.trim());
-
+        let list = system.components_by_name("");
         if list.is_empty() {
             ui.label(
-                egui::RichText::new(if system.components.is_empty() {
-                    "No components yet"
-                } else {
-                    "No matches"
-                })
-                .color(p.ink_faint)
-                .size(11.0),
+                egui::RichText::new("No components yet.")
+                    .color(theme::palette(ui).ink_faint)
+                    .size(11.0),
             );
             return;
         }
@@ -530,9 +546,6 @@ impl Panel {
                 self.new_component_button(ui);
             });
         });
-        if let Some(status) = &self.status {
-            muted(ui, status);
-        }
         if self.form_open {
             self.new_component_form(ui, action, agent_ready);
         }
@@ -585,10 +598,7 @@ impl Panel {
     ) {
         let p = theme::palette(ui);
         let width = ui.available_width().clamp(200.0, 680.0);
-        // Reserve the height the card declares (a 56pt checkbox is a 56pt
-        // card), rather than a fixed 16:9 frame that leaves dead space.
-        let reference = component.card.height.unwrap_or(640) as f32;
-        let height = (width * reference / 900.0).clamp(48.0, 720.0);
+        let height = card_height(&component.card);
         let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
         frame_placeholder(ui, rect, p);
 
@@ -717,6 +727,21 @@ impl Panel {
     }
 }
 
+/// A preview card is as tall as it declares: a 56pt checkbox is a 56pt card.
+fn card_height(card: &CardMeta) -> f32 {
+    card.height
+        .map_or(UNDECLARED_CARD_H, |height| height as f32)
+}
+
+/// A rail row's focus ring. The rail's clip stops at the rows' edges, and the
+/// ring goes outside them.
+fn rail_focus_ring(ui: &mut egui::Ui, response: &egui::Response) {
+    let clip = ui.clip_rect();
+    ui.set_clip_rect(clip.expand(4.0));
+    widgets::focus_ring(ui, response, theme::RADIUS_SM);
+    ui.set_clip_rect(clip);
+}
+
 /// The second level's header: a back chevron and the level's name.
 fn back_row(ui: &mut egui::Ui, label: &str) -> egui::Response {
     let p = theme::palette(ui);
@@ -747,6 +772,7 @@ fn back_row(ui: &mut egui::Ui, label: &str) -> egui::Response {
             p.ink,
         );
     }
+    rail_focus_ring(ui, &response);
     response
 }
 
@@ -787,6 +813,7 @@ fn nav_row(ui: &mut egui::Ui, label: &str, meta: Option<&str>, selected: bool) -
             if selected { p.ink } else { p.ink_muted },
         );
     }
+    rail_focus_ring(ui, &response);
     response
 }
 
@@ -843,28 +870,26 @@ fn centred(ui: &egui::Ui, rect: Rect, text: &str, color: Color32) {
 fn search(system: &DesignSystem, query: &str) -> Vec<Hit> {
     let matches = |name: &str| name.to_lowercase().contains(query);
     let mut hits = Vec::new();
-    let mut token_hits = |category: Category, detail: &str, tokens: &[Token]| {
+    let mut token_hits = |category: Category, tokens: &[Token]| {
         for token in tokens {
             if matches(&token.name) {
                 hits.push(Hit {
                     category,
                     label: token.name.clone(),
-                    detail: detail.to_string(),
                 });
             }
         }
     };
-    token_hits(Category::Colors, "color", &system.tokens.color);
-    token_hits(Category::Spacing, "spacing", &system.tokens.spacing);
-    token_hits(Category::Radius, "radius", &system.tokens.radius);
-    token_hits(Category::Shadows, "shadow", &system.tokens.shadow);
-    token_hits(Category::Size, "size", &system.tokens.size);
+    token_hits(Category::Colors, &system.tokens.color);
+    token_hits(Category::Spacing, &system.tokens.spacing);
+    token_hits(Category::Radius, &system.tokens.radius);
+    token_hits(Category::Shadows, &system.tokens.shadow);
+    token_hits(Category::Size, &system.tokens.size);
     for component in &system.components {
         if matches(&component.name) {
             hits.push(Hit {
                 category: Category::Components,
                 label: component.name.clone(),
-                detail: "component".to_string(),
             });
         }
     }
@@ -874,7 +899,6 @@ fn search(system: &DesignSystem, query: &str) -> Vec<Hit> {
                 hits.push(Hit {
                     category: Category::Typography,
                     label: style.name.clone(),
-                    detail: group.name.clone(),
                 });
             }
         }

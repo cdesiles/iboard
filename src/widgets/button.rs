@@ -206,6 +206,11 @@ fn paint_button(
     }
 }
 
+/// How wide a [`button`] with no icon and no shortcut draws `label`.
+pub fn text_button_width(ui: &Ui, kind: ButtonKind, label: &str) -> f32 {
+    button_content(ui, kind, None, label, None).width
+}
+
 /// A 24pt button with an optional icon and an inline shortcut hint. An empty
 /// label makes a 24×24 icon button.
 pub fn button(

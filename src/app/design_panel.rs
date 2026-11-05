@@ -121,9 +121,9 @@ impl IboardApp {
                 }
                 true
             }
-            design_ui::Action::OpenCatalog => {
+            design_ui::Action::OpenCatalog { theme } => {
                 if let Some(system) = self.session.design_system.as_ref() {
-                    match design::catalog::show(system, "light") {
+                    match design::catalog::show(system, theme) {
                         Ok(path) => panel.status = Some(format!("Opened {}", path.display())),
                         Err(err) => panel.status = Some(err),
                     }

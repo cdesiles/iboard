@@ -119,6 +119,24 @@ impl Appearance {
             Appearance::System => "System",
         }
     }
+
+    /// The theme the live catalog opens in when no window can say.
+    pub fn catalog_theme(self) -> &'static str {
+        let dark = match self {
+            Appearance::Light => false,
+            Appearance::Dark => true,
+            Appearance::System => system_is_dark(),
+        };
+        if dark { "dark" } else { "light" }
+    }
+}
+
+/// Whether macOS draws in dark mode: the key exists only then.
+fn system_is_dark() -> bool {
+    std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleInterfaceStyle"])
+        .output()
+        .is_ok_and(|output| String::from_utf8_lossy(&output.stdout).contains("Dark"))
 }
 
 /// The `[appearance]` section of the user configuration.
@@ -214,6 +232,8 @@ mod tests {
         assert_eq!(load_appearance(&mut config), Appearance::Dark);
         let mut config = UserConfig::parse("[appearance]\ntheme = \"sepia\"\n", file);
         assert_eq!(load_appearance(&mut config), Appearance::Light);
+        assert_eq!(Appearance::Light.catalog_theme(), "light");
+        assert_eq!(Appearance::Dark.catalog_theme(), "dark");
         assert_eq!(config.problems.len(), 1, "an unknown theme is reported");
     }
 }

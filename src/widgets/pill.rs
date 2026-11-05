@@ -40,18 +40,33 @@ pub fn pill(ui: &mut Ui, text: &str, color: Color32) -> Response {
 /// a `None` colour (an unknown label) is neutral: `surface-sunken` on
 /// `ink-muted`, so the chip is legible in both themes.
 pub fn label_pill(ui: &mut Ui, name: &str, color: Option<Rgb>) -> Response {
-    label_pill_lit(ui, name, color, false)
+    sensing_label_pill(ui, name, color, false, Sense::click())
 }
 
 /// A [`label_pill`] that may be the active filter: then, and under the
 /// pointer, `accent` text and edge on `accent-soft`.
 pub fn label_pill_lit(ui: &mut Ui, name: &str, color: Option<Rgb>, active: bool) -> Response {
+    sensing_label_pill(ui, name, color, active, Sense::click())
+}
+
+/// A [`label_pill`] that `tab` skips, for where the mouse is its only use.
+pub fn unfocusable_label_pill(ui: &mut Ui, name: &str, color: Option<Rgb>) -> Response {
+    sensing_label_pill(ui, name, color, false, Sense::CLICK)
+}
+
+fn sensing_label_pill(
+    ui: &mut Ui,
+    name: &str,
+    color: Option<Rgb>,
+    active: bool,
+    sense: Sense,
+) -> Response {
     let p = theme::palette(ui);
     let name = name.to_lowercase();
     let font = FontId::new(11.0, theme::ui_button().family);
     let width = galley(ui, &name, font.clone(), p.ink).size().x;
     let size = Vec2::new(7.0 + width + 7.0, 18.0);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let (rect, response) = ui.allocate_exact_size(size, sense);
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
     });

@@ -1,14 +1,19 @@
 //! Settings › Labels: label colours, renames and new labels.
 
-use egui::{Align, CornerRadius, FontId, Frame, Layout, Stroke, Vec2};
+use std::collections::HashMap;
+
+use egui::{CornerRadius, FontId, Frame, Stroke, Vec2};
 
 use super::Dialog;
-use crate::labels::{self};
+use crate::labels::{self, Rgb};
 use crate::theme::{self, Icon};
 use crate::widgets::{self, ButtonKind, field_label, help};
 
 /// Tallest the label list grows before it scrolls.
 const LABEL_LIST_MAX_H: f32 = 240.0;
+
+/// Width of a row's `#rrggbb` field.
+const HEX_W: f32 = 80.0;
 
 /// The row whose name is being edited, the name typed so far, and whether its
 /// field takes focus on the next frame.
@@ -35,7 +40,7 @@ fn hex_field(ui: &mut egui::Ui, hex: &mut String, hint: &str) -> egui::Response 
         ui,
         widgets::field_edit(ui, hex, hint, FontId::monospace(12.0))
             .char_limit(7)
-            .desired_width(80.0),
+            .desired_width(HEX_W),
     );
     if invalid {
         ui.painter().rect_stroke(
@@ -54,13 +59,35 @@ fn new_label_name(typed: &str) -> Option<String> {
     labels::normalize(typed.trim().trim_matches(['[', ']']))
 }
 
-/// A label's row: its chip, or the field renaming it, then its colour, a way
-/// back to the preset and a trash to remove it.
+/// Labels with a colour, then those without, each by name.
+pub(super) fn sort_rows(rows: &mut [(String, String)]) {
+    rows.sort_by_cached_key(|(name, hex)| (hex.trim().is_empty(), name.clone()));
+}
+
+/// The colour `name`'s chip shows for `hex`: none when empty, its last valid
+/// one while `hex` is not a colour.
+fn chip_colour(last: &mut HashMap<String, Rgb>, name: &str, hex: &str) -> Option<Rgb> {
+    if hex.trim().is_empty() {
+        return None;
+    }
+    let Some(colour) = labels::parse_hex(hex) else {
+        return last.get(name).copied();
+    };
+    if last.get(name) != Some(&colour) {
+        last.insert(name.to_string(), colour);
+    }
+    Some(colour)
+}
+
+/// A label's row: its chip, or the field renaming it, then on the right its
+/// colour, a way back to the preset and a trash to remove it, drawn in the
+/// order `tab` walks them.
 fn label_row(
     ui: &mut egui::Ui,
     index: usize,
     name: &str,
     hex: &mut String,
+    colour: Option<Rgb>,
     rename: Option<&mut Rename>,
     edits: &mut RowEdits,
 ) {
@@ -84,7 +111,7 @@ fn label_row(
                 edits.commit_rename = true;
             }
         } else {
-            let pill = widgets::label_pill(ui, name, labels::parse_hex(hex))
+            let pill = widgets::unfocusable_label_pill(ui, name, colour)
                 .on_hover_text("Double-click to rename");
             if pill.double_clicked() {
                 edits.start_rename = Some(Rename {
@@ -94,29 +121,34 @@ fn label_row(
                 });
             }
         }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            // Every label can go, the presets too.
-            if widgets::icon_button(
-                ui,
-                Icon::Trash,
-                egui::Id::new(("label-remove", index)),
-                "Remove this label",
-                widgets::Tone::Danger,
-            )
-            .clicked()
-            {
-                edits.remove = Some(index);
-            }
-            if let Some(preset) = labels::preset_hex(name)
-                && !hex.eq_ignore_ascii_case(preset)
-                && widgets::button(ui, ButtonKind::Ghost, None, "Reset", None)
-                    .on_hover_text(format!("Back to {preset}"))
-                    .clicked()
-            {
-                *hex = preset.to_string();
-            }
-            hex_field(ui, hex, "no colour");
+        let gap = ui.spacing().item_spacing.x;
+        let preset = labels::preset_hex(name).filter(|preset| !hex.eq_ignore_ascii_case(preset));
+        let reset_w = preset.map_or(0.0, |_| {
+            widgets::text_button_width(ui, ButtonKind::Ghost, "Reset") + gap
         });
+        ui.add_space(
+            (ui.available_width() - HEX_W - gap - reset_w - widgets::CARD_ACTION).max(0.0),
+        );
+        hex_field(ui, hex, "no colour");
+        if let Some(preset) = preset
+            && widgets::button(ui, ButtonKind::Ghost, None, "Reset", None)
+                .on_hover_text(format!("Back to {preset}"))
+                .clicked()
+        {
+            *hex = preset.to_string();
+        }
+        // Every label can go, the presets too.
+        if widgets::icon_button(
+            ui,
+            Icon::Trash,
+            egui::Id::new(("label-remove", index)),
+            "Remove this label",
+            widgets::Tone::Danger,
+        )
+        .clicked()
+        {
+            edits.remove = Some(index);
+        }
     });
 }
 
@@ -149,7 +181,8 @@ impl Dialog {
                             for (index, (name, hex)) in rows.iter_mut().enumerate() {
                                 let rename =
                                     self.rename.as_mut().filter(|rename| rename.index == index);
-                                label_row(ui, index, name, hex, rename, &mut edits);
+                                let colour = chip_colour(&mut self.last_colours, name, hex);
+                                label_row(ui, index, name, hex, colour, rename, &mut edits);
                             }
                         },
                     );
@@ -196,7 +229,7 @@ impl Dialog {
             );
             hex_field(ui, &mut self.new_hex, "#rrggbb");
             if let Some(name) = new_label_name(&self.new_label) {
-                widgets::label_pill(ui, &name, labels::parse_hex(&self.new_hex));
+                widgets::unfocusable_label_pill(ui, &name, labels::parse_hex(&self.new_hex));
             }
             if widgets::button(ui, ButtonKind::Secondary, Some(Icon::Plus), "Add", None).clicked() {
                 self.label_error = self.add_label().err();
@@ -217,11 +250,9 @@ impl Dialog {
         let hex = self.new_hex.trim().to_string();
         match self.label_rows.iter_mut().find(|(known, _)| *known == name) {
             Some(row) => row.1 = hex,
-            None => {
-                self.label_rows.push((name, hex));
-                self.label_rows.sort_by(|a, b| a.0.cmp(&b.0));
-            }
+            None => self.label_rows.push((name, hex)),
         }
+        sort_rows(&mut self.label_rows);
         self.new_label.clear();
         self.new_hex.clear();
         Ok(())
@@ -245,6 +276,9 @@ impl Dialog {
         if let Some(row) = self.label_rows.get_mut(index) {
             row.0 = new.clone();
         }
+        if let Some(colour) = self.last_colours.remove(&old) {
+            self.last_colours.insert(new.clone(), colour);
+        }
         if let Some(rename) = self.renames.iter_mut().find(|(from, _)| *from == old) {
             rename.1 = new;
         } else {
@@ -256,7 +290,9 @@ impl Dialog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings_ui::Tab;
+    use crate::settings_ui::{Catalog, Tab};
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
     use iboard::preferences::Preferences;
 
     #[test]
@@ -293,5 +329,89 @@ mod tests {
             ]
         );
         assert!(dialog.new_label.is_empty() && dialog.new_hex.is_empty());
+    }
+
+    #[test]
+    fn coloured_labels_sort_before_the_others() {
+        let dialog = Dialog::new(&Preferences::default(), Tab::Labels);
+        let mut dialog = Dialog {
+            label_rows: vec![("zeta".to_string(), "#000000".to_string())],
+            ..dialog
+        }
+        .with_used_labels(["alpha".to_string()]);
+        let names = |dialog: &Dialog| {
+            dialog
+                .label_rows
+                .iter()
+                .map(|(name, _)| name.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&dialog), ["zeta", "alpha"]);
+
+        dialog.new_label = "beta".to_string();
+        dialog.new_hex = "#111111".to_string();
+        assert_eq!(dialog.add_label(), Ok(()));
+        assert_eq!(names(&dialog), ["beta", "zeta", "alpha"]);
+    }
+
+    #[test]
+    fn an_invalid_hex_keeps_the_last_valid_colour() {
+        let mut last = HashMap::new();
+        let black = Some(Rgb(0, 0, 0));
+        assert_eq!(chip_colour(&mut last, "bug", "#00"), None, "none to keep");
+        assert_eq!(chip_colour(&mut last, "bug", "#000000"), black);
+        assert_eq!(chip_colour(&mut last, "bug", "#00000"), black);
+        assert_eq!(chip_colour(&mut last, "ops", "#00000"), None, "per label");
+        assert_eq!(chip_colour(&mut last, "bug", ""), None, "no colour");
+    }
+
+    fn labels_harness(rows: &[(&str, &str)]) -> Harness<'static, (bool, Dialog, Catalog)> {
+        let mut dialog = Dialog::new(&Preferences::default(), Tab::Labels);
+        dialog.label_rows = rows
+            .iter()
+            .map(|(name, hex)| (name.to_string(), hex.to_string()))
+            .collect();
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(1280.0, 800.0))
+            .build_ui_state(
+                |ui, (themed, dialog, catalog): &mut (bool, Dialog, Catalog)| {
+                    if !*themed {
+                        theme::install(ui.ctx());
+                        *themed = true;
+                        return;
+                    }
+                    dialog.show(ui, catalog, "Saved to ~/x.toml");
+                },
+                (false, dialog, Catalog::default()),
+            );
+        harness.run_steps(2);
+        harness
+    }
+
+    #[test]
+    fn tab_walks_a_row_from_its_colour_to_its_trash() {
+        let mut harness = labels_harness(&[("bug", "#000000"), ("ops", "#111111")]);
+        let row_y = harness.get_by_label("bug").rect().center().y;
+        let mut walked = Vec::new();
+        for _ in 0..40 {
+            harness.key_press(egui::Key::Tab);
+            harness.run_steps(2);
+            let focused = harness.ctx.memory(|m| m.focused());
+            let Some(rect) = focused.and_then(|id| harness.ctx.read_response(id)) else {
+                continue;
+            };
+            let rect = rect.rect;
+            if rect.y_range().contains(row_y) && !walked.contains(&rect) {
+                walked.push(rect);
+            }
+        }
+        assert_eq!(walked.len(), 3, "hex, Reset, trash, never the chip");
+        assert!(walked[0].max.x < walked[1].min.x && walked[1].max.x < walked[2].min.x);
+        let trashes = harness
+            .get_all_by_label("Remove this label")
+            .map(|node| node.rect().max.x)
+            .collect::<Vec<_>>();
+        assert_eq!(trashes[0], trashes[1], "with or without a Reset");
+        assert_eq!(trashes[0], walked[2].max.x);
     }
 }
