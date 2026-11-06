@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use egui::{Align, CornerRadius, Frame, Id, Key, Layout, Modifiers, Rect, RichText, Stroke, Vec2};
 
-use crate::project_menu::matches;
+use crate::project_menu::{matches, step};
 use crate::theme::{self, Icon};
 use crate::widgets::{self, ButtonKind, FooterClick, RowLook, Tone};
 use crate::workspace::config::{self, has_issues_dir};
@@ -54,6 +54,14 @@ pub fn row_id(at: usize, index: usize) -> Id {
     Id::new(("group-project", at, index))
 }
 
+/// A project the Add project menu lists, with what its filter matched.
+struct AddRow {
+    project: PathBuf,
+    name: String,
+    path: String,
+    mark: Option<std::ops::Range<usize>>,
+}
+
 pub struct Dialog {
     pub draft: Draft,
     /// The configuration file as it was read, to refuse a stale save.
@@ -66,6 +74,10 @@ pub struct Dialog {
     adding: Option<usize>,
     /// What the Add project menu's filter holds.
     add_filter: String,
+    /// The Add project menu's keyboard row, among the projects it lists.
+    add_active: Option<usize>,
+    /// The keyboard row moved: it scrolls into view.
+    add_reveal: bool,
     /// The group about to be deleted, asking first.
     deleting: Option<usize>,
     /// `esc` with unsaved changes: asking whether to drop them.
@@ -95,6 +107,8 @@ impl Dialog {
             conflict: false,
             adding: None,
             add_filter: String::new(),
+            add_active: None,
+            add_reveal: false,
             deleting: None,
             discarding: false,
             focus_name: None,
@@ -121,6 +135,12 @@ impl Dialog {
         let at = self.draft.add_group();
         self.focus_name = Some(at);
         self.adding = None;
+    }
+
+    fn open_add(&mut self, at: usize) {
+        self.add_filter.clear();
+        self.add_active = None;
+        self.adding = Some(at);
     }
 
     fn save(&mut self, overwrite: bool) -> Action {
@@ -157,7 +177,7 @@ impl Dialog {
     /// The keys the dialog owns: the confirmation's first, then an open
     /// menu's, then its own. Taken before the fields draw, so `⌘⌫` in a name
     /// doesn't also clear it.
-    fn keys(&mut self, ctx: &egui::Context) -> Action {
+    fn keys(&mut self, ctx: &egui::Context, projects: &[PathBuf]) -> Action {
         let take = |modifiers, key| ctx.input_mut(|i| i.consume_key(modifiers, key));
         if let Some(at) = self.deleting {
             if widgets::enter_confirms(ctx) && take(Modifiers::NONE, Key::Enter) {
@@ -171,6 +191,9 @@ impl Dialog {
         if self.adding.is_some() && take(Modifiers::NONE, Key::Escape) {
             self.adding = None;
             return Action::Keep;
+        }
+        if let Some(at) = self.adding {
+            self.add_keys(ctx, at, projects);
         }
         if take(Modifiers::COMMAND, Key::Enter) {
             return self.save(self.conflict);
@@ -197,7 +220,7 @@ impl Dialog {
 
     pub fn show(&mut self, ui: &egui::Ui, projects: &[PathBuf], config_file: &str) -> Action {
         let ctx = ui.ctx().clone();
-        let mut action = self.keys(&ctx);
+        let mut action = self.keys(&ctx, projects);
         widgets::modal(ui, "groups-dialog", theme::ModalSize::M, "Project groups").show(
             &ctx,
             |ui| {
@@ -367,10 +390,10 @@ impl Dialog {
                     None,
                 );
                 if add.clicked() {
-                    self.adding = match self.adding {
-                        Some(open) if open == at => None,
-                        _ => Some(at),
-                    };
+                    match self.adding {
+                        Some(open) if open == at => self.adding = None,
+                        _ => self.open_add(at),
+                    }
                 }
                 if self.adding == Some(at) {
                     self.add_menu(ui, at, projects);
@@ -405,8 +428,7 @@ impl Dialog {
                 self.focus_name = None;
             }
             if name.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                self.add_filter.clear();
-                self.adding = Some(at);
+                self.open_add(at);
             }
             ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -443,8 +465,7 @@ impl Dialog {
                         .link(RichText::new("Add a project").font(theme::ui_small()))
                         .clicked()
                     {
-                        self.add_filter.clear();
-                        self.adding = Some(at);
+                        self.open_add(at);
                     }
                 });
             })
@@ -586,14 +607,17 @@ impl Dialog {
 
     /// The Add project menu under the group's button: the user's projects
     /// not in the group yet, in their order, with a filter once there are
-    /// more than 8; then the OS picker. It stays open to add more.
+    /// more than 8, the keyboard's row filled; then the OS picker. It stays
+    /// open to add more.
     fn add_menu(&mut self, ui: &mut egui::Ui, at: usize, projects: &[PathBuf]) {
         let width = ui.available_width() - 2.0 * theme::SPACE_1;
-        let fresh: Vec<&PathBuf> = projects
-            .iter()
-            .filter(|project| !self.draft.groups[at].repos.contains(project))
-            .collect();
+        let fresh = self.fresh(at, projects);
         let filterable = fresh.len() > ADD_FILTER_FROM;
+        let mut listed = self.listed(&fresh);
+        self.add_active = self.add_active.and_then(|row| match listed.len() {
+            0 => None,
+            len => Some(row.min(len - 1)),
+        });
         let mut picked: Vec<PathBuf> = Vec::new();
         widgets::popover_frame(ui)
             .inner_margin(theme::SPACE_1)
@@ -615,24 +639,29 @@ impl Dialog {
                         if !field.has_focus() && ui.memory(|m| m.focused().is_none()) {
                             field.request_focus();
                         }
+                        if field.changed() {
+                            listed = self.listed(&fresh);
+                            self.add_active = (!self.add_filter.is_empty()).then_some(0);
+                            self.add_reveal = true;
+                        }
                     }
                     egui::ScrollArea::vertical()
                         .max_height(ADD_LIST_MAX_H)
                         .show(ui, |ui| {
-                            for project in &fresh {
-                                let name = project
-                                    .file_name()
-                                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-                                let path = config::contract(project, self.home.as_deref());
-                                let Some(mark) = matches(&name, &path, &self.add_filter) else {
-                                    continue;
-                                };
+                            for (row, item) in listed.into_iter().enumerate() {
+                                let active = self.add_active == Some(row);
                                 let look = RowLook {
-                                    mark,
+                                    active,
+                                    mark: item.mark,
                                     ..RowLook::default()
                                 };
-                                if widgets::menu_row(ui, width, &name, &path, look).clicked() {
-                                    picked.push((*project).clone());
+                                let response =
+                                    widgets::menu_row(ui, width, &item.name, &item.path, look);
+                                if active && std::mem::take(&mut self.add_reveal) {
+                                    response.scroll_to_me(Some(Align::Center));
+                                }
+                                if response.clicked() {
+                                    picked.push(item.project);
                                 }
                             }
                         });
@@ -652,6 +681,54 @@ impl Dialog {
         let now = ui.input(|i| i.time);
         for dir in picked {
             self.add_picked(at, &dir, now);
+        }
+    }
+
+    /// The user's projects not in the `at`th group yet, in their order.
+    fn fresh(&self, at: usize, projects: &[PathBuf]) -> Vec<PathBuf> {
+        projects
+            .iter()
+            .filter(|project| !self.draft.groups[at].repos.contains(project))
+            .cloned()
+            .collect()
+    }
+
+    /// The rows of `fresh` the Add project menu's filter keeps.
+    fn listed(&self, fresh: &[PathBuf]) -> Vec<AddRow> {
+        fresh
+            .iter()
+            .filter_map(|project| {
+                let name = project
+                    .file_name()
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                let path = config::contract(project, self.home.as_deref());
+                let mark = matches(&name, &path, &self.add_filter)?;
+                Some(AddRow {
+                    project: project.clone(),
+                    name,
+                    path,
+                    mark,
+                })
+            })
+            .collect()
+    }
+
+    /// The Add project menu's type-to-filter keys: the arrows move round its
+    /// projects, `↩` adds the active one and the menu stays open.
+    fn add_keys(&mut self, ctx: &egui::Context, at: usize, projects: &[PathBuf]) {
+        let take = |key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key));
+        let listed = self.listed(&self.fresh(at, projects));
+        for (key, down) in [(Key::ArrowDown, true), (Key::ArrowUp, false)] {
+            if !listed.is_empty() && take(key) {
+                self.add_active = Some(step(self.add_active, listed.len(), down));
+                self.add_reveal = true;
+            }
+        }
+        if let Some(row) = self.add_active.and_then(|row| listed.get(row))
+            && take(Key::Enter)
+        {
+            let now = ctx.input(|i| i.time);
+            self.add_picked(at, &row.project, now);
         }
     }
 

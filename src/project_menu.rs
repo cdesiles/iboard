@@ -567,7 +567,7 @@ fn move_item<T>(list: &mut Vec<T>, from: usize, to: usize) -> usize {
 }
 
 /// The next (or previous) line from `at`, round the end.
-fn step(at: Option<usize>, len: usize, down: bool) -> usize {
+pub fn step(at: Option<usize>, len: usize, down: bool) -> usize {
     match (at, down) {
         (None, true) => 0,
         (None, false) => len.saturating_sub(1),

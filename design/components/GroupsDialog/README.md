@@ -73,6 +73,7 @@ The boards themselves: each group is its own board, its columns merge by kind, e
 | --- | --- |
 | `⌘N` | New group (inside the dialog only) |
 | `↩` in a group name | Open its Add project menu |
+| `↑ ↓` / `↩` in the Add project menu | Move the active project (its `accent-soft` fill) / add it; the menu stays open |
 | `Del` on a project row | Remove it from the group |
 | `⌘⌫` inside a group | Delete group (asks first) |
 | `⌘↩` | Save |

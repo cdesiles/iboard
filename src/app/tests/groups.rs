@@ -117,6 +117,23 @@ fn projects_come_from_the_recent_ones_or_the_picker_with_an_issues_folder() {
 }
 
 #[test]
+fn the_add_project_menu_moves_with_the_arrows_and_adds_with_return() {
+    let (parent, _config, mut app) = configured("groups-add-keys");
+    app.recents = vec![parent.join("site")];
+    app.open_groups(false);
+    let mut harness = kittest(app);
+    press_nth(&mut harness, "Add project", 1);
+    harness.key_press(Key::ArrowDown);
+    harness.run_steps(2);
+    harness.key_press(Key::Enter);
+    harness.run_steps(2);
+    let repos = &dialog(&mut harness).draft.groups[1].repos;
+    assert_eq!(repos.len(), 2);
+    assert!(repos[1].ends_with("site"));
+    harness.get_by_label("Choose folders…");
+}
+
+#[test]
 fn cancelling_with_changes_asks_first_and_writes_nothing() {
     let (_scratch, config, mut app) = configured("groups-cancel");
     let before = std::fs::read_to_string(&config).unwrap();
