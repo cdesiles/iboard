@@ -178,8 +178,8 @@ impl IboardApp {
         self.filter_field(ui);
     }
 
-    /// An issue's toolbar, right to left: Save in the Editor, the `…` menu, the
-    /// AI split button by column, then the dynamic icon buttons.
+    /// An issue's toolbar, right to left: Save in the Editor, the Reader's `…`
+    /// menu, the AI split button by column, then the dynamic icon buttons.
     fn detail_controls(&mut self, ui: &mut egui::Ui, path: &Path) {
         let path = path.to_path_buf();
         let exists = self.board.find(&path).is_some();
@@ -196,7 +196,9 @@ impl IboardApp {
         {
             self.save_and_preview();
         }
-        self.more_button(ui, &path, exists);
+        if self.session.reading().is_some() {
+            self.more_button(ui, &path, exists);
+        }
         self.ai_button(ui, &path);
         if exists {
             let gap = std::mem::replace(&mut ui.spacing_mut().item_spacing.x, theme::SPACE_1);
@@ -283,7 +285,6 @@ impl IboardApp {
             agent_log: reading && self.has_agent_log(path),
             draft_design: reading && !done && self.design_reachable(),
             archive: reading && done,
-            discard: self.session.editing().is_some() && exists,
         }
     }
 
@@ -319,7 +320,6 @@ impl IboardApp {
             Some(More::AgentLog) => self.toggle_agent_log(path),
             Some(More::DraftDesign) => self.start_enrichment(path),
             Some(More::Archive) => self.archive_issue(path),
-            Some(More::Discard) => self.discard_edits(),
             None => {}
         }
     }
@@ -352,7 +352,6 @@ enum More {
     AgentLog,
     DraftDesign,
     Archive,
-    Discard,
 }
 
 /// The rows of the `…` menu.
@@ -364,7 +363,6 @@ struct MoreMenu {
     agent_log: bool,
     draft_design: bool,
     archive: bool,
-    discard: bool,
 }
 
 impl MoreMenu {
@@ -374,7 +372,6 @@ impl MoreMenu {
             && !self.agent_log
             && !self.draft_design
             && !self.archive
-            && !self.discard
     }
 
     fn rows(&self, ui: &mut egui::Ui) -> Option<More> {
@@ -402,13 +399,6 @@ impl MoreMenu {
         });
         let archive = Some(Icon::Archive);
         row(ui, self.archive, archive, "Archive", "", || More::Archive);
-        if self.discard {
-            widgets::menu_separator(ui);
-        }
-        let close = Some(Icon::Close);
-        row(ui, self.discard, close, "Discard changes", "", || {
-            More::Discard
-        });
         picked
     }
 

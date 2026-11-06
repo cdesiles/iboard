@@ -183,7 +183,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | ConfirmDialog | Delete (`↩`) / Cancel (`esc`) | IssueDeleted / DeleteCancelled | Board |
 | Reader, Editor (Todo) | Review (`⌘⇧R`) | ReviewRequested → ReviewReceived | Review panel opens beside the page |
 | Reader, Editor | AI split chevron | AIMenuOpened | Todo: Refine, Review, Deep or Quick review, Ask, Update from the code. Ready, Doing: Update from the code, Ask. Done has no AI split button |
-| Reader, Editor | `…` | MoreMenuOpened | Menu: Move to…; Refresh with Auto off; in the Reader, Agent log when the issue has one, Draft design with `idesign` on (not on Done) and Archive on Done; Discard changes in the Editor |
+| Reader | `…` | MoreMenuOpened | Menu: Move to…; Refresh with Auto off; Agent log when the issue has one, Draft design with `idesign` on (not on Done) and Archive on Done. The Editor has no `…` |
 | Any | Hold ⌘ alone 0.5s / release or another key | KeyHintsShown / KeyHintsHidden | Same screen with key hints beside controls, in the filter, footers, popups and status bar (view state only, no file change) |
 | Any | Settings (`⌘,`, Review menu, new issue engine tag) | SettingsOpened | Settings dialog on the matching tab |
 | Settings › AI review | Pick tool, pick model, Save (`⌘↩`) | ReviewToolChosen, ReviewModelChosen → SettingsSaved | Back to the screen; Review menu shows the new tool and model |

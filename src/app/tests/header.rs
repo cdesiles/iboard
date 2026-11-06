@@ -138,7 +138,7 @@ fn ask_opens_from_the_ai_menu() {
 }
 
 /// Edit in Todo and Ready; Add label too; Delete but on Done; the Editor keeps
-/// Delete only, Save and the `…`'s Discard changes.
+/// Delete only and Save, with no `…`.
 #[test]
 fn the_dynamic_buttons_follow_the_column_and_the_mode() {
     let (dir, app) = board("header-dynamic");
@@ -171,9 +171,7 @@ fn the_dynamic_buttons_follow_the_column_and_the_mode() {
     harness.get_by_label("Delete");
     assert!(!has(&harness, "Edit"));
     assert!(!has(&harness, "Add label"));
-    click(&mut harness, "More actions");
-    click(&mut harness, "Discard changes");
-    assert!(harness.state().1.session.editing().is_none());
+    assert!(!has(&harness, "More actions"));
 }
 
 /// Move to… lists the other columns, and a pick moves the issue.
