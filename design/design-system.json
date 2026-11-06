@@ -18,8 +18,8 @@
   },
   "lastChange": {
     "by": "Clément",
-    "at": "2026-11-06T09:31:11Z",
+    "at": "2026-11-06T09:56:52Z",
     "via": "Claude Code",
-    "note": "Spec lines that disagreed aligned with HeaderBar, Button and the code: the … menu, the key table, what blue and line-strong are for, helper names, the 900pt stack."
+    "note": "Specs aligned with the implemented quiet pass: keys, the … menu, line-strong's list, what blue is for, helper names, ghost tiles two across, and asking before a proposal replaces unsaved edits."
   }
 }

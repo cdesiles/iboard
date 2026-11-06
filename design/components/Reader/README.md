@@ -15,7 +15,7 @@ Under the sheet, 12pt apart, comes the **Not written yet** block, on Todo issues
 iboard checks the issue for the standard headings `## Context`, `## Acceptance criteria`, `## Out of scope` and `## Open questions`. The list is configurable: `[reader] sections = [...]`, and an empty list turns this off.
 
 - **The block**: its own `surface` card with a `line-soft` edge and `radius-md`, 12×16 padding. Its head row has "Not written yet" in `ui-label` `ink-muted` on the left and the Review button on the right.
-- **No section written yet** (a title and a paragraph): one **ghost tile** per missing section, in a grid of up to four across (two on a narrow window). A ghost tile has a dashed `line-strong` edge, the heading in `ui-strong` `ink-muted` with a `+`, and one short `ui-small` hint saying what belongs there:
+- **No section written yet** (a title and a paragraph): one **ghost tile** per missing section, in a grid of two across. A ghost tile has a dashed `line-strong` edge, the heading in `ui-strong` `ink-muted` with a `+`, and one short `ui-small` hint saying what belongs there:
   - Context: "Why now, and what to know first?"
   - Acceptance criteria: "What must be true when done?"
   - Out of scope: "What will this deliberately not do?"
