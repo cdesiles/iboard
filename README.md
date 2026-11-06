@@ -123,6 +123,10 @@ confirm = true      # false: delete without asking, with ⌘Z undo
 
 [direnv]
 enabled = false     # true: agents run through `direnv exec` in projects with an .envrc
+
+[stats]
+show_releases = true  # false: no release lines on the Trends; their checkbox writes it
+release_tags = "v*"   # which tags are releases, as `git for-each-ref refs/tags/<this>` matches
 ```
 
 The board also writes a `[splits]` section there: the widths you resized pairs

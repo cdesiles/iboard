@@ -13,7 +13,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
-use super::{Blobs, Cycles, FileStat, PAGE, Progress, STOPPED, Snapshot, Stats, cycle, files_at};
+use super::{
+    Blobs, Cycles, FileStat, PAGE, Progress, Releases, STOPPED, Snapshot, Stats, cycle, files_at,
+    release,
+};
 use crate::agenda::{self, DayCommit};
 use crate::files;
 use crate::git::{self, Batch};
@@ -33,6 +36,7 @@ pub enum Need {
     Cycles,
     Files,
     Agenda,
+    Releases,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -145,6 +149,7 @@ pub struct Source {
     dir: PathBuf,
     root: PathBuf,
     page: usize,
+    release_tags: String,
     measures: Arc<Measures>,
     /// How far the measuring got, for the UI.
     pub progress: Progress,
@@ -153,6 +158,7 @@ pub struct Source {
     cycles: Memo<Cycles>,
     files: Memo<Vec<FileStat>>,
     agenda: Memo<BTreeMap<NaiveDate, Vec<DayCommit>>>,
+    releases: Memo<Releases>,
 }
 
 impl Source {
@@ -163,6 +169,7 @@ impl Source {
             dir: dir.to_path_buf(),
             root: root.to_path_buf(),
             page,
+            release_tags: release::ReleasePrefs::default().tags,
             measures,
             progress: Progress::default(),
             listing: Memo::default(),
@@ -170,7 +177,19 @@ impl Source {
             cycles: Memo::default(),
             files: Memo::default(),
             agenda: Memo::default(),
+            releases: Memo::default(),
         }
+    }
+
+    /// The same source, reading the tags matching `pattern` as releases.
+    pub fn with_release_tags(mut self, pattern: &str) -> Self {
+        self.release_tags = pattern.to_string();
+        self
+    }
+
+    /// The pattern of the tags it reads as releases.
+    pub fn release_tags(&self) -> &str {
+        &self.release_tags
     }
 
     /// The folder its git commands run in.
@@ -181,6 +200,7 @@ impl Source {
     /// The same project at `page`, read afresh but for the commit cache.
     pub fn at_page(&self, page: usize) -> Self {
         Self::new(&self.dir, &self.root, page, Arc::clone(&self.measures))
+            .with_release_tags(&self.release_tags)
     }
 
     /// The [`Stats`] with what `needs` asks for filled in and the rest empty.
@@ -204,6 +224,7 @@ impl Source {
                     let agenda = self.agenda.get(cancel, || agenda::collect(&self.dir))?;
                     stats.agenda.clone_from(&*agenda);
                 }
+                Need::Releases => stats.releases.clone_from(&*self.releases(cancel)?),
             }
         }
         Ok(stats)
@@ -238,6 +259,13 @@ impl Source {
         self.cycles.get(cancel, || {
             let listing = self.listing(cancel)?;
             cycle::collect(&self.dir, &self.root, listing.newest())
+        })
+    }
+
+    fn releases(&self, cancel: &Cancel) -> Result<Arc<Releases>, String> {
+        self.releases.get(cancel, || {
+            let listing = self.listing(cancel)?;
+            release::read(&self.dir, &self.release_tags, &listing.commits, cancel)
         })
     }
 

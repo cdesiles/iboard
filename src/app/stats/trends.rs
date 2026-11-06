@@ -6,6 +6,7 @@ use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use iboard::stats::{Cycles, Limits, Snapshot, Stats};
 
 use super::blocks::{Blocks, Part, Phase, clock_note, dim_if_stale, failed_row};
+use super::releases::{Lane, checkbox};
 use super::{
     Align, Color32, Duration, Layout, Measure, Pos2, Rect, RichText, Sense, Shape, Stroke, TREND_H,
     TREND_LABEL_W, TRENDS_H, Vec2, block, block_label, theme, widgets,
@@ -37,8 +38,18 @@ fn plot_of(chart: Rect) -> Rect {
 }
 
 /// The width between two commits of a page of `count`.
-fn step_of(plot: Rect, count: usize) -> f32 {
+pub(super) fn step_of(plot: Rect, count: usize) -> f32 {
     plot.width() / (count.max(2) - 1) as f32
+}
+
+/// The plot a chart would have in `row`, a row as wide as the Trends: the
+/// x axis every chart shares.
+pub(super) fn shared_plot(ui: &egui::Ui, row: Rect) -> Rect {
+    let gap = ui.spacing().item_spacing.x;
+    plot_of(Rect::from_min_max(
+        row.min + Vec2::new(TREND_LABEL_W + gap, 0.0),
+        row.max,
+    ))
 }
 
 /// The axis of a measure over the values it shows: size and cycle time from 0,
@@ -112,11 +123,12 @@ pub(super) fn trends(
     blocks: &mut Blocks,
     limits: &Limits,
     hovered: Option<usize>,
+    show_releases: &mut bool,
 ) -> Option<usize> {
     block(ui, |ui| {
         ui.set_min_height(TRENDS_H);
         let p = theme::palette(ui);
-        ui.horizontal(|ui| {
+        let head = ui.horizontal(|ui| {
             block_label(ui, "Trends");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let commits = blocks.loaded(Part::Head).map_or(&[][..], |s| &s.snapshots);
@@ -126,9 +138,13 @@ pub(super) fn trends(
                     None => format!("{} commits, oldest left", commits.len()),
                 };
                 ui.label(RichText::new(text).font(theme::meta()).color(p.ink_muted));
+                checkbox(ui, blocks, show_releases);
             });
         });
+        blocks.settle(ui, Part::Releases, &head.response);
+        let lane = show_releases.then(|| Lane::begin(ui, blocks)).flatten();
         let mut now_hovered = None;
+        let mut bottom = ui.cursor().top();
         for (at, measure) in ROWS.into_iter().enumerate() {
             if at > 0 {
                 widgets::rule(ui);
@@ -138,9 +154,14 @@ pub(super) fn trends(
                 limits,
                 hovered,
             };
-            if let Some(at) = row.show(ui, blocks) {
+            let shown = row.show(ui, blocks);
+            bottom = shown.response.rect.bottom() - PLOT_INSET;
+            if let Some(at) = shown.inner {
                 now_hovered = Some(at);
             }
+        }
+        if let Some(at) = lane.and_then(|lane| lane.finish(ui, bottom)) {
+            now_hovered = Some(at);
         }
         let commits = blocks.loaded(Part::Head).map_or(&[][..], |s| &s.snapshots);
         month_axis(ui, commits);
@@ -151,11 +172,9 @@ pub(super) fn trends(
 /// The shared time axis under the rows: each month's name at its first commit.
 fn month_axis(ui: &mut egui::Ui, commits: &[Snapshot]) {
     let p = theme::palette(ui);
-    let gap = ui.spacing().item_spacing.x;
     let (row, _) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), MONTHS_H), Sense::hover());
-    let chart = Rect::from_min_max(row.min + Vec2::new(TREND_LABEL_W + gap, 0.0), row.max);
-    let plot = plot_of(chart);
+    let plot = shared_plot(ui, row);
     let step = step_of(plot, commits.len());
     let mut last = f32::MIN;
     for (at, name) in month_ticks(commits) {
@@ -182,7 +201,7 @@ struct TrendRow<'a> {
 }
 
 impl TrendRow<'_> {
-    fn show(&self, ui: &mut egui::Ui, blocks: &mut Blocks) -> Option<usize> {
+    fn show(&self, ui: &mut egui::Ui, blocks: &mut Blocks) -> egui::InnerResponse<Option<usize>> {
         let measure = self.measure;
         let part = Part::Trend(measure);
         let phase = blocks.phase(part);
@@ -230,7 +249,7 @@ impl TrendRow<'_> {
             }
         });
         blocks.settle(ui, part, &row.response);
-        row.inner
+        row
     }
 }
 

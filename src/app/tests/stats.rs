@@ -432,3 +432,133 @@ fn a_file_row_opens_its_history() {
     assert!(panel.history.is_none());
     assert_eq!(harness.get_all_by_label("three").count(), 1);
 }
+
+/// `project`'s three commits with `v0.1.0` on the first, `v0.1.1` on the
+/// third and `nightly`, which isn't a release, on the second.
+fn tagged(tag: &str) -> (Scratch, Located) {
+    let (dir, located) = project(tag);
+    git(&dir, &["tag", "v0.1.0", "HEAD~2"]);
+    git(&dir, &["tag", "nightly", "HEAD~1"]);
+    git(&dir, &["tag", "v0.1.1", "HEAD"]);
+    (dir, located)
+}
+
+fn release_label(harness: &kit::Kit, tag: &str) -> String {
+    let panel = harness.state().1.session.stats.as_ref().unwrap();
+    let stats = panel.blocks.loaded(Part::Releases).unwrap();
+    let release = stats.releases.shown.iter().find(|r| r.tag == tag).unwrap();
+    release.describe()
+}
+
+/// The lane reads each release aloud, and hovering a name turns on its tooltip
+/// and moves the shared crosshair to its commit.
+#[test]
+fn hovering_a_release_says_what_shipped_and_moves_the_crosshair() {
+    let (_dir, located) = tagged("stats-releases");
+    let mut app = IboardApp::from_located(located);
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+
+    let first = release_label(&harness, "v0.1.0");
+    assert!(
+        first.starts_with("v0.1.0 · ") && first.ends_with(" · 1 commit"),
+        "{first}"
+    );
+    let second = release_label(&harness, "v0.1.1");
+    assert!(second.ends_with(" · 2 commits since v0.1.0"), "{second}");
+    assert!(harness.query_by_label_contains("nightly").is_none());
+
+    let spot = harness.get_by_label(&first).rect().center();
+    harness.event(moved(spot));
+    harness.run_steps(3);
+    assert_eq!(
+        harness.get_all_by_label(&first).count(),
+        2,
+        "and its tooltip"
+    );
+    let panel = harness.state().1.session.stats.as_ref().unwrap();
+    assert_eq!(panel.hovered, Some(0));
+    assert_eq!(harness.get_all_by_label(&second).count(), 1);
+}
+
+/// Unticked, the lane goes, the charts move up by its 16pt, and the choice is
+/// saved next to the pattern, keeping comments; a new tag shows on Refresh.
+#[test]
+fn the_releases_checkbox_is_saved_and_takes_the_lane_away() {
+    let (dir, located) = tagged("stats-releases-off");
+    let file = dir.join("user.toml");
+    std::fs::write(&file, "# mine\n[stats]\nrelease_tags = \"v*\" # ours\n").unwrap();
+    let mut app = IboardApp::from_located(located);
+    app.config_file = Some(file.clone());
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+    let label = release_label(&harness, "v0.1.0");
+    harness.get_by_label(&label);
+    let chart_top = |harness: &kit::Kit| harness.get_by_label("Lines of code trend").rect().top();
+    let with_lane = chart_top(&harness);
+
+    harness.get_by_label("Releases").click();
+    harness.run_steps(3);
+
+    assert!(harness.query_by_label(&label).is_none());
+    assert_eq!(with_lane - chart_top(&harness), 16.0);
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "# mine\n[stats]\nrelease_tags = \"v*\" # ours\nshow_releases = false\n"
+    );
+    assert!(!harness.state().1.prefs.releases.show);
+
+    harness.get_by_label("Releases").click();
+    harness.run_steps(3);
+    git(&dir, &["tag", "v0.2.0"]);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, Key::R);
+    harness.run_steps(1);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+    harness.get_by_label(&release_label(&harness, "v0.2.0"));
+}
+
+/// With no tag matching, the checkbox is disabled and says why.
+#[test]
+fn the_checkbox_is_disabled_when_no_tag_matches() {
+    let (dir, located) = project("stats-releases-none");
+    git(&dir, &["tag", "rel-1"]);
+    let mut app = IboardApp::from_located(located);
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+    assert!(
+        harness
+            .get_by_label("Releases")
+            .accesskit_node()
+            .is_disabled()
+    );
+    harness.get_by_label("Releases").hover();
+    harness.run_steps(3);
+    harness.get_by_label("No release tags match v*");
+}
+
+/// `[stats] release_tags` picks another pattern.
+#[test]
+fn release_tags_pick_another_pattern() {
+    let (dir, located) = project("stats-releases-pattern");
+    git(&dir, &["tag", "rel-1"]);
+    let mut app = IboardApp::from_located(located);
+    app.prefs.releases.tags = "rel-*".to_string();
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+    assert!(
+        !harness
+            .get_by_label("Releases")
+            .accesskit_node()
+            .is_disabled()
+    );
+    harness.get_by_label(&release_label(&harness, "rel-1"));
+}

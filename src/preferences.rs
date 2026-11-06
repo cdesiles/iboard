@@ -10,6 +10,7 @@ use crate::filter;
 use crate::general::{self, Appearance};
 use crate::labels::{self, Labels};
 use crate::settings::{Section, UserConfig};
+use crate::stats::ReleasePrefs;
 use crate::titles::{self, Engine};
 
 const SPLITS: &str = "splits";
@@ -55,6 +56,9 @@ pub struct Preferences {
     /// `[agenda]`: the range the Agenda opens on. It writes it as it changes;
     /// Settings does not list it.
     pub agenda_range: Range,
+    /// `[stats]`: the release lines on the Trends. Their checkbox writes it as
+    /// it is ticked; Settings does not list it.
+    pub releases: ReleasePrefs,
 }
 
 impl Default for Preferences {
@@ -86,6 +90,7 @@ impl Preferences {
             splits: config.section(SPLITS),
             keep_notes: general::load_keep_notes(config),
             agenda_range: agenda::load_range(config),
+            releases: ReleasePrefs::load(config),
         }
     }
 
@@ -164,6 +169,7 @@ mod tests {
             splits: BTreeMap::new(),
             keep_notes: true,
             agenda_range: Range::W12,
+            releases: ReleasePrefs::default(),
         };
         assert_eq!(Preferences::default(), defaults);
         let mut empty = UserConfig::default();
@@ -187,7 +193,8 @@ mod tests {
              [label_style]\nstand_out = [\"bug\"]\n\
              [splits]\nreview = 420\n\
              [new_issue]\nkeep_notes = false\n\
-             [agenda]\nrange = \"26w\"\n",
+             [agenda]\nrange = \"26w\"\n\
+             [stats]\nshow_releases = false\nrelease_tags = \"rel-*\"\n",
         );
         let preferences = Preferences::load(&mut config);
         assert!(config.problems.is_empty(), "{:?}", config.problems);
@@ -208,6 +215,10 @@ mod tests {
                 splits: BTreeMap::from([("review".to_string(), 420)]),
                 keep_notes: false,
                 agenda_range: Range::W26,
+                releases: ReleasePrefs {
+                    show: false,
+                    tags: "rel-*".to_string(),
+                },
             }
         );
     }

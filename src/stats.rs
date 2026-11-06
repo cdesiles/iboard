@@ -12,6 +12,7 @@
 
 mod cycle;
 mod measure;
+mod release;
 mod source;
 mod watch;
 
@@ -27,6 +28,7 @@ use crate::git::{self, Batch};
 use crate::job::Cancel;
 pub use cycle::{Cycle, Cycles, span};
 pub use measure::{FileMetrics, Language, language_of, measure};
+pub use release::{Release, ReleasePrefs, Releases};
 use source::Listed;
 pub use source::{Measures, Need, Source};
 pub use watch::{Limits, Signal, culprits, cycle_drift, refactor_draft, refactor_due, signals};
@@ -149,6 +151,8 @@ pub struct Stats {
     pub files: Vec<FileStat>,
     /// The issues the page's commits closed, and how long each took.
     pub cycles: Cycles,
+    /// The release tags the page shows.
+    pub releases: Releases,
     /// Where the measures are kept.
     pub cache: Option<PathBuf>,
 }

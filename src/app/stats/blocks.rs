@@ -34,6 +34,7 @@ pub(in crate::app) enum Part {
     Watch,
     Files,
     Agenda,
+    Releases,
 }
 
 impl Part {
@@ -47,6 +48,7 @@ impl Part {
             Part::Watch => &[Need::Measures, Need::Cycles, Need::Files],
             Part::Files => &[Need::Files],
             Part::Agenda => &[Need::Agenda],
+            Part::Releases => &[Need::Commits, Need::Releases],
         }
     }
 
@@ -58,6 +60,7 @@ impl Part {
             Part::Tile(_) | Part::Trend(_) => "commit measures",
             Part::Watch => "refactor signals",
             Part::Files => "biggest files",
+            Part::Releases => "release tags",
         }
     }
 }
@@ -297,8 +300,15 @@ pub(super) fn framed<R>(
 /// Dims `phase`'s data while it is stale, for the blocks not drawn by
 /// [`framed`].
 pub(super) fn dim_if_stale(ui: &mut egui::Ui, phase: &Phase) {
+    ui.multiply_opacity(stale_opacity(phase));
+}
+
+/// The opacity of `phase`'s data.
+pub(super) fn stale_opacity(phase: &Phase) -> f32 {
     if matches!(phase, Phase::Loaded { stale: true, .. }) {
-        ui.multiply_opacity(STALE_OPACITY);
+        STALE_OPACITY
+    } else {
+        1.0
     }
 }
 

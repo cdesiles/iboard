@@ -417,6 +417,10 @@ pub const LABEL_TRACKING: f32 = 0.66;
 pub fn meta() -> FontId {
     FontId::proportional(12.0)
 }
+/// A release's name on the Trends: 11pt Inter 500.
+pub fn release_name() -> FontId {
+    FontId::new(11.0, family(SANS_MEDIUM))
+}
 /// `meta-mono`: key caps only.
 pub fn meta_mono() -> FontId {
     FontId::new(11.0, family(MONO_MEDIUM))

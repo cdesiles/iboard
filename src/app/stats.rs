@@ -18,6 +18,7 @@ use super::{
 
 pub(super) mod blocks;
 mod files;
+mod releases;
 mod tiles;
 mod trends;
 mod watch;
@@ -109,10 +110,12 @@ pub(super) struct StatsPanel {
     /// The history popup of a row clicked in the files table.
     pub(super) history: Option<FileHistory>,
     pub(super) agenda: Agenda,
+    /// The Releases checkbox of the Trends.
+    pub(super) show_releases: bool,
 }
 
 impl StatsPanel {
-    fn new(source: Source, page: usize, range: Range) -> Self {
+    fn new(source: Source, page: usize, range: Range, show_releases: bool) -> Self {
         Self {
             page,
             blocks: Blocks::new(source),
@@ -121,6 +124,7 @@ impl StatsPanel {
             all_files: false,
             history: None,
             agenda: Agenda::new(range),
+            show_releases,
         }
     }
 
@@ -166,8 +170,15 @@ impl IboardApp {
         if self.session.stats.is_none() {
             let dir = &self.located.project_dir;
             let measures = Arc::new(Measures::new(dir));
-            let source = Source::new(dir, &self.located.root, 0, measures);
-            self.session.stats = Some(StatsPanel::new(source, 0, self.prefs.agenda_range));
+            let releases = &self.prefs.releases;
+            let source =
+                Source::new(dir, &self.located.root, 0, measures).with_release_tags(&releases.tags);
+            self.session.stats = Some(StatsPanel::new(
+                source,
+                0,
+                self.prefs.agenda_range,
+                releases.show,
+            ));
         }
     }
 
@@ -272,10 +283,15 @@ impl IboardApp {
         {
             panel.history = None;
         }
+        let show_releases = panel.show_releases;
         let range = panel.agenda.range;
         if range != self.prefs.agenda_range {
             self.prefs.agenda_range = range;
             self.remember_section(iboard::agenda::range_section(range));
+        }
+        if show_releases != self.prefs.releases.show {
+            self.prefs.releases.show = show_releases;
+            self.remember_section(self.prefs.releases.section());
         }
         if let Some(ask) = ask {
             self.stats_ask(ask);
@@ -290,7 +306,7 @@ impl IboardApp {
             StatsAsk::Page(page) => {
                 let range = panel.agenda.range;
                 let source = panel.blocks.source().at_page(page);
-                *panel = StatsPanel::new(source, page, range);
+                *panel = StatsPanel::new(source, page, range, panel.show_releases);
             }
             StatsAsk::Refresh => panel.refresh(),
             StatsAsk::DraftRefactor(title, description) => {
@@ -367,10 +383,11 @@ fn stats_body(ui: &mut egui::Ui, panel: &mut StatsPanel) -> Option<StatsAsk> {
     let mut draft = None;
     let mut hovered = None;
     let shown = panel.hovered;
+    let show_releases = &mut panel.show_releases;
     split(
         ui,
         &mut panel.blocks,
-        |ui, blocks| hovered = trends(ui, blocks, &limits, shown),
+        |ui, blocks| hovered = trends(ui, blocks, &limits, shown, show_releases),
         |ui, blocks| draft = watch(ui, blocks, &limits),
     );
     if hovered != panel.hovered {
@@ -486,7 +503,8 @@ fn stats_footer(ui: &mut egui::Ui, stats: Option<&Stats>) {
                      estimated; test share is test lines over code lines, not run \
                      coverage; cycle time runs from an issue entering doing to its \
                      entering done, or from its first build run or commit to the \
-                     commit that closes it.{kept}"
+                     commit that closes it; a release line sits on the commit its tag \
+                     falls on.{kept}"
                 ))
                 .font(theme::meta())
                 .color(p.ink_muted),
