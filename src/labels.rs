@@ -318,8 +318,7 @@ pub fn front_matter_labels(markdown: &str) -> Vec<String> {
     };
     let mut labels: Vec<String> = Vec::new();
     let mut push = |raw: &str| {
-        let raw = raw.trim().trim_matches(['"', '\'']);
-        if let Some(name) = normalize(raw)
+        if let Some(name) = item_name(raw)
             && !labels.contains(&name)
         {
             labels.push(name);
@@ -369,7 +368,7 @@ fn add_label(markdown: &str, label: &str) -> Result<Option<String>, String> {
         return Ok(None);
     }
     let mut out: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
-    if let Some(at) = front_matter_list(&lines) {
+    if let Some(at) = front_matter_lists(&lines).into_iter().next() {
         add_to_list(&lines, &mut out, at, label);
     } else if let Some(i) = h1(&lines) {
         out[i] = add_to_heading(lines[i], label);
@@ -394,7 +393,7 @@ fn add_to_list(lines: &[&str], out: &mut Vec<String>, at: List, label: &str) {
             };
             out[i] = format!("{key}labels: [{items}]{end}");
         }
-        List::Block { last, indent } => {
+        List::Block { last, indent, .. } => {
             let (_, end) = split_eol(lines[last]);
             let end = if end.is_empty() { "\n" } else { end };
             if !out[last].ends_with('\n') {
@@ -432,7 +431,10 @@ pub fn add_label_to_file(path: &Path, label: &str) -> Result<bool, String> {
 fn remove_label(markdown: &str, label: &str) -> Option<String> {
     let lines: Vec<&str> = markdown.split_inclusive('\n').collect();
     let mut out: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
-    let mut changed = remove_from_list(&lines, &mut out, label);
+    let mut changed = false;
+    for at in front_matter_lists(&lines) {
+        changed |= remove_from_list(&lines, &mut out, at, label);
+    }
     if let Some(i) = h1(&lines)
         && let Some(line) = remove_from_heading(lines[i], label)
     {
@@ -442,17 +444,15 @@ fn remove_label(markdown: &str, label: &str) -> Option<String> {
     changed.then(|| out.concat())
 }
 
-/// Takes `label` off the front matter's `labels:` list: rewrites an inline
-/// list with its items normalized, empties a block list's item lines. Whether
-/// the list had it.
-fn remove_from_list(lines: &[&str], out: &mut [String], label: &str) -> bool {
-    match front_matter_list(lines) {
-        Some(List::Inline(i)) => {
+/// Takes `label` off a front matter `labels:` list: rewrites an inline list
+/// with its items normalized, empties a block list's item lines. Whether the
+/// list had it.
+fn remove_from_list(lines: &[&str], out: &mut [String], at: List, label: &str) -> bool {
+    match at {
+        List::Inline(i) => {
             let (body, end) = split_eol(lines[i]);
             let (key, value) = body.split_once("labels:").unwrap_or((body, ""));
-            let items: Vec<String> = inline_items(value)
-                .filter_map(|raw| normalize(raw.trim().trim_matches(['"', '\''])))
-                .collect();
+            let items: Vec<String> = inline_items(value).filter_map(item_name).collect();
             let kept: Vec<&str> = items
                 .iter()
                 .map(String::as_str)
@@ -464,21 +464,17 @@ fn remove_from_list(lines: &[&str], out: &mut [String], label: &str) -> bool {
             out[i] = format!("{key}labels: [{}]{end}", kept.join(", "));
             true
         }
-        Some(List::Block { last, .. }) => {
-            let key = (1..=last)
-                .find(|&j| lines[j].trim().starts_with("labels:"))
-                .unwrap_or(last);
+        List::Block { key, last, .. } => {
             let mut changed = false;
             for (j, line) in lines.iter().enumerate().take(last + 1).skip(key + 1) {
                 let item = line.trim().strip_prefix("- ").unwrap_or("");
-                if normalize(item.trim_matches(['"', '\''])).as_deref() == Some(label) {
+                if item_name(item).as_deref() == Some(label) {
                     out[j].clear();
                     changed = true;
                 }
             }
             changed
         }
-        None => false,
     }
 }
 
@@ -542,32 +538,50 @@ fn edit_file(
 enum List {
     /// `labels: [a, b]` on this line.
     Inline(usize),
-    /// `labels:` then `- item` lines; the last item (or the key) and the
-    /// items' indent.
-    Block { last: usize, indent: String },
+    /// `labels:` on `key`, then `- item` lines; the last item (or the key)
+    /// and the items' indent.
+    Block {
+        key: usize,
+        last: usize,
+        indent: String,
+    },
 }
 
-fn front_matter_list(lines: &[&str]) -> Option<List> {
-    let matter = markdown::front_matter(lines)?;
+/// Every `labels:` list of the front matter, in order.
+fn front_matter_lists(lines: &[&str]) -> Vec<List> {
+    let Some(matter) = markdown::front_matter(lines) else {
+        return Vec::new();
+    };
+    let mut lists = Vec::new();
     for i in matter.clone() {
-        let trimmed = lines[i].trim();
-        if let Some(value) = trimmed.strip_prefix("labels:") {
-            if !value.trim().is_empty() {
-                return Some(List::Inline(i));
-            }
-            let mut last = i;
-            let mut indent = "  ".to_string();
-            while last + 1 < matter.end
-                && let Some(line) = lines.get(last + 1)
-                && line.trim().starts_with("- ")
-            {
-                last += 1;
-                indent = line[..line.len() - line.trim_start().len()].to_string();
-            }
-            return Some(List::Block { last, indent });
+        let Some(value) = lines[i].trim().strip_prefix("labels:") else {
+            continue;
+        };
+        if !value.trim().is_empty() {
+            lists.push(List::Inline(i));
+            continue;
         }
+        let mut last = i;
+        let mut indent = "  ".to_string();
+        while last + 1 < matter.end
+            && let Some(line) = lines.get(last + 1)
+            && line.trim().starts_with("- ")
+        {
+            last += 1;
+            indent = line[..line.len() - line.trim_start().len()].to_string();
+        }
+        lists.push(List::Block {
+            key: i,
+            last,
+            indent,
+        });
     }
-    None
+    lists
+}
+
+/// A list item's label: unquoted and normalized.
+fn item_name(raw: &str) -> Option<String> {
+    normalize(raw.trim().trim_matches(['"', '\'']))
 }
 
 /// What an inline `[a, b]` list holds between its brackets, as written.
@@ -887,6 +901,25 @@ mod tests {
             "---\nlabels:\n  - ux\nowner: me\n---\n# T\n"
         );
         assert!(remove_label("---\nlabels: [ux]\n---\n# T\n", "bug").is_none());
+    }
+
+    #[test]
+    fn a_label_comes_off_every_front_matter_list_however_spaced() {
+        assert_eq!(
+            remove_label("---\nlabels:\n  -  \"bug\"\n---\n# T\n", "bug").unwrap(),
+            "---\nlabels:\n---\n# T\n"
+        );
+        let two = "---\nlabels: [ux]\nowner: me\nlabels:\n  - bug\n---\n# T\n";
+        assert_eq!(front_matter_labels(two), ["ux", "bug"]);
+        assert_eq!(add_label(two, "bug"), Ok(None));
+        assert_eq!(
+            remove_label(two, "bug").unwrap(),
+            "---\nlabels: [ux]\nowner: me\nlabels:\n---\n# T\n"
+        );
+        assert_eq!(
+            add_label(two, "ops").unwrap().unwrap(),
+            "---\nlabels: [ux, ops]\nowner: me\nlabels:\n  - bug\n---\n# T\n"
+        );
     }
 
     #[test]
