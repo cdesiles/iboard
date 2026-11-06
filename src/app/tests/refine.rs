@@ -16,6 +16,30 @@ fn refining(tag: &str, command: &str) -> (Scratch, PathBuf, IboardApp) {
     (dir, file, app)
 }
 
+/// The head names the file in Inter, as the design says of everything but code.
+#[test]
+fn the_refinement_head_sets_the_path_in_inter() {
+    let (_dir, file, mut app) = refining("refine-head", "printf 'Who needs it?\\nPROPOSAL: NONE'");
+    app.start_refinement(&file);
+    assert!(until(|| {
+        app.poll_refinement();
+        turns(&app) == 1
+    }));
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let (_, shapes) = painted(&ctx, &mut app, vec![]);
+    let fonts: Vec<egui::FontId> = shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Text(text) if text.galley.job.text == "todo/01-demo.md" => {
+                Some(text.galley.job.sections[0].format.font_id.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(fonts.contains(&theme::ui_strong()), "{fonts:?}");
+}
+
 fn turns(app: &IboardApp) -> usize {
     app.session.refine.as_ref().map_or(0, |r| r.turns.len())
 }

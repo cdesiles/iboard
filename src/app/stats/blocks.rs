@@ -249,7 +249,7 @@ pub(in crate::app) fn failure(ui: &mut egui::Ui, what: &str, error: &str) -> boo
         )
         .truncate(),
     );
-    widgets::button(ui, ButtonKind::Secondary, None, "Retry", None).clicked()
+    widgets::button(ui, ButtonKind::Ghost, None, "Retry", None).clicked()
 }
 
 /// `part` in a [`block`] at least `height` tall whatever its phase. `loaded`

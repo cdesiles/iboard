@@ -222,6 +222,49 @@ fn a_deep_review_says_so_and_is_kept_as_deep() {
     assert_eq!(app.past_reviews[&file].mode, ReviewMode::Deep);
 }
 
+/// The note's composer is one field, outlined in `review`: its text has no
+/// frame of its own inside that outline.
+#[test]
+fn a_margin_comments_field_has_one_edge() {
+    use egui_kittest::kittest::Queryable;
+    let dir = scratch_dir("margin-field");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("demo.md");
+    std::fs::write(&file, "# Demo\n\nA paragraph.\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_issue(file);
+    let mut harness = kittest(app);
+    harness
+        .get_all_by_label("Add a comment")
+        .nth(1)
+        .unwrap()
+        .click();
+    harness.run_steps(2);
+
+    let app = &mut harness.state_mut().1;
+    let ctx = themed_ctx();
+    draw(&ctx, app, vec![]);
+    let (p, shapes) = painted(&ctx, app, vec![]);
+    let edged: Vec<_> = shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Rect(rect) if !rect.stroke.is_empty() => Some(rect),
+            _ => None,
+        })
+        .collect();
+    let outline = edged
+        .iter()
+        .find(|rect| rect.stroke.color == p.review)
+        .expect("the outline");
+    let inside = edged.iter().filter(|rect| {
+        rect.rect != outline.rect
+            && outline.rect.contains_rect(rect.rect)
+            && rect.rect.height() > theme::CONTROL_H
+    });
+    assert_eq!(inside.count(), 0, "no second frame around the text");
+}
+
 /// A comment written in the reader's margin is kept beside the issue and
 /// reaches the next review, which marks it seen.
 #[test]

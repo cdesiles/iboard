@@ -36,8 +36,6 @@ struct Extras {
     open: bool,
     active: bool,
     chips: Vec<String>,
-    /// "4 of 12" while filtering.
-    count: Option<String>,
 }
 
 impl IboardApp {
@@ -45,21 +43,13 @@ impl IboardApp {
     /// growing to the left. Focused, it offers the suggestions as chips; a
     /// picked one becomes a token at the start of the field.
     pub(super) fn filter_field(&mut self, ui: &mut egui::Ui) {
-        let shown = (!self.filter_bar.filter.is_empty())
-            .then(|| self.visible_grid().iter().map(Vec::len).sum::<usize>());
         let suggestions = self.prefs.suggestions.as_deref();
-        self.filter_bar.show(ui, &self.board, suggestions, shown);
+        self.filter_bar.show(ui, &self.board, suggestions);
     }
 }
 
 impl FilterBar {
-    fn show(
-        &mut self,
-        ui: &mut egui::Ui,
-        board: &Board,
-        suggestions: Option<&[String]>,
-        shown: Option<usize>,
-    ) {
+    fn show(&mut self, ui: &mut egui::Ui, board: &Board, suggestions: Option<&[String]>) {
         let ctx = ui.ctx().clone();
         let focused = ctx.memory(|m| m.has_focus(filter_id()));
         if !focused {
@@ -76,7 +66,6 @@ impl FilterBar {
             } else {
                 Vec::new()
             },
-            count: shown.map(|shown| format!("{shown} of {}", board.issue_count())),
         };
         self.row(ui, rect, focused, extras);
     }
@@ -141,7 +130,7 @@ impl FilterBar {
     }
 
     /// Inside the field: the search icon, the tokens, the text, then the
-    /// chips, the count and the key hint on the right.
+    /// chips and the key hint on the right.
     fn row(&mut self, ui: &mut egui::Ui, rect: Rect, focused: bool, mut extras: Extras) {
         let inner = Rect::from_min_max(
             rect.min + Vec2::new(theme::SPACE_3, 0.0),
@@ -201,16 +190,11 @@ impl FilterBar {
             } else {
                 0.0
             };
-        let count_width = extras
-            .count
-            .as_ref()
-            .map(|count| widgets::text_width(row, count, theme::meta()) + FILTER_GAP)
-            .unwrap_or(0.0);
         let text_width = widgets::text_width(row, &self.filter.text, theme::ui_body());
-        row.available_width() - count_width - chips_width >= text_width.max(FILTER_TEXT_MIN)
+        row.available_width() - chips_width >= text_width.max(FILTER_TEXT_MIN)
     }
 
-    /// Right to left: the chips, "Labels", the count, the key hint while ⌘
+    /// Right to left: the chips, "Labels", the key hint while ⌘
     /// is held, then the text taking what is left. Returns the chip picked
     /// and the text's response.
     fn trailing(
@@ -236,9 +220,6 @@ impl FilterBar {
                             .font(filter_try_font())
                             .color(p.ink_muted),
                     );
-                }
-                if let Some(count) = &extras.count {
-                    ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
                 }
                 if !extras.open {
                     let key = if extras.active { "esc" } else { "⌘F" };

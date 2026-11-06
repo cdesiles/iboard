@@ -325,6 +325,10 @@ fn the_board_status_says_the_folder_and_no_total() {
     assert_eq!(in_status_bar(&harness, &folder).len(), 1, "filtered");
     let matches = "1 of 2 issues matches “bug”";
     assert_eq!(in_status_bar(&harness, matches).len(), 1);
+    assert!(
+        harness.query_by_label("1 of 2").is_none(),
+        "the filter field does not repeat it"
+    );
 }
 
 /// The Reader's status bar: its path, how old it is, then its checklist or

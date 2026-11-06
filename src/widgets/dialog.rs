@@ -4,7 +4,7 @@
 use egui::epaint::MarginF32;
 use egui::{
     Align, Color32, CornerRadius, FontId, Frame, InnerResponse, Layout, Margin, Rect, Response,
-    RichText, Stroke, StrokeKind, Ui, Vec2,
+    RichText, Sense, Stroke, StrokeKind, Ui, Vec2,
 };
 
 use super::modal::{focus_here, modal};
@@ -342,38 +342,56 @@ pub fn text_field(ui: &mut Ui, text: &mut String, hint: &str) -> Response {
 /// A segmented control on a `surface-sunken` track: the current option is
 /// raised on `surface`. Returns the option clicked this frame.
 pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &str)]) -> Option<T> {
-    let p = theme::palette(ui);
     let mut picked = None;
     Frame::new()
-        .fill(p.surface_sunken)
+        .fill(theme::palette(ui).surface_sunken)
         .corner_radius(CornerRadius::same(theme::RADIUS_SM))
         .inner_margin(Margin::same(2))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 for &(option, name) in options {
-                    let active = option == current;
-                    let text = RichText::new(name)
-                        .font(theme::ui_button())
-                        .color(if active { p.ink } else { p.ink_muted });
-                    let button = egui::Button::new(text)
-                        .fill(if active {
-                            p.surface
-                        } else {
-                            Color32::TRANSPARENT
-                        })
-                        .stroke(Stroke::NONE)
-                        .corner_radius(CornerRadius::same(theme::RADIUS_SM - 1))
-                        .min_size(Vec2::new(0.0, theme::CONTROL_H - 4.0));
-                    let response = ui.add(button);
-                    focus_ring(ui, &response, theme::RADIUS_SM - 1);
-                    if response.clicked() {
+                    if segment(ui, name, option == current).clicked() {
                         picked = Some(option);
                     }
                 }
             });
         });
     picked
+}
+
+/// One option of a [`segmented`]; the active one has a soft shadow and no edge.
+fn segment(ui: &mut Ui, name: &str, active: bool) -> Response {
+    let p = theme::palette(ui);
+    let text =
+        ui.painter()
+            .layout_no_wrap(name.to_string(), theme::ui_button(), Color32::PLACEHOLDER);
+    let size = Vec2::new(text.size().x + 2.0 * theme::SPACE_3, theme::CONTROL_H - 4.0);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), active, name)
+    });
+    let radius = CornerRadius::same(theme::RADIUS_SM - 1);
+    let painter = ui.painter();
+    if active {
+        let shadow = egui::Shadow {
+            offset: [0, 1],
+            blur: 3,
+            spread: 0,
+            color: p.popover_shadow,
+        };
+        painter.add(shadow.as_shape(rect, radius));
+        painter.rect_filled(rect, radius, p.surface);
+    }
+    let ink = if active || response.hovered() {
+        p.ink
+    } else {
+        p.ink_muted
+    };
+    painter.galley(rect.center() - text.size() / 2.0, text, ink);
+    focus_ring(ui, &response, theme::RADIUS_SM - 1);
+    response
 }
 
 /// A 1pt dashed edge just inside `rect`, following its `radius` corners, as on
@@ -410,6 +428,41 @@ fn rounded_outline(r: Rect, radius: u8) -> Vec<egui::Pos2> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The active tab's look, in both themes: `surface`, a blurred shadow
+    /// under it, and nothing in the control has an edge.
+    #[test]
+    fn a_segmented_controls_active_tab_has_a_soft_shadow_and_no_edge() {
+        for theme_name in [egui::Theme::Light, egui::Theme::Dark] {
+            let ctx = egui::Context::default();
+            theme::install(&ctx);
+            ctx.set_theme(theme_name);
+            let mut palette = None;
+            let mut pass = || {
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    palette = Some(theme::palette(ui));
+                    segmented(ui, 1, &[(0, "One"), (1, "Two")]);
+                });
+                output.textures_delta.clear();
+                output.shapes
+            };
+            pass();
+            let shapes = pass();
+            let p = palette.unwrap();
+            let rects: Vec<_> = shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Rect(rect) => Some(rect),
+                    _ => None,
+                })
+                .collect();
+            let tabs: Vec<_> = rects.iter().filter(|r| r.fill == p.surface).collect();
+            assert_eq!(tabs.len(), 1, "only the active tab is raised");
+            let shadows = rects.iter().filter(|r| r.blur_width > 0.0);
+            assert_eq!(shadows.count(), 1, "under it");
+            assert!(rects.iter().all(|r| r.stroke.is_empty()), "no edge");
+        }
+    }
 
     #[test]
     fn the_dashed_edge_rounds_its_corners() {

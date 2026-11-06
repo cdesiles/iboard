@@ -329,7 +329,7 @@ fn notes_pane(ui: &mut egui::Ui, composer: &mut Composer, height: f32) {
                     ui.label(
                         RichText::new(format!("{words} {noun}"))
                             .font(theme::meta())
-                            .color(p.ink_faint),
+                            .color(p.ink_muted),
                     );
                 });
             });
@@ -361,7 +361,7 @@ fn notes_field(ui: &mut egui::Ui, composer: &mut Composer, ink: Color32, room: f
             .max_height(room)
             .auto_shrink([false, false]),
         |ui| {
-            let rows = (room / 22.0).floor().max(3.0) as usize;
+            let rows = (room / 24.0).floor().max(3.0) as usize;
             ui.add_enabled(
                 !drafting,
                 egui::TextEdit::multiline(&mut composer.description)
@@ -370,6 +370,7 @@ fn notes_field(ui: &mut egui::Ui, composer: &mut Composer, ink: Color32, room: f
                     .text_color(ink)
                     .hint_text(
                         RichText::new("Describe the issue. Write or dictate as much as you like.")
+                            .font(theme::read_body())
                             .color(p.ink_faint),
                     )
                     .frame(Frame::NONE)
@@ -544,7 +545,7 @@ fn sheet_head(ui: &mut egui::Ui, composer: &Composer, view: &ComposeView) {
             ui.add(egui::Label::new(meta(error.clone(), p.danger)).truncate());
         } else if display.is_empty() {
             let unnamed = match composer.engine {
-                Some(_) => " named on save",
+                Some(_) => " named in the background",
                 None => " empty title uses the first line",
             };
             ui.label(meta(view.folder.to_string(), p.ink_muted));

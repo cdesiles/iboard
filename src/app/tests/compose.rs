@@ -213,12 +213,12 @@ fn the_sheet_head_follows_the_engine() {
             .query_by_label(" empty title uses the first line")
             .is_some()
     );
-    assert!(harness.query_by_label(" named on save").is_none());
+    assert!(harness.query_by_label(" named in the background").is_none());
 
     let app = &mut harness.state_mut().1;
     app.session.composer.as_mut().unwrap().engine = Some(Engine::Apple);
     harness.run_steps(1);
-    assert!(harness.query_by_label(" named on save").is_some());
+    assert!(harness.query_by_label(" named in the background").is_some());
     assert!(
         harness
             .query_by_label(" empty title uses the first line")
@@ -594,4 +594,23 @@ fn a_new_cards_highlight_runs_out_over_two_seconds() {
     assert!((0.4..=0.5).contains(&left), "{left}");
     app.session.new_card = at(2);
     assert!(app.flashing_card().is_none());
+}
+
+/// The notes are prose: their placeholder reads at `read-body`, as they do.
+#[test]
+fn the_notes_placeholder_is_in_read_body() {
+    let dir = scratch_dir("compose-notes-hint");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_composer();
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let (_, shapes) = painted(&ctx, &mut app, vec![]);
+    let font = shapes.iter().find_map(|shape| match shape {
+        egui::Shape::Text(text) if text.galley.job.text.starts_with("Describe the issue") => {
+            Some(text.galley.job.sections[0].format.font_id.clone())
+        }
+        _ => None,
+    });
+    assert_eq!(font, Some(theme::read_body()));
 }

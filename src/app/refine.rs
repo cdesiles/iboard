@@ -516,8 +516,7 @@ fn refine_head(ui: &mut egui::Ui, shown: &str, agent: &str, round: usize) {
                     ui.spacing_mut().item_spacing.x = theme::SPACE_3;
                     let review = |text: &str, font| RichText::new(text).font(font).color(p.review);
                     ui.label(review("Refining", theme::ui_strong()));
-                    let mono = egui::FontId::new(12.0, theme::edit_body().family);
-                    ui.label(review(shown, mono));
+                    ui.label(review(shown, theme::ui_strong()));
                     role_pill(ui, "Challenger");
                     if round > 1 {
                         ui.label(
@@ -789,7 +788,8 @@ fn choice_card(
     let width = ui.available_width();
     let wrap = width - 2.0 * pad.x - lead - radio;
     let painter = ui.painter();
-    let title_text = painter.layout(title.clone(), theme::ui_strong(), p.ink, wrap);
+    let title_font = egui::FontId::new(13.0, theme::ui_title().family);
+    let title_text = painter.layout(title.clone(), title_font, p.ink, wrap);
     let detail_text = detail
         .map(|detail| painter.layout(detail.to_string(), theme::ui_small(), p.ink_muted, wrap));
     let title_h = title_text.size().y;

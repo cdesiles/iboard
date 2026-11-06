@@ -285,21 +285,24 @@ fn note_card(ui: &mut egui::Ui, comment: &Comment) -> Option<NoteAction> {
 fn note_composer(ui: &mut egui::Ui, draft: &mut NoteDraft) -> Option<NoteAction> {
     let p = theme::palette(ui);
     let mut action = None;
-    Frame::new()
+    let mut focused = false;
+    let frame = Frame::new()
         .fill(p.surface)
         .stroke(Stroke::new(1.0, p.review))
         .corner_radius(CornerRadius::same(theme::RADIUS_SM))
         .inner_margin(theme::SPACE_3)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            let field = widgets::text_entry(
-                ui,
+            let field = ui.add(
                 egui::TextEdit::multiline(&mut draft.text)
                     .hint_text(RichText::new("What should the review know?").color(p.ink_faint))
                     .font(theme::ui_body())
+                    .frame(Frame::NONE)
+                    .margin(egui::Margin::ZERO)
                     .desired_rows(2)
                     .desired_width(f32::INFINITY),
             );
+            focused = field.has_focus();
             if std::mem::take(&mut draft.focus) {
                 field.request_focus();
             }
@@ -322,5 +325,8 @@ fn note_composer(ui: &mut egui::Ui, draft: &mut NoteDraft) -> Option<NoteAction>
                 },
             );
         });
+    if focused {
+        widgets::paint_focus_halo(ui, frame.response.rect, theme::RADIUS_SM);
+    }
     action
 }
