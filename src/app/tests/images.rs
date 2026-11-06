@@ -122,6 +122,34 @@ fn a_screenshot_pasted_in_the_composer_lands_in_the_new_ticket() {
 }
 
 #[test]
+fn a_screenshot_pasted_in_the_composer_shows_in_the_issue_pane() {
+    let dir = scratch_dir("paste-compose-shown");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.clipboard = Clipboard::Held(Some(screenshot()));
+    let ctx = themed_ctx();
+
+    app.open_composer();
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, command_v());
+    let textures = || {
+        ctx.loaders()
+            .texture
+            .lock()
+            .iter()
+            .map(|loader| loader.byte_size())
+            .sum::<usize>()
+    };
+    assert!(
+        until(|| {
+            frame(&ctx, &mut app, vec![]);
+            textures() > 0
+        }),
+        "the pending image decodes through the file loader"
+    );
+}
+
+#[test]
 fn text_on_the_clipboard_wins_over_an_image() {
     let (dir, file, mut app) = issue_with_image("paste-text", "demo.md", "# Demo\n");
     std::fs::remove_dir_all(dir.join("issues/.assets")).unwrap();

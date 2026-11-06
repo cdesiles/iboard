@@ -4,7 +4,7 @@
 
 use super::board::status_color;
 use super::compose::{Composer, ComposerField, Drafted, TitleStage};
-use super::reader::{column_mark, sheet_rule};
+use super::reader::{column_mark, image_base_uri, sheet_rule};
 use super::{
     Align, ButtonKind, CCursor, CCursorRange, Color32, CommonMarkCache, CommonMarkViewer,
     CornerRadius, Engine, Frame, IboardApp, Key, Labels, Layout, Margin, Path, Pos2, Rect,
@@ -46,6 +46,8 @@ struct ComposeView<'a> {
     /// The folder the issue lands in, and the file it will be.
     folder: &'a str,
     dir: Option<&'a Path>,
+    /// The `file://` base the pasted images' links resolve against.
+    images: String,
     sections: &'a [String],
     labels: &'a Labels,
     keep_notes: &'a mut bool,
@@ -67,6 +69,7 @@ impl IboardApp {
         else {
             return;
         };
+        let images = image_base_uri(&todo.join("new.md"));
         let dir = self.compose_preview(&todo).unwrap_or(todo);
         let folder = self.compose_folder(&dir);
         let blocked = self.draft_blocked();
@@ -80,6 +83,7 @@ impl IboardApp {
             status,
             folder: &folder,
             dir: Some(dir.as_path()).filter(|dir| dir.is_dir()),
+            images,
             sections: &self.board.reader_sections,
             labels: &self.prefs.labels,
             keep_notes: &mut self.prefs.keep_notes,
@@ -508,7 +512,7 @@ fn sheet(
     }
     match &composer.draft {
         None => {
-            mirror(ui, &composer.description, cache);
+            mirror(ui, &composer.description, &view.images, cache);
             None
         }
         Some(drafted) => {
@@ -518,11 +522,12 @@ fn sheet(
                 view.sections,
                 started.is_some(),
                 skeleton,
+                &view.images,
                 cache,
             );
             if *view.keep_notes && started.is_none() && !composer.description.trim().is_empty() {
                 section_heading(ui, "Notes", false);
-                body_text(ui, "kept-notes", &composer.description, cache);
+                body_text(ui, "kept-notes", &composer.description, &view.images, cache);
             }
             at
         }
@@ -666,11 +671,11 @@ fn receipt(ui: &mut egui::Ui, composer: &Composer, actions: &mut Vec<ComposeActi
 }
 
 /// Before a draft, the sheet's body is your notes rendered, live.
-fn mirror(ui: &mut egui::Ui, notes: &str, cache: &mut CommonMarkCache) {
+fn mirror(ui: &mut egui::Ui, notes: &str, images: &str, cache: &mut CommonMarkCache) {
     if notes.trim().is_empty() {
         return;
     }
-    body_text(ui, "mirror", notes, cache);
+    body_text(ui, "mirror", notes, images, cache);
 }
 
 /// The draft at its final shape: the summary, then each standard section,
@@ -682,12 +687,13 @@ fn drafted_body(
     wanted: &[String],
     running: bool,
     skeleton: bool,
+    images: &str,
     cache: &mut CommonMarkCache,
 ) -> Option<Rect> {
     let draft = &drafted.draft;
     let mut writing_at = None;
     if !draft.summary.is_empty() {
-        let rect = body_text(ui, "summary", &draft.summary, cache);
+        let rect = body_text(ui, "summary", &draft.summary, images, cache);
         if running && draft.sections.is_empty() {
             writing_at = Some(rect);
         }
@@ -713,7 +719,7 @@ fn drafted_body(
             Some(section) if !section.text.trim().is_empty() || writing => {
                 let top = ui.cursor().min.y;
                 section_heading(ui, heading, writing);
-                let rect = body_text(ui, ("section", index), &section.text, cache);
+                let rect = body_text(ui, ("section", index), &section.text, images, cache);
                 if writing {
                     writing_at = Some(rect);
                     let p = theme::palette(ui);
@@ -765,6 +771,7 @@ fn body_text(
     ui: &mut egui::Ui,
     id: impl std::hash::Hash + std::fmt::Debug,
     text: &str,
+    images: &str,
     cache: &mut CommonMarkCache,
 ) -> Rect {
     ui.push_id(id, |ui| {
@@ -772,7 +779,9 @@ fn body_text(
             .text_styles
             .insert(egui::TextStyle::Body, theme::read_body());
         ui.vertical(|ui| {
-            CommonMarkViewer::new().show(ui, cache, text);
+            CommonMarkViewer::new()
+                .default_implicit_uri_scheme(images)
+                .show(ui, cache, text);
         })
         .response
         .rect
