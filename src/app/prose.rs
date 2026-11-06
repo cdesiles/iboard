@@ -10,16 +10,20 @@ use iboard::prose::{self, Item, Prose, Span};
 use iboard::theme;
 
 /// `read-body`'s line height.
-const BODY_LINE: f32 = 22.0;
+const BODY_LINE: f32 = 24.0;
 /// `read-h1`'s.
 const H1_LINE: f32 = 26.0;
-/// `ui-title`'s, the reader's h2.
-const H2_LINE: f32 = 20.0;
+/// `read-h2`'s.
+const H2_LINE: f32 = 22.0;
+/// `read-h3`'s.
+const H3_LINE: f32 = 20.0;
+/// Under a paragraph or a list, and between a list's items.
+const BLOCK_GAP: f32 = 10.0;
+/// Under a `read-h2`.
+const H2_BELOW: f32 = 6.0;
 /// What a list indents by: a bullet, a number or a task box sits in here.
 const MARKER_W: f32 = 20.0;
-/// Paragraphs and list items fit this many `0`s.
-const MEASURE_CH: f32 = 68.0;
-const CODE_SIZE: f32 = 12.5;
+pub(super) const CODE_SIZE: f32 = 13.0;
 /// A code span's height: its background, and its baseline against the text's.
 const CODE_LINE: f32 = 20.0;
 /// A narrow no-break space, the side padding of a code span's background.
@@ -32,8 +36,9 @@ pub(super) type Ticked = Option<(Range<usize>, bool)>;
 pub(super) fn margins(block: &Prose) -> (f32, f32) {
     match block {
         Prose::Heading { level: 1, .. } => (0.0, theme::SPACE_4),
+        Prose::Heading { level: 2, .. } => (theme::SPACE_6, H2_BELOW),
         Prose::Heading { .. } => (theme::SPACE_5, theme::SPACE_2),
-        Prose::Paragraph(_) | Prose::List { .. } => (0.0, theme::SPACE_3),
+        Prose::Paragraph(_) | Prose::List { .. } => (0.0, BLOCK_GAP),
     }
 }
 
@@ -65,8 +70,8 @@ fn draw(ui: &mut Ui, blocks: &[Prose], depth: usize, ticked: &mut Ticked) {
 fn heading_font(level: u8) -> (FontId, f32) {
     match level {
         1 => (theme::read_h1(), H1_LINE),
-        2 => (theme::ui_title(), H2_LINE),
-        _ => (semibold(theme::read_body().size), BODY_LINE),
+        2 => (theme::read_h2(), H2_LINE),
+        _ => (theme::read_h3(), H3_LINE),
     }
 }
 
@@ -74,13 +79,8 @@ fn semibold(size: f32) -> FontId {
     FontId::new(size, theme::read_h1().family)
 }
 
-/// The widest a paragraph gets: 68ch.
-fn measure(ui: &Ui) -> f32 {
-    MEASURE_CH * ui.fonts_mut(|fonts| fonts.glyph_width(&theme::read_body(), '0'))
-}
-
 fn paragraph(ui: &mut Ui, spans: &[Span]) {
-    let width = ui.available_width().min(measure(ui));
+    let width = ui.available_width().min(theme::READ_MEASURE);
     ui.allocate_ui(Vec2::new(width, 0.0), |ui| {
         inline(ui, spans, &theme::read_body(), BODY_LINE);
     });
@@ -89,7 +89,7 @@ fn paragraph(ui: &mut Ui, spans: &[Span]) {
 fn list(ui: &mut Ui, start: Option<u64>, items: &[Item], depth: usize, ticked: &mut Ticked) {
     for (index, item) in items.iter().enumerate() {
         if index > 0 {
-            ui.add_space(theme::SPACE_3);
+            ui.add_space(BLOCK_GAP);
         }
         let number = start.map(|start| start + index as u64);
         let row = Vec2::new(ui.available_width(), 0.0);

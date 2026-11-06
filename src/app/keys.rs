@@ -306,19 +306,19 @@ impl IboardApp {
         {
             self.go(to);
         }
-        // A double-click on the page (not the header) edits, as `E` does.
+        // A double-click on the page (not the header) edits at that line.
         if cx.editable
             && !self.writing_note()
             && let Place::Issue(path, DetailMode::Preview) = cx.place
-            && ctx.input(|i| {
+            && let Some(pos) = ctx.input(|i| {
                 i.pointer
                     .button_double_clicked(egui::PointerButton::Primary)
-                    && i.pointer
-                        .interact_pos()
-                        .is_some_and(|pos| self.reader.preview_rect.contains(pos))
+                    .then(|| i.pointer.interact_pos())
+                    .flatten()
+                    .filter(|pos| self.reader.preview_rect.contains(*pos))
             })
         {
-            self.start_editing(&path);
+            self.edit_at_line(&path, self.reader.line_at(pos.y));
         }
     }
 

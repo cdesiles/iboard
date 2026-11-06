@@ -393,4 +393,6 @@ fn the_editor_status_puts_the_save_state_on_the_right() {
         .find_map(|word| in_status_bar(&harness, word).first().copied())
         .expect("the save state shows");
     assert!(pill.min.x > window().center().x, "{pill:?}");
+    let shown = harness.query_all_by_label("Saved").count();
+    assert_eq!(shown, 1, "the sheet does not repeat it");
 }

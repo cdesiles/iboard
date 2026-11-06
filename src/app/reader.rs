@@ -1,8 +1,7 @@
-//! The reader: an issue's page, its sheet head, and what it still lacks.
+//! The reader: an issue's page and what it still lacks.
 
 use std::ops::Range;
 
-use super::board::status_color;
 use super::comments::{NoteAction, Notes, block_notes, outdated_notes};
 use super::groups;
 use super::intent::Intent;
@@ -10,7 +9,7 @@ use super::prose as prose_ui;
 use super::{
     Align, ButtonKind, Color32, CommonMarkCache, CommonMarkViewer, CornerRadius, Frame, HashSet,
     IboardApp, Icon, Labels, Layout, Path, PathBuf, Pos2, Rect, RichText, Sense, Stroke,
-    StrokeKind, Vec2, images, relative_time, settings, sheet, theme, widgets,
+    StrokeKind, Vec2, images, settings, sheet, theme, widgets,
 };
 use iboard::{markdown, preferences, prose};
 
@@ -37,6 +36,9 @@ pub(super) struct Reader {
     /// The rendered issue content, used to tell a double-click on the page
     /// from one on the header when deciding whether to start editing.
     pub(super) preview_rect: Rect,
+    /// Where each block of the issue was drawn, for a double-click to find
+    /// its line.
+    blocks: Vec<BlockLines>,
     /// The images already reported missing, by issue and link.
     pub(super) reported: HashSet<(PathBuf, String)>,
     /// The issue whose `read-h1` has scrolled out of view: its title joins
@@ -49,10 +51,34 @@ impl Default for Reader {
         Self {
             cache: CommonMarkCache::default(),
             preview_rect: Rect::NOTHING,
+            blocks: Vec::new(),
             reported: HashSet::new(),
             title_away: None,
         }
     }
+}
+
+impl Reader {
+    /// The line of the file drawn at height `y`: the block's first for prose,
+    /// and in a block of several lines the one as far down as `y` is. Between
+    /// blocks, the next one's.
+    pub(super) fn line_at(&self, y: f32) -> Option<usize> {
+        let block = self
+            .blocks
+            .iter()
+            .find(|block| y <= block.rect.bottom())
+            .or(self.blocks.last())?;
+        let down = (y - block.rect.top()) / block.rect.height().max(1.0);
+        let within = (down.clamp(0.0, 1.0) * block.lines as f32) as usize;
+        Some(block.first + within.min(block.lines.saturating_sub(1)))
+    }
+}
+
+/// One block of the issue on the page, and the lines of the file it holds.
+struct BlockLines {
+    rect: Rect,
+    first: usize,
+    lines: usize,
 }
 
 impl IboardApp {
@@ -183,29 +209,20 @@ impl IboardApp {
     }
 
     /// The reader sheet: a `surface` page that reaches down to the status bar.
-    /// A meta head (column, path, modified, checklist progress or words), the
-    /// rendered markdown, ghost blocks for missing standard sections, and the
-    /// empty rest of the sheet, which edits at the end of the file.
-    /// Checkboxes are live: ticking one writes the file. Double-clicking the
-    /// text opens the editor.
+    /// The labels, the rendered markdown, ghost blocks for missing standard
+    /// sections, and the empty rest of the sheet, which edits at the end of
+    /// the file. Checkboxes are live: ticking one writes the file.
+    /// Double-clicking the text opens the editor at that line.
     pub(super) fn detail_preview(&mut self, ui: &mut egui::Ui, path: &Path) {
         let Some(issue) = self.board.find(path) else {
             return;
         };
         // The title's `[label]` groups show as tags above it, not as text.
         let (text, title_line) = sheet::hide_title_labels(&issue.markdown);
-        let p = theme::palette(ui);
-        let (column, status, todo_issue) = self
+        let todo_issue = self
             .board
             .column_of(path)
-            .map(|column| {
-                (
-                    column.name.clone(),
-                    status_color(p, column),
-                    column.accepts_new_issues(),
-                )
-            })
-            .unwrap_or_else(|| (String::new(), p.status_todo, false));
+            .is_some_and(|column| column.accepts_new_issues());
         let sections = &self.board.reader_sections;
         // Only Todo issues are still being written: Ready, Doing and Done
         // ones never get the "Not written yet" block.
@@ -224,14 +241,6 @@ impl IboardApp {
         );
         let sheet = SheetView {
             path,
-            head: SheetHead {
-                column: &column,
-                status,
-                path: &self.relative(path),
-                modified: issue.modified,
-                checklist: sheet::checklist(&text),
-                words: sheet::word_count(&text),
-            },
             labels: issue.labels.clone(),
             active_labels: self.filter_bar.filter.tokens.clone(),
             text: &text,
@@ -265,6 +274,7 @@ impl IboardApp {
             self.reader.title_away = away;
             ui.ctx().request_repaint();
         }
+        self.reader.blocks = outcome.blocks;
 
         self.report_missing_images(path, &outcome.missing);
         if !outcome.edits.is_empty() {
@@ -282,7 +292,7 @@ impl IboardApp {
         self.apply(intents);
     }
 
-    /// The scrolling sheet: its head, the labels, the issue's blocks with
+    /// The scrolling sheet: the labels, the issue's blocks with
     /// their comments, and the empty rest that edits at the end of the file.
     fn reader_sheet(
         &mut self,
@@ -303,6 +313,7 @@ impl IboardApp {
             edits: Vec::new(),
             missing: Vec::new(),
             title_away: false,
+            blocks: Vec::new(),
         };
         let mut note_actions = Vec::new();
         let cache = &mut self.reader.cache;
@@ -316,8 +327,7 @@ impl IboardApp {
             |ui| {
                 page(ui, |ui| {
                     let top = ui.cursor().min.y;
-                    let inner_height = layout.sheet_height - 2.0 * theme::SPACE_6 - 2.0;
-                    sheet_head(ui, sheet.head);
+                    let inner_height = layout.sheet_height - 2.0 * theme::SPACE_7;
                     if let Some(label) = label_row(ui, sheet, labels) {
                         intents.push(Intent::ShowLabel(label));
                     }
@@ -325,11 +335,14 @@ impl IboardApp {
                         // The body spans the sheet, so a short issue still
                         // gets an outline wide enough for its legend.
                         ui.set_min_width(ui.available_width());
-                        // Reading sizes: `read-body` 14, `read-h1` 20.
+                        // What the markdown viewer draws, in the reading sizes.
                         let styles = &mut ui.style_mut().text_styles;
                         styles.insert(egui::TextStyle::Body, theme::read_body());
                         styles.insert(egui::TextStyle::Heading, theme::read_h1());
-                        styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.5));
+                        styles.insert(
+                            egui::TextStyle::Monospace,
+                            egui::FontId::monospace(prose_ui::CODE_SIZE),
+                        );
                         ui.spacing_mut().item_spacing.y = 0.0;
                         let drawn = issue_blocks(ui, cache, path, sheet.text, notes.as_mut());
                         outcome.edits = drawn.edits;
@@ -338,11 +351,12 @@ impl IboardApp {
                         outcome.title_away =
                             drawn.title_bottom.is_none_or(|bottom| bottom < view_top);
                         note_actions = drawn.actions;
+                        outcome.blocks = drawn.blocks;
                     });
                     outcome.body = body.response.rect;
 
-                    // The rest of the sheet: empty, and a click edits at the
-                    // end of the file.
+                    // The rest of the sheet: empty, and a double-click edits
+                    // at the end of the file.
                     let used = ui.cursor().min.y - top;
                     let rest_height = (inner_height - used).max(56.0);
                     let (rest, response) = ui.allocate_exact_size(
@@ -351,7 +365,10 @@ impl IboardApp {
                     );
                     if sheet.editable {
                         let response = response.on_hover_cursor(egui::CursorIcon::Text);
-                        if response.clicked() {
+                        response.widget_info(|| {
+                            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, REST_HINT)
+                        });
+                        if response.double_clicked() {
                             intents.push(Intent::EditAtEnd(path.to_path_buf()));
                         }
                         paint_rest_hint(ui, rest);
@@ -372,7 +389,6 @@ impl IboardApp {
 /// What the reader sheet shows of one issue.
 struct SheetView<'a> {
     path: &'a Path,
-    head: SheetHead<'a>,
     labels: Vec<String>,
     /// The labels the board is filtered by: they show as active.
     active_labels: Vec<String>,
@@ -393,6 +409,7 @@ struct SheetOutcome {
     missing: Vec<String>,
     /// The page's title is out of view, scrolled away or never there.
     title_away: bool,
+    blocks: Vec<BlockLines>,
 }
 
 /// What drawing the issue's blocks did.
@@ -402,6 +419,7 @@ struct DrawnBlocks {
     missing: Vec<String>,
     /// Where the first `# ` heading ends, if there is one.
     title_bottom: Option<f32>,
+    blocks: Vec<BlockLines>,
 }
 
 /// The reader's two blocks: the sheet, and under it the "Not written yet"
@@ -488,16 +506,14 @@ impl ReaderLayout {
     }
 }
 
-/// The labels, on their own row between the head and the title. Returns the
-/// one clicked, to filter the board by.
+/// The labels, on their own row above the title. Returns the one clicked, to
+/// filter the board by.
 fn label_row(ui: &mut egui::Ui, sheet: &SheetView, labels: &Labels) -> Option<String> {
     let names = &sheet.labels;
     if names.is_empty() {
         return None;
     }
     let mut clicked = None;
-    // The row sits closer to the rule than the title does without labels.
-    ui.add_space(-theme::SPACE_3);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
         for name in names.iter().filter(|name| !name.starts_with("group:")) {
@@ -512,9 +528,12 @@ fn label_row(ui: &mut egui::Ui, sheet: &SheetView, labels: &Labels) -> Option<St
             }
         }
     });
-    ui.add_space(theme::SPACE_3 - ui.spacing().item_spacing.y);
+    ui.add_space(LABELS_BELOW - ui.spacing().item_spacing.y);
     clicked
 }
+
+/// Between the labels and the title.
+const LABELS_BELOW: f32 = 10.0;
 
 /// Hovering the text shows that it is one edit target: a `line-strong`
 /// outline with the hint on its top edge.
@@ -569,6 +588,7 @@ fn issue_blocks(
     let mut edits = Vec::new();
     let mut actions = Vec::new();
     let mut missing = Vec::new();
+    let mut drawn = Vec::new();
     let mut below: f32 = 0.0;
     let mut title_bottom = None;
     for (index, range) in blocks.iter().enumerate() {
@@ -595,6 +615,11 @@ fn issue_blocks(
                 None => viewer_block(ui, cache, path, block, &mut missing),
             })
             .inner;
+        drawn.push(BlockLines {
+            rect: shown.rect,
+            first: text[..range.start].matches('\n').count(),
+            lines: block.trim_end().lines().count(),
+        });
         if title_bottom.is_none() && block.trim_start().starts_with("# ") {
             title_bottom = Some(shown.rect.bottom());
         }
@@ -615,6 +640,7 @@ fn issue_blocks(
         actions,
         missing,
         title_bottom,
+        blocks: drawn,
     }
 }
 
@@ -812,7 +838,11 @@ fn draft_with_review(ui: &mut egui::Ui, review_ready: bool) -> bool {
     }
 }
 
-/// The reader's `surface` page: `reader-max` wide, centred, 24×32 padding.
+/// The sheet's edge, inside its 32pt padding.
+const SHEET_EDGE: f32 = 1.0;
+
+/// The reader's `surface` page: `reader-max` wide, centred, 32pt in from its
+/// edge to a `read-measure` text column.
 pub(super) fn page<R>(
     ui: &mut egui::Ui,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
@@ -821,68 +851,14 @@ pub(super) fn page<R>(
         let p = theme::palette(ui);
         Frame::new()
             .fill(p.surface)
-            .stroke(Stroke::new(1.0, p.line_soft))
+            .stroke(Stroke::new(SHEET_EDGE, p.line_soft))
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-            .inner_margin(Vec2::new(theme::SPACE_7, theme::SPACE_6))
+            .inner_margin(theme::SPACE_7 - SHEET_EDGE)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 add_contents(ui)
             })
     })
-}
-
-/// What the reader sheet's head strip shows.
-#[derive(Clone, Copy)]
-struct SheetHead<'a> {
-    column: &'a str,
-    status: Color32,
-    path: &'a str,
-    modified: Option<std::time::SystemTime>,
-    /// `(ticked, total)` checkboxes; with none, the word count shows instead.
-    checklist: (usize, usize),
-    words: usize,
-}
-
-/// The sheet's `meta` head: the column as a status mark and the file path on
-/// the left, "modified 1h ago" and checklist progress (or the word count) on
-/// the right, over a `line` rule.
-fn sheet_head(ui: &mut egui::Ui, head: SheetHead) {
-    let p = theme::palette(ui);
-    let meta = |text: String, color: Color32| {
-        egui::Label::new(RichText::new(text).font(theme::meta()).color(color))
-    };
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
-        if !head.column.is_empty() {
-            column_mark(ui, head.column, head.status);
-            ui.add(meta("·".into(), p.ink_faint));
-        }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let (ticked, total) = head.checklist;
-            if total > 0 {
-                ui.add(meta(format!("{ticked}/{total} done"), p.ink_muted));
-                ui.spacing_mut().item_spacing.x = 6.0;
-                widgets::meter(ui, ticked, total);
-                ui.spacing_mut().item_spacing.x = 10.0;
-            } else {
-                let unit = if head.words == 1 { "word" } else { "words" };
-                ui.add(meta(format!("{} {unit}", head.words), p.ink_muted));
-            }
-            if let Some(modified) = head.modified {
-                ui.add(meta("·".into(), p.ink_faint));
-                ui.add(meta(
-                    format!("modified {}", relative_time(modified)),
-                    p.ink_muted,
-                ));
-            }
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.add(meta(head.path.to_string(), p.ink_muted).truncate());
-            });
-        });
-    });
-    ui.add_space(theme::SPACE_4);
-    sheet_rule(ui);
-    ui.add_space(20.0);
 }
 
 /// A sheet head's column: its status dot and its name in capitals.
@@ -908,12 +884,14 @@ pub(super) fn sheet_rule(ui: &mut egui::Ui) {
         .hline(rule.x_range(), rule.center().y, Stroke::new(1.0, line));
 }
 
-/// "Click below the text to keep writing" in `ink-faint`, at the foot of the
-/// empty rest of the sheet, with its key `E` while ⌘ is held.
-pub(super) fn paint_rest_hint(ui: &egui::Ui, rest: Rect) {
+/// At the foot of the empty rest of the sheet.
+const REST_HINT: &str = "Double-click below the text to keep writing";
+
+/// [`REST_HINT`] in `ink-faint`, with its key `E` while ⌘ is held.
+fn paint_rest_hint(ui: &egui::Ui, rest: Rect) {
     let p = theme::palette(ui);
     let text = egui::WidgetText::from(
-        RichText::new("Click below the text to keep writing")
+        RichText::new(REST_HINT)
             .font(theme::ui_small())
             .color(p.ink_faint),
     )

@@ -3,9 +3,8 @@
 use super::reader::page_column;
 use super::{
     Align, ButtonKind, CCursor, CCursorRange, Color32, CornerRadius, DetailMode, Duration, Frame,
-    IboardApp, Instant, Layout, LeaveChoice, Margin, Palette, Path, PathBuf, RichText, Screen,
-    Stroke, Vec2, atomic_write, discovery, file_name, files, normalize_file_name, sheet, theme,
-    widgets,
+    IboardApp, Instant, LeaveChoice, Margin, Palette, Path, PathBuf, RichText, Screen, Stroke,
+    Vec2, atomic_write, discovery, file_name, files, normalize_file_name, sheet, theme, widgets,
 };
 
 /// How long after the last keystroke an edit is written to disk.
@@ -26,6 +25,9 @@ pub(super) struct EditorState {
     conflict: Option<String>,
     last_edit: Option<Instant>,
     pub(super) error: Option<String>,
+    /// The line the caret lands on when the field next takes focus; without
+    /// one, the end of the file.
+    caret_line: Option<usize>,
 }
 
 impl EditorState {
@@ -40,6 +42,7 @@ impl EditorState {
             conflict: None,
             last_edit: None,
             error: None,
+            caret_line: None,
         }
     }
 
@@ -213,6 +216,15 @@ impl IboardApp {
         self.session.stop_editing();
     }
 
+    /// The editor on `path`, the caret on `line` when there is one.
+    pub(super) fn edit_at_line(&mut self, path: &Path, line: Option<usize>) {
+        self.start_editing(path);
+        if let Some(editor) = self.session.editor.as_mut().filter(|e| e.path == path) {
+            editor.caret_line = line;
+            self.session.focus_editor = true;
+        }
+    }
+
     pub(super) fn start_editing(&mut self, path: &Path) {
         if self.can_edit(path) {
             self.open_editor(path);
@@ -357,8 +369,8 @@ impl IboardApp {
     }
 }
 
-/// The editor's bar: the folder and the file name, editable, with the save
-/// state on the right. Save and Discard live in the header.
+/// The editor's bar: the folder and the file name, editable. Save and Discard
+/// live in the header, the save state in the status bar.
 fn editor_bar(ui: &mut egui::Ui, editor: &mut EditorState, folder: &str) {
     let p = theme::palette(ui);
     ui.horizontal(|ui| {
@@ -378,10 +390,6 @@ fn editor_bar(ui: &mut egui::Ui, editor: &mut EditorState, folder: &str) {
             editor.mark_edited();
             ui.ctx().request_repaint_after(AUTOSAVE_AFTER);
         }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let (word, color) = save_state(editor, p);
-            widgets::pill(ui, word, color);
-        });
     });
 }
 
@@ -442,10 +450,11 @@ pub(super) const EDITOR_ID: &str = "editor_body";
 const FRAME_W: f32 = 2.0;
 
 /// The text itself, in a 2pt `accent` frame filling the window, inset as far as
-/// the Reader's text. A freshly created issue gets the caret after its title.
+/// the Reader's text. Asked to focus, it puts the caret on the line asked for
+/// and brings it into view, or after a freshly created issue's title.
 fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
     let p = theme::palette(ui);
-    let rows = ((ui.available_height() - 2.0 * theme::SPACE_6) / 20.0).max(8.0) as usize;
+    let rows = ((ui.available_height() - 2.0 * theme::SPACE_7) / 20.0).max(8.0) as usize;
     Frame::new()
         .fill(p.surface)
         .stroke(Stroke::new(FRAME_W, p.accent))
@@ -456,8 +465,8 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                 egui::ScrollArea::vertical()
                     .id_salt(("editor_scroll", &editor.path))
                     .content_margin(theme::scroll_margin(
-                        theme::SPACE_7 + 1.0 - FRAME_W,
-                        theme::SPACE_6 + 1.0 - FRAME_W,
+                        theme::SPACE_7 - FRAME_W,
+                        theme::SPACE_7 - FRAME_W,
                     ))
                     .auto_shrink([false, false]),
                 |ui| {
@@ -472,13 +481,19 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                         .desired_rows(rows)
                         .show(ui);
                     if focus {
-                        let end = CCursor::new(editor.text.chars().count());
+                        let line = editor.caret_line.take();
+                        let caret = CCursor::new(caret_char(&editor.text, line));
                         output
                             .state
                             .cursor
-                            .set_char_range(Some(CCursorRange::one(end)));
+                            .set_char_range(Some(CCursorRange::one(caret)));
                         output.state.store(ui.ctx(), id);
                         output.response.request_focus();
+                        if line.is_some() {
+                            let at = output.galley.pos_from_cursor(caret);
+                            let at = at.translate(output.galley_pos.to_vec2());
+                            ui.scroll_to_rect(at, Some(Align::Center));
+                        }
                     }
                     if output.response.changed() {
                         editor.mark_edited();
@@ -487,6 +502,17 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                 },
             );
         });
+}
+
+/// Where the caret goes: the start of `line`, or the end of `text`.
+fn caret_char(text: &str, line: Option<usize>) -> usize {
+    let Some(line) = line else {
+        return text.chars().count();
+    };
+    text.split_inclusive('\n')
+        .take(line)
+        .map(|line| line.chars().count())
+        .sum()
 }
 
 /// The editor's save state as a pill word and its colour.
