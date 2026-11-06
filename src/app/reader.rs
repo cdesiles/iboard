@@ -13,7 +13,7 @@ use super::{
 };
 use iboard::{markdown, preferences, prose};
 
-/// The narrowest a pane beside the Reader leaves it (`column-min`).
+/// The narrowest a pane beside the Reader leaves it.
 const PANE_MIN: f32 = 280.0;
 
 /// Width of the AI review panel beside the reader or editor page.
@@ -36,6 +36,13 @@ pub(super) struct Reader {
     /// The rendered issue content, used to tell a double-click on the page
     /// from one on the header when deciding whether to start editing.
     pub(super) preview_rect: Rect,
+    /// `preview_rect` where it shows: a long page runs on under the bars and
+    /// the "Not written yet" block.
+    pub(super) sheet_rect: Rect,
+    /// When the pointer last went down off the sheet.
+    pub(super) stray_press: f64,
+    /// What a key asked of the page's scroll, and whether down.
+    pub(super) scroll: Option<(Stride, bool)>,
     /// Where each block of the issue was drawn, for a double-click to find
     /// its line.
     blocks: Vec<BlockLines>,
@@ -51,6 +58,9 @@ impl Default for Reader {
         Self {
             cache: CommonMarkCache::default(),
             preview_rect: Rect::NOTHING,
+            sheet_rect: Rect::NOTHING,
+            stray_press: f64::NEG_INFINITY,
+            scroll: None,
             blocks: Vec::new(),
             reported: HashSet::new(),
             title_away: None,
@@ -73,6 +83,20 @@ impl Reader {
         Some(block.first + within.min(block.lines.saturating_sub(1)))
     }
 }
+
+/// How far a key scrolls the Reader's page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Stride {
+    /// `↑ ↓`: [`LINE_STRIDE`].
+    Line,
+    /// `space`, `fn ↑ ↓`: [`PAGE_STRIDE`] of the pane, as a click in the
+    /// scrollbar's strip.
+    Page,
+}
+
+/// Two lines of `read-body`.
+const LINE_STRIDE: f32 = 48.0;
+const PAGE_STRIDE: f32 = 0.9;
 
 /// One block of the issue on the page, and the lines of the file it holds.
 struct BlockLines {
@@ -265,10 +289,15 @@ impl IboardApp {
             });
         }
         let outline = outcome.body.expand(theme::SPACE_3);
-        if sheet.editable && ui.rect_contains_pointer(outline) {
-            paint_edit_outline(ui, outline);
+        let hovered = sheet.editable && ui.rect_contains_pointer(outline);
+        let fade = widgets::hover_fade(ui.ctx(), egui::Id::new("reader_edit_outline"), hovered);
+        if fade > 0.0 {
+            let mut faded = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
+            faded.multiply_opacity(fade);
+            paint_edit_outline(&faded, outline);
         }
         self.reader.preview_rect = outline;
+        self.reader.sheet_rect = outline.intersect(outcome.view);
         let away = outcome.title_away.then(|| path.to_path_buf());
         if self.reader.title_away != away {
             self.reader.title_away = away;
@@ -310,15 +339,23 @@ impl IboardApp {
         };
         let mut outcome = SheetOutcome {
             body: Rect::NOTHING,
+            view: Rect::NOTHING,
             edits: Vec::new(),
             missing: Vec::new(),
             title_away: false,
             blocks: Vec::new(),
         };
         let mut note_actions = Vec::new();
+        let scroll = self.reader.scroll.take().map(|(stride, down)| {
+            let by = match stride {
+                Stride::Line => LINE_STRIDE,
+                Stride::Page => PAGE_STRIDE * layout.scroll_height,
+            };
+            if down { by } else { -by }
+        });
         let cache = &mut self.reader.cache;
         let labels = &self.prefs.labels;
-        theme::scroll_area(
+        outcome.view = theme::scroll_area(
             ui,
             egui::ScrollArea::vertical()
                 .id_salt(("detail", path))
@@ -374,8 +411,13 @@ impl IboardApp {
                         paint_rest_hint(ui, rest);
                     }
                 });
+                if let Some(by) = scroll {
+                    let delta = Vec2::new(0.0, -by);
+                    ui.scroll_with_delta_animation(delta, egui::style::ScrollAnimation::none());
+                }
             },
-        );
+        )
+        .inner_rect;
         if notes.is_some() {
             self.session.notes = notes;
         }
@@ -403,6 +445,8 @@ struct SheetView<'a> {
 struct SheetOutcome {
     /// Where the issue's text was drawn, for the edit outline.
     body: Rect,
+    /// The part of the pane the page scrolls in.
+    view: Rect,
     /// The blocks a ticked checkbox changed.
     edits: Vec<(Range<usize>, String)>,
     /// The links of the images that could not be shown.

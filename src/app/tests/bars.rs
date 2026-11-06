@@ -87,6 +87,22 @@ fn board_of_every_column(dir: &Path) -> Board {
     harness
 }
 
+/// With Auto on the board reads itself: the idle hints don't offer `⌘R`.
+#[test]
+fn the_idle_hints_offer_refresh_only_with_auto_off() {
+    let dir = scratch_dir("refresh-hint");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut harness = board(&dir);
+    harness.state_mut().1.prefs.auto = true;
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    harness.run_steps(7);
+    assert!(harness.query_by_label("filter").is_some());
+    assert!(harness.query_by_label("refresh").is_none(), "Auto on");
+    harness.state_mut().1.prefs.auto = false;
+    harness.run_steps(2);
+    assert!(harness.query_by_label("refresh").is_some(), "Auto off");
+}
+
 /// How many of the status bar's possible hints show.
 fn hints_shown(harness: &Board) -> usize {
     [

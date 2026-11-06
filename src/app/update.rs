@@ -3,7 +3,7 @@
 //! rewritten as things are. Its answer is a review, in the same panel; Apply
 //! opens the editor with the update, and saving it is the accept.
 
-use super::review::ReviewTarget;
+use super::review::{ReviewTarget, RunKind};
 use super::{IboardApp, Path, ReviewMode, prompts};
 
 impl IboardApp {
@@ -28,24 +28,25 @@ impl IboardApp {
             path: path.to_path_buf(),
             draft: false,
             mode: ReviewMode::Deep,
+            kind: RunKind::Update,
         };
         self.run_review(target, &content, prompt);
     }
 
     /// The button and `⌘U`: starts an update, or cancels the one running; with
-    /// no agent set up, Settings open instead.
+    /// no agent set up, Settings open instead. A run on an issue that reached
+    /// Done can still be cancelled or shown.
     pub(super) fn toggle_update(&mut self, path: &Path) {
-        if !self.updatable(path) {
-            return;
-        }
         if self.session.review_runs.is_ready(path) {
             self.show_past_review(path.to_path_buf());
         } else if self.review_is_running(path) {
             self.cancel_review_run(path);
-        } else if !self.prefs.agent.configured() {
-            self.open_config();
-        } else {
-            self.start_update(path);
+        } else if self.updatable(path) {
+            if self.prefs.agent.configured() {
+                self.start_update(path);
+            } else {
+                self.open_config();
+            }
         }
     }
 }

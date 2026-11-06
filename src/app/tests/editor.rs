@@ -95,6 +95,25 @@ fn editing_with_unsaved_change(tag: &str, auto: bool) -> (Scratch, PathBuf, Iboa
     (dir, file, app)
 }
 
+/// The leave prompt's Save is filled, and the header's gives up its fill.
+#[test]
+fn the_leave_prompt_keeps_one_filled_button() {
+    let (_dir, _file, mut app) = editing_with_unsaved_change("leave-fill", false);
+    let ctx = themed_ctx();
+    let fills = |ctx: &egui::Context, app: &mut IboardApp| {
+        draw(ctx, app, vec![]);
+        let (p, shapes) = painted(ctx, app, vec![]);
+        shapes
+            .iter()
+            .filter(|shape| matches!(shape, egui::Shape::Rect(rect) if rect.fill == p.primary))
+            .count()
+    };
+    assert_eq!(fills(&ctx, &mut app), 1, "the header's Save");
+    app.back_to_board();
+    assert!(app.session.leave_prompt.is_some());
+    assert_eq!(fills(&ctx, &mut app), 1, "the prompt's Save alone");
+}
+
 #[test]
 fn leaving_with_auto_on_saves() {
     let (_dir, file, mut app) = editing_with_unsaved_change("leave-auto", true);

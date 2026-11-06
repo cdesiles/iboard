@@ -299,9 +299,10 @@ fn column_head(
         egui::Id::new(("column_head", view.index)),
         hovered,
     );
+    let acts = has_actions(view, visible);
     head.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-        if hovered {
+        if hovered && acts {
             ui.multiply_opacity(fade);
             column_actions(ui, view, visible, intents);
             return;
@@ -330,6 +331,17 @@ fn column_head(
 
 /// The hovered header's actions, right to left: Todo's `+`, Ready's play,
 /// Doing's agents and Done's archive.
+/// Whether [`column_actions`] has anything to offer in place of the count.
+fn has_actions(view: &ColumnView, visible: &[&Issue]) -> bool {
+    let column = view.column;
+    let builds = discovery::is_ready_column(&column.dir)
+        && (view.builds.active() || visible.iter().any(|issue| build::buildable(issue)));
+    column.accepts_new_issues()
+        || builds
+        || discovery::is_doing_column(&column.dir)
+        || column.name.eq_ignore_ascii_case("done") && !visible.is_empty()
+}
+
 fn column_actions(
     ui: &mut egui::Ui,
     view: &ColumnView,

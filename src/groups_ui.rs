@@ -23,6 +23,12 @@ const ADD_LIST_MAX_H: f32 = 8.0 * 40.0;
 /// How long a row already in the group flashes.
 const FLASH_SECONDS: f64 = 1.2;
 
+/// How strong the flash is with `left` of it to go, from 1 to 0: with reduced
+/// motion it holds steady, then goes at once.
+fn flash_strength(left: f64, reduced: bool) -> f32 {
+    if reduced { 1.0 } else { left as f32 }
+}
+
 const HELP: &str = "Each group is a board of its own projects. Removing a project here never touches its issues/ folder.";
 
 /// What the dialog asks of the app this frame.
@@ -563,13 +569,19 @@ impl Dialog {
             return;
         }
         let p = theme::palette(ui);
+        let reduced = theme::reduced_motion(ui.ctx());
         ui.painter().rect_stroke(
             rect,
             CornerRadius::same(theme::RADIUS_SM),
-            Stroke::new(1.5, p.accent.gamma_multiply(left as f32)),
+            Stroke::new(1.5, p.accent.gamma_multiply(flash_strength(left, reduced))),
             egui::StrokeKind::Inside,
         );
-        ui.ctx().request_repaint();
+        if reduced {
+            let rest = std::time::Duration::from_secs_f64(left * FLASH_SECONDS);
+            ui.ctx().request_repaint_after(rest);
+        } else {
+            ui.ctx().request_repaint();
+        }
     }
 
     /// The Add project menu under the group's button: the user's projects
@@ -698,5 +710,16 @@ impl Dialog {
             widgets::Answer::Cancelled => self.deleting = None,
             widgets::Answer::Pending => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_flash_holds_steady_under_reduced_motion() {
+        assert_eq!(flash_strength(0.5, false), 0.5);
+        assert_eq!(flash_strength(0.5, true), 1.0);
     }
 }

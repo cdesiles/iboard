@@ -183,9 +183,14 @@ impl IboardApp {
     fn detail_controls(&mut self, ui: &mut egui::Ui, path: &Path) {
         let path = path.to_path_buf();
         let exists = self.board.find(&path).is_some();
+        // The leave prompt's Save is the screen's one fill while it asks.
+        let save = match self.session.leave_prompt {
+            Some(_) => ButtonKind::Secondary,
+            None => ButtonKind::Primary,
+        };
         if self.session.editing().is_some()
             && exists
-            && widgets::button(ui, ButtonKind::Primary, None, "Save", Some("⌘S"))
+            && widgets::button(ui, save, None, "Save", Some("⌘S"))
                 .on_hover_text("Save this issue  ⌘S")
                 .clicked()
         {

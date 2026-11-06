@@ -13,7 +13,7 @@ const LONG: &str = "This paragraph runs on for long enough that it has to wrap a
 
 /// The app in frames short enough for two clicks to make a double-click: the
 /// harness gives every pointer event a frame of its own.
-fn kit(app: IboardApp) -> Kit {
+pub(super) fn kit(app: IboardApp) -> Kit {
     let builder = egui_kittest::Harness::builder()
         .with_size(window().size())
         .with_step_dt(0.02);
@@ -105,7 +105,7 @@ fn the_editor_starts_its_text_where_the_reader_does() {
 }
 
 /// Two clicks at `pos`.
-fn double_click(harness: &mut Kit, pos: egui::Pos2) {
+pub(super) fn double_click(harness: &mut Kit, pos: egui::Pos2) {
     harness.event(moved(pos));
     harness.step();
     for _ in 0..2 {

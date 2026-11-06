@@ -731,6 +731,55 @@ fn an_update_rewrites_a_doing_issue_through_the_editor() {
     );
 }
 
+/// An update on a Todo issue is called one, running and ready, not a review.
+#[test]
+fn an_update_on_todo_says_updating_and_update_ready() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, file, mut harness) = reviewing("update-words", "sleep 30 # {prompt}");
+    harness.state_mut().1.start_update(&file);
+    harness.run_steps(2);
+    harness.get_by_label("Updating…");
+    harness.state_mut().1.open_issue(file.clone());
+    harness.run_steps(2);
+    harness.get_by_label_contains("Updating…");
+    assert!(harness.query_by_label_contains("Reviewing…").is_none());
+    harness.state_mut().1.cancel_review_run(&file);
+    harness.state_mut().1.back_to_board();
+
+    harness.state_mut().1.prefs.agent = fake_agent(PASSING);
+    harness.state_mut().1.start_update(&file);
+    land(&mut harness, &file);
+    harness.get_by_label("Update ready");
+    assert!(harness.query_by_label("Review ready").is_none());
+}
+
+/// An issue that reached Done has no split button, but the runs already going
+/// on it keep what stops or shows them.
+#[test]
+fn a_run_on_an_issue_that_reached_done_keeps_its_controls() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, file, mut harness) = reviewing("update-done", "sleep 30 # {prompt}");
+    let done = dir.join("issues/done");
+    std::fs::create_dir_all(&done).unwrap();
+    harness.state_mut().1.refresh();
+    let app = &mut harness.state_mut().1;
+    app.prefs.build_agent = fake_agent("sleep 30 # {prompt}");
+    app.start_update(&file);
+    app.toggle_ask(&file);
+    app.session.ask_draft.as_mut().unwrap().request = "Go on".to_string();
+    app.send_ask();
+    let moved = app.move_issue(&file, &done).expect("it moves");
+    app.open_issue(moved.clone());
+    harness.run_steps(2);
+    assert!(harness.query_by_label("AI actions").is_none());
+    harness.get_by_label_contains("Asking…").click();
+    harness.run_steps(2);
+    assert!(!harness.state().1.asking(&moved));
+    harness.get_by_label_contains("Updating…").click();
+    harness.run_steps(2);
+    assert!(!harness.state().1.review_is_running(&moved));
+}
+
 /// `⌘U` starts Update with AI on the open issue, and a second one cancels it.
 #[test]
 fn cmd_u_starts_and_cancels_an_update() {

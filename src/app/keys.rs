@@ -3,6 +3,7 @@
 //! list of [`Command`]s, applied in order.
 
 use super::editor::EditorState;
+use super::reader::Stride;
 use super::{
     Confirm, DetailMode, IboardApp, Instant, Job, Key, LeaveChoice, PathBuf, RESCAN_EVERY, Screen,
     Vec2, job, quitting, scan, settings_ui, widgets,
@@ -20,10 +21,15 @@ struct KeyContext {
     place: Place,
     /// The open issue's text can be edited.
     editable: bool,
-    /// The open issue is in Todo, so it can be refined and reviewed.
+    /// The open issue or the selected card is in Todo, so it can be refined
+    /// and reviewed.
     refinable: bool,
     /// The review panel shows a proposal to apply.
     proposal: bool,
+    /// Settings › General's Auto: the board reloads itself.
+    auto: bool,
+    /// A menu is open and takes the plain keys.
+    popup: bool,
 }
 
 /// The screen the keys act on.
@@ -44,8 +50,8 @@ impl Place {
         }
     }
 
-    /// What `⌘U`, `⌘K` and `Del` act on: the card selected on the board, or
-    /// the issue the reader shows.
+    /// What `Del` acts on: the card selected on the board, or the issue the
+    /// reader shows.
     fn target(&self) -> Option<&PathBuf> {
         match self {
             Place::Board(selected) => selected.as_ref().map(|(path, _)| path),
@@ -65,7 +71,8 @@ enum Command {
     Settings,
     /// `⌘R` on a Todo issue: refine it with the challenger.
     Refine(PathBuf),
-    /// `⌘⇧R`: review the open issue, or cancel the review running.
+    /// `⌘⇧R`: review the open issue or the selected Todo card, or cancel the
+    /// review running.
     ToggleReview(PathBuf),
     /// `⌘[`: one level back.
     Back,
@@ -87,6 +94,8 @@ enum Command {
     ApplyReview,
     /// `⌘K`: Ask AI on the open issue or the selected card, or stop the ask.
     Ask(PathBuf),
+    /// `↑ ↓`, `fn ↑ ↓`, `space`, `⇧space` on the Reader's page, down when true.
+    Scroll(Stride, bool),
 }
 
 /// The shortcuts that fire for `input` where the keyboard is.
@@ -107,14 +116,15 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     if let Place::Issue(path, DetailMode::Preview) = &cx.place
         && !cx.typing
         && !cx.confirming
-        && plain
+        && !cx.popup
     {
-        if pressed(Key::L) {
+        if plain && pressed(Key::L) {
             out.push(Command::Labels(path.clone()));
         }
-        if cx.editable && pressed(Key::E) {
+        if plain && cx.editable && (pressed(Key::E) || pressed(Key::Enter)) {
             out.push(Command::Edit(path.clone()));
         }
+        out.extend(scroll_keys(input));
     }
     // `Del` (or Backspace) asks to delete the selected card, or the issue the
     // reader shows. In the editor the key belongs to the text.
@@ -132,9 +142,17 @@ fn command_keys(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     }
     let board = matches!(cx.place, Place::Board(_));
     let shift = input.modifiers.shift;
-    let target = cx.place.target().filter(|_| !cx.typing);
+    // The Editor's text keeps the keyboard: these keys still reach the issue.
+    let target = match &cx.place {
+        Place::Issue(path, DetailMode::Edit) => Some(path),
+        place => place.target().filter(|_| !cx.typing),
+    };
     let open = cx.place.open();
     let refine = open.filter(|_| cx.refinable).cloned();
+    let review = match &cx.place {
+        Place::Board(Some((path, _))) if cx.refinable && !cx.typing && !cx.confirming => Some(path),
+        place => place.open(),
+    };
     [
         (Key::N, Some(Command::Compose)),
         (Key::F, board.then_some(Command::FocusFilter)),
@@ -147,14 +165,17 @@ fn command_keys(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
         (Key::K, target.cloned().map(Command::Ask)),
         (
             Key::R,
-            (!shift).then(|| refine.map_or(Command::Refresh, Command::Refine)),
+            refine
+                .map(Command::Refine)
+                .or((!cx.auto).then_some(Command::Refresh))
+                .filter(|_| !shift),
         ),
         // In a text field `⌘Z` stays the field's own undo.
         (Key::Z, (board && !cx.typing).then_some(Command::Undo)),
         (Key::Comma, Some(Command::Settings)),
         (
             Key::R,
-            open.filter(|_| shift).cloned().map(Command::ToggleReview),
+            review.filter(|_| shift).cloned().map(Command::ToggleReview),
         ),
         (Key::OpenBracket, (!board).then_some(Command::Back)),
         (Key::S, Some(Command::Save)),
@@ -162,6 +183,24 @@ fn command_keys(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     .into_iter()
     .filter(|(key, _)| input.key_pressed(*key))
     .filter_map(|(_, command)| command)
+    .collect()
+}
+
+/// The keys that scroll the Reader's page by a line or by a page.
+fn scroll_keys(input: &egui::InputState) -> Vec<Command> {
+    let plain = input.modifiers.is_none();
+    let shift = input.modifiers.shift_only();
+    [
+        (plain, Key::ArrowUp, Stride::Line, false),
+        (plain, Key::ArrowDown, Stride::Line, true),
+        (plain, Key::PageUp, Stride::Page, false),
+        (plain, Key::PageDown, Stride::Page, true),
+        (plain, Key::Space, Stride::Page, true),
+        (shift, Key::Space, Stride::Page, false),
+    ]
+    .into_iter()
+    .filter(|(held, key, ..)| *held && input.key_pressed(*key))
+    .map(|(_, _, stride, down)| Command::Scroll(stride, down))
     .collect()
 }
 
@@ -211,6 +250,7 @@ impl IboardApp {
         self.forget_undo_on_action(ctx);
         self.poll_jobs(ctx);
         self.window_requests(ctx);
+        self.note_stray_press(ctx);
         let confirming = self.confirm_keys(ctx);
         if self.settings.is_none() {
             self.watch_config();
@@ -306,8 +346,10 @@ impl IboardApp {
         {
             self.go(to);
         }
-        // A double-click on the page (not the header) edits at that line.
+        let delay = ctx.options(|o| o.input_options.max_double_click_delay);
+        // A double-click on the sheet, both its clicks, edits at that line.
         if cx.editable
+            && !cx.confirming
             && !self.writing_note()
             && let Place::Issue(path, DetailMode::Preview) = cx.place
             && let Some(pos) = ctx.input(|i| {
@@ -315,10 +357,38 @@ impl IboardApp {
                     .button_double_clicked(egui::PointerButton::Primary)
                     .then(|| i.pointer.interact_pos())
                     .flatten()
-                    .filter(|pos| self.reader.preview_rect.contains(*pos))
+                    .filter(|_| i.time - self.reader.stray_press > delay)
             })
+            && self.on_the_sheet(ctx, pos)
         {
             self.edit_at_line(&path, self.reader.line_at(pos.y));
+        }
+    }
+
+    /// Whether `pos` is on the Reader's sheet with nothing over it: no
+    /// dialog, no menu, no header or status bar the page scrolled under.
+    fn on_the_sheet(&self, ctx: &egui::Context, pos: egui::Pos2) -> bool {
+        self.reader.sheet_rect.contains(pos)
+            && self.session.confirm.is_none()
+            && self.session.label_picker.is_none()
+            && !egui::Popup::is_any_open(ctx)
+            && ctx.layer_id_at(pos) == Some(egui::LayerId::background())
+    }
+
+    /// Remembers a press off the sheet: the click that closes a menu or a
+    /// dialog is not the first half of a double-click on what it uncovers.
+    fn note_stray_press(&mut self, ctx: &egui::Context) {
+        let press = ctx.input(|i| {
+            i.pointer
+                .primary_pressed()
+                .then(|| i.pointer.interact_pos())
+                .flatten()
+                .map(|pos| (pos, i.time))
+        });
+        if let Some((pos, time)) = press
+            && !self.on_the_sheet(ctx, pos)
+        {
+            self.reader.stray_press = time;
         }
     }
 
@@ -493,12 +563,20 @@ impl IboardApp {
             _ => Place::Elsewhere,
         };
         let open = place.open();
+        let selected = match &place {
+            Place::Board(selected) => selected.as_ref().map(|(path, _)| path),
+            _ => None,
+        };
         KeyContext {
             typing: ctx.memory(|m| m.focused().is_some()),
             confirming,
             editable: open.is_some_and(|path| self.can_edit(path)),
-            refinable: open.is_some_and(|path| self.is_todo_issue(path)),
+            refinable: open
+                .or(selected)
+                .is_some_and(|path| self.is_todo_issue(path)),
             proposal: self.proposal_shown() && !self.refinement_shown(),
+            auto: self.prefs.auto,
+            popup: egui::Popup::is_any_open(ctx),
             place,
         }
     }
@@ -550,6 +628,7 @@ impl IboardApp {
             Command::Update(path) => self.toggle_update(&path),
             Command::ApplyReview => self.apply_review_proposal(),
             Command::Ask(path) => self.toggle_ask(&path),
+            Command::Scroll(stride, down) => self.reader.scroll = Some((stride, down)),
         }
     }
 

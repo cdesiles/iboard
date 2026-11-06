@@ -133,7 +133,8 @@ impl Menu {
     }
 
     /// The menu's keys, taken before anything else sees them: typing
-    /// filters, the arrows move, `↩` opens, `esc` clears then closes. In
+    /// filters, the arrows move, `↩` opens, `⌘I` is its Stats row, `esc`
+    /// clears then closes. In
     /// reorder mode `⌥↑ ⌥↓` move the selected project and `↩` saves.
     pub fn keys(&mut self, ctx: &egui::Context, entries: &Entries) -> Option<Action> {
         let take =
@@ -175,6 +176,9 @@ impl Menu {
             self.active = self.current_index(entries);
             self.reveal = true;
             return None;
+        }
+        if take(Modifiers::COMMAND, Key::I) {
+            return Some(Action::Stats);
         }
         let items = self.items(entries);
         if take(Modifiers::NONE, Key::Enter) {

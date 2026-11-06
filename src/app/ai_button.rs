@@ -2,6 +2,7 @@
 //! opens what the agent can do on the issue. Refine and Review belong to Todo;
 //! Ready and Doing get Update from the code; Done has none.
 
+use super::review::RunKind;
 use super::{ButtonKind, IboardApp, Icon, Path, ReviewMode, theme, widgets};
 use widgets::{ActionTone, MenuAction};
 
@@ -28,20 +29,33 @@ struct Face {
 }
 
 impl IboardApp {
+    /// The face while a run works on `path`: a click or its key cancels it.
+    fn running_face(&self, path: &Path) -> Option<Face> {
+        let kind = self.session.review_runs.running.get(path)?.kind;
+        let (hint, key) = match kind {
+            RunKind::Review => ("The review runs in the background: cancel it (⌘⇧R)", "⌘⇧R"),
+            RunKind::Update => ("The agent is checking the project: cancel it  ⌘U", "⌘U"),
+        };
+        Some(Face {
+            icon: Icon::Thinking,
+            label: kind.running(),
+            hint,
+            key,
+            enabled: true,
+        })
+    }
+
     /// The face on a Todo issue: Refine, or what the running review or the
     /// hidden refinement is doing.
     fn refine_face(&self, path: &Path) -> Face {
+        if let Some(face) = self.running_face(path) {
+            return face;
+        }
         let configured = self.prefs.agent.configured();
         let refine = self.session.refine.as_ref();
         let hidden = refine.filter(|refine| refine.path == path && refine.hidden);
         let review = (Icon::Review, "⌘R");
         let (icon, label, hint, key) = match hidden {
-            _ if self.review_is_running(path) => (
-                Icon::Thinking,
-                "Reviewing…",
-                "The review runs in the background: cancel it (⌘⇧R)",
-                "⌘⇧R",
-            ),
             Some(refine) if refine.is_running() => (
                 Icon::Thinking,
                 "Refining…",
@@ -72,44 +86,33 @@ impl IboardApp {
             label,
             hint,
             key,
-            enabled: configured || self.review_is_running(path),
+            enabled: configured,
         }
     }
 
     /// The face on a Ready or Doing issue: Update from the code.
     fn update_face(&self, path: &Path) -> Face {
-        let running = self.review_is_running(path);
+        if let Some(face) = self.running_face(path) {
+            return face;
+        }
         let configured = self.prefs.agent.configured();
-        let (icon, label, hint) = if running {
-            (
-                Icon::Thinking,
-                "Updating…",
-                "The agent is checking the project: cancel it  ⌘U",
-            )
-        } else if configured {
-            (
-                Icon::Edit,
-                UPDATE,
-                "Ask the agent where this issue stands in the project, and to rewrite it as things are  ⌘U",
-            )
+        let hint = if configured {
+            "Ask the agent where this issue stands in the project, and to rewrite it as things are  ⌘U"
         } else {
-            (
-                Icon::Edit,
-                UPDATE,
-                "No agent is set up yet: choose one in Settings › AI review (⌘, or the chevron)",
-            )
+            "No agent is set up yet: choose one in Settings › AI review (⌘, or the chevron)"
         };
         Face {
-            icon,
-            label,
+            icon: Icon::Edit,
+            label: UPDATE,
             hint,
             key: "⌘U",
-            enabled: running || configured,
+            enabled: configured,
         }
     }
 
     /// The split button of the issue at `path`, then what its runs have to
-    /// say: nothing at all on a Done issue.
+    /// say. A Done issue has no split button, only a run that was already
+    /// going when it got there.
     pub(super) fn ai_button(&mut self, ui: &mut egui::Ui, path: &Path) {
         let todo = self.is_todo_issue(path);
         let face = if todo {
@@ -117,6 +120,8 @@ impl IboardApp {
         } else if self.updatable(path) {
             self.update_face(path)
         } else {
+            self.stray_run_button(ui, path);
+            self.run_buttons(ui, path);
             return;
         };
         let (main, caret) = widgets::split_button(
@@ -162,12 +167,25 @@ impl IboardApp {
         };
         let picked = menu.show(&caret);
         self.apply_ai_pick(path, picked, other_scope);
-        if todo {
-            self.ready_button(ui, path, "Review ready", "The review is in: show it");
-        } else {
-            let hint = "The agent's answer is in: show it";
-            self.ready_button(ui, path, "Update ready", hint);
+        self.run_buttons(ui, path);
+    }
+
+    /// A run still working on an issue the split button left: a click cancels.
+    fn stray_run_button(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let Some(face) = self.running_face(path) else {
+            return;
+        };
+        let kind = ButtonKind::Review;
+        if widgets::button(ui, kind, Some(face.icon), face.label, Some(face.key))
+            .on_hover_text(face.hint)
+            .clicked()
+        {
+            self.cancel_review_run(path);
         }
+    }
+
+    fn run_buttons(&mut self, ui: &mut egui::Ui, path: &Path) {
+        self.ready_button(ui, path);
         self.asking_button(ui, path);
     }
 

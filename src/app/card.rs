@@ -317,13 +317,19 @@ fn expand_action(
 }
 
 /// The card the build agent works on: it flashes `status-doing` as it is
-/// taken, then its edge breathes and a light runs along its foot.
+/// taken, then its edge breathes and a light runs along its foot. With reduced
+/// motion the edge stays steady and nothing else moves.
 fn at_work(ui: &egui::Ui, card: Rect, since: Instant) {
     const TAKEN: f32 = 0.6;
     const SWEEP: f32 = 1.6;
     let p = theme::palette(ui);
     let painter = ui.painter();
     let corner = CornerRadius::same(theme::RADIUS_MD);
+    if theme::reduced_motion(ui.ctx()) {
+        let edge = Stroke::new(2.0, p.status_doing);
+        painter.rect_stroke(card, corner, edge, StrokeKind::Inside);
+        return;
+    }
     let t = since.elapsed().as_secs_f32();
     if t < TAKEN {
         let flash = p.status_doing.gamma_multiply(0.3 * (1.0 - t / TAKEN));
@@ -737,6 +743,48 @@ mod tests {
             .into_iter()
             .map(|button| button.action)
             .collect()
+    }
+
+    /// The rects a running card paints, and whether it asks for the next frame.
+    fn at_work_paints(reduce: bool) -> (Vec<egui::epaint::RectShape>, bool) {
+        let ctx = egui::Context::default();
+        theme::set_reduced_motion(&ctx, reduce);
+        let card = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(200.0, 80.0));
+        let frame = || {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                at_work(ui, card, Instant::now());
+            })
+        };
+        for _ in 0..3 {
+            frame().textures_delta.clear();
+        }
+        let mut output = frame();
+        output.textures_delta.clear();
+        let delay = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        let rects = output
+            .shapes
+            .into_iter()
+            .filter_map(|clipped| match clipped.shape {
+                egui::Shape::Rect(rect) => Some(rect),
+                _ => None,
+            })
+            .collect();
+        (rects, delay.is_zero())
+    }
+
+    #[test]
+    fn a_running_card_holds_still_under_reduced_motion() {
+        let (rects, repaints) = at_work_paints(false);
+        assert_eq!(rects.len(), 3, "flash, edge and a light along its foot");
+        assert!(repaints);
+
+        let (rects, repaints) = at_work_paints(true);
+        let [edge] = rects.as_slice() else {
+            panic!("only the edge: {rects:?}");
+        };
+        assert_eq!(edge.stroke.color.a(), 255, "steady");
+        assert_eq!(edge.fill, Color32::TRANSPARENT);
+        assert!(!repaints, "nothing moves");
     }
 
     #[test]

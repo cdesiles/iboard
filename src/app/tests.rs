@@ -15,6 +15,7 @@ mod groups;
 mod handover;
 mod header;
 mod images;
+mod keys;
 mod kit;
 mod labelling;
 mod modals;

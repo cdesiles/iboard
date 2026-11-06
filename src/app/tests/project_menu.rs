@@ -84,6 +84,18 @@ fn the_rows_are_42pt_and_the_trigger_has_no_path() {
     );
 }
 
+/// The open menu owns the keyboard, and its Stats row keeps the key it shows.
+#[test]
+fn command_i_closes_the_menu_and_opens_stats() {
+    let (_scratch, _config, _projects, app) = three_projects("menu-stats-key");
+    let mut harness = kittest(app);
+    open(&mut harness);
+    key(&mut harness, Modifiers::COMMAND, Key::I);
+    let app = &harness.state().1;
+    assert!(app.project_menu.is_none());
+    assert!(app.session.stats.is_some());
+}
+
 /// On a group's board Stats stays in the menu; the status bar says why it
 /// shows nothing, and `⌘I` says the same.
 #[test]

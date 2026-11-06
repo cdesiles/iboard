@@ -4,8 +4,8 @@ use super::side_panel::side_panel;
 use super::split::{self, Split};
 use super::{
     Align, ButtonKind, Color32, CommonMarkCache, CommonMarkViewer, Duration, Frame, HashMap,
-    HashSet, IboardApp, Job, Layout, Palette, Path, PathBuf, Report, ReviewMode, RichText, Vec2,
-    agent, file_name, job, prompts, reviews, theme, widgets,
+    IboardApp, Job, Layout, Palette, Path, PathBuf, Report, ReviewMode, RichText, Vec2, agent,
+    file_name, job, prompts, reviews, theme, widgets,
 };
 
 impl IboardApp {
@@ -45,6 +45,7 @@ impl IboardApp {
         runs.running.insert(
             target.path,
             ReviewRun {
+                kind: target.kind,
                 draft: target.draft,
                 mode: target.mode,
                 agent: self.prefs.agent.label(),
@@ -75,6 +76,7 @@ impl IboardApp {
             path: path.to_path_buf(),
             draft,
             mode,
+            kind: RunKind::Review,
         };
         self.run_review(target, &content, prompt);
     }
@@ -88,6 +90,7 @@ impl IboardApp {
             path: review.path.clone(),
             draft: review.review.draft,
             mode: review.review.mode,
+            kind: RunKind::Review,
         };
         let follow_up = review.follow_up.as_deref().unwrap_or("").trim().to_string();
         if follow_up.is_empty() {
@@ -174,7 +177,10 @@ impl IboardApp {
                 let past = PastReview::new(&stored, &issue.markdown);
                 self.past_reviews.insert(path.clone(), past);
             }
-            self.session.review_runs.ready.insert(path.clone());
+            self.session
+                .review_runs
+                .ready
+                .insert(path.clone(), run.kind);
             // The issue being read shows its answer at once.
             let reading = self.session.reading() == Some(path.as_path())
                 && self.session.review.is_none()
@@ -223,11 +229,13 @@ impl IboardApp {
 
     /// Review ready, or Update ready, beside its button once the answer on
     /// `path` is in: a click shows it.
-    pub(super) fn ready_button(&mut self, ui: &mut egui::Ui, path: &Path, label: &str, hint: &str) {
-        if self.session.review_runs.is_ready(path)
-            && widgets::button(ui, ButtonKind::Review, None, label, None)
-                .on_hover_text(hint)
-                .clicked()
+    pub(super) fn ready_button(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let Some(kind) = self.session.review_runs.ready.get(path) else {
+            return;
+        };
+        if widgets::button(ui, ButtonKind::Review, None, kind.ready(), None)
+            .on_hover_text(kind.ready_hint())
+            .clicked()
         {
             self.show_past_review(path.to_path_buf());
         }
@@ -325,6 +333,45 @@ pub(super) struct ReviewTarget {
     pub(super) path: PathBuf,
     pub(super) draft: bool,
     pub(super) mode: ReviewMode,
+    pub(super) kind: RunKind,
+}
+
+/// What a run asked the agent, for what the button and the card call it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RunKind {
+    Review,
+    /// Update from the code.
+    Update,
+}
+
+impl RunKind {
+    pub(super) fn running(self) -> &'static str {
+        match self {
+            RunKind::Review => "Reviewing…",
+            RunKind::Update => "Updating…",
+        }
+    }
+
+    fn running_hint(self) -> &'static str {
+        match self {
+            RunKind::Review => "The review is running",
+            RunKind::Update => "The update is running",
+        }
+    }
+
+    fn ready(self) -> &'static str {
+        match self {
+            RunKind::Review => "Review ready",
+            RunKind::Update => "Update ready",
+        }
+    }
+
+    fn ready_hint(self) -> &'static str {
+        match self {
+            RunKind::Review => "The review is in: show it",
+            RunKind::Update => "The agent's answer is in: show it",
+        }
+    }
 }
 
 /// The review panel on one issue: its findings, or the split they led to.
@@ -353,11 +400,12 @@ impl ReviewState {
 #[derive(Default)]
 pub(super) struct ReviewRuns {
     pub(super) running: HashMap<PathBuf, ReviewRun>,
-    ready: HashSet<PathBuf>,
+    ready: HashMap<PathBuf, RunKind>,
 }
 
 /// A review the agent is working on, and what to keep with its answer.
 pub(super) struct ReviewRun {
+    pub(super) kind: RunKind,
     draft: bool,
     mode: ReviewMode,
     agent: String,
@@ -374,7 +422,7 @@ impl ReviewRuns {
     }
 
     pub(super) fn is_ready(&self, path: &Path) -> bool {
-        self.ready.contains(path)
+        self.ready.contains_key(path)
     }
 
     pub(super) fn any_running(&self) -> bool {
@@ -397,8 +445,8 @@ impl ReviewRuns {
         if let Some(run) = self.running.remove(old) {
             self.running.insert(new.to_path_buf(), run);
         }
-        if self.ready.remove(old) {
-            self.ready.insert(new.to_path_buf());
+        if let Some(kind) = self.ready.remove(old) {
+            self.ready.insert(new.to_path_buf(), kind);
         }
     }
 }
@@ -509,11 +557,11 @@ pub(super) struct CardReviews<'a> {
 
 impl CardReviews<'_> {
     pub(super) fn pill(&self, path: &Path, p: &Palette) -> Option<ReviewPill> {
-        if self.runs.is_running(path) {
-            return Some(("Reviewing…", p.review, "The review is running"));
+        if let Some(run) = self.runs.running.get(path) {
+            return Some((run.kind.running(), p.review, run.kind.running_hint()));
         }
-        if self.runs.is_ready(path) {
-            return Some(("Review ready", p.review, "The review is in: show it"));
+        if let Some(kind) = self.runs.ready.get(path) {
+            return Some((kind.ready(), p.review, kind.ready_hint()));
         }
         self.past.get(path).map(|past| past.card_pill(p))
     }
