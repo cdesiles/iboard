@@ -363,6 +363,35 @@ fn the_command_keys_wait_behind_a_modal() {
 }
 
 #[test]
+fn the_menu_bar_picks_wait_behind_a_modal() {
+    let modals: [(&str, Modal); 6] = [
+        ("delete", delete_dialog),
+        ("quit", quit_dialog),
+        ("commits", |app, file| app.open_commits(file)),
+        ("settings", |app, _| {
+            app.open_settings(settings_ui::Tab::Review);
+        }),
+        ("ask", |app, file| app.toggle_ask(file)),
+        ("new issue", |app, _| app.open_composer()),
+    ];
+    for (name, up) in modals {
+        let (_dir, file, mut harness) = opened_in("menu-picks", "todo");
+        let app = &mut harness.state_mut().1;
+        up(app, &file);
+        let had_settings = app.settings.is_some();
+        app.menu_picks(true, true);
+        assert!(app.session.stats.is_none(), "{name}: stats opened");
+        assert_eq!(app.settings.is_some(), had_settings, "{name}: settings");
+    }
+    let (_dir, _file, mut harness) = opened_in("menu-picks-free", "todo");
+    let app = &mut harness.state_mut().1;
+    app.menu_picks(false, true);
+    assert!(app.session.stats.is_some(), "stats");
+    app.menu_picks(true, false);
+    assert!(app.settings.is_some(), "settings over the stats screen");
+}
+
+#[test]
 fn the_board_keys_wait_behind_a_dialog() {
     let (_dir, file, mut harness) = board_with("board-dialog-keys", "todo");
     delete_dialog(&mut harness.state_mut().1, &file);

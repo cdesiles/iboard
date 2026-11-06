@@ -459,13 +459,10 @@ impl IboardApp {
             self.quit(ctx);
         }
         #[cfg(target_os = "macos")]
-        if iboard::menu::take_settings_request() && self.settings.is_none() {
-            self.open_settings(self.settings_tab);
-        }
-        #[cfg(target_os = "macos")]
-        if iboard::menu::take_stats_request() {
-            self.open_stats();
-        }
+        self.menu_picks(
+            iboard::menu::take_settings_request(),
+            iboard::menu::take_stats_request(),
+        );
         let close_requested = ctx.input(|i| i.viewport().close_requested());
         if close_requested && !self.closing {
             self.request_quit();
@@ -476,6 +473,30 @@ impl IboardApp {
         if std::mem::take(&mut self.send_close) {
             self.quit(ctx);
         }
+    }
+
+    /// Settings or Project Stats picked from the menu bar. A modal stops the
+    /// board until it is answered, so a pick made under one is dropped.
+    pub(super) fn menu_picks(&mut self, settings: bool, stats: bool) {
+        if self.modal_up() {
+            return;
+        }
+        if settings {
+            self.open_settings(self.settings_tab);
+        }
+        if stats {
+            self.open_stats();
+        }
+    }
+
+    fn modal_up(&self) -> bool {
+        self.session.confirm.is_some()
+            || self.settings.is_some()
+            || self.groups_dialog.is_some()
+            || self.session.commits.is_some()
+            || self.session.ask_draft.is_some()
+            || self.composer_open()
+            || self.refinement_shown()
     }
 
     /// The confirmation owns Escape and Enter while it is up, and no other
