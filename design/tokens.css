@@ -11,13 +11,13 @@
   --surface-sunken: #eceef2; /* Inline code, key caps, neutral label pills, the empty-column well, editor gutter. */
   --line: #cfd4db; /* Dividers only: header and status bar rules, modal head and foot rules, the sheet's rules, a modal frame's edge. Decorative, never the edge of a control or a card. */
   --line-soft: #dfe2e7; /* Card edges at rest; hairline of secondary buttons in modal feet and dialogs. Decorative. */
-  --line-strong: #7c8491; /* Only edges that identify a control: text fields, checkboxes, radios; plus a card or ghost tile under the pointer. 3.2:1 or better on every surface in both themes (WCAG 1.4.11). Text buttons, labels and key caps have no line-strong edge. */
+  --line-strong: #7c8491; /* Only edges that identify a control: text fields, Selects, checkboxes, radios, a ghost tile's dashed edge; plus, under the pointer, a card, an Agenda day, the Reader's edit outline and a pane divider. 3.2:1 or better on every surface in both themes (WCAG 1.4.11). Text buttons, labels and key caps have no line-strong edge. */
   --scrollbar: #bfc4cb; /* Scrollbar thumb while scrolling. Hidden at rest: no thumb until the pane scrolls or the pointer reaches its edge. Light 1.75:1 on surface, dark 3.9:1. */
   --scrollbar-active: #a1a7b0; /* Scrollbar thumb under the pointer (8pt). Light 2.4:1 on surface; dark matches ink-muted. */
   --ink: #15181d; /* Primary text on bg, surface, surface-hover, surface-sunken. */
   --ink-muted: #4d5562; /* Secondary text: summaries, paths, counts, dates, word counts, the status bar, modal context. At least 6.4:1 on all surfaces. */
   --ink-faint: #626a78; /* Placeholders, separators, empty-state text, menu key caps. At least 4.5:1 on all surfaces; never smaller than 11px. */
-  --accent: #2b54c4; /* Blue means selected, focused or a link, nothing else: selected card, focus ring, links, active filter, dragging scrollbar. Not a button fill (see primary). */
+  --accent: #2b54c4; /* On a control, blue means selected, focused or a link: selected card, focus ring, links, active filter, dragging scrollbar. Beyond controls, the data colour: charts, the Agenda's ramp, the build line. Not a button fill (see primary). */
   --accent-soft: #e4eafb; /* Selected card fill, text selection, active crumb. */
   --on-accent: #ffffff; /* Text and icons on an accent fill (checked checkbox, and the primary button if primary is switched back to accent). */
   --primary: var(--ink); /* Fill of the one filled button per screen (New issue, Save, Add to Todo). An ink fill, so blue stays for selection and focus. Alternative kept for comparison: set to {accent} with on-primary {on-accent}. */
@@ -134,8 +134,8 @@
   --text-ui-body: 400 13px/18px var(--font-sans); /* Default UI text, inputs, card titles (at 500). */
   --text-ui-strong: 500 13px/18px var(--font-sans); /* Card title, column titles (title case), current crumb, button labels at 12px. */
   --text-ui-small: 400 12px/17px var(--font-sans); /* Card summary, review findings. */
-  --text-ui-label: 600 11px/14px var(--font-sans); /* Uppercase section labels (Not written yet). Column titles use ui-strong in title case; ui-label is the uppercase alternative. */
-  --text-meta: 400 12px/16px var(--font-sans); /* Inter, ink-muted: paths, file names, counts, dates, word counts, the status bar, modal context (in todo/, named on save, Saved for this session). */
+  --text-ui-label: 600 11px/14px var(--font-sans); /* Uppercase section labels (Not written yet). Column titles use ui-strong in title case. */
+  --text-meta: 400 12px/16px var(--font-sans); /* Inter, ink-muted: paths, file names, counts, dates, word counts, the status bar, modal context (in todo/, named in the background, Saved for this session). */
   --text-read-h1: 600 20px/26px var(--font-sans); /* Issue title in the reader. */
   --text-read-h2: 600 16px/22px var(--font-sans); /* ## headings in the reader. 24pt above, 6pt below. */
   --text-read-h3: 600 14px/20px var(--font-sans); /* ### headings and deeper in the reader. 16pt above, 4pt below. */

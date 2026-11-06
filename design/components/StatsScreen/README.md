@@ -36,8 +36,8 @@ One sample per week: the last commit of the week (Monday start). Earlier weeks a
 
 Release tags drawn on the trends, so a jump in complexity or a dip in coverage can be read against what shipped.
 
-- **Which tags**: tags matching `release_tags` in Settings › Stats, `v*` by default (`v0.4.0`, `v1.2`). A tag that doesn't parse as a version still shows, labelled with its name. Annotated tags use the tagger date, lightweight ones the commit date.
-- **Marker**: a 1pt dotted line in `ink-faint`, full height, through all four charts at the tag's day (placed inside its week, not snapped to the sample). Dotted so it never reads as the solid crosshair or the dashed `status-doing` limits. No colour: a release is context, not a state.
+- **Which tags**: tags matching `release_tags`, `v*` by default (`v0.4.0`, `v1.2`). It is edited by hand in `~/.config/iboard/iboard.toml` for now: there is no Settings › Stats tab yet (ticket 006). A tag that doesn't parse as a version still shows, labelled with its name. Annotated tags use the tagger date, lightweight ones the commit date.
+- **Marker**: a 1pt dotted line in `ink-faint`, full height, through all four charts at the tag's day (placed inside its week, not snapped to the sample). Until weekly samples land (ticket 006) the trends are per commit, so a release sits on its tag's commit. Dotted so it never reads as the solid crosshair or the dashed `status-doing` limits. No colour: a release is context, not a state.
 - **Lane**: one 16pt row above the first chart holds the tag names, 11pt Inter 500 in `ink-muted`, centred on their line with a 3pt tick. Patch releases (`x.y.Z` with Z > 0) are a tick only, and their line is drawn at half strength. When two names would touch, the newer keeps its name and the older becomes a tick.
 - **Hover** a name, a tick or a line within 4pt: the line turns solid `ink-muted`, its name `ink`, and a tooltip reads "v0.4.0 · 14 Aug · 37 commits since v0.3.1". The shared crosshair moves to that week as usual. Clicking does nothing.
 - **Opt out**: a **Releases** checkbox in the Trends head, left of the range, checked by default. Unchecked, the lane and every line go, and the charts move up by 16pt. Saved at once in `~/.config/iboard/iboard.toml` as `[stats] show_releases = false`, next to `release_tags = "v*"`. With no matching tag, the checkbox is disabled with the tooltip "No release tags match v*".
@@ -55,7 +55,7 @@ Four signals, each with its numbers and its limit, marked with an icon and a wor
 | Cycle time drifts | 12-week median more than 50% above the 12 weeks before |
 
 - With 0 or 1 signals on, the verdict reads "No refactor needed now" on `surface-sunken`, with no button.
-- With 2 or more on, it reads "**Time to plan a refactor.** 3 of 4 signals are on, mostly from 3 files." and offers **Draft a refactor issue**. That opens the QuickAdd composer in Todo, prefilled with the signals and the hotspot files, labelled `refactor`. Nothing is written until you confirm.
+- With 2 or more on, it reads "**Time to plan a refactor.** 3 of 4 signals are on, mostly from 3 files." and offers **Draft a refactor issue**. That opens the NewIssueModal, its notes prefilled with the signals and the hotspot files, labelled `refactor`. Nothing is written until you confirm.
 
 ## Biggest files
 
@@ -72,7 +72,7 @@ Columns: File (directory in `ink-faint`, name in `ink`), Lines (number plus a ba
 | Stats | Toggle Releases | ReleaseMarkersToggled | Trends redrawn with or without the release lines |
 | Any | A new tag matching `release_tags` | TagsScanned | Its line appears on the next scan |
 | Stats | Sort the files | FilesSortChanged | Table reordered |
-| Stats | Draft a refactor issue | RefactorIssueDrafted → ComposerOpened | Board, composer prefilled in Todo |
+| Stats | Draft a refactor issue | RefactorIssueDrafted → NewIssueOpened | NewIssueModal, notes prefilled |
 | Stats | A tool is missing (no lcov, no complexity tool) | MetricUnavailable | That tile and row say what is missing and how to add it; the rest still shows |
 
 Read model: `WeeklyMetrics` holds one row per week with loc, by_language, complexity, coverage (optional) and cycle median/p85, plus `FileMetrics` for the current commit. Both are fed by `MetricsScanned`. `Releases` holds (tag, date, is_patch) from `TagsScanned`, read with `git for-each-ref refs/tags`.

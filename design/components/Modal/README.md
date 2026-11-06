@@ -29,7 +29,7 @@ On a 14" MacBook Pro window (1512 × 945pt) XL is 1200 × 880: most of the scree
 
 - **Scrim** over the whole window, header and status bar included (`scrim`).
 - **Frame**: `surface`, 1px `line` (the scrim and `shadow-modal` set it apart; the edge only finishes it in dark mode), `radius-md`, `shadow-modal` (stronger than `shadow-popover`, since it floats above everything). Nothing inside the frame scrolls but the body.
-- **Head**, 40pt, `line` rule below: the title in `ui-title` (a noun: "New issue", "Project groups", "Settings"), then optional context in `meta` (Inter) `ink-muted` (the folder or file it acts on: "in todo/", "named on save"), an optional tag or Unsaved pill, then a ghost close button (×, tooltip "Close (esc)"). S has no head bar: its title is the question and Cancel is the close.
+- **Head**, 40pt, `line` rule below: the title in `ui-title` (a noun: "New issue", "Project groups", "Settings"), then optional context in `meta` (Inter) `ink-muted` (the folder or file it acts on: "in todo/", "named in the background"), an optional tag or Unsaved pill, then a ghost close button (×, tooltip "Close (esc)"). S has no head bar: its title is the question and Cancel is the close.
 - **Body**: padding 16 (20 for S), gaps 16 between fields. It is the only part that scrolls (overlay scrollbar). XL bodies have no padding of their own: each pane pads itself.
 - **Foot**, 40pt, `line` rule above. On the left, context in `meta` (Inter, `ink-muted`): the file that will be written, the config path, "Saved for this session". The keys that apply now join it only while ⌘ is held. On the right, buttons in this order: an optional ghost button (Discard, End refining), the secondary close (Cancel or Close) with a `line-soft` hairline and no fill, then **one** filled primary, rightmost. Its key shows beside it while ⌘ is held and in its tooltip.
 - **The primary's colour says what it does**: `primary` (ink) saves or adds, `danger` destroys (S only), `review` sends to an agent. Never two filled buttons in one foot. Its key is `↩` in S and in the new-issue modal (where `↩` already meant add), `⌘↩` everywhere else.
@@ -55,4 +55,4 @@ New in `tokens.json`: `modal-s` 360, `modal-m` 480, `modal-l` 760, `modal-xl` 12
 - ConfirmDialog is already S; nothing changes but the shadow.
 - QuickAdd's inline composer is replaced by NewIssueModal.
 
-The consumer provides the size, the title and context, the body, the foot's actions, a `dirty` flag and the close handler. In egui, an `egui::Modal` (or an `Area` on `Order::Foreground` over a full-window scrim `Rect`) sized with `theme::modal_rect(size, screen_rect)`.
+The consumer provides the size, the title and context, the body, the foot's actions, a `dirty` flag and the close handler. In egui, `widgets::modal(ui, id, size, title)`, sized with `theme::modal_size(size, window)`.

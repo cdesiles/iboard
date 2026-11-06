@@ -11,7 +11,7 @@ The board's filter in the header: compact at rest, wide while you use it, with o
 
 ## Suggestions
 
-- When the field is focused, the right end shows "Labels" and one chip for each of the three labels used most on the board (for example **bug**, **feature**, **discovery**), read from the `[Brackets]` in titles. Chips are 18pt pills in `meta`, `line-strong` edge; on hover they take `accent` on `accent-soft`.
+- When the field is focused, the right end shows "Labels" and one chip for each of the three labels used most on the board (for example **bug**, **feature**, **discovery**), read from the `[Brackets]` in titles. Chips are 18pt pills in `meta`, `line-soft` edge; on hover they take `accent` on `accent-soft`.
 - Clicking a chip (or `↓` to reach the chips, `← →` between them, `↩` to pick) turns it into a token at the start of the field: `bug ×` in `accent` on `accent-soft`. Focus stays in the field so you can keep typing.
 - A label token matches issues that carry that label exactly (from `[Bug]` in the title, or a `labels:` list in front matter). Clicking a label on a card or in the Reader adds the same token. Free text after a token narrows further: tokens and text must all match.
 - Picked suggestions leave the chip row; the others stay. When the row would not fit next to your text, it hides and comes back when the text is cleared.
@@ -19,7 +19,7 @@ The board's filter in the header: compact at rest, wide while you use it, with o
 
 ## Feedback
 
-- While a filter is on, the field shows the match count in `meta` ("5 of 14"), and each column count becomes "2/6" with the total in `ink-faint`.
+- While a filter is on, the status bar alone says the match count ("4 of 9 issues match “bug”"; see StatusBar), and each column count becomes "2/6" with the total in `ink-faint`.
 - A column with no match shows its empty well with "No issues labelled bug".
 
 ## Keys

@@ -4,7 +4,7 @@ The result of a review: a 360pt panel beside the Reader or Editor page with thre
 
 - Header on `review-soft` names the file and the agent. Findings: Relevance, Size, Clarity, each with a verdict pill (Pass, Challenge, Block) and one or two sentences, then concrete items (a proposed split, the questions an implementer would ask).
 - When the issue is only a title, the panel instead proposes the missing sections (Context, Acceptance criteria, Out of scope, Open questions).
-- Apply to draft opens the Editor with the proposal merged into the draft, unsaved. The agent never writes the file.
+- Apply to draft, the panel's one filled button, opens the Editor with the proposal merged into the draft, unsaved. The agent never writes the file.
 - Ask again sends a follow-up ("make it smaller", "assume CLI only"). Dismiss closes the panel; the last review stays reachable from the card's pill.
 - The header also names the review's scope: *Ticket only* (the issue alone) or *Ticket + project context* (it could read the repository and its design system). While it runs, the body shows the elapsed time and the agent's current step.
 - OpenCode and Claude Code review in plan mode, unable to change the repository; the body then opens on a muted `meta` note saying so. A tool that rejects the flag reviews without it, and without the note.

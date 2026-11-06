@@ -18,8 +18,8 @@
   },
   "lastChange": {
     "by": "Clément",
-    "at": "2026-11-05T23:50:00Z",
+    "at": "2026-11-06T09:31:11Z",
     "via": "Claude Code",
-    "note": "Token usage texts realigned; column-min 200 for the 880pt minimum window; Ask stays ⌘K and Update ⌘U; Stats opens from the ProjectMenu footer and ⌘I; stale v1 reading sizes removed."
+    "note": "Spec lines that disagreed aligned with HeaderBar, Button and the code: the … menu, the key table, what blue and line-strong are for, helper names, the 900pt stack."
   }
 }

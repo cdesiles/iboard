@@ -7,4 +7,4 @@ The board after ⌘ alone has been held for `hint-hold` 0.5s. Hints slide out ov
 - Card actions keep their tooltips; no caps are added on cards.
 - Layout does not move: a hint takes room that was empty (inside the field, after a label, at the status bar's right).
 
-In egui: track `ui.input(|i| i.modifiers.command_only())` and the time it became true; show hints once it has been true for `theme::motion::HINT_HOLD` with no key pressed since.
+In egui: track `ui.input(|i| i.modifiers.command_only())` and the time it became true; show hints once it has been true for `theme::HINT_HOLD` with no key pressed since.

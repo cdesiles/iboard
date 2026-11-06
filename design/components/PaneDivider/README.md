@@ -19,7 +19,7 @@ The previous handle was a 8×60 pill on a gutter framed by two rules. Next to th
 | Dragging | Rule and dots in `accent`. A `meta` readout above the grip shows both pane widths ("612 · 404"). The cursor keeps col-resize even when it leaves the gutter. |
 | Keyboard focus | `tab` reaches the divider after the left pane's content: 2pt `focus` ring around the grip, `accent` rule, readout shown. |
 | Inline | Two panes inside one card (RefinePanel): the 1pt `line` divider is the handle, with a 9pt hit area centred on it (4pt each side). On hover it thickens to 2pt `line-strong` and the grip sits on `surface`. The left pane's scroll strip steps 4pt in so the two never overlap. |
-| Too narrow | When the window can't fit both minimums, the panes stack (as RefinePanel does under 820pt) and there is no divider. |
+| Too narrow | When the window can't fit both minimums, the panes stack (as RefinePanel does under 900pt) and there is no divider. |
 
 ## Behaviour
 

@@ -22,7 +22,7 @@ A short tag that groups issues, read straight from the title. `# [Discovery] Off
 - **IssueCard**: the first row, 4pt gaps, wrapping if needed. No row when there is no label.
 - **Reader**: the first row of the sheet, above the `read-h1` title.
 - **FilterField**: the suggestion chips are the three most used labels, and a picked chip becomes a token.
-- **QuickAdd**: `[bug] ` typed at the start of the title becomes a tag as you type.
+- **NewIssueModal**: `[bug] ` typed at the start of the title becomes a tag as you type.
 - **LabelPicker**: from the card's Add label action or the Reader's Add label icon (`L`), pick board labels or type a new one; it writes `[label]` into the title, or into front matter `labels:` when the file has that list.
 
 ## Behaviour

@@ -11,7 +11,7 @@ The one top bar: `bar-h` 40pt, `bg` ground, a `line` rule below. It holds where 
 ## Board
 
 - Left: the project name in `ui-title` with a chevron; it opens the ProjectMenu. The issues path is no longer here: it is in the status bar.
-- Right: FilterField (220pt, 480pt while in use, growing to the left; its `line-strong` edge stays, since a text field is identified by it), Refresh (`⌘R`, only when Settings › General turns Auto off), then **New issue**, the board's one filled button (`primary`). Stats is not in the header: it opens from the ProjectMenu footer or `⌘I`.
+- Right: FilterField (220pt, 480pt while in use, growing to the left; its `line-strong` edge stays, since a text field is identified by it), Design (only when `idesign` is on, on a single project's board), Refresh (`⌘R`, only when Settings › General turns Auto off), then **New issue**, the board's one filled button (`primary`). Stats is not in the header: it opens from the ProjectMenu footer or `⌘I`.
 
 ## Reader and Editor
 
@@ -20,7 +20,7 @@ The one top bar: `bar-h` 40pt, `bg` ground, a `line` rule below. It holds where 
 - Right, left to right:
   1. **Edit, Add label, Delete** as dynamic icon buttons (below). Edit only in Todo and Ready (Doing and Done open read-only; Done shows Commits instead). Add label only on Todo and Ready issues (labels are settled once work starts). Delete not on Done issues, which are archived, never deleted. The Editor keeps only Delete, without a key, since `Del` edits text there.
   2. **The AI split button**: `review` label, no edge, `review-soft` on hover. Its face follows the column. **Todo**: Refine (`⌘R`); the chevron opens Refine with a challenger (`⌘R`), Review this issue (`⌘⇧R`), the other review scope as a one-off (Deep review or Quick review), Ask… (`⌘K`) and Update from the code (`⌘U`). Reviewing refines an issue, so Refine and Review belong to Todo only. **Ready and Doing**: Update from the code (`⌘U`); the chevron opens Update from the code and Ask… (`⌘K`). **Done**: no AI split button; the `…` menu sits right after the icons. Every menu ends with the current tool and model, which opens Settings (`⌘,`). See ReviewButton for running and Review ready.
-  3. **`…`**: a 24pt icon button in `ink-muted`. Its menu: Move to… (submenu of the other columns), Refresh only when Auto is off, and in the Editor, Discard changes.
+  3. **`…`**: a 24pt icon button in `ink-muted`. Its menu: Move to… (submenu of the other columns), Refresh only when Auto is off, in the Reader Agent log when the issue has one, Draft design when `idesign` is on (not on Done), Archive on Done, and in the Editor, Discard changes.
   4. **Editor only**: Save (`⌘S`), the Editor's one filled button. Discard moves into the `…` menu. The Unsaved pill is in the status bar.
 - Menus always show their keys, right-aligned in `meta-mono` `ink-faint`. Refresh leaves the Reader header: with Auto on (the default) the file watcher refreshes; with Auto off it is a row of the `…` menu.
 
@@ -35,7 +35,7 @@ Edit (`E`), Add label (`L`) and Delete (`Del`) stay visible, so the actions peop
 | ⌘ held | The key slides out after each icon, in layout, in `meta-mono` (`E`, `L`, `Del`), like every other hint. |
 | ⌘ held, pointer on it | Label, icon and key. |
 
-Leaving collapses the pill at once. With reduced motion it appears and goes in one frame. In egui: `theme::dynamic_button`.
+Leaving collapses the pill at once. With reduced motion it appears and goes in one frame. In egui: `widgets::DynamicButton`.
 - In the Editor, `esc` asks first when there are unsaved changes.
 
 ## Key hints

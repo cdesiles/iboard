@@ -40,7 +40,7 @@ color: var(--line, #353a42);
 | --- | --- | --- | --- |
 | `--line` | #cfd4db | #353a42 | Dividers only: header and status bar rules, modal head and foot rules, the sheet's rules, a modal frame's edge. Decorative, never the edge of a control or a card. |
 | `--line-soft` | #dfe2e7 | #2d3138 | Card edges at rest; hairline of secondary buttons in modal feet and dialogs. Decorative. |
-| `--line-strong` | #7c8491 | #737c89 | Only edges that identify a control: text fields, checkboxes, radios; plus a card or ghost tile under the pointer. 3.2:1 or better on every surface in both themes (WCAG 1.4.11). Text buttons, labels and key caps have no line-strong edge. |
+| `--line-strong` | #7c8491 | #737c89 | Only edges that identify a control: text fields, Selects, checkboxes, radios, a ghost tile's dashed edge; plus, under the pointer, a card, an Agenda day, the Reader's edit outline and a pane divider. 3.2:1 or better on every surface in both themes (WCAG 1.4.11). Text buttons, labels and key caps have no line-strong edge. |
 | `--scrollbar` | #bfc4cb | #737c89 | Scrollbar thumb while scrolling. Hidden at rest: no thumb until the pane scrolls or the pointer reaches its edge. Light 1.75:1 on surface, dark 3.9:1. |
 | `--scrollbar-active` | #a1a7b0 | #a7aeb9 | Scrollbar thumb under the pointer (8pt). Light 2.4:1 on surface; dark matches ink-muted. |
 
@@ -78,7 +78,7 @@ color: var(--accent, #86a4ff);
 
 | token | light | dark | usage |
 | --- | --- | --- | --- |
-| `--accent` | #2b54c4 | #86a4ff | Blue means selected, focused or a link, nothing else: selected card, focus ring, links, active filter, dragging scrollbar. Not a button fill (see primary). |
+| `--accent` | #2b54c4 | #86a4ff | On a control, blue means selected, focused or a link: selected card, focus ring, links, active filter, dragging scrollbar. Beyond controls, the data colour: charts, the Agenda's ramp, the build line. Not a button fill (see primary). |
 | `--accent-soft` | #e4eafb | #222c47 | Selected card fill, text selection, active crumb. |
 | `--on-accent` | #ffffff | #0b1433 | Text and icons on an accent fill (checked checkbox, and the primary button if primary is switched back to accent). |
 | `--primary` | {ink} → #15181d | {ink} → #e7e9ec | Fill of the one filled button per screen (New issue, Save, Add to Todo). An ink fill, so blue stays for selection and focus. Alternative kept for comparison: set to {accent} with on-primary {on-accent}. |
@@ -205,8 +205,8 @@ font-family: var(--font-sans);   /* the family alone */
 | `ui-body` | `.ui-body`, `--text-ui-body` | 13px / 18px | 400 | `sans` | Default UI text, inputs, card titles (at 500). |
 | `ui-strong` | `.ui-strong`, `--text-ui-strong` | 13px / 18px | 500 | `sans` | Card title, column titles (title case), current crumb, button labels at 12px. |
 | `ui-small` | `.ui-small`, `--text-ui-small` | 12px / 17px | 400 | `sans` | Card summary, review findings. |
-| `ui-label` | `.ui-label`, `--text-ui-label` | 11px / 14px, letter-spacing 0.06em | 600 | `sans` | Uppercase section labels (Not written yet). Column titles use ui-strong in title case; ui-label is the uppercase alternative. |
-| `meta` | `.meta`, `--text-meta` | 12px / 16px | 400 | `sans` | Inter, ink-muted: paths, file names, counts, dates, word counts, the status bar, modal context (in todo/, named on save, Saved for this session). |
+| `ui-label` | `.ui-label`, `--text-ui-label` | 11px / 14px, letter-spacing 0.06em | 600 | `sans` | Uppercase section labels (Not written yet). Column titles use ui-strong in title case. |
+| `meta` | `.meta`, `--text-meta` | 12px / 16px | 400 | `sans` | Inter, ink-muted: paths, file names, counts, dates, word counts, the status bar, modal context (in todo/, named in the background, Saved for this session). |
 | `read-h1` | `.read-h1`, `--text-read-h1` | 20px / 26px | 600 | `sans` | Issue title in the reader. |
 | `read-h2` | `.read-h2`, `--text-read-h2` | 16px / 22px | 600 | `sans` | ## headings in the reader. 24pt above, 6pt below. |
 | `read-h3` | `.read-h3`, `--text-read-h3` | 14px / 20px | 600 | `sans` | ### headings and deeper in the reader. 16pt above, 4pt below. |

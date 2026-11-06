@@ -16,8 +16,8 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 - **The file is the truth.** Every screen shows what is on disk. Name things the way the filesystem does (`todo/ai-assist.md`), never with an invented ID.
 - **Calm by default.** A screen at rest shows content and the few controls you need, nothing else: no key hints, no scrollbars, no file names on cards, no edges that don't identify a control. Density stays (24pt controls, 13pt UI, four columns on a 14" screen); what goes is noise. Devin's restraint is the reference.
 - **Each fact once.** For every screen, list what it shows and say each thing in one place (see Each fact once below). A path, a count or a date that appears twice is one too many.
-- **Colour once per screen.** One filled button per screen, in `primary` (ink). Blue means selected, focused or a link and nothing else. Status colour lives in the four small column icons; label colour in 6pt dots; violet only where an agent talks; red only for a failure or inside the Delete confirmation.
-- **Edges only where they identify.** `line-strong` (3:1 or better, WCAG 1.4.11) only on text fields, checkboxes, radios, the focus ring, and a card under the pointer. A text button is identified by its label, so it has no edge in the header and a `line-soft` hairline in modal feet and dialogs. Cards rest on `line-soft`.
+- **Colour once per screen.** One filled button per screen, in `primary` (ink). On a control, blue means selected, focused or a link and nothing else; beyond controls it is the data colour, on charts and the build line. Status colour lives in the four small column icons; label colour in 6pt dots; violet only where an agent talks; red only for a failure or inside the Delete confirmation.
+- **Edges only where they identify.** `line-strong` (3:1 or better, WCAG 1.4.11) only on text fields, Selects, checkboxes, radios and a ghost tile's dashed edge, and under the pointer on a card, an Agenda day, the Reader's edit outline and a pane divider. A text button is identified by its label, so it has no edge in the header and a `line-soft` hairline in modal feet and dialogs. Cards rest on `line-soft`.
 - **Keyboard first, pointer complete.** Every action has a shortcut, and every shortcut has a visible control. The keys stay out of sight until you ask: hold ⌘ alone for half a second and each key slides out beside its control (buttons, the filter, footers, popups) while the status bar lists the screen's keys. Letting go, or pressing anything with ⌘, puts them away, so a shortcut never flashes them. Tooltips, menus and the RefinePanel's numbered choices always show their keys.
 - **Type to filter.** Any list that opens (the ProjectMenu, the GroupsDialog and LabelPicker menus, select menus, filter suggestions) filters the moment you type: the first printable key goes into its filter field, already holding that character, with no click and no shortcut first. A list short enough to hide its field shows it on that first key. `↑ ↓` still move, `↩` opens the first match, `esc` clears the filter before it closes anything.
 
@@ -28,11 +28,11 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 | Board | Project name (header, opens the ProjectMenu) · per-column icon, name and count (column head) · cards: labels, title, summary; Done adds its date · the issues folder (status bar) · file name and actions of the hovered or selected card (card strip) | The issues path left the header for the status bar. The total "9 issues" left the status bar: the column counts already say it. The file name left every card at rest. |
 | Reader | Column and project (breadcrumb, with the column's status icon) · labels and title (sheet) · body · what is not written yet (dock) · path, modified time, progress or word count (status bar) | The sheet's head strip (column mark, path, "modified 15d ago", word count) is gone: the breadcrumb has the column, the status bar has the rest. The issue title joins the breadcrumb only once the `read-h1` has scrolled out of view. |
 | Editor | Breadcrumb with the title · the raw file · path and save state (status bar) | Save state is said once, in the status bar pill (not also in the header). |
-| Modals | Title and context in the head (`in todo/`, Inter `ink-muted`) · body · one primary in the foot | The file to be written is named once: in the foot when it is the commit point, otherwise in the head. |
+| Modals | Title and context in the head (`in todo/`, Inter `ink-muted`) · body · one primary in the foot | The file to be written is named once: in the foot when it is the commit point, otherwise in the head. The NewIssueModal shows the file on its sheet, so its head names only the folder (`in todo/`) and the sheet head alone names the file (`todo/<slug>.md`). |
 
 ## Content
 
-- Sentence case everywhere, column titles included (`Todo`, `Doing`, `Done` in `ui-strong`; the uppercase `ui-label` version is kept only as the compared alternative). Labels are always lowercase (`bug`, `discovery`), whatever the case in the title.
+- Sentence case everywhere, column titles included (`Todo`, `Doing`, `Done` in `ui-strong`); only `ui-label` section labels such as "Not written yet" are drawn uppercase. Labels are always lowercase (`bug`, `discovery`), whatever the case in the title.
 - Buttons are verbs: New issue, Refresh, Save, Review, Discard. No "OK", no ellipses unless a dialog follows.
 - Counts are bare numbers in `meta` (Inter). "4 issues", never "4 issue(s)".
 - Empty states say what goes there: "No issues in doing/" rather than "Empty".
@@ -43,9 +43,9 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 
 - `bg` is the window ground; `surface` is anything you can click into (card, reader page, editor, input, menu, modal). Cards and pages on `bg` take a `line-soft` edge; do not stack `surface` on `surface` without one.
 - Text: `ink` for content, `ink-muted` for secondary text (summaries, paths, counts, dates, the status bar, modal context), `ink-faint` only for placeholders, separators and menu key caps.
-- **Edges.** `line-strong` identifies a control: text fields, checkboxes, radios, plus a card or ghost tile under the pointer. `line-soft` is a hairline for cards at rest and for secondary buttons in modal feet and dialogs. `line` is for dividers only: the header and status bar rules, modal head and foot rules, a modal's frame. Header buttons have no edge at all. See Button for which applies where.
-- **One filled button per screen**, in `primary` (`ink`), label in `on-primary`: New issue on the Board, Save in the Editor, the commit button of a modal. The Reader has none. The violet filled button in RefinePanel (Send) and the red one in ConfirmDialog (Delete) are that screen's one fill. Switching `primary` back to `{accent}` restores today's blue; the Button card shows both.
-- Selection and focus: `accent`. With an ink primary, blue means only selected, focused or a link. Buttons, chips, cards and other controls show focus as a solid 2px `focus` ring outside the element. Text entry (fields, textareas, the composer, the editor) keeps a single border: it turns `focus` and gains a soft 3px `focus-halo` glow, so the field never looks double-bordered. Focus is never a color change alone.
+- **Edges.** `line-strong` identifies a control: text fields, Selects, checkboxes, radios and a ghost tile's dashed edge, plus, under the pointer, a card, an Agenda day, the Reader's edit outline and a pane divider. `line-soft` is a hairline for cards at rest and for secondary buttons in modal feet and dialogs. `line` is for dividers only: the header and status bar rules, modal head and foot rules, a modal's frame. Header buttons have no edge at all. See Button for which applies where.
+- **One filled button per screen**, in `primary` (`ink`), label in `on-primary`: New issue on the Board, Save in the Editor, the commit button of a modal. The Reader has none. The violet filled button in RefinePanel (Send), the red one in ConfirmDialog (Delete) and Apply to draft in the Review panel are that surface's one fill. Switching `primary` back to `{accent}` restores today's blue; the Button card shows both.
+- Selection and focus: `accent`. With an ink primary, blue on a control means only selected, focused or a link. It is also the data colour: the Stats charts and bars, the Agenda's ramp, and the build line in the status bar. Buttons, chips, cards and other controls show focus as a solid 2px `focus` ring outside the element. Text entry (fields, textareas, the composer, the editor) keeps a single border: it turns `focus` and gains a soft 3px `focus-halo` glow, so the field never looks double-bordered. Focus is never a color change alone.
 - **Columns** carry their status as a 14pt icon whose shape differs per column, in the status colour: Todo an empty circle (`status-todo`), Ready a dotted circle (`status-ready`), Doing a half-filled circle (`status-doing`), Done a filled circle with a check (`status-done`). Shape and word carry the meaning, so colour is never the only signal. There is no coloured rule.
 - **Labels** are neutral pills (`surface-sunken`, `ink-muted`) with the label's colour as a 6pt dot. The presets use the `label-*` palette (`bug` red, `feature` green, `discovery` teal, `question` ochre, `chore` grey); Settings › Labels can give any label its own `#rrggbb`, and a label with no colour has no dot. A label marked Stand out (`[label_style] stand_out`, default `["bug"]`) is a tinted pill: its colour as text on itself at `label-tint` (`label-tint-dark` in dark) over `surface`, 4.5:1 or better, else `ink` text. The presets have no blue (selection) and no violet (review).
 - `review` (violet) is reserved for the agent: the AI split button, the Challenge verdict, the RefinePanel and what an agent wrote. Nothing else may use it, so the user learns that this hue means "an agent is talking". It is inviting on purpose: distinct from the blue `accent` and never close to `danger`.
@@ -66,8 +66,8 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 
 ## Type
 
-- **Inter for the interface, JetBrains Mono only for code**: the editor, code blocks and inline code, diffs, and key caps. Paths, file names, counts, dates, word counts, the status bar and modal context ("in todo/", "named on save", "Saved for this session") are Inter in `meta`, `ink-muted`. Both faces are under the SIL Open Font License; bundle the TTFs in the binary with their license text.
-- Weights are the static faces only: Inter Regular, Medium, SemiBold and JetBrains Mono Regular, Medium. egui has no weights, so each is a named family (`theme::install_fonts`).
+- **Inter for the interface, JetBrains Mono only for code**: the editor, code blocks and inline code, diffs, and key caps. Paths, file names, counts, dates, word counts, the status bar and modal context ("in todo/", "named in the background", "Saved for this session") are Inter in `meta`, `ink-muted`. Both faces are under the SIL Open Font License; bundle the TTFs in the binary with their license text.
+- Weights are the static faces only: Inter Regular, Medium, SemiBold and JetBrains Mono Regular, Medium. egui has no weights, so each is a named family (`theme::install`).
 - Both faces carry the macOS key symbols themselves: ⌘ ⌥ ⇧ ⌃ ↩ ⌫ ⌦ ⇥ ⇪ and the arrows. That is why they replaced IBM Plex, which has none of them. egui never falls back to system fonts, so a symbol the bundled face lacks shows as an empty box: check a new glyph against the face before using it (JetBrains Mono has no ⏏).
 - Interface sizes: `ui-title` 15, `ui-body` and `ui-strong` 13, `ui-small` 12, `meta` 12 (Inter), `ui-label` and `meta-mono` 11. Nothing below 11pt. Column titles are `ui-strong` in title case ("Todo"); `ui-label` uppercase stays for section labels such as "Not written yet".
 - Reading sizes: `read-h1` 20/26, `read-h2` 16/22 and `read-h3` 14/20, all SemiBold, so `##` and `###` read as sections under the title instead of rivalling it. `read-body` is 15/24 in a `read-measure` 560pt column, about 75 characters per line (measured 70 to 79 on prose); the sheet is `reader-max` 624, the column plus 32pt each side.
@@ -117,20 +117,20 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 
 | Key | Board | Reader | Editor |
 | --- | --- | --- | --- |
-| `↑ ↓ ← →` | Move selection between cards and columns | Scroll | Cursor |
-| `↩` | Open selected issue | Edit | New line |
+| `↑ ↓ ← →` | Move selection between cards and columns | `↑ ↓` scroll | Cursor |
+| `↩` | Open selected issue | Edit (Todo, Ready) | New line |
 | `E` | Edit selected issue (Todo, Ready) | Edit (Todo, Ready) | |
-| `⌘↩` | Move selected issue to the next column (no composer open) | | |
+| `⌘↩` | Move selected issue to the next column (no modal open) | | |
 | `esc` | Clear filter | Back to board | Leave editor (asks if unsaved) |
 | `⌘S` | | | Save to file |
 | `⌘N` | New issue (NewIssueModal) | New issue, over the page | New issue, over the page (the unsaved edit stays open behind it) |
 | `⌘F` | Focus and widen the filter; `↓` reaches the suggestions | | |
 | `⌘R` | Refresh from disk (Auto off) | Refine this issue (Todo; Refresh elsewhere, Auto off) | Refine draft (Todo) |
 | `⌘[` | | Back | Back (asks if unsaved) |
-| `⌘⇧R` | | Review this issue (Todo) | Review draft (Todo) |
-| `⌘U` | | Update from the code (Todo, Ready, Doing) | |
-| `⌘K` | | Ask… (Todo, Ready, Doing) | |
-| `⌘I` | Stats (also in the ProjectMenu footer) | | |
+| `⌘⇧R` | Review the selected issue (Todo) | Review this issue (Todo) | Review draft (Todo) |
+| `⌘U` | Update the selected issue from the code (Todo, Ready, Doing) | Update from the code (Todo, Ready, Doing) | Update from the code (Todo, Ready, Doing) |
+| `⌘K` | Ask… on the selected issue (Todo, Ready, Doing) | Ask… (Todo, Ready, Doing) | Ask… (Todo, Ready, Doing) |
+| `⌘I` | Stats (also in the ProjectMenu footer, and with that menu open) | | |
 | `⌘Z` | Undo the last delete (asking off) or split, until the next key or pointer press; moving a card between columns has no undo | | Undo typing |
 | `⌘,` | Open Settings (last tab used) | Open Settings | Open Settings |
 | `⇧↩` | New line in the new issue's notes | | |
@@ -157,7 +157,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | NewIssueModal | `⌘↩` | IssueCreated → EditStarted (title as for `↩`, landing once the Editor closes) | Editor on the new file |
 | Reader (Todo, Ready) | Double-click description, `E`, `↩` | EditStarted | Editor |
 | Reader | Click a ghost section or an "Add a section" chip | SectionAddRequested → EditStarted | Editor with `## <Section>` appended, cursor under it |
-| Reader | Click the empty sheet below the text | EditStarted | Editor, cursor at the end of the file |
+| Reader (Todo, Ready) | Double-click the empty sheet below the text | EditStarted | Editor, cursor at the end of the file |
 | Reader | Draft them with Review | ReviewRequested → ReviewReceived | Review panel; proposed sections apply to the draft |
 | Reader (Done) | Click Commits | CommitsOpened | Popup lists the commits whose message names the file (`closes <file>.md`) |
 | Commits popup | Click a commit, or All | DiffOpened | Diff: the changed files on the left, the unified diff on the right; `⌘F` finds, `n p` and `] [` move by file and hunk, `esc` goes back to the issue |
@@ -183,7 +183,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | ConfirmDialog | Delete (`↩`) / Cancel (`esc`) | IssueDeleted / DeleteCancelled | Board |
 | Reader, Editor (Todo) | Review (`⌘⇧R`) | ReviewRequested → ReviewReceived | Review panel opens beside the page |
 | Reader, Editor | AI split chevron | AIMenuOpened | Todo: Refine, Review, Deep or Quick review, Ask, Update from the code. Ready, Doing: Update from the code, Ask. Done has no AI split button |
-| Reader, Editor | `…` | MoreMenuOpened | Menu: Move to…; Discard in the Editor |
+| Reader, Editor | `…` | MoreMenuOpened | Menu: Move to…; Refresh with Auto off; in the Reader, Agent log when the issue has one, Draft design with `idesign` on (not on Done) and Archive on Done; Discard changes in the Editor |
 | Any | Hold ⌘ alone 0.5s / release or another key | KeyHintsShown / KeyHintsHidden | Same screen with key hints beside controls, in the filter, footers, popups and status bar (view state only, no file change) |
 | Any | Settings (`⌘,`, Review menu, new issue engine tag) | SettingsOpened | Settings dialog on the matching tab |
 | Settings › AI review | Pick tool, pick model, Save (`⌘↩`) | ReviewToolChosen, ReviewModelChosen → SettingsSaved | Back to the screen; Review menu shows the new tool and model |
@@ -211,18 +211,18 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 
 ## Motion
 
-Motion is short and only ever says where something went or what just became available. Durations are tokens (`motion` in `tokens.json`, `theme::motion` in Rust):
+Motion is short and only ever says where something went or what just became available. Durations are tokens (`motion` in `tokens.json`, `theme::MOTION_HOVER` and its neighbours in Rust, each passed through `theme::motion`):
 
-- **Hover** fills and edges fade in over `motion-hover` 100ms and go at once when the pointer leaves (`theme::hover_fade`). Keyboard selection never animates: a selected card, menu row or focus ring changes in one frame, so arrowing through a list never lags.
+- **Hover** fills and edges fade in over `motion-hover` 100ms and go at once when the pointer leaves (`widgets::hover_fade`). Keyboard selection never animates: a selected card, menu row or focus ring changes in one frame, so arrowing through a list never lags.
 - **Key hints** wait `hint-hold` 0.5s of ⌘ held alone, then slide out over `motion-hint` 120ms; they hide in one frame on release or on any other key.
 - **Scrollbars** appear while scrolling or when the pointer enters the pane's 12pt edge strip, stay `scroll-linger` 800ms after the last movement, then fade over `scroll-fade` 150ms.
 - The rest is unchanged: the filter field widening (120ms), the drop zones sliding up (140ms), modals (scrim 120ms, frame 160ms, close 100ms), the Design panel's rail (220ms), the Thinking mark's rocking card.
 
-When macOS asks for reduced motion (Accessibility › Display › Reduce motion), every one of them is skipped: states change in one frame, hints and scrollbars appear and disappear without fades, the dot stays still and the Thinking card rests at −8°. The app reads the setting once at launch and stores it with `theme::set_reduced_motion`; `theme::dur` turns any duration into 0 under it. `bundle.css` gates the same transitions behind `prefers-reduced-motion`, which reads the same setting in WebKit.
+When macOS asks for reduced motion (Accessibility › Display › Reduce motion), every one of them is skipped: states change in one frame, hints and scrollbars appear and disappear without fades, the dot stays still and the Thinking card rests at −8°. The app reads the setting once at launch and stores it with `theme::set_reduced_motion`; `theme::motion` turns any duration into 0 under it. `bundle.css` gates the same transitions behind `prefers-reduced-motion`, which reads the same setting in WebKit.
 
 ## Iconography
 
-Line icons at 14pt, 1.6pt stroke, `currentColor`, drawn on the 24pt control grid: refresh, back chevron, edit pencil, plus, review, trash, archive, tag-plus, git node, play and square (stop). The repo has no icon set yet; use Lucide (MIT) glyphs of the same names, except trash, which is iboard's own soft bin (see the Icons card): a 15-wide lid, a round 2.5 knob instead of a square tab, a body that tapers 1pt each side into 3pt rounded bottom corners, and two short ribs. Use that one path everywhere a delete appears (card action, header Delete button, ConfirmDialog, Delete drop zone); never Lucide's straight-sided `trash-2`. Keep any icon paired with a word (the back chevron comes with "Board") except the per-card actions (trash, archive), which carry a tooltip and only appear when the card is hovered, selected or focused.
+Line icons at 14pt, 1.6pt stroke, `currentColor`, drawn on the 24pt control grid: refresh, back chevron, edit pencil, plus, review, trash, archive, tag-plus, git node, play and square (stop). The repo has no icon set yet; use Lucide (MIT) glyphs of the same names, except trash, which is iboard's own soft bin (see the Icons card): a 15-wide lid, a round 2.5 knob instead of a square tab, a body that tapers 1pt each side into 3pt rounded bottom corners, and two short ribs. Use that one path everywhere a delete appears (card action, header Delete button, ConfirmDialog, Delete drop zone); never Lucide's straight-sided `trash-2`. Keep any icon paired with a word (the back chevron comes with "Board") except the per-card actions (trash, archive), which carry a tooltip and only appear when the card is hovered, selected or focused, and the header's dynamic icons, whose pill is their label.
 
 ## AI review
 
@@ -238,11 +238,11 @@ issue. The tool and model are chosen in the ReviewSettings dialog: a Tool select
 - **Verdicts**: Pass (`status-done`), Challenge (`review`), Block (`danger`), always with the word.
 - **From an idea to an issue**: when the issue is only a title, the review drafts the missing sections (Context, Acceptance criteria, Out of scope, Open questions) as a proposal. *Apply to draft* opens it in the Editor, unsaved; the agent never writes the file itself.
 - **States**: idle, running (button shows "Reviewing…", `esc` cancels), result (panel open), failed (inline `danger` text with retry). Only the issue text is sent; interactive agents are run in one-shot mode, so no terminal is attached yet.
-- **Refining (RefinePanel)**: an agent in a role (the Challenger) pushes back on the issue and offers numbered resolutions. The panel has two panes: the TL;DR (`ui-title` with a 3px `review` rule) and the reasoning (`read-body`, in `read-measure`) on the left, the choices on the right so they never scroll away. Each choice is a bordered card with a short title, a muted detail, its number key and a radio; the selected one takes the `accent` edge and `accent-soft` fill. The note under the choices follows the selection ("Add a note to choice 1", or "Or answer in your own words"). Send is the one filled `review` button and names what goes out ("Send choice 1", "Send answer"). Under 820pt it stacks and folds the reasoning under the TL;DR. See `components/RefinePanel`.
+- **Refining (RefinePanel)**: an agent in a role (the Challenger) pushes back on the issue and offers numbered resolutions. The panel has two panes: the TL;DR (`ui-title` with a 3px `review` rule) and the reasoning (`read-body`, in `read-measure`) on the left, the choices on the right so they never scroll away. Each choice is a bordered card with a short title, a muted detail, its number key and a radio; the selected one takes the `accent` edge and `accent-soft` fill. The note under the choices follows the selection ("Add a note to choice 1", or "Or answer in your own words"). Send is the one filled `review` button and names what goes out ("Send choice 1", "Send answer"). Under 900pt it stacks and folds the reasoning under the TL;DR. See `components/RefinePanel`.
 - **Waiting (Thinking)**: while the agent works (often about 10s), the iboard "i" stands in for a spinner: its blue dot stretches across the stem, the stem tucks into the freed corner, and the two hand over until the i stands again a quarter turn on (1.6s per quarter, a full square in 6.4s). The panel opens at its final size with placeholder bars and cards, the status line says what it waits for with an elapsed clock ("Challenger is reading the issue · 4s"), and after 20s it says it is slow and that `esc` cancels. No fake progress. See `components/Thinking`.
 
 ## Using the tokens from Rust
 
 Tokens are points, which map 1:1 to egui points and to CSS px on a Retina display. The header font (Ubuntu) and widget shapes in the screenshot look like egui's defaults, so the companion `theme.rs` in the project files maps these tokens onto `egui::Visuals` and `egui::Style`. If the app uses iced, Slint or Tauri instead, the same `tokens.json` drives it; only the mapping file changes.
 
-egui has no font weights: register `Inter-Medium`, `Inter-SemiBold` and `JetBrainsMono-Medium` as their own named families and use them where a style says 500 or 600 (card titles, column labels, the project name, `meta`). `theme.rs` does this in `install_fonts`.
+egui has no font weights: register `Inter-Medium`, `Inter-SemiBold` and `JetBrainsMono-Medium` as their own named families and use them where a style says 500 or 600 (card titles, column labels, the project name, `meta`). `theme.rs` does this in `font_definitions`.
