@@ -55,6 +55,14 @@ impl IboardApp {
             .and_then(|drag| drag.path.parent().map(Path::to_path_buf));
         let mut dragged_column = None;
         let mut intents = Vec::new();
+        let background = ui.interact(
+            ui.available_rect_before_wrap(),
+            egui::Id::new("board_background"),
+            Sense::click(),
+        );
+        if background.clicked() {
+            intents.push(Intent::ClearPicked);
+        }
         theme::scroll_area(
             ui,
             egui::ScrollArea::horizontal()

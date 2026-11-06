@@ -122,6 +122,32 @@ fn a_plain_click_voids_the_selection() {
 }
 
 #[test]
+fn a_click_in_an_empty_region_voids_the_selection() {
+    let (dir, mut app, [a, b, c]) = board("empty");
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let doing = app
+        .board
+        .columns
+        .iter()
+        .position(|column| column.dir == dir.join("issues/doing"))
+        .unwrap();
+    let well = ctx
+        .read_response(egui::Id::new(("column_drop", doing)))
+        .unwrap()
+        .rect
+        .center();
+    let below = card_center(&ctx, &c) + egui::vec2(0.0, 200.0);
+
+    for at in [well, below] {
+        click(&ctx, &mut app, card_center(&ctx, &a), false);
+        app.pick(b.clone());
+        click(&ctx, &mut app, at, false);
+        assert!(app.session.picked.is_empty() && app.session.selected.is_none());
+    }
+}
+
+#[test]
 fn the_column_holding_the_selection_offers_to_clear_it() {
     let (_dir, mut app, [a, b, _]) = board("clear");
     app.pick(a);
