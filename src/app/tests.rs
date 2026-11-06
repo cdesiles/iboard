@@ -3,6 +3,7 @@
 use super::*;
 
 mod bars;
+mod board_look;
 mod build;
 mod compose;
 mod design_panel;

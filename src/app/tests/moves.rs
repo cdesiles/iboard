@@ -281,9 +281,16 @@ fn the_card_delete_icon_asks_to_delete_without_opening() {
     let ctx = themed_ctx();
 
     draw(&ctx, &mut app, vec![]);
+    let card = ctx
+        .read_response(egui::Id::new(("issue_card", &file)))
+        .unwrap()
+        .rect
+        .center();
+    draw(&ctx, &mut app, vec![egui::Event::PointerMoved(card)]);
+    draw(&ctx, &mut app, vec![egui::Event::PointerMoved(card)]);
     let icon = ctx
         .read_response(egui::Id::new(("card_delete", &file)))
-        .expect("the card draws a delete icon")
+        .expect("the hovered card draws a delete icon")
         .rect
         .center();
     draw(&ctx, &mut app, vec![egui::Event::PointerMoved(icon)]);

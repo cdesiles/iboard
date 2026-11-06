@@ -3,65 +3,108 @@
 use super::compose::DISCARD_UNDO;
 use super::dock::IssueDrag;
 use super::{
-    Align, ButtonKind, Frame, IboardApp, Layout, NOTICE_FOR, Path, RichText, Screen, Undo,
-    file_name, relative_time, theme, widgets,
+    Align, ButtonKind, Frame, IboardApp, Issue, Layout, NOTICE_FOR, Path, RichText, Screen, Undo,
+    display_path, file_name, relative_time, sheet, theme, widgets,
 };
 
+/// Between a status bar item and the `·` that parts it from the next.
+const STATUS_GAP: f32 = 6.0;
+
 impl IboardApp {
-    /// The 24pt bottom strip: where you are on the left and, while ⌘ is held,
-    /// what you can press on the right.
+    /// The 24pt bottom strip: where you are on the left and on the right the
+    /// Editor's save state and, while ⌘ is held, what you can press.
     pub(super) fn status_bar(&mut self, ui: &mut egui::Ui) {
         ui.style_mut().interaction.selectable_labels = false;
         ui.horizontal_centered(|ui| {
-            ui.spacing_mut().item_spacing.x = theme::SPACE_5;
-            let hints = match self.session.screen.clone() {
+            ui.spacing_mut().item_spacing.x = STATUS_GAP;
+            let screen = self.session.screen.clone();
+            let hints = match &screen {
                 Screen::Board => self.board_status(ui),
-                Screen::Detail(path, _) => self.detail_status(ui, &path),
+                Screen::Detail(path, _) => self.detail_status(ui, path),
                 Screen::Diff => self.diff_status(ui),
             };
-            if !widgets::key_hints_shown(ui.ctx()) {
+            let editing = match &screen {
+                Screen::Detail(path, _) if self.session.editing().is_some() => Some(path),
+                _ => None,
+            };
+            let keys = widgets::key_hints_shown(ui.ctx());
+            if editing.is_none() && !keys {
                 return;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                widgets::sliding_hints(ui, |ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                    for (key, action) in hints.into_iter().rev() {
-                        ui.horizontal(|ui| widgets::hint(ui, key, action));
-                    }
-                });
+                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                if let Some(path) = editing {
+                    self.save_pill(ui, path);
+                }
+                if keys {
+                    widgets::sliding_hints(ui, |ui| {
+                        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                        for (key, action) in hints.into_iter().rev() {
+                            ui.horizontal(|ui| widgets::hint(ui, key, action));
+                        }
+                    });
+                }
             });
         });
     }
 
-    /// The board's status: what the last action did or what is selected,
-    /// the issue count and the board's warnings. Returns its key hints.
+    /// The board's status: where it reads from or what just happened, its
+    /// warnings and the AI build. Returns its key hints.
     fn board_status(&mut self, ui: &mut egui::Ui) -> Vec<Hint> {
         let p = theme::palette(ui);
         let hints = self.board_message(ui);
-        let count = self.board.issue_count();
-        let noun = if count == 1 { "issue" } else { "issues" };
-        ui.label(status_meta(ui, format!("{count} {noun}")));
         if !self.board.warnings.is_empty() {
             let n = self.board.warnings.len();
             let noun = if n == 1 { "warning" } else { "warnings" };
-            ui.label(
-                RichText::new(format!("{n} {noun}"))
-                    .font(theme::meta())
-                    .color(p.status_doing),
-            )
-            .on_hover_text(self.board.warnings.join("\n"));
+            status_sep(ui);
+            ui.label(status_meta(ui, format!("{n} {noun}")))
+                .on_hover_text(self.board.warnings.join("\n"));
         }
         if let Some(status) = self.build_status() {
+            status_sep(ui);
             let text = RichText::new(status).font(theme::meta()).color(p.accent);
             ui.add(egui::Label::new(text).truncate());
         }
         hints
     }
 
+    /// The issues folder, or the projects of a group's board.
+    fn issues_folder(&self) -> String {
+        match self.shown_group() {
+            Some(group) => group.count(),
+            None => display_path(&self.board.root),
+        }
+    }
+
+    /// While filtering: "4 of 9 issues match “bug”".
+    fn filter_matches(&self) -> Option<String> {
+        let filter = &self.filter_bar.filter;
+        if filter.is_empty() {
+            return None;
+        }
+        let total = self.board.issue_count();
+        let issues = self.board.columns.iter().flat_map(|c| &c.issues);
+        let shown = issues.filter(|issue| filter.matches(issue)).count();
+        let noun = if total == 1 { "issue" } else { "issues" };
+        let verb = if shown == 1 { "matches" } else { "match" };
+        Some(format!(
+            "{shown} of {total} {noun} {verb} “{}”",
+            filter.describe()
+        ))
+    }
+
+    /// The issues folder, then what the filter matches.
+    fn folder_line(&self, ui: &mut egui::Ui) {
+        ui.label(status_meta(ui, self.issues_folder()));
+        if let Some(matches) = self.filter_matches() {
+            status_sep(ui);
+            ui.label(status_meta(ui, matches));
+        }
+    }
+
     /// The board's first status line, by priority: a drag, an undo, a
-    /// notice, the composer, the selection.
+    /// notice, else the folder. The selection and the composer set the keys.
     fn board_message(&mut self, ui: &mut egui::Ui) -> Vec<Hint> {
-        let p = theme::palette(ui);
         let notice = self
             .session
             .notice
@@ -79,49 +122,42 @@ impl IboardApp {
             .as_ref()
             .filter(|(_, at)| at.elapsed() < DISCARD_UNDO)
         {
-            ui.label(
-                RichText::new("Discarded the new issue · ⌘Z")
-                    .font(theme::meta())
-                    .color(p.ink),
-            );
+            ui.label(status_meta(ui, "Discarded the new issue · ⌘Z".to_owned()));
             ui.ctx()
                 .request_repaint_after(DISCARD_UNDO.saturating_sub(at.elapsed()));
             return vec![("⌘Z", "undo"), ("⌘N", "new")];
         }
         if let Some(undo) = self.session.undo.as_ref() {
             let text = match undo {
-                Undo::Deleted(deleted) => self.trashed_notice(deleted),
+                Undo::Deleted(deleted) => format!("{} · ⌘Z", self.trashed_notice(deleted)),
                 Undo::Split(split) => format!(
                     "Split {} into {} tickets",
                     file_name(&split.original),
                     split.children.len()
                 ),
             };
-            ui.label(RichText::new(text).font(theme::meta()).color(p.ink));
+            ui.label(status_meta(ui, text));
             return vec![("⌘Z", "undo"), ("⌘,", "settings")];
         }
         if let Some((text, at)) = notice {
-            ui.label(RichText::new(text).font(theme::meta()).color(p.ink));
+            ui.label(status_meta(ui, text));
             ui.ctx()
                 .request_repaint_after(NOTICE_FOR.saturating_sub(at.elapsed()));
             return idle;
         }
-        if self.composer_open()
-            && let Some(todo) = self.board.todo_column()
-        {
-            ui.label(status_meta(ui, self.relative(&todo.dir)));
+        self.folder_line(ui);
+        if self.composer_open() && self.board.todo_column().is_some() {
             return vec![("↩", "add"), ("⌘↩", "add & edit"), ("esc", "close")];
         }
         let Some(selected) = self.selected_issue() else {
             return idle;
         };
-        ui.label(status_meta(ui, self.relative(&selected)));
         let done = self
             .board
             .find(&selected)
             .is_some_and(|issue| issue.done_at.is_some());
         if self.can_edit(&selected) {
-            vec![("↩", "open"), ("E", "edit"), ("⌘↩", "move")]
+            vec![("↩", "open"), ("E", "edit"), ("⌘↩", "next column")]
         } else if done {
             vec![("↩", "open"), ("A", "archive")]
         } else if self.updatable(&selected) {
@@ -139,33 +175,36 @@ impl IboardApp {
         vec![("⌘F", "find"), ("n p", "file"), ("esc", "back")]
     }
 
-    /// The open issue's status: its file, then the save state in the Editor
-    /// or when it was modified in the Reader. Returns its key hints.
+    /// The open issue's status: its file, then in the Reader when it was
+    /// modified and how far it is. Returns its key hints.
     fn detail_status(&mut self, ui: &mut egui::Ui, path: &Path) -> Vec<Hint> {
         ui.label(status_meta(ui, self.relative(path)));
         if self.session.editing().is_some() {
-            self.save_pill(ui, path);
             return if self.session.leave_prompt.is_some() {
                 vec![("esc", "keep editing")]
             } else {
                 vec![("⌘S", "save"), ("esc", "leave")]
             };
         }
-        if let Some(modified) = self.board.find(path).and_then(|t| t.modified) {
-            ui.label(status_meta(
-                ui,
-                format!("modified {}", relative_time(modified)),
-            ));
+        if let Some(issue) = self.board.find(path) {
+            reader_facts(ui, issue);
         }
-        let done = self.is_done_issue(path);
-        if self.can_edit(path) {
-            vec![("E", "edit"), ("Del", "delete"), ("esc", "back")]
-        } else if done {
-            vec![("esc", "back")]
+        let todo = self
+            .board
+            .column_of(path)
+            .is_some_and(|column| column.accepts_new_issues());
+        if todo && self.prefs.agent.configured() {
+            vec![("E", "edit"), ("esc", "board"), ("⌘⇧R", "review")]
+        } else if self.can_edit(path) && self.updatable(path) {
+            vec![("E", "edit"), ("esc", "board"), ("⌘U", "update")]
+        } else if self.can_edit(path) {
+            vec![("E", "edit"), ("esc", "board"), ("Del", "delete")]
+        } else if self.is_done_issue(path) {
+            vec![("esc", "board")]
         } else if self.updatable(path) {
-            vec![("⌘U", "update"), ("Del", "delete"), ("esc", "back")]
+            vec![("⌘U", "update"), ("Del", "delete"), ("esc", "board")]
         } else {
-            vec![("Del", "delete"), ("esc", "back")]
+            vec![("Del", "delete"), ("esc", "board")]
         }
     }
 
@@ -207,6 +246,34 @@ impl IboardApp {
 
 /// A key hint of the status bar: the key, and what it does.
 type Hint = (&'static str, &'static str);
+
+/// What the Reader's status line says of an open issue after its path: "modified
+/// 15d ago", then its checklist as a 48pt meter and "1/3 done", or with no
+/// checkboxes its word count.
+fn reader_facts(ui: &mut egui::Ui, issue: &Issue) {
+    if let Some(modified) = issue.modified {
+        status_sep(ui);
+        let ago = format!("modified {}", relative_time(modified));
+        ui.label(status_meta(ui, ago));
+    }
+    status_sep(ui);
+    let (text, _) = sheet::hide_title_labels(&issue.markdown);
+    let (ticked, total) = sheet::checklist(&text);
+    if total > 0 {
+        widgets::meter(ui, ticked, total);
+        ui.label(status_meta(ui, format!("{ticked}/{total} done")));
+    } else {
+        let words = sheet::word_count(&text);
+        let unit = if words == 1 { "word" } else { "words" };
+        ui.label(status_meta(ui, format!("{words} {unit}")));
+    }
+}
+
+/// The `·` between two status bar items, in `ink-faint`.
+fn status_sep(ui: &mut egui::Ui) {
+    let faint = theme::palette(ui).ink_faint;
+    ui.label(RichText::new("·").font(theme::meta()).color(faint));
+}
 
 /// Status bar text in `meta`, `ink-muted`.
 fn status_meta(ui: &egui::Ui, text: String) -> RichText {

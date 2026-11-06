@@ -4,9 +4,21 @@ use super::dock::IssueDrag;
 use super::labelling::{label_picker_open, set_label_anchor};
 use super::review::ReviewPill;
 use super::{
-    Align, Color32, CornerRadius, Duration, Frame, Icon, Instant, Issue, Labels, Layout, LayoutJob,
-    Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2, stopwatch, theme, widgets,
+    Align, Color32, CornerRadius, Frame, Icon, Instant, Issue, Labels, Layout, LayoutJob, Pos2,
+    Rect, RichText, Sense, Stroke, StrokeKind, Vec2, stopwatch, theme, widgets,
 };
+
+/// The strip laid over a card's bottom on hover, selection or focus. A card
+/// keeps at least this much under its title, so the strip never changes its
+/// height.
+const STRIP_H: f32 = 28.0;
+/// `ui-strong`, `ui-small` and `meta`'s line heights.
+const TITLE_LINE: f32 = 18.0;
+const SUMMARY_LINE: f32 = 17.0;
+const META_LINE: f32 = 16.0;
+/// A card's padding, and the edge drawn outside it.
+const CARD_PADDING: Vec2 = Vec2::new(theme::SPACE_4, 10.0);
+const CARD_BORDER: f32 = 1.0;
 
 /// An issue action available from a card or the detail header.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -83,8 +95,8 @@ pub(super) enum CardLook {
 }
 
 /// Draws one issue card. A click selects it, a shift-click picks it into the
-/// multi-selection, its Expand action or a double click reads it; dragging the card carries it to another column, with a
-/// copy following the cursor. Returns the action the card asked for (if any)
+/// multi-selection, its Expand action or a double click reads it; dragging the
+/// card carries it to another column, with a copy following the cursor. Returns the action the card asked for (if any)
 /// and the rect it occupies.
 pub(super) fn issue_card(
     ui: &mut egui::Ui,
@@ -100,7 +112,6 @@ pub(super) fn issue_card(
     // to select text (which also showed an I-beam cursor and hijacked the drag).
     ui.style_mut().interaction.selectable_labels = false;
 
-    // Actions show on hover or selection, never while any card is dragged.
     // Hover is read from last frame's rect, since the body is drawn first.
     let drag = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx());
     let dragging_self = drag.as_ref().is_some_and(|drag| drag.path == issue.path);
@@ -109,14 +120,17 @@ pub(super) fn issue_card(
         .ctx()
         .data(|d| d.get_temp::<Rect>(rect_id))
         .is_some_and(|rect| ui.rect_contains_pointer(rect));
-    // An open LabelPicker keeps its card's actions, and so its trigger, shown.
+    // An open LabelPicker keeps its card's strip, and so its trigger, shown.
     let picking = label_picker_open(ui.ctx()).as_deref() == Some(issue.path.as_path());
-    let show_actions =
-        drag.is_none() && (hovered || picking || matches!(look, CardLook::Selected { .. }));
-    let actions = if show_actions {
-        Actions::Shown
+    let wanted = hovered
+        || picking
+        || matches!(look, CardLook::Selected { .. })
+        || focus_within(ui.ctx(), issue, card_id, &extras);
+    let running = matches!(extras.build, Some(CardBuild::Running(_)));
+    let strip = if drag.is_none() {
+        wanted || running
     } else {
-        Actions::Hidden
+        running && !dragging_self
     };
 
     let scope = ui.scope_builder(
@@ -128,14 +142,17 @@ pub(super) fn issue_card(
             if dragging_self {
                 ui.set_opacity(0.4);
             }
-            card_body(ui, issue, width, look, actions, labels, extras)
+            card_body(ui, issue, width, look, strip, labels, extras)
         },
     );
     let mut body = scope.inner;
     let response = scope.response;
     ui.ctx().data_mut(|d| d.insert_temp(rect_id, response.rect));
-    if show_actions && extras.expand {
-        expand_action(ui, issue, response.rect, look, &mut body);
+    if strip {
+        card_strip(ui, issue, response.rect, look, &extras, &mut body);
+        if extras.expand {
+            expand_action(ui, issue, response.rect, look, &mut body);
+        }
     }
 
     // Dragging the card carries its file path; a drop on a column moves it,
@@ -148,11 +165,10 @@ pub(super) fn issue_card(
     // The action icons are their own click targets: while the pointer is over
     // one, the card must not override the pointer cursor the icon set with its
     // own grab cursor below (and a click there must not open the issue).
-    let over_action = show_actions
-        && ui
-            .ctx()
-            .pointer_interact_pos()
-            .is_some_and(|pos| body.action_rects.iter().any(|rect| rect.contains(pos)));
+    let over_action = ui
+        .ctx()
+        .pointer_interact_pos()
+        .is_some_and(|pos| body.action_rects.iter().any(|rect| rect.contains(pos)));
 
     // `esc` cancels a drag by dropping the payload: the card stays put.
     if response.dragged() && dragging_self {
@@ -188,6 +204,81 @@ pub(super) fn issue_card(
     (action, response.rect)
 }
 
+/// The keyboard is on the card or on one of its actions.
+fn focus_within(ctx: &egui::Context, issue: &Issue, card: egui::Id, extras: &CardExtras) -> bool {
+    let Some(focused) = ctx.memory(egui::Memory::focused) else {
+        return false;
+    };
+    focused == card
+        || focused == egui::Id::new(("card_expand", &issue.path))
+        || card_buttons(issue.done_at.is_some(), extras)
+            .iter()
+            .any(|button| focused == egui::Id::new((button.id, &issue.path)))
+}
+
+/// Where the strip lies: the card's bottom, inside its edge.
+fn strip_rect(card: Rect) -> Rect {
+    let inner = card.shrink(CARD_BORDER);
+    inner.with_min_y(inner.max.y - STRIP_H)
+}
+
+/// The strip, over the card's bottom on the card's own fill: the file name,
+/// Done's date, the build's time, then the actions. It covers the last summary
+/// line or the date row.
+fn card_strip(
+    ui: &mut egui::Ui,
+    issue: &Issue,
+    card: Rect,
+    look: CardLook,
+    extras: &CardExtras,
+    body: &mut CardBody,
+) {
+    let p = theme::palette(ui);
+    let strip = strip_rect(card);
+    let corner = theme::RADIUS_MD - 1;
+    ui.painter().rect_filled(
+        strip,
+        CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: corner,
+            se: corner,
+        },
+        card_fill(p, look),
+    );
+    let row = Rect::from_min_max(
+        strip.min + Vec2::new(CARD_PADDING.x, 0.0),
+        strip.max - Vec2::new(6.0, 2.0),
+    );
+    let mut ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(row)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    ui.spacing_mut().item_spacing.x = theme::SPACE_1;
+    card_actions(
+        &mut ui,
+        issue,
+        extras,
+        &mut body.action,
+        &mut body.action_rects,
+    );
+    ui.add_space(theme::SPACE_3 - theme::SPACE_1);
+    ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+    if let Some(CardBuild::Running(since)) = extras.build {
+        build_timer(&mut ui, issue, since);
+    } else if let Some(took) = issue.built_in {
+        ui.label(meta_text(stopwatch(took), p.ink_muted));
+    }
+    if let Some(done_at) = issue.done_at {
+        ui.label(meta_text(done_date(done_at), p.ink_muted))
+            .on_hover_text(done_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false));
+    }
+    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+        ui.add(egui::Label::new(meta_text(issue.file_name(), p.ink_muted)).truncate());
+    });
+}
+
 /// Expand, in the card's top right corner over the card's fill: it opens the
 /// Reader.
 fn expand_action(
@@ -198,7 +289,7 @@ fn expand_action(
     body: &mut CardBody,
 ) {
     let p = theme::palette(ui);
-    let inset = theme::SPACE_1 + 2.0;
+    let inset = 6.0;
     let rect = Rect::from_min_size(
         Pos2::new(
             card.max.x - inset - widgets::CARD_ACTION,
@@ -285,6 +376,7 @@ fn card_edge(ui: &egui::Ui, response: &egui::Response, look: CardLook) {
             StrokeKind::Inside,
         );
     }
+    widgets::focus_ring(ui, response, theme::RADIUS_MD);
     if look == (CardLook::Selected { scroll: true }) {
         response.scroll_to_me(None);
     }
@@ -314,7 +406,7 @@ fn drag_ghost(ui: &egui::Ui, issue: &Issue, width: f32, labels: &Labels, at: Pos
                         issue,
                         width,
                         CardLook::Plain,
-                        Actions::Ghost,
+                        false,
                         labels,
                         CardExtras::default(),
                     )
@@ -345,54 +437,35 @@ struct CardBody {
     action_rects: Vec<Rect>,
 }
 
-/// What the slot for a card's icon buttons holds.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Actions {
-    /// Nothing: the lifted copy while dragging.
-    Ghost,
-    /// The buttons, invisible and disabled so a click there opens the card;
-    /// on a Done issue the build agent did, how long it took instead.
-    Hidden,
-    Shown,
-}
-
 /// The visual body of a card, shared by the card in the board and the ghost
-/// that follows the pointer while dragging: title, summary clamped to three
-/// lines, file name. The meta row ends with a slot for the icon buttons, filled
-/// as `actions` says. The slot is always reserved so the file name and date
-/// never move when the buttons appear.
+/// that follows the pointer while dragging, `space-3` between its rows: labels,
+/// title, summary, Done's date, "Naming…". While the `strip` shows it holds the
+/// date, so the row stays but its text does not.
 fn card_body(
     ui: &mut egui::Ui,
     issue: &Issue,
     width: f32,
     look: CardLook,
-    actions: Actions,
+    strip: bool,
     labels: &Labels,
     extras: CardExtras,
 ) -> CardBody {
     let p = theme::palette(ui);
-    let padding = Vec2::new(theme::SPACE_4, 10.0);
-    let border = 1.0;
     // The frame's border is drawn outside the padding, so take it off too.
-    let inner = width - 2.0 * padding.x - 2.0 * border;
+    let inner = width - 2.0 * CARD_PADDING.x - 2.0 * CARD_BORDER;
     let shown = Frame::new()
         .fill(card_fill(p, look))
-        .stroke(Stroke::new(border, p.line_soft))
+        .stroke(Stroke::new(CARD_BORDER, p.line_soft))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
-        .inner_margin(padding)
+        .inner_margin(CARD_PADDING)
         .show(ui, |ui| {
             ui.set_width(inner);
-            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
             let (review, label_clicks) = card_labels(ui, issue, labels, &extras);
             card_text(ui, issue, inner);
-            let (mut action, mut action_rects) = ui
-                .horizontal(|ui| {
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        card_meta(ui, issue, actions, &extras)
-                    })
-                    .inner
-                })
-                .inner;
+            card_tail(ui, issue, inner, strip, extras.naming);
+            let mut action = None;
+            let mut action_rects = Vec::new();
             if let Some(review) = review {
                 action_rects.push(review.rect);
                 if review.clicked() {
@@ -411,6 +484,25 @@ fn card_body(
     CardBody {
         action: shown.inner.0,
         action_rects: shown.inner.1,
+    }
+}
+
+/// What follows the summary: Done's date and "Naming…". With neither, nor a
+/// summary, the card keeps the strip's room under its title.
+fn card_tail(ui: &mut egui::Ui, issue: &Issue, inner: f32, strip: bool, naming: bool) {
+    let p = theme::palette(ui);
+    if let Some(done_at) = issue.done_at {
+        if strip {
+            ui.allocate_exact_size(Vec2::new(inner, META_LINE), Sense::hover());
+        } else {
+            ui.label(meta_text(done_date(done_at), p.ink_muted));
+        }
+    }
+    if naming {
+        ui.label(meta_text("Naming…".to_owned(), p.ink_muted));
+    }
+    if issue.summary.is_empty() && issue.done_at.is_none() && !naming {
+        ui.add_space(STRIP_H - CARD_PADDING.y - theme::SPACE_3);
     }
 }
 
@@ -458,80 +550,45 @@ fn review_pill(ui: &mut egui::Ui, word: &str, color: Color32, hint: &str) -> egu
         .on_hover_text(hint)
 }
 
-/// The title and the summary, clamped to three lines.
+/// The title and the summary, each clamped to two lines with an ellipsis.
 fn card_text(ui: &mut egui::Ui, issue: &Issue, inner: f32) {
     let p = theme::palette(ui);
-    ui.add(
-        egui::Label::new(
-            RichText::new(&issue.title)
-                .font(theme::ui_strong())
-                .color(p.ink),
-        )
-        .wrap(),
-    );
+    let title = clamped(&issue.title, theme::ui_strong(), TITLE_LINE, p.ink, inner);
+    ui.add(egui::Label::new(title).show_tooltip_when_elided(false));
     if !issue.summary.is_empty() {
-        let mut job =
-            LayoutJob::simple(issue.summary.clone(), theme::ui_small(), p.ink_muted, inner);
-        job.wrap.max_rows = 3;
-        ui.add(egui::Label::new(job).show_tooltip_when_elided(false));
+        let summary = clamped(
+            &issue.summary,
+            theme::ui_small(),
+            SUMMARY_LINE,
+            p.ink_muted,
+            inner,
+        );
+        ui.add(egui::Label::new(summary).show_tooltip_when_elided(false));
     }
 }
 
-/// The card's last row, right to left: its actions, the date, then the file
-/// name. The action clicked, and every action's rect.
-fn card_meta(
-    ui: &mut egui::Ui,
-    issue: &Issue,
-    actions: Actions,
-    extras: &CardExtras,
-) -> (Option<CardAction>, Vec<Rect>) {
-    let p = theme::palette(ui);
-    let mut action = None;
-    let mut action_rects = Vec::new();
-    // Add label, Review and Delete, or Agent log, Diff and Archive on Done: 70pt.
-    let slots = 3.0;
-    let slot = Vec2::new(
-        slots * widgets::CARD_ACTION + (slots - 1.0) * theme::SPACE_1,
-        widgets::CARD_ACTION,
+/// `text` in at most two lines of `width`, cut with an ellipsis.
+fn clamped(text: &str, font: egui::FontId, line: f32, color: Color32, width: f32) -> LayoutJob {
+    let mut job = LayoutJob::single_section(
+        text.to_owned(),
+        egui::TextFormat {
+            font_id: font,
+            line_height: Some(line),
+            color,
+            ..Default::default()
+        },
     );
-    ui.allocate_ui_with_layout(slot, Layout::right_to_left(Align::Center), |ui| {
-        ui.set_min_size(slot);
-        ui.spacing_mut().item_spacing.x = theme::SPACE_1;
-        match actions {
-            Actions::Ghost => return,
-            Actions::Hidden => {
-                if let Some(took) = issue.built_in {
-                    built_in(ui, took);
-                    return;
-                }
-                ui.set_invisible();
-            }
-            Actions::Shown => {}
-        }
-        card_actions(ui, issue, extras, &mut action, &mut action_rects);
-    });
-    if let Some(CardBuild::Running(since)) = extras.build {
-        build_timer(ui, issue, since);
-    }
-    card_date_label(ui, issue);
-    if extras.naming {
-        ui.label(
-            RichText::new("Naming…")
-                .font(theme::meta())
-                .color(p.status_doing),
-        );
-    }
-    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-        ui.add(
-            egui::Label::new(
-                RichText::new(issue.file_name())
-                    .font(theme::meta())
-                    .color(p.ink_muted),
-            )
-            .truncate(),
-        );
-    });
-    (action, action_rects)
+    job.wrap.max_width = width;
+    job.wrap.max_rows = 2;
+    job
+}
+
+/// `meta` text on its 16pt line.
+fn meta_text(text: String, color: Color32) -> RichText {
+    RichText::new(text)
+        .font(theme::meta())
+        .line_height(Some(META_LINE))
+        .color(color)
 }
 
 /// Draws the card's buttons. Add label opens the LabelPicker under it.
@@ -662,41 +719,13 @@ fn build_timer(ui: &mut egui::Ui, issue: &Issue, since: Instant) {
         egui::UiBuilder::new()
             .id(egui::Id::new(("card_build_timer", &issue.path)))
             .sense(Sense::hover()),
-        |ui| {
-            ui.label(
-                RichText::new(stopwatch(since.elapsed()))
-                    .font(theme::meta())
-                    .color(color),
-            )
-        },
+        |ui| ui.label(meta_text(stopwatch(since.elapsed()), color)),
     );
 }
 
-/// How long the build agent took on a Done issue, `mm:ss` in `ink-muted`,
-/// where its actions show on hover.
-fn built_in(ui: &mut egui::Ui, took: Duration) {
-    let color = theme::palette(ui).ink_muted;
-    ui.label(
-        RichText::new(stopwatch(took))
-            .font(theme::meta())
-            .color(color),
-    );
-}
-
-/// Done issues show the day they were done, the exact time on hover.
-fn card_date_label(ui: &mut egui::Ui, issue: &Issue) {
-    let p = theme::palette(ui);
-    let Some(done_at) = issue.done_at else {
-        return;
-    };
-    let (text, hover) = (
-        done_at.format("%Y-%m-%d").to_string(),
-        done_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
-    );
-    ui.add(egui::Label::new(
-        RichText::new(text).font(theme::meta()).color(p.ink_muted),
-    ))
-    .on_hover_text(hover);
+/// The day a Done issue was finished.
+fn done_date(done_at: chrono::DateTime<chrono::Local>) -> String {
+    done_at.format("%Y-%m-%d").to_string()
 }
 
 #[cfg(test)]

@@ -109,7 +109,8 @@ enum DropZone {
 }
 
 /// Draws a drop zone and returns the dragged issue if it was dropped here:
-/// dashed at rest, a solid 2pt edge on a soft fill while a card is over it.
+/// neutral and dashed at rest, a solid 2pt edge on a soft fill only while a
+/// card is over it.
 /// Every zone drawn accepts the drop; the dock simply does not draw the zones
 /// that would refuse it.
 fn drop_zone(ui: &mut egui::Ui, rect: Rect, zone: DropZone, asks: bool) -> Option<PathBuf> {
@@ -138,11 +139,6 @@ fn drop_zone(ui: &mut egui::Ui, rect: Rect, zone: DropZone, asks: bool) -> Optio
             );
             p.accent
         }
-        DropZone::Archive => {
-            painter.rect_filled(rect, radius, p.surface_sunken);
-            dashed_rect(painter, rect, theme::RADIUS_MD, p.line);
-            p.ink_muted
-        }
         DropZone::Delete if over => {
             painter.rect(
                 rect,
@@ -153,10 +149,9 @@ fn drop_zone(ui: &mut egui::Ui, rect: Rect, zone: DropZone, asks: bool) -> Optio
             );
             p.danger
         }
-        DropZone::Delete => {
-            painter.rect_filled(rect, radius, p.surface_sunken);
-            dashed_rect(painter, rect, theme::RADIUS_MD, p.danger);
-            p.danger
+        DropZone::Archive | DropZone::Delete => {
+            dashed_rect(painter, rect, theme::RADIUS_MD, p.line);
+            p.ink_muted
         }
     };
 

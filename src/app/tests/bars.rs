@@ -27,7 +27,11 @@ fn the_board_header_names_the_project_before_the_path() {
     let name = harness.state().1.board.name();
     let path = display_path(&harness.state().1.board.root);
     let name = harness.get_by_label(&name).rect();
-    let path = harness.get_by_label(&path).rect();
+    let path = harness
+        .get_all_by_label(&path)
+        .map(|node| node.rect())
+        .find(|rect| rect.min.y < theme::BAR_H)
+        .expect("the header shows the path");
     assert!(name.max.x <= path.min.x, "{name:?} then {path:?}");
 }
 
@@ -85,16 +89,32 @@ fn board_of_every_column(dir: &Path) -> Board {
 /// How many of the status bar's possible hints show.
 fn hints_shown(harness: &Board) -> usize {
     [
-        "new", "filter", "refresh", "stats", "project", "open", "edit", "move", "delete",
-        "archive", "update", "ask", "back", "find", "file", "hunk",
+        "new",
+        "filter",
+        "refresh",
+        "stats",
+        "project",
+        "open",
+        "edit",
+        "next column",
+        "delete",
+        "archive",
+        "update",
+        "review",
+        "ask",
+        "board",
+        "back",
+        "find",
+        "file",
+        "hunk",
     ]
     .into_iter()
     .filter(|action| harness.query_by_label(action).is_some())
     .count()
 }
 
-/// Wherever you are, the status bar lists three keys at most, and `Del` only
-/// where it deletes.
+/// Wherever you are, the status bar lists three keys at most. `Del` shows only
+/// where it deletes, and gives way to `⌘U` in the Reader on Ready.
 #[test]
 fn the_status_bar_lists_three_keys_at_most() {
     let dir = scratch_dir("three-hints");
@@ -103,7 +123,7 @@ fn the_status_bar_lists_three_keys_at_most() {
 
     let cases = [
         ("todo/a.md", true),
-        ("ready/b.md", true),
+        ("ready/b.md", false),
         ("doing/c.md", true),
         ("done/d.md", false),
     ];

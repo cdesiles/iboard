@@ -388,8 +388,15 @@ fn the_card_says_it_is_being_named() {
     let (_dir, _todo, mut app) = composer_with_engine("naming-card");
     added(&mut app);
     let mut harness = kittest(app);
-    assert!(harness.query_by_label("Naming…").is_some());
+    let naming = harness.get_by_label("Naming…").rect();
     let placeholder = harness.state().1.session.namings[0].placeholder.clone();
+    let file = harness.state().1.board.columns[0].issues[0].path.clone();
+    let card = harness
+        .ctx
+        .read_response(egui::Id::new(("issue_card", &file)))
+        .unwrap()
+        .rect;
+    assert_eq!(naming.max.y + 11.0, card.max.y, "its last row");
     answer(
         &mut harness.state_mut().1,
         &placeholder,

@@ -128,25 +128,19 @@ impl IboardApp {
     }
 }
 
-/// The status color of a column, from its folder's role.
-pub(super) fn status_color(p: &Palette, column: &Column) -> Color32 {
+/// Where a column's issues stand, from its folder's role.
+pub(super) fn column_status(column: &Column) -> theme::Status {
     match column.name.to_lowercase().as_str() {
-        "ready" => p.status_ready,
-        "doing" | "in progress" | "in-progress" | "wip" | "review" => p.status_doing,
-        "done" => p.status_done,
-        _ => p.status_todo,
+        "ready" => theme::Status::Ready,
+        "doing" | "in progress" | "in-progress" | "wip" | "review" => theme::Status::Doing,
+        "done" => theme::Status::Done,
+        _ => theme::Status::Todo,
     }
 }
 
-/// The column header's title: the uppercase `ui-label`.
-fn column_title(ui: &mut egui::Ui, name: &str) {
-    let p = theme::palette(ui);
-    ui.label(
-        RichText::new(name.to_uppercase())
-            .font(theme::ui_label())
-            .extra_letter_spacing(theme::LABEL_TRACKING)
-            .color(p.ink),
-    );
+/// The status color of a column.
+pub(super) fn status_color(p: &Palette, column: &Column) -> Color32 {
+    column_status(column).color(p)
 }
 
 /// Everything `column_ui` needs to know about one column.
@@ -231,7 +225,8 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
                     |ui| {
                         ui.set_width(view.width);
                         ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                        let cards = column_cards(ui, view, &visible, &folder, &mut intents);
+                        let over = foreign_drag_over(view, &drop_response);
+                        let cards = column_cards(ui, view, &visible, &folder, over, &mut intents);
                         // While the DropZones dock covers the bottom of the board,
                         // the last cards can still scroll out from under it.
                         if egui::DragAndDrop::has_payload_of_type::<IssueDrag>(ui.ctx()) {
@@ -248,7 +243,10 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
             });
         },
     );
-    highlight_foreign_drop(ui, view, column, drop_rect, &drop_response);
+    // An empty column's well is the highlight.
+    if !visible.is_empty() && foreign_drag_over(view, &drop_response) {
+        highlight_drop(ui, drop_rect);
+    }
     if let Some(drag) = drop_response.dnd_release_payload::<IssueDrag>() {
         intents.push(Intent::Place {
             path: drag.path.clone(),
@@ -259,10 +257,9 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
     intents
 }
 
-/// The column's header: dot, uppercase name, count, and the 2pt status rule
-/// under it. Hovered, the count gives way to the column actions. Picked cards
-/// put "Clear selection" beside the title. A
-/// column holding picked cards offers to clear the multi-selection.
+/// The column's header: its status icon, its name and its count. Hovered, the
+/// count gives way to the column actions, fading in. A column holding picked
+/// cards offers to clear the multi-selection beside its title.
 fn column_head(
     ui: &mut egui::Ui,
     view: &ColumnView,
@@ -271,7 +268,6 @@ fn column_head(
 ) {
     let p = theme::palette(ui);
     let column = view.column;
-    let status = status_color(p, column);
     let (head_rect, _) =
         ui.allocate_exact_size(Vec2::new(view.width, theme::CONTROL_H), Sense::hover());
     let mut head = ui.new_child(
@@ -280,22 +276,33 @@ fn column_head(
             .layout(Layout::left_to_right(Align::Center)),
     );
     head.spacing_mut().item_spacing.x = theme::SPACE_3;
-    let (dot, _) = head.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
-    head.painter().circle_filled(dot.center(), 4.0, status);
-    column_title(&mut head, &column.name);
+    let (icon, _) = head.allocate_exact_size(Vec2::splat(theme::STATUS_ICON), Sense::hover());
+    theme::status_icon(head.painter(), column_status(column), icon, p);
+    head.label(
+        RichText::new(&column.name)
+            .font(theme::ui_strong())
+            .color(p.ink),
+    );
     if visible
         .iter()
         .any(|issue| view.picked.contains(&issue.path))
     {
         let id = egui::Id::new(("clear_picked", view.index));
         let hover = "Clear selection  esc";
-        if widgets::icon_button(&mut head, Icon::Close, id, hover, widgets::Tone::Plain).clicked() {
+        if widgets::icon_button(&mut head, Icon::Close, id, hover, widgets::Tone::Ghost).clicked() {
             intents.push(Intent::ClearPicked);
         }
     }
+    let hovered = head.rect_contains_pointer(head_rect);
+    let fade = widgets::hover_fade(
+        head.ctx(),
+        egui::Id::new(("column_head", view.index)),
+        hovered,
+    );
     head.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-        if ui.rect_contains_pointer(head_rect) {
+        if hovered {
+            ui.multiply_opacity(fade);
             column_actions(ui, view, visible, intents);
             return;
         }
@@ -319,13 +326,6 @@ fn column_head(
         }
         ui.label(count);
     });
-    ui.painter().line_segment(
-        [
-            Pos2::new(head_rect.min.x, head_rect.max.y - 1.0),
-            Pos2::new(head_rect.max.x, head_rect.max.y - 1.0),
-        ],
-        Stroke::new(2.0, status),
-    );
 }
 
 /// The hovered header's actions, right to left: Todo's `+`, Ready's play,
@@ -378,7 +378,7 @@ fn build_action(
         return;
     }
     let id = egui::Id::new(("build", view.index));
-    let tone = widgets::Tone::Plain;
+    let tone = widgets::Tone::Ghost;
     if view.builds.active() {
         if widgets::icon_button(ui, Icon::Stop, id, "Stop the AI build", tone).clicked() {
             intents.push(Intent::StopBuild);
@@ -399,7 +399,7 @@ fn agents_stepper(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent
         return;
     }
     let agents = view.builds.agents;
-    let tone = widgets::Tone::Plain;
+    let tone = widgets::Tone::Ghost;
     ui.add_enabled_ui(agents < build::MAX_AGENTS, |ui| {
         let id = egui::Id::new(("more_agents", view.index));
         if widgets::icon_button(ui, Icon::Plus, id, "One more build agent", tone).clicked() {
@@ -428,6 +428,7 @@ fn column_cards(
     view: &ColumnView,
     visible: &[&Issue],
     folder: &str,
+    over: bool,
     intents: &mut Vec<Intent>,
 ) -> Vec<(PathBuf, Rect)> {
     let column = view.column;
@@ -441,7 +442,7 @@ fn column_cards(
         } else {
             view.filter.empty_message()
         };
-        empty_well(ui, &message, view.width);
+        empty_well(ui, &message, view.width, over);
     }
     let mut cards = Vec::new();
     for issue in visible {
@@ -471,7 +472,7 @@ fn done_controls(
         visible.len()
     );
     let id = egui::Id::new(("archive_all", view.index));
-    if widgets::icon_button(ui, Icon::Archive, id, &hover, widgets::Tone::Plain).clicked() {
+    if widgets::icon_button(ui, Icon::Archive, id, &hover, widgets::Tone::Ghost).clicked() {
         intents.push(Intent::ArchiveAll(
             visible.iter().map(|issue| issue.path.clone()).collect(),
         ));
@@ -543,23 +544,16 @@ fn drop_line(ui: &egui::Ui, cards: &[(PathBuf, Rect)]) -> Option<PathBuf> {
     cards.get(insert).map(|(path, _)| path.clone())
 }
 
-/// Highlights the column while a card from elsewhere hovers over it: the
-/// cards' area, under the header and its status rule.
-fn highlight_foreign_drop(
-    ui: &egui::Ui,
-    view: &ColumnView,
-    column: &Column,
-    drop_rect: Rect,
-    drop_response: &egui::Response,
-) {
-    let p = theme::palette(ui);
-    let hovering_foreign = drop_response
+/// A card from another column is over this one.
+fn foreign_drag_over(view: &ColumnView, drop_response: &egui::Response) -> bool {
+    drop_response
         .dnd_hover_payload::<IssueDrag>()
-        .filter(|drag| !view.board.in_column(&drag.path, &column.dir))
-        .is_some();
-    if !hovering_foreign {
-        return;
-    }
+        .is_some_and(|drag| !view.board.in_column(&drag.path, &view.column.dir))
+}
+
+/// Highlights the column's cards area, under its header, as a drop target.
+fn highlight_drop(ui: &egui::Ui, drop_rect: Rect) {
+    let p = theme::palette(ui);
     let rect = drop_rect
         .with_min_y(drop_rect.min.y + theme::CONTROL_H + theme::SPACE_3 / 2.0)
         .expand2(Vec2::new(theme::SPACE_2, 0.0))
@@ -577,13 +571,18 @@ fn highlight_foreign_drop(
     );
 }
 
-/// The dashed `surface-sunken` well of an empty column. It is also where a
-/// dragged card lands.
-pub(super) fn empty_well(ui: &mut egui::Ui, message: &str, width: f32) {
+/// The dashed well of an empty column, with no fill. It is also where a
+/// dragged card lands: while one is `over` it, solid `accent` on `accent-soft`.
+fn empty_well(ui: &mut egui::Ui, message: &str, width: f32, over: bool) {
     let p = theme::palette(ui);
+    let corner = CornerRadius::same(theme::RADIUS_MD);
     let response = Frame::new()
-        .fill(p.surface_sunken)
-        .corner_radius(CornerRadius::same(theme::RADIUS_MD))
+        .fill(if over {
+            p.accent_soft
+        } else {
+            Color32::TRANSPARENT
+        })
+        .corner_radius(corner)
         .inner_margin(theme::SPACE_4)
         .show(ui, |ui| {
             ui.set_width(width - 2.0 * theme::SPACE_4);
@@ -596,7 +595,13 @@ pub(super) fn empty_well(ui: &mut egui::Ui, message: &str, width: f32) {
             });
         })
         .response;
-    dashed_rect(ui.painter(), response.rect, theme::RADIUS_MD, p.line);
+    if over {
+        let edge = Stroke::new(1.0, p.accent);
+        ui.painter()
+            .rect_stroke(response.rect, corner, edge, StrokeKind::Inside);
+    } else {
+        dashed_rect(ui.painter(), response.rect, theme::RADIUS_MD, p.line);
+    }
 }
 
 pub(super) use crate::widgets::dashed_rect;
