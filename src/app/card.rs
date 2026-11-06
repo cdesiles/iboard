@@ -530,7 +530,7 @@ fn card_labels(
             }
             let shown = label.strip_prefix("repo:").unwrap_or(label);
             let active = extras.active_labels.contains(label);
-            let pill = widgets::label_pill_lit(ui, shown, labels.color(label), active)
+            let pill = widgets::label_pill_lit(ui, shown, labels.style(label), active)
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(format!("Filter by {label}"));
             clicks.push((label.clone(), pill.rect, pill.clicked()));

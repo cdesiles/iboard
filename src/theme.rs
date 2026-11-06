@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::general::Appearance;
-use crate::labels::Rgb;
+use crate::labels::{Hue, LabelColor, Rgb};
 
 use egui::epaint::Shadow;
 use egui::{
@@ -234,6 +234,21 @@ pub fn contrast_ratio(a: Color32, b: Color32) -> f32 {
     let (la, lb) = (luminance(a), luminance(b));
     let (hi, lo) = if la >= lb { (la, lb) } else { (lb, la) };
     (hi + 0.05) / (lo + 0.05)
+}
+
+/// What a label's colour is in this theme: a preset's `label-*` value, or the
+/// user's own, unchanged.
+pub fn label_color(color: LabelColor, p: &Palette) -> Color32 {
+    match color {
+        LabelColor::Preset(hue) => match hue {
+            Hue::Red => p.label_red,
+            Hue::Ochre => p.label_ochre,
+            Hue::Green => p.label_green,
+            Hue::Teal => p.label_teal,
+            Hue::Grey => p.label_grey,
+        },
+        LabelColor::Own(own) => rgb(own),
+    }
 }
 
 /// A loud label pill's fill: `color` at `label-tint` over `surface`.

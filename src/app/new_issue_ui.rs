@@ -487,7 +487,7 @@ fn sheet(
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = theme::SPACE_2;
             for label in &drafted.draft.labels {
-                widgets::label_pill(ui, label, view.labels.color(label));
+                widgets::label_pill(ui, label, view.labels.style(label));
             }
         });
     }
@@ -862,7 +862,7 @@ fn title_row(ui: &mut egui::Ui, composer: &mut Composer, known: &Labels) {
     row_ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
         for label in &composer.title_labels {
             let name = labels::normalize(label).unwrap_or_else(|| label.clone());
-            widgets::label_pill(ui, &name, known.color(&name));
+            widgets::label_pill(ui, &name, known.style(&name));
         }
         title_field(ui, composer);
     });

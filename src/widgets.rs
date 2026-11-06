@@ -107,19 +107,40 @@ pub fn skeleton_bar(ui: &mut Ui, share: f32, height: f32) {
 
 /// The 14pt checkbox: `accent` fill and an `on-accent` tick when checked.
 pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
-    checkbox_named(ui, checked, label, label)
+    let ink = theme::palette(ui).ink;
+    checkbox_named(ui, checked, label, label, (theme::ui_button(), ink))
+}
+
+/// A [`checkbox`] that sits inside a row, its text in `meta` `ink-muted`.
+pub fn quiet_checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> Response {
+    let ink = theme::palette(ui).ink_muted;
+    checkbox_named(ui, checked, label, label, (theme::meta(), ink))
+}
+
+/// How wide a [`quiet_checkbox`] is.
+pub fn quiet_checkbox_width(ui: &Ui, label: &str) -> f32 {
+    CHECKBOX_SIZE + 6.0 + text_width(ui, label, theme::meta())
 }
 
 /// A [`checkbox`] with no text beside it, read aloud as `name`: what it ticks
 /// is the field next to it.
 pub fn bare_checkbox(ui: &mut Ui, checked: &mut bool, name: &str) -> Response {
-    checkbox_named(ui, checked, "", name)
+    let ink = theme::palette(ui).ink;
+    checkbox_named(ui, checked, "", name, (theme::ui_button(), ink))
 }
 
-fn checkbox_named(ui: &mut Ui, checked: &mut bool, label: &str, name: &str) -> Response {
+const CHECKBOX_SIZE: f32 = 14.0;
+
+fn checkbox_named(
+    ui: &mut Ui,
+    checked: &mut bool,
+    label: &str,
+    name: &str,
+    (font, ink): (FontId, Color32),
+) -> Response {
     let p = theme::palette(ui);
-    let text = galley(ui, label, theme::ui_button(), p.ink);
-    let box_size = 14.0;
+    let text = galley(ui, label, font, ink);
+    let box_size = CHECKBOX_SIZE;
     let width = if label.is_empty() {
         box_size
     } else {
@@ -159,7 +180,7 @@ fn checkbox_named(ui: &mut Ui, checked: &mut bool, label: &str, name: &str) -> R
             );
         }
         let pos = Pos2::new(box_rect.max.x + 6.0, rect.center().y - text.size().y / 2.0);
-        painter.galley(pos, text, p.ink);
+        painter.galley(pos, text, ink);
     }
     focus_ring(ui, &response, theme::RADIUS_SM);
     response
@@ -424,7 +445,7 @@ pub fn meter(ui: &mut Ui, done: usize, total: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::labels::Rgb;
+    use crate::labels::{LabelColor, LabelStyle, Rgb};
 
     #[test]
     fn a_key_cap_is_sunken_with_no_edge() {
@@ -525,56 +546,30 @@ mod tests {
             ..Default::default()
         };
         ctx.run_ui(raw, |ui| {
-            // A preset colour, an unknown label and a nearly-white colour that
-            // must fall back to readable ink all draw at the same 18pt size.
+            // A colour, an unknown label and a nearly-white colour that must
+            // fall back to readable ink all draw at the same 18pt size, loud or
+            // not.
             for (name, color) in [
-                ("bug", Some(Rgb(0xb1, 0x2f, 0x22))),
+                ("bug", Some(LabelColor::Own(Rgb(0xb1, 0x2f, 0x22)))),
                 ("spike", None),
-                ("faint", Some(Rgb(0xf5, 0xf5, 0xf5))),
+                ("faint", Some(LabelColor::Own(Rgb(0xf5, 0xf5, 0xf5)))),
             ] {
-                let response = label_pill(ui, name, color);
+                let quiet = LabelStyle {
+                    color,
+                    stand_out: false,
+                };
+                let loud = LabelStyle {
+                    color,
+                    stand_out: true,
+                };
+                assert_eq!(label_pill(ui, name, loud).rect.height(), 18.0);
+                let response = label_pill(ui, name, quiet);
                 assert_eq!(response.rect.height(), 18.0);
                 assert!(response.rect.width() > 0.0);
             }
         })
         .textures_delta
         .clear();
-    }
-
-    /// Under the pointer, or as the active filter, a label is `accent` on
-    /// `accent-soft`.
-    #[test]
-    fn a_label_pill_lights_up_when_hovered_or_active() {
-        let ctx = egui::Context::default();
-        theme::install(&ctx);
-        let frame = |active: bool, events: Vec<egui::Event>| {
-            let raw = egui::RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0))),
-                events,
-                ..Default::default()
-            };
-            let mut accents = None;
-            let mut pill_rect = Rect::NOTHING;
-            let mut output = ctx.run_ui(raw, |ui| {
-                let p = theme::palette(ui);
-                accents = Some((p.accent_soft, p.accent));
-                pill_rect = label_pill_lit(ui, "bug", None, active).rect;
-            });
-            output.textures_delta.clear();
-            let (fill, edge) = accents.unwrap();
-            let lit = output.shapes.iter().any(|clipped| {
-                matches!(&clipped.shape, egui::Shape::Rect(rect)
-                    if rect.fill == fill && rect.stroke.color == edge)
-            });
-            (lit, pill_rect)
-        };
-        frame(false, vec![]);
-        let (rest, pill) = frame(false, vec![]);
-        assert!(!rest, "at rest");
-        assert!(frame(true, vec![]).0, "active");
-        let over = egui::Event::PointerMoved(pill.center());
-        frame(false, vec![over]);
-        assert!(frame(false, vec![]).0, "hovered");
     }
 
     /// The status is said once, the time from 10s and in tens of seconds, so
@@ -654,7 +649,7 @@ mod tests {
                     theme::install(ui.ctx());
                     return;
                 }
-                if label_pill(ui, "Bug", None).clicked() {
+                if label_pill(ui, "Bug", LabelStyle::default()).clicked() {
                     clicked.push("bug");
                 }
                 if filter_token(ui, "ux").clicked() {

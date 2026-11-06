@@ -45,7 +45,9 @@ fn the_active_filter_lights_its_label_on_the_card() {
     let lit = |p: &Palette, shapes: &[egui::Shape]| {
         rects(shapes)
             .filter(|rect| rect.rect.height() == 18.0)
-            .filter(|rect| rect.fill == p.accent_soft && rect.stroke.color == p.accent)
+            .filter(|rect| {
+                rect.fill == p.accent_soft && rect.corner_radius.nw == theme::RADIUS_PILL
+            })
             .count()
     };
     let (p, shapes) = painted(&ctx, &mut app, vec![]);

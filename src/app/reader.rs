@@ -486,7 +486,7 @@ fn label_row(ui: &mut egui::Ui, sheet: &SheetView, labels: &Labels) -> Option<St
         for name in names.iter().filter(|name| !name.starts_with("group:")) {
             let shown = name.strip_prefix("repo:").unwrap_or(name);
             let active = sheet.active_labels.contains(name);
-            if widgets::label_pill_lit(ui, shown, labels.color(name), active)
+            if widgets::label_pill_lit(ui, shown, labels.style(name), active)
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(format!("Filter by {name}"))
                 .clicked()

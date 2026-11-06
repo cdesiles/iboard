@@ -172,7 +172,7 @@ pub fn show(
                         .iter()
                         .filter(|name| typed.as_deref().is_none_or(|text| name.contains(text)))
                         .collect();
-                    widgets::menu_head(ui, "On this board", &shown.len().to_string());
+                    group_head(ui, shown.len());
                     let pill_ids = if board.is_empty() {
                         ui.label(
                             egui::RichText::new("No labels on this board yet. Type one above.")
@@ -235,9 +235,10 @@ fn filter_field(
         egui::TextEdit::singleline(&mut picker.text)
             .id(egui::Id::new("label_picker_field"))
             .hint_text("Add a label")
-            .font(theme::ui_small())
+            .font(theme::ui_body())
             .desired_width(width)
-            .margin(Margin::symmetric(6, 4)),
+            .margin(Margin::symmetric(6, 3))
+            .min_size(Vec2::new(0.0, theme::CONTROL_H)),
     );
     if std::mem::take(&mut picker.focus_field) {
         field.request_focus();
@@ -268,7 +269,7 @@ fn hint_line(
 ) {
     let p = theme::palette(ui);
     let meta = theme::meta();
-    let strong = FontId::new(11.0, theme::ui_strong().family);
+    let strong = FontId::new(meta.size, theme::ui_strong().family);
     let plain = |color: Color32| TextFormat {
         font_id: meta.clone(),
         color,
@@ -315,6 +316,25 @@ fn hint_line(
     ui.label(job);
 }
 
+/// "On this board", and on the right how many labels show.
+fn group_head(ui: &mut egui::Ui, count: usize) {
+    let ink = theme::palette(ui).ink_muted;
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new("On this board")
+                .font(theme::ui_button())
+                .color(ink),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new(count.to_string())
+                    .font(theme::meta())
+                    .color(ink),
+            );
+        });
+    });
+}
+
 /// The labels, wrapping, scrolling after five rows. Returns the ids of the
 /// pills, for [`hand_off`].
 fn label_list(
@@ -352,7 +372,7 @@ fn label_list(
                             *outcome = Some(Outcome::Remove((*name).clone()));
                         }
                     } else {
-                        let pill = widgets::label_pill(ui, name, colors.color(name))
+                        let pill = widgets::label_pill(ui, name, colors.style(name))
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .on_hover_text(format!("Add {name}"));
                         if flashing {
@@ -435,13 +455,11 @@ fn pressed_outside(ctx: &egui::Context, popup: Rect, trigger: Option<Rect>) -> b
 /// Just added, its edge flashes `status-done`; a label just removed does too.
 fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) -> Response {
     let p = theme::palette(ui);
-    let text = ui.painter().layout_no_wrap(
-        name.to_string(),
-        FontId::new(11.0, theme::ui_button().family),
-        p.ink_muted,
-    );
+    let text = ui
+        .painter()
+        .layout_no_wrap(name.to_string(), theme::meta(), p.ink_muted);
     let check = 10.0;
-    let size = Vec2::new(6.0 + check + 4.0 + text.size().x + 7.0, 18.0);
+    let size = Vec2::new(6.0 + check + 5.0 + text.size().x + 7.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), true, name)
@@ -463,7 +481,7 @@ fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) -> Response {
     );
     theme::paint_icon(painter, Icon::Check, icon, p.status_done);
     painter.galley(
-        Pos2::new(icon.max.x + 4.0, rect.center().y - text.size().y / 2.0),
+        Pos2::new(icon.max.x + 5.0, rect.center().y - text.size().y / 2.0),
         text,
         p.ink_muted,
     );

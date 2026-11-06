@@ -14,7 +14,7 @@ mod review;
 mod select_menu;
 mod titles;
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use egui::{Key, Modifiers, Vec2};
 
@@ -25,7 +25,7 @@ use crate::theme;
 use crate::titles::{Availability, Engine};
 use crate::widgets::{self, FooterClick};
 pub use catalog::Catalog;
-use iboard::labels::Rgb;
+use iboard::labels::{self as label_config, LabelColor, Labels};
 use iboard::preferences::Preferences;
 use select_menu::SelectMenu;
 
@@ -59,6 +59,8 @@ struct Edits {
     appearance: Appearance,
     auto: bool,
     label_rows: Vec<(String, String)>,
+    stand_out: BTreeSet<String>,
+    colourless: BTreeSet<String>,
 }
 
 /// The dialog's state while it is open.
@@ -83,8 +85,14 @@ pub struct Dialog {
     pub appearance: Appearance,
     /// Settings › General: reload from disk and save edits as you type.
     pub auto: bool,
-    /// Settings › Labels: every label and its `#rrggbb` colour (empty: none).
+    /// Settings › Labels: every label and its `#rrggbb` colour. Empty: a
+    /// preset's palette colour, or none.
     pub label_rows: Vec<(String, String)>,
+    /// The labels whose pill is tinted.
+    stand_out: BTreeSet<String>,
+    /// The presets shown with no colour, for they were removed but issues
+    /// still use them.
+    colourless: BTreeSet<String>,
     /// The Labels tab was shown, so Save writes `[labels]`.
     pub labels_seen: bool,
     /// Renames made while editing the rows, as (old, new), in order. The app
@@ -94,7 +102,7 @@ pub struct Dialog {
     rename: Option<labels::Rename>,
     /// Each row's last valid colour, which its chip keeps while the hex field
     /// holds something else.
-    last_colours: HashMap<String, Rgb>,
+    last_colours: HashMap<String, LabelColor>,
     new_label: String,
     new_hex: String,
     label_error: Option<String>,
@@ -132,6 +140,8 @@ impl Dialog {
             appearance: prefs.appearance,
             auto: prefs.auto,
             label_rows: prefs.labels.entries(),
+            stand_out: prefs.labels.stand_outs().clone(),
+            colourless: BTreeSet::new(),
             labels_seen: false,
             renames: Vec::new(),
             rename: None,
@@ -156,11 +166,27 @@ impl Dialog {
         let rows = &mut self.label_rows;
         for name in used {
             if !rows.iter().any(|(known, _)| *known == name) {
+                if label_config::preset_hue(&name).is_some() {
+                    self.colourless.insert(name.clone());
+                }
                 rows.push((name, String::new()));
             }
         }
-        labels::sort_rows(rows);
+        labels::sort_rows(rows, &self.colourless);
         self
+    }
+
+    /// The labels Save stores.
+    pub fn labels(&self) -> Labels {
+        let rows: Vec<(String, String)> = self
+            .label_rows
+            .iter()
+            .filter(|(name, hex)| {
+                label_config::parse_hex(hex).is_some() || !self.colourless.contains(name)
+            })
+            .cloned()
+            .collect();
+        Labels::with(&label_config::table(&rows)).with_stand_out(self.stand_out.clone())
     }
 
     fn edits(&self) -> Edits {
@@ -173,6 +199,8 @@ impl Dialog {
             appearance: self.appearance,
             auto: self.auto,
             label_rows: self.label_rows.clone(),
+            stand_out: self.stand_out.clone(),
+            colourless: self.colourless.clone(),
         }
     }
 

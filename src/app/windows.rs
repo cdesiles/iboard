@@ -1,9 +1,9 @@
 //! Windows over the board: the delete confirmation, an issue's commits, Settings.
 
 use super::{
-    AgentConfig, Align, ButtonKind, CornerRadius, IboardApp, Instant, Job, Labels, Layout,
-    MarginF32, Path, PathBuf, Preferences, RichText, Sense, Vec2, commits, display_path, file_name,
-    job, labels, settings, settings_ui, theme, trash, widgets,
+    AgentConfig, Align, ButtonKind, CornerRadius, IboardApp, Instant, Job, Layout, MarginF32, Path,
+    PathBuf, Preferences, RichText, Sense, Vec2, commits, display_path, file_name, job, labels,
+    settings, settings_ui, theme, trash, widgets,
 };
 
 /// The newest commit naming one issue's file, for the board it was looked up
@@ -236,7 +236,7 @@ impl IboardApp {
                 }
                 // `[labels]` is rewritten only once its tab was looked at.
                 if dialog.labels_seen {
-                    prefs.labels = Labels::with(&labels::table(&dialog.label_rows));
+                    prefs.labels = dialog.labels();
                 }
                 let renames = dialog.renames.clone();
                 // Only what changed is written, so a setting another window

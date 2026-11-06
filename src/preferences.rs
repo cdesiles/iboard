@@ -43,7 +43,8 @@ pub struct Preferences {
     pub idesign: bool,
     /// `[direnv]`: agents run through `direnv exec` in projects with an `.envrc`.
     pub direnv: bool,
-    /// `[labels]`: the label colours over the presets.
+    /// `[labels]` and `[label_style]`: the label colours over the presets, and
+    /// the labels that stand out.
     pub labels: Labels,
     /// `[splits]`: the right pane's width per pair of panes, in points. The
     /// board writes it as they are resized; Settings does not list it.
@@ -111,8 +112,11 @@ impl Preferences {
         if self.auto != before.auto {
             sections.push(general::auto_section(self.auto)?);
         }
-        if self.labels != before.labels {
+        if self.labels.entries() != before.labels.entries() {
             sections.push(labels::section(&labels::table(&self.labels.entries()))?);
+        }
+        if self.labels.stand_outs() != before.labels.stand_outs() {
+            sections.push(labels::style_section(self.labels.stand_outs())?);
         }
         Ok(sections)
     }
@@ -180,6 +184,7 @@ mod tests {
              [idesign]\nenabled = true\n\
              [direnv]\nenabled = true\n\
              [labels]\nspike = \"#123456\"\n\
+             [label_style]\nstand_out = [\"bug\"]\n\
              [splits]\nreview = 420\n\
              [new_issue]\nkeep_notes = false\n\
              [agenda]\nrange = \"26w\"\n",
@@ -211,6 +216,7 @@ mod tests {
     fn what_cannot_be_used_falls_back_and_is_reported_in_reading_order() {
         let mut config = parse(
             "[splits]\nreview = \"wide\"\n\
+             [label_style]\nstand_out = \"bug\"\n\
              [labels]\nbug = \"red\"\n\
              [direnv]\nenabled = \"yes\"\n\
              [idesign]\nenabled = \"yes\"\n\
@@ -241,6 +247,7 @@ mod tests {
                 "[idesign]",
                 "[direnv]",
                 "[labels]",
+                "[label_style]",
                 "[splits]",
             ]
         );
@@ -293,6 +300,8 @@ mod tests {
         };
         assert_eq!(auto_off.sections_since(&before).unwrap().len(), 1);
 
+        let mut stand_out = before.labels.stand_outs().clone();
+        stand_out.insert("spike".to_string());
         let after = Preferences {
             agent: AgentConfig {
                 scope: ReviewMode::Deep,
@@ -304,7 +313,7 @@ mod tests {
             confirm_delete: false,
             appearance: Appearance::Dark,
             auto: false,
-            labels: colours("spike", "#123456"),
+            labels: colours("spike", "#123456").with_stand_out(stand_out),
             ..before.clone()
         };
         settings::save(&file, &after.sections_since(&before).unwrap()).unwrap();
@@ -319,7 +328,8 @@ mod tests {
                  [delete]\nconfirm = false\n\n\
                  [appearance]\ntheme = \"dark\"\n\n\
                  [auto]\nenabled = false\n\n\
-                 [labels]\nspike = \"#123456\"\n"
+                 [labels]\nspike = \"#123456\"\n\n\
+                 [label_style]\nstand_out = [\"bug\", \"spike\"]\n"
             )
         );
         let mut config = UserConfig::load(Some(&file));

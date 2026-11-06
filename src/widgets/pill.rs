@@ -4,8 +4,8 @@ use egui::{
     Color32, CornerRadius, FontId, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2,
 };
 
-use super::galley;
-use crate::labels::Rgb;
+use super::{galley, hover_fade};
+use crate::labels::LabelStyle;
 use crate::theme::{self, Icon};
 
 /// An 18pt pill with a dot and a word, outlined in its state color.
@@ -36,64 +36,75 @@ pub fn pill(ui: &mut Ui, word: &str, color: Color32) -> Response {
     response
 }
 
-/// An 18pt label chip: the preset colour as a soft tint behind its lowercased
-/// name, in `meta`. A colour too faint to read on the tint falls back to `ink`;
-/// a `None` colour (an unknown label) is neutral: `surface-sunken` on
-/// `ink-muted`, so the chip is legible in both themes.
-pub fn label_pill(ui: &mut Ui, name: &str, color: Option<Rgb>) -> Response {
-    sensing_label_pill(ui, name, color, false, Sense::click())
+/// An 18pt label pill, lowercased, in `meta`: `ink-muted` on `surface-sunken`
+/// with a 6pt dot in the label's colour, no dot when it has none. One that
+/// stands out is tinted with its colour instead, its text in that colour,
+/// Medium, or in `ink` when too faint to read on the tint. Under the pointer,
+/// `ink` on `surface-hover`.
+pub fn label_pill(ui: &mut Ui, name: &str, style: LabelStyle) -> Response {
+    sensing_label_pill(ui, name, style, false, Sense::click())
 }
 
-/// A [`label_pill`] that may be the active filter: then, and under the
-/// pointer, `accent` text and edge on `accent-soft`.
-pub fn label_pill_lit(ui: &mut Ui, name: &str, color: Option<Rgb>, active: bool) -> Response {
-    sensing_label_pill(ui, name, color, active, Sense::click())
+/// A [`label_pill`] that may be the active filter: then `accent` text on
+/// `accent-soft`.
+pub fn label_pill_lit(ui: &mut Ui, name: &str, style: LabelStyle, active: bool) -> Response {
+    sensing_label_pill(ui, name, style, active, Sense::click())
 }
 
 /// A [`label_pill`] that `tab` skips, for where the mouse is its only use.
-pub fn unfocusable_label_pill(ui: &mut Ui, name: &str, color: Option<Rgb>) -> Response {
-    sensing_label_pill(ui, name, color, false, Sense::CLICK)
+pub fn unfocusable_label_pill(ui: &mut Ui, name: &str, style: LabelStyle) -> Response {
+    sensing_label_pill(ui, name, style, false, Sense::CLICK)
 }
 
 fn sensing_label_pill(
     ui: &mut Ui,
     name: &str,
-    color: Option<Rgb>,
+    style: LabelStyle,
     active: bool,
     sense: Sense,
 ) -> Response {
     let p = theme::palette(ui);
     let name = name.to_lowercase();
-    let font = FontId::new(11.0, theme::ui_button().family);
+    let color = style.color.map(|color| theme::label_color(color, p));
+    let tint = color.filter(|_| style.stand_out);
+    let dot = color.filter(|_| !style.stand_out);
+    let font = if tint.is_some() {
+        theme::ui_button()
+    } else {
+        theme::meta()
+    };
+    let lead = if dot.is_some() { 6.0 + 6.0 + 5.0 } else { 7.0 };
     let width = galley(ui, &name, font.clone(), p.ink).size().x;
-    let size = Vec2::new(7.0 + width + 7.0, 18.0);
-    let (rect, response) = ui.allocate_exact_size(size, sense);
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(lead + width + 7.0, 18.0), sense);
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
     });
     if ui.is_rect_visible(rect) {
-        let (fill, edge, ink) = label_look(p, color, active || response.hovered());
+        let fade = hover_fade(ui.ctx(), response.id, response.hovered());
+        let (fill, ink) = label_look(p, tint, active, fade);
         let text = galley(ui, &name, font, ink);
         let painter = ui.painter();
-        painter.rect(
-            rect,
-            CornerRadius::same(theme::RADIUS_PILL),
-            fill,
-            edge,
-            StrokeKind::Inside,
-        );
-        let pos = rect.center() - text.size() / 2.0 - Vec2::new(0.0, 1.0);
+        painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_PILL), fill);
+        if let Some(dot) = dot {
+            painter.circle_filled(Pos2::new(rect.min.x + 9.0, rect.center().y), 3.0, dot);
+        }
+        let pos = Pos2::new(rect.min.x + lead, rect.center().y - text.size().y / 2.0);
         painter.galley(pos, text, ink);
     }
     response
 }
 
-/// A label pill's fill, edge and text.
-fn label_look(p: &theme::Palette, color: Option<Rgb>, lit: bool) -> (Color32, Stroke, Color32) {
-    if lit {
-        return (p.accent_soft, Stroke::new(1.0, p.accent), p.accent);
+/// A label pill's fill and text, `fade` of the way to its hovered look.
+fn label_look(
+    p: &theme::Palette,
+    tint: Option<Color32>,
+    active: bool,
+    fade: f32,
+) -> (Color32, Color32) {
+    if active {
+        return (p.accent_soft, p.accent);
     }
-    let (fill, ink) = match color.map(theme::rgb) {
+    let (fill, ink) = match tint {
         Some(color) => {
             let fill = theme::label_tint(color, p);
             let ink = if theme::contrast_ratio(color, fill) >= 4.5 {
@@ -105,7 +116,10 @@ fn label_look(p: &theme::Palette, color: Option<Rgb>, lit: bool) -> (Color32, St
         }
         None => (p.surface_sunken, p.ink_muted),
     };
-    (fill, Stroke::NONE, ink)
+    (
+        fill.lerp_to_gamma(p.surface_hover, fade),
+        ink.lerp_to_gamma(p.ink, fade),
+    )
 }
 
 /// A picked filter keyword: `accent` on `accent-soft`, with a × that removes
@@ -219,4 +233,159 @@ fn tag_with(ui: &mut Ui, text: &str, fills: [Color32; 2], edge: Color32, ink: Co
         ui.painter().galley(pos, label, ink);
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::labels::{Hue, LabelColor, Rgb};
+
+    const RED: Option<LabelColor> = Some(LabelColor::Preset(Hue::Red));
+
+    struct Paint {
+        fill: Color32,
+        dot: Option<Color32>,
+        ink: Color32,
+        rect: Rect,
+    }
+
+    fn context() -> egui::Context {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        ctx
+    }
+
+    /// What a frame paints for a light-theme pill, at `time`, the pointer at
+    /// `pointer`.
+    fn paint(
+        ctx: &egui::Context,
+        style: LabelStyle,
+        active: bool,
+        time: f64,
+        pointer: Pos2,
+    ) -> Paint {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0))),
+            time: Some(time),
+            events: vec![egui::Event::PointerMoved(pointer)],
+            ..Default::default()
+        };
+        let mut rect = Rect::NOTHING;
+        let mut output = ctx.run_ui(raw, |ui| {
+            rect = label_pill_lit(ui, "bug", style, active).rect;
+        });
+        output.textures_delta.clear();
+        let mut painted = Paint {
+            fill: Color32::TRANSPARENT,
+            dot: None,
+            ink: Color32::TRANSPARENT,
+            rect,
+        };
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Rect(shape) => {
+                    assert_eq!(shape.stroke.width, 0.0, "a label pill has no edge");
+                    painted.fill = shape.fill;
+                }
+                egui::Shape::Circle(circle) => painted.dot = Some(circle.fill),
+                egui::Shape::Text(text) => painted.ink = text.fallback_color,
+                _ => {}
+            }
+        }
+        painted
+    }
+
+    const AWAY: Pos2 = Pos2::new(390.0, 190.0);
+
+    #[test]
+    fn a_label_is_neutral_with_a_dot_or_tinted_when_it_stands_out() {
+        let ctx = context();
+        let p = &theme::LIGHT;
+        let look = |color, stand_out| {
+            let style = LabelStyle { color, stand_out };
+            let paint = paint(&ctx, style, false, 0.0, AWAY);
+            (paint.fill, paint.dot, paint.ink)
+        };
+        assert_eq!(
+            look(RED, false),
+            (p.surface_sunken, Some(p.label_red), p.ink_muted)
+        );
+        assert_eq!(
+            look(None, false),
+            (p.surface_sunken, None, p.ink_muted),
+            "no colour, no dot"
+        );
+        assert_eq!(
+            look(RED, true),
+            (theme::label_tint(p.label_red, p), None, p.label_red)
+        );
+        assert_eq!(
+            look(None, true),
+            (p.surface_sunken, None, p.ink_muted),
+            "nothing to tint with"
+        );
+        let faint = Some(LabelColor::Own(Rgb(0xf5, 0xf5, 0xf5)));
+        assert_eq!(look(faint, true).2, p.ink, "too faint to read on its tint");
+    }
+
+    #[test]
+    fn a_preset_follows_the_theme_and_an_own_colour_does_not() {
+        let own = LabelColor::Own(Rgb(1, 2, 3));
+        let preset = LabelColor::Preset(Hue::Red);
+        assert_eq!(
+            theme::label_color(own, &theme::LIGHT),
+            theme::label_color(own, &theme::DARK)
+        );
+        assert_eq!(
+            theme::label_color(preset, &theme::LIGHT),
+            theme::LIGHT.label_red
+        );
+        assert_eq!(
+            theme::label_color(preset, &theme::DARK),
+            theme::DARK.label_red
+        );
+    }
+
+    #[test]
+    fn every_preset_reads_in_both_themes() {
+        for p in [&theme::LIGHT, &theme::DARK] {
+            for hue in [Hue::Red, Hue::Ochre, Hue::Green, Hue::Teal, Hue::Grey] {
+                let color = theme::label_color(LabelColor::Preset(hue), p);
+                let name = hue.name();
+                assert!(
+                    theme::contrast_ratio(color, p.surface_sunken) >= 4.5,
+                    "{name} dot"
+                );
+                assert!(
+                    theme::contrast_ratio(color, theme::label_tint(color, p)) >= 4.5,
+                    "{name} on its tint"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_label_fades_to_ink_under_the_pointer_and_is_accent_as_the_active_filter() {
+        let ctx = context();
+        let p = &theme::LIGHT;
+        let style = LabelStyle {
+            color: RED,
+            stand_out: true,
+        };
+        let rest = paint(&ctx, style, false, 0.0, AWAY);
+        assert_eq!(rest.ink, p.label_red);
+        let over = rest.rect.center();
+        paint(&ctx, style, false, 0.02, over);
+        let rising = paint(&ctx, style, false, 0.04, over);
+        assert_ne!(rising.fill, p.surface_hover, "still fading in");
+        assert_ne!(rising.fill, rest.fill, "already fading in");
+        for step in 0..8 {
+            paint(&ctx, style, false, 0.06 + f64::from(step) * 0.02, over);
+        }
+        let hovered = paint(&ctx, style, false, 0.3, over);
+        assert_eq!((hovered.fill, hovered.ink), (p.surface_hover, p.ink));
+
+        let active = paint(&ctx, style, true, 0.32, AWAY);
+        assert_eq!((active.fill, active.ink), (p.accent_soft, p.accent));
+    }
 }
