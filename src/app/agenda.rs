@@ -27,6 +27,8 @@ const DAY_PANEL_W: f32 = 260.0;
 const SIDE_BY_SIDE: f32 = 640.0;
 /// The commits listed for a day before "N more".
 const DAY_COMMITS: usize = 5;
+const COMMIT_TIME_W: f32 = 36.0;
+const COMMIT_SHA_W: f32 = 56.0;
 /// The block's height, so a failure keeps its size.
 const AGENDA_H: f32 = 332.0;
 /// The narrowest the grid's pane goes, to hold its head and legend.
@@ -75,6 +77,7 @@ impl IboardApp {
 pub(super) fn agenda_ui(
     ui: &mut egui::Ui,
     agenda: &mut Agenda,
+    project: &str,
     show: Show,
     clock: Option<Duration>,
 ) -> bool {
@@ -115,7 +118,7 @@ pub(super) fn agenda_ui(
                         agenda,
                         width,
                         |ui, agenda| main(ui, agenda, days, clock),
-                        |ui, agenda| day_panel(ui, agenda.selected, days),
+                        |ui, agenda| day_panel(ui, agenda.selected, project, days),
                     );
                 }
             }
@@ -465,7 +468,12 @@ fn swatch(ui: &mut egui::Ui, fill: Color32, ring: Option<Color32>) {
 }
 
 /// The selected day: how many commits, then each, newest first.
-fn day_panel(ui: &mut egui::Ui, day: NaiveDate, days: &BTreeMap<NaiveDate, Vec<DayCommit>>) {
+fn day_panel(
+    ui: &mut egui::Ui,
+    day: NaiveDate,
+    project: &str,
+    days: &BTreeMap<NaiveDate, Vec<DayCommit>>,
+) {
     let p = theme::palette(ui);
     let commits = commits_on(days, day);
     ui.spacing_mut().item_spacing.y = theme::SPACE_2;
@@ -483,12 +491,16 @@ fn day_panel(ui: &mut egui::Ui, day: NaiveDate, days: &BTreeMap<NaiveDate, Vec<D
     ui.add_space(theme::SPACE_2);
     for commit in commits.iter().take(DAY_COMMITS) {
         ui.horizontal(|ui| {
-            ui.label(
+            commit_cell(
+                ui,
+                COMMIT_TIME_W,
                 RichText::new(&commit.time)
                     .font(theme::meta())
                     .color(p.ink_muted),
             );
-            ui.label(
+            commit_cell(
+                ui,
+                COMMIT_SHA_W,
                 RichText::new(&commit.short)
                     .font(theme::meta())
                     .color(p.accent),
@@ -505,6 +517,22 @@ fn day_panel(ui: &mut egui::Ui, day: NaiveDate, days: &BTreeMap<NaiveDate, Vec<D
         });
     }
     if commits.len() > DAY_COMMITS {
-        summary(ui, &format!("{} more", commits.len() - DAY_COMMITS));
+        ui.horizontal(|ui| {
+            ui.add_space(COMMIT_TIME_W + ui.spacing().item_spacing.x);
+            let more = commits.len() - DAY_COMMITS;
+            summary(ui, &format!("{more} more in {project}"));
+        });
     }
+}
+
+/// A commit's time or sha, in a column of its own so its subjects line up.
+fn commit_cell(ui: &mut egui::Ui, width: f32, text: RichText) {
+    ui.allocate_ui_with_layout(
+        Vec2::new(width, ui.available_height()),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.set_min_width(width);
+            ui.label(text);
+        },
+    );
 }

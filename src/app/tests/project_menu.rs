@@ -245,3 +245,17 @@ fn an_added_project_opens_at_the_top_of_the_list() {
     assert_eq!(app.ordered_projects()[0], delta);
     assert_eq!(app.ordered_projects()[1..], projects[..]);
 }
+
+/// A section's count sits at the far end of its head, over its rows' edge.
+#[test]
+fn a_sections_count_ends_its_head() {
+    let (_scratch, _config, _projects, app) = three_projects("menu-head");
+    let mut harness = kittest(app);
+    open(&mut harness);
+    let title = harness.get_by_label("PROJECTS").rect();
+    let count = harness.get_by_label("3").rect();
+    assert!(
+        count.left() > title.right() + 100.0,
+        "{title:?} then {count:?}"
+    );
+}

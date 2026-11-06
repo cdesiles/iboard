@@ -180,7 +180,7 @@ pub fn menu_action(ui: &mut Ui, action: MenuAction<'_>) -> Response {
 }
 
 /// A menu's group head, "PROJECTS 12": the title in uppercase `ui-label`,
-/// then the count, if any, in `meta`, both `ink-muted`.
+/// the count, if any, at the far end in `meta`, both `ink-muted`.
 pub fn menu_head(ui: &mut Ui, title: &str, count: &str) {
     let p = theme::palette(ui);
     let title = RichText::new(title.to_uppercase())
@@ -191,9 +191,10 @@ pub fn menu_head(ui: &mut Ui, title: &str, count: &str) {
         return;
     }
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
         ui.label(title);
-        ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(RichText::new(count).font(theme::meta()).color(p.ink_muted));
+        });
     });
 }
 

@@ -9,6 +9,8 @@ use egui::{Align, Color32, FontId, Layout, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use iboard::prose::{self, Item, Prose, Span};
 use iboard::theme;
 
+use crate::widgets;
+
 /// `read-body`'s line height.
 const BODY_LINE: f32 = 24.0;
 /// `read-h1`'s.
@@ -26,8 +28,10 @@ const MARKER_W: f32 = 20.0;
 pub(super) const CODE_SIZE: f32 = 13.0;
 /// A code span's height: its background, and its baseline against the text's.
 const CODE_LINE: f32 = 20.0;
-/// A narrow no-break space, the side padding of a code span's background.
-const CODE_PAD: &str = "\u{202F}";
+/// A code span's side padding: egui breaks a line at any space but this one,
+/// which a small font narrows.
+const CODE_PAD: &str = "\u{A0}";
+const CODE_PAD_SIZE: f32 = 6.0;
 
 /// A task box clicked this frame: where it is and what it now says.
 pub(super) type Ticked = Option<(Range<usize>, bool)>;
@@ -109,18 +113,15 @@ fn marker(ui: &mut Ui, item: &Item, number: Option<u64>, depth: usize, ticked: &
     let (rect, _) = ui.allocate_exact_size(Vec2::new(MARKER_W, glyphs), Sense::hover());
     if let Some(task) = &item.task {
         let mut checked = task.checked;
-        let hit = rect.with_max_x(rect.left() + ui.spacing().icon_width);
-        let response = ui
-            .scope(|ui| {
-                // Any larger, and the box centres itself away from the column's edge.
-                ui.spacing_mut().interact_size = Vec2::ZERO;
-                ui.put(hit, egui::Checkbox::without_text(&mut checked))
-            })
-            .inner;
-        response.widget_info(|| {
-            let label = item_text(item);
-            egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, task.checked, label)
-        });
+        let mut cell = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(Rect::from_center_size(
+                    rect.center(),
+                    Vec2::new(rect.width(), theme::CONTROL_H),
+                ))
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        let response = widgets::bare_checkbox(&mut cell, &mut checked, &item_text(item));
         if response.clicked() {
             *ticked = Some((task.marker.clone(), checked));
         }
@@ -225,8 +226,13 @@ fn append(ui: &Ui, job: &mut LayoutJob, span: &Span, font: &FontId, line: f32) {
         format.line_height = Some(CODE_LINE);
         format.valign = Align::Center;
         format.expand_bg = 0.0;
-        let text = format!("{CODE_PAD}{}{CODE_PAD}", span.text);
-        job.append(&text, 0.0, format);
+        let pad = TextFormat {
+            font_id: FontId::monospace(CODE_PAD_SIZE),
+            ..format.clone()
+        };
+        job.append(CODE_PAD, 0.0, pad.clone());
+        job.append(&span.text, 0.0, format);
+        job.append(CODE_PAD, 0.0, pad);
     } else {
         job.append(&span.text, 0.0, format);
     }
@@ -235,4 +241,50 @@ fn append(ui: &Ui, job: &mut LayoutJob, span: &Span, font: &FontId, line: f32) {
 /// `block` after this frame's click on a task box in it.
 pub(super) fn apply(block: &str, ticked: Ticked) -> Option<String> {
     ticked.map(|(marker, checked)| prose::with_task(block, marker, checked))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn span(text: &str, code: bool) -> Span {
+        Span {
+            text: text.to_string(),
+            code,
+            strong: false,
+            emphasis: false,
+            strikethrough: false,
+            link: None,
+        }
+    }
+
+    /// At no width does a line end on the padding of a code span that starts
+    /// on the next line.
+    #[test]
+    fn a_code_span_keeps_its_padding_when_it_wraps() {
+        let spans = [
+            span("Text like ", false),
+            span("TextEditState", true),
+            span(" and ", false),
+            span("CCursorRange", true),
+        ];
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let font = theme::read_body();
+            for width in 40..400 {
+                let mut job = LayoutJob::default();
+                for span in &spans {
+                    append(ui, &mut job, span, &font, BODY_LINE);
+                }
+                job.wrap.max_width = width as f32;
+                let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+                for row in &galley.rows {
+                    let text: String = row.row.glyphs.iter().map(|glyph| glyph.chr).collect();
+                    let stranded = format!(" {CODE_PAD}");
+                    assert!(!text.ends_with(&stranded), "{width}pt: {text:?}");
+                }
+            }
+        });
+        output.textures_delta.clear();
+    }
 }

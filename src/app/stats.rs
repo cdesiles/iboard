@@ -110,12 +110,20 @@ pub(super) struct StatsPanel {
     /// The history popup of a row clicked in the files table.
     pub(super) history: Option<FileHistory>,
     pub(super) agenda: Agenda,
+    /// The project's name, as the Agenda's day panel says it.
+    project: String,
     /// The Releases checkbox of the Trends.
     pub(super) show_releases: bool,
 }
 
 impl StatsPanel {
-    fn new(source: Source, page: usize, range: Range, show_releases: bool) -> Self {
+    fn new(
+        source: Source,
+        project: String,
+        page: usize,
+        range: Range,
+        show_releases: bool,
+    ) -> Self {
         Self {
             page,
             blocks: Blocks::new(source),
@@ -124,6 +132,7 @@ impl StatsPanel {
             all_files: false,
             history: None,
             agenda: Agenda::new(range),
+            project,
             show_releases,
         }
     }
@@ -175,6 +184,7 @@ impl IboardApp {
                 Source::new(dir, &self.located.root, 0, measures).with_release_tags(&releases.tags);
             self.session.stats = Some(StatsPanel::new(
                 source,
+                self.board.name(),
                 0,
                 self.prefs.agenda_range,
                 releases.show,
@@ -306,7 +316,8 @@ impl IboardApp {
             StatsAsk::Page(page) => {
                 let range = panel.agenda.range;
                 let source = panel.blocks.source().at_page(page);
-                *panel = StatsPanel::new(source, page, range, panel.show_releases);
+                let project = std::mem::take(&mut panel.project);
+                *panel = StatsPanel::new(source, project, page, range, panel.show_releases);
             }
             StatsAsk::Refresh => panel.refresh(),
             StatsAsk::DraftRefactor(title, description) => {
@@ -412,7 +423,7 @@ fn agenda_block(ui: &mut egui::Ui, panel: &mut StatsPanel) {
     };
     let scope = ui.scope(|ui| {
         blocks::dim_if_stale(ui, &phase);
-        agenda::agenda_ui(ui, &mut panel.agenda, show, clock)
+        agenda::agenda_ui(ui, &mut panel.agenda, &panel.project, show, clock)
     });
     if scope.inner {
         panel.blocks.start(Part::Agenda);

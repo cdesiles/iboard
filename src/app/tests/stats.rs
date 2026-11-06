@@ -562,3 +562,19 @@ fn release_tags_pick_another_pattern() {
     );
     harness.get_by_label(&release_label(&harness, "rel-1"));
 }
+
+/// A day past its five commits says how many more, and in which project.
+#[test]
+fn the_agenda_names_the_project_of_a_days_other_commits() {
+    let (dir, located) = project("agenda-more");
+    for name in ["four", "five", "six", "seven"] {
+        git(&dir, &["commit", "-q", "--allow-empty", "-m", name]);
+    }
+    let mut app = IboardApp::from_located(located);
+    app.open_stats();
+    let name = app.board.name();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+    harness.get_by_label(&format!("2 more in {name}"));
+}

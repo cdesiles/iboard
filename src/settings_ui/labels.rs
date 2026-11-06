@@ -278,7 +278,7 @@ impl Dialog {
             Some(error) => help(ui, error, p.danger),
             None => help(
                 ui,
-                "A label is the [word] at the start of an issue's title. Only changes to iboard's presets are written to [labels].",
+                "A label is the [word] at the start of an issue's title. Only changes to iboard's presets are written to [labels]. Stand out tints the pill; keep it for what must catch the eye.",
                 p.ink_muted,
             ),
         }

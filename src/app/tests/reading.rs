@@ -215,3 +215,25 @@ fn a_doing_issue_is_read_only_with_live_boxes() {
         "# Demo\n\nFirst.\n\n- [x] one\n"
     );
 }
+
+/// The longest standard heading fits its ghost tile, with room for its `+`.
+#[test]
+fn a_ghost_tile_holds_its_whole_heading() {
+    let (_dir, _file, harness) = opened("ghost-fit", "# Demo\n\nA paragraph.\n");
+    let heading = "Acceptance criteria";
+    let tile = harness.get_by_label(heading).rect();
+    let text = harness.ctx.fonts_mut(|fonts| {
+        let galley = fonts.layout_no_wrap(
+            heading.to_string(),
+            theme::ui_strong(),
+            egui::Color32::PLACEHOLDER,
+        );
+        galley.size().x
+    });
+    let chrome = 2.0 * theme::SPACE_4 + theme::ICON_SIZE + 6.0;
+    assert!(
+        text + chrome <= tile.width(),
+        "{text} + {chrome} in {}",
+        tile.width()
+    );
+}

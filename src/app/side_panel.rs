@@ -18,7 +18,9 @@ pub(super) fn side_panel<R>(
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            let spacing = std::mem::take(&mut ui.spacing_mut().item_spacing.y);
             head(ui, title, detail);
+            ui.spacing_mut().item_spacing.y = spacing;
             body(ui)
         })
         .inner

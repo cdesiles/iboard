@@ -442,13 +442,13 @@ impl ReaderLayout {
         let gutter = theme::SPACE_5;
         let page_width = (full.width() - 2.0 * gutter).min(theme::READER_MAX);
         let page_left = full.min.x + ((full.width() - page_width) / 2.0).max(gutter);
-        let tiles_across = if page_width >= 560.0 { 4 } else { 2 }.min(missing.max(1));
+        let tiles_across = GHOST_TILES_ACROSS.min(missing.max(1));
         let block_height = if none_written {
             let rows = missing.div_ceil(tiles_across) as f32;
             2.0 * theme::SPACE_4
                 + theme::CONTROL_H
                 + theme::SPACE_3
-                + rows * GHOST_TILE_H
+                + rows * ghost_tile_height(page_width - 2.0 * gutter)
                 + (rows - 1.0) * theme::SPACE_3
         } else if missing > 0 {
             40.0
@@ -719,6 +719,19 @@ pub(super) fn page_column<R>(
 
 /// Height of a ghost tile in the "Not written yet" block.
 const GHOST_TILE_H: f32 = 72.0;
+/// A tile whose hint fits on one line.
+const GHOST_TILE_ONE_LINE_H: f32 = 56.0;
+/// Four would be narrower than "Acceptance criteria", even on a full sheet.
+const GHOST_TILES_ACROSS: usize = 2;
+
+/// How tall the tiles of a block `width` across are.
+fn ghost_tile_height(width: f32) -> f32 {
+    if width >= 500.0 {
+        GHOST_TILE_ONE_LINE_H
+    } else {
+        GHOST_TILE_H
+    }
+}
 
 /// What the "Not written yet" block asked for.
 enum NotWritten {
@@ -792,15 +805,16 @@ fn not_written_block(
     ui.add_space(theme::SPACE_3);
     let gap = theme::SPACE_3;
     let tile_w = (inner.width() - gap * (across as f32 - 1.0)) / across as f32;
+    let tile_h = ghost_tile_height(inner.width());
     let top = ui.cursor().min.y;
     for (index, section) in missing.iter().enumerate() {
         let (row, col) = (index / across, index % across);
         let tile = Rect::from_min_size(
             Pos2::new(
                 inner.min.x + col as f32 * (tile_w + gap),
-                top + row as f32 * (GHOST_TILE_H + gap),
+                top + row as f32 * (tile_h + gap),
             ),
-            Vec2::new(tile_w, GHOST_TILE_H),
+            Vec2::new(tile_w, tile_h),
         );
         let mut cell = ui.new_child(
             egui::UiBuilder::new()
