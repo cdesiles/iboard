@@ -91,6 +91,94 @@ pub fn menu_option(ui: &mut Ui, option: MenuOption<'_>) -> Response {
     response
 }
 
+/// Height of a [`menu_action`].
+const ACTION_ROW_H: f32 = 26.0;
+
+/// What a [`menu_action`] looks like.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActionTone {
+    /// `ink-muted` icon, `surface-hover` under the pointer.
+    #[default]
+    Plain,
+    /// The AI menu's: `review` icon, `review-soft` under the pointer.
+    Review,
+    /// The current tool and model: `ink-muted` `meta` text.
+    Quiet,
+}
+
+/// One row of the header's menus: an icon, a name, and at the right its key
+/// in `meta-mono` `ink-faint`, a `meta` note, or a submenu's chevron.
+#[derive(Default)]
+pub struct MenuAction<'a> {
+    pub icon: Option<Icon>,
+    pub name: &'a str,
+    pub key: &'a str,
+    pub note: &'a str,
+    pub tone: ActionTone,
+    pub submenu: bool,
+}
+
+pub fn menu_action(ui: &mut Ui, action: MenuAction<'_>) -> Response {
+    let p = theme::palette(ui);
+    let size = Vec2::new(ui.available_width(), ACTION_ROW_H);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), action.name)
+    });
+    if !ui.is_rect_visible(rect) {
+        return response;
+    }
+    let (hover, icon_ink) = match action.tone {
+        ActionTone::Review => (p.review_soft, p.review),
+        ActionTone::Plain | ActionTone::Quiet => (p.surface_hover, p.ink_muted),
+    };
+    let fade = super::hover_fade(ui.ctx(), response.id, response.hovered());
+    let painter = ui.painter();
+    painter.rect_filled(
+        rect,
+        CornerRadius::same(theme::RADIUS_SM),
+        hover.gamma_multiply(fade),
+    );
+    let inner = rect.shrink2(Vec2::new(theme::SPACE_3, 0.0));
+    let box_at = |x: f32| {
+        Rect::from_center_size(
+            Pos2::new(x + theme::ICON_SIZE / 2.0, rect.center().y),
+            Vec2::splat(theme::ICON_SIZE),
+        )
+    };
+    let mut left = inner.min.x;
+    if let Some(icon) = action.icon {
+        theme::paint_icon(painter, icon, box_at(left), icon_ink);
+        left += theme::ICON_SIZE + theme::SPACE_3;
+    }
+    let mut right = inner.max.x;
+    if action.submenu {
+        right -= theme::ICON_SIZE;
+        theme::paint_icon(painter, Icon::ChevronRight, box_at(right), p.ink_faint);
+    }
+    let meta = if action.key.is_empty() {
+        (!action.note.is_empty()).then(|| galley(ui, action.note, theme::meta(), p.ink_muted))
+    } else {
+        Some(galley(ui, action.key, theme::meta_mono(), p.ink_faint))
+    };
+    if let Some(meta) = meta {
+        right -= meta.size().x;
+        let at = Pos2::new(right, rect.center().y - meta.size().y / 2.0);
+        painter.galley(at, meta, p.ink_faint);
+        right -= theme::SPACE_3;
+    }
+    let (font, ink) = match action.tone {
+        ActionTone::Quiet => (theme::meta(), p.ink_muted),
+        ActionTone::Plain | ActionTone::Review => (theme::ui_body(), p.ink),
+    };
+    let name = galley_truncated(ui, action.name, font, ink, (right - left).max(0.0));
+    let at = Pos2::new(left, rect.center().y - name.size().y / 2.0);
+    painter.galley(at, name, ink);
+    focus_ring(ui, &response, theme::RADIUS_SM);
+    response
+}
+
 /// A menu's group head, "PROJECTS 12": the title in uppercase `ui-label`,
 /// then the count, if any, in `meta`, both `ink-muted`.
 pub fn menu_head(ui: &mut Ui, title: &str, count: &str) {
@@ -122,7 +210,7 @@ pub fn menu_group(ui: &mut Ui, text: &str) {
 const LIFTED_TILT_DEG: f32 = -0.6;
 
 /// Height of a two-line [`menu_row`].
-pub const MENU_ROW_H: f32 = 40.0;
+pub const MENU_ROW_H: f32 = 42.0;
 
 /// What sets a [`menu_row`] apart.
 #[derive(Clone, Default)]

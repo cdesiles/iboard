@@ -190,6 +190,7 @@ fn with_idesign_off_no_path_reaches_the_design_panel() {
     let dir = scratch_dir("design-off");
     let todo = dir.join("issues/todo");
     std::fs::create_dir_all(&todo).unwrap();
+    std::fs::create_dir_all(dir.join("issues/ready")).unwrap();
     let issue = todo.join("open.md");
     std::fs::write(&issue, "# Open\n").unwrap();
     write_min_design(&dir);
@@ -205,7 +206,11 @@ fn with_idesign_off_no_path_reaches_the_design_panel() {
     let (offered, mut app) = offers(app, "Design");
     assert!(!offered, "the board has no Design button");
     app.open_issue(issue.clone());
-    let (offered, mut app) = offers(app, "Draft design");
+    let mut harness = kittest(app);
+    harness.get_by_label("More actions").click();
+    harness.run_steps(2);
+    let offered = harness.query_by_label("Draft design").is_some();
+    let mut app = harness.into_state().1;
     assert!(!offered, "the reader has no Draft design");
 
     app.show_design(true, false);

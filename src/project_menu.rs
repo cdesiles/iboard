@@ -1,6 +1,6 @@
 //! The ProjectMenu under the board header's project name: the groups, then
 //! the user's projects in their own order, filtered as soon as a key is
-//! typed, and a footer with Add project…, Edit groups… and Reorder. Reorder
+//! typed, and a footer with Stats, Add project…, Edit groups… and Reorder. Reorder
 //! is a mode of its own: rows drag, or move with `⌥↑ ⌥↓`, and Done saves.
 
 use std::ops::Range;
@@ -15,7 +15,7 @@ use iboard::theme::{self, Icon};
 use iboard::widgets::{self, ButtonKind, Drag, MENU_ROW_H, RowLook};
 
 const WIDTH: f32 = 360.0;
-const ROW_GAP: f32 = 2.0;
+const ROW_GAP: f32 = 0.0;
 /// The groups scroll after four rows.
 const GROUPS_MAX_H: f32 = 4.0 * (MENU_ROW_H + ROW_GAP);
 /// The projects scroll after eight rows, or sooner in a short window.
@@ -51,6 +51,7 @@ pub enum Pick {
 
 pub enum Action {
     Open(Pick),
+    Stats,
     Add,
     EditGroups,
     SaveOrder(Vec<PathBuf>),
@@ -230,6 +231,7 @@ impl Menu {
                     } else {
                         list_h = self.body(ui, entries, list_max, &mut action);
                         match footer(ui) {
+                            Some(Footer::Stats) => action = Some(Action::Stats),
                             Some(Footer::Add) => action = Some(Action::Add),
                             Some(Footer::EditGroups) => action = Some(Action::EditGroups),
                             Some(Footer::Reorder) => self.start_reorder(entries),
@@ -631,18 +633,34 @@ fn footer_frame(ui: &egui::Ui) -> Frame {
         })
 }
 
+/// Between the footer's Stats row and its buttons.
+const FOOTER_GAP: f32 = 6.0;
+
 enum Footer {
+    Stats,
     Add,
     EditGroups,
     Reorder,
 }
 
-/// The three actions, on the window ground.
+/// The Stats row over the three actions, on the window ground.
 fn footer(ui: &mut egui::Ui) -> Option<Footer> {
     let mut picked = None;
     widgets::rule(ui);
     footer_frame(ui).show(ui, |ui| {
         ui.set_width(ui.available_width());
+        let stats = widgets::wide_button(
+            ui,
+            ButtonKind::Secondary,
+            Some(Icon::Bars),
+            "Stats",
+            Some("⌘I"),
+        )
+        .on_hover_text("Project stats: what the commits say, and the Agenda  ⌘I");
+        if stats.clicked() {
+            picked = Some(Footer::Stats);
+        }
+        ui.add_space(FOOTER_GAP);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = theme::SPACE_3;
             let add = widgets::button(

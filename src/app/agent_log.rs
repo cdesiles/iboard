@@ -3,8 +3,8 @@
 
 use super::side_panel::side_panel;
 use super::{
-    ButtonKind, CommonMarkCache, CommonMarkViewer, IboardApp, Instant, Path, PathBuf, RichText,
-    file_name, stopwatch, theme, widgets,
+    CommonMarkCache, CommonMarkViewer, IboardApp, Instant, Path, PathBuf, RichText, file_name,
+    stopwatch, theme,
 };
 use crate::build_log::{self, Entry};
 
@@ -39,23 +39,6 @@ impl IboardApp {
             .agent_log
             .as_ref()
             .is_some_and(|log| log.path == path)
-    }
-
-    /// Agent log, in the reader's header: opens the log beside the issue, or
-    /// closes it.
-    pub(super) fn agent_log_button(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let open = self.agent_log_open(path);
-        let kind = if open {
-            ButtonKind::Open
-        } else {
-            ButtonKind::Header
-        };
-        if widgets::button(ui, kind, None, "Agent log", None)
-            .on_hover_text("What the build agent does, or did, on this issue")
-            .clicked()
-        {
-            self.toggle_agent_log(path);
-        }
     }
 
     /// Opens the issue with its agent log beside it; or says there is none.

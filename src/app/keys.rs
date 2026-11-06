@@ -429,6 +429,10 @@ impl IboardApp {
     /// what its field holds), then the filter takes it, then a note being
     /// written, a review (cancelled, or its panel closed), and the screens.
     fn escape_keys(&mut self, ctx: &egui::Context) {
+        // An open menu closes on `esc` by itself, and the screen stays.
+        if egui::Popup::is_any_open(ctx) {
+            return;
+        }
         let take = || ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
         if self.session.label_picker.is_some() && take() {
             self.session.label_picker = None;

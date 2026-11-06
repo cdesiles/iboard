@@ -50,6 +50,18 @@ pub enum Icon {
     Layers,
     /// Six dots: something that can be dragged into place.
     Grip,
+    /// Three bars: the Stats screen.
+    Bars,
+    /// Three dots in a row: a menu of what is left.
+    More,
+    /// An arrow pointing right: Move to….
+    ArrowRight,
+    /// A small right chevron: a row that opens a submenu.
+    ChevronRight,
+    /// Three narrowing lines: refine.
+    Narrow,
+    /// A speech bubble: ask an agent.
+    Bubble,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -86,7 +98,12 @@ pub fn paint_icon_stroked(painter: &Painter, icon: Icon, rect: Rect, color: Colo
         Icon::Play | Icon::Stop | Icon::Thinking | Icon::Log | Icon::Review => {
             agent_icon(&grid, icon);
         }
-        Icon::Layers | Icon::Grip | Icon::Warning | Icon::Flame => project_icon(&grid, icon),
+        Icon::Layers | Icon::Grip | Icon::Warning | Icon::Flame | Icon::Bars => {
+            project_icon(&grid, icon);
+        }
+        Icon::More | Icon::ArrowRight | Icon::ChevronRight | Icon::Narrow | Icon::Bubble => {
+            menu_icon(&grid, icon);
+        }
     }
 }
 
@@ -328,10 +345,47 @@ fn agent_icon(g: &Grid, icon: Icon) {
     }
 }
 
-/// The project's marks: the ProjectMenu footer's groups and Reorder grip,
-/// the Stats screen's signals and hot spots.
+/// The rows of the header's menus.
+fn menu_icon(g: &Grid, icon: Icon) {
+    match icon {
+        Icon::More => {
+            for x in [5.0, 12.0, 19.0] {
+                g.painter
+                    .circle_filled(g.at(x, 12.0), 1.5 * g.scale, g.stroke.color);
+            }
+        }
+        Icon::ArrowRight => {
+            g.line(&[(5.0, 12.0), (19.0, 12.0)]);
+            g.line(&[(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]);
+        }
+        Icon::ChevronRight => g.line(&[(9.0, 6.0), (15.0, 12.0), (9.0, 18.0)]),
+        Icon::Narrow => {
+            g.line(&[(4.0, 6.0), (20.0, 6.0)]);
+            g.line(&[(7.0, 12.0), (17.0, 12.0)]);
+            g.line(&[(10.0, 18.0), (14.0, 18.0)]);
+        }
+        Icon::Bubble => {
+            g.closed(&[
+                (4.0, 5.0),
+                (20.0, 5.0),
+                (20.0, 17.0),
+                (9.0, 17.0),
+                (4.0, 21.0),
+            ]);
+        }
+        _ => {}
+    }
+}
+
+/// The project's marks: the ProjectMenu footer's Stats, groups and Reorder
+/// grip, the Stats screen's signals and hot spots.
 fn project_icon(g: &Grid, icon: Icon) {
     match icon {
+        Icon::Bars => {
+            g.line(&[(5.0, 20.0), (5.0, 12.0)]);
+            g.line(&[(12.0, 20.0), (12.0, 4.0)]);
+            g.line(&[(19.0, 20.0), (19.0, 15.0)]);
+        }
         Icon::Layers => {
             g.closed(&[(12.0, 3.0), (21.0, 8.0), (12.0, 13.0), (3.0, 8.0)]);
             g.line(&[(3.0, 13.0), (12.0, 18.0), (21.0, 13.0)]);

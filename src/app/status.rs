@@ -195,7 +195,7 @@ impl IboardApp {
             .is_some_and(|column| column.accepts_new_issues());
         if todo && self.prefs.agent.configured() {
             vec![("E", "edit"), ("esc", "board"), ("⌘⇧R", "review")]
-        } else if self.can_edit(path) && self.updatable(path) {
+        } else if !todo && self.can_edit(path) && self.updatable(path) {
             vec![("E", "edit"), ("esc", "board"), ("⌘U", "update")]
         } else if self.can_edit(path) {
             vec![("E", "edit"), ("esc", "board"), ("Del", "delete")]

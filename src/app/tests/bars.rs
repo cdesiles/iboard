@@ -18,36 +18,34 @@ fn board(dir: &Path) -> Board {
     harness
 }
 
-/// The board's header names the project, then its issues path.
+/// The board's header names the project, and its path is no longer there.
 #[test]
-fn the_board_header_names_the_project_before_the_path() {
+fn the_board_header_names_the_project_without_its_path() {
     let dir = scratch_dir("project-name");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let harness = board(&dir);
     let name = harness.state().1.board.name();
     let path = display_path(&harness.state().1.board.root);
-    let name = harness.get_by_label(&name).rect();
-    let path = harness
-        .get_all_by_label(&path)
-        .map(|node| node.rect())
-        .find(|rect| rect.min.y < theme::BAR_H)
-        .expect("the header shows the path");
-    assert!(name.max.x <= path.min.x, "{name:?} then {path:?}");
+    harness.get_by_label(&name);
+    let in_header = harness
+        .query_all_by_label(&path)
+        .any(|node| node.rect().min.y < theme::BAR_H);
+    assert!(!in_header, "the path left the header");
 }
 
-fn stats_width(harness: &Board) -> f32 {
-    harness.get_by_label("Stats").rect().width()
+fn new_issue_width(harness: &Board) -> f32 {
+    harness.get_by_label("New issue").rect().width()
 }
 
-/// At rest the status bar lists no keys and Stats shows its label alone.
-/// Half a second of ⌘ brings out `⌘I` and the bar's keys; letting go puts
+/// At rest the status bar lists no keys and New issue shows its label alone.
+/// Half a second of ⌘ brings out `⌘N` and the bar's keys; letting go puts
 /// them away.
 #[test]
 fn the_board_shows_its_keys_only_while_command_is_held() {
     let dir = scratch_dir("key-hints");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let mut harness = board(&dir);
-    let at_rest = stats_width(&harness);
+    let at_rest = new_issue_width(&harness);
     assert!(
         harness.query_by_label("filter").is_none(),
         "no keys at rest"
@@ -59,12 +57,15 @@ fn the_board_shows_its_keys_only_while_command_is_held() {
         harness.query_by_label("filter").is_some(),
         "the status bar lists them"
     );
-    assert!(stats_width(&harness) > at_rest, "⌘I slides out of Stats");
+    assert!(
+        new_issue_width(&harness) > at_rest,
+        "⌘N slides out of New issue"
+    );
 
     harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
     harness.run_steps(1);
     assert!(harness.query_by_label("filter").is_none());
-    assert_eq!(stats_width(&harness), at_rest);
+    assert_eq!(new_issue_width(&harness), at_rest);
 }
 
 /// A board with an issue per column, its keys out and `Auto` off.
@@ -179,18 +180,24 @@ fn a_split_drafts_checkbox_has_a_name() {
     harness.get_by_role_and_label(egui::accesskit::Role::CheckBox, "Include First part");
 }
 
-/// Refresh shows `⌘R` as its key, except on a Todo issue, where it refines.
+/// With Auto off Refresh is the board's button with its `⌘R`; on an issue it
+/// leaves the header for the `…` menu, with no key on Todo, where `⌘R` refines.
 #[test]
 fn refresh_shows_its_key_where_it_has_it() {
     let dir = scratch_dir("refresh-key");
     let mut harness = board_of_every_column(&dir);
-    let width = |harness: &Board| harness.get_by_label("Refresh").rect().width();
-    let on_board = width(&harness);
+    harness.get_by_label("Refresh");
 
-    harness
-        .state_mut()
-        .1
-        .open_issue(dir.join("issues/todo/a.md"));
+    let todo = dir.join("issues/todo/a.md");
+    let ready = dir.join("issues/ready/b.md");
+    harness.state_mut().1.open_issue(todo.clone());
     harness.run_steps(1);
-    assert!(width(&harness) < on_board, "⌘R refines here");
+    assert!(harness.query_by_label("Refresh").is_none(), "in the menu");
+    harness.get_by_label("More actions").click();
+    harness.run_steps(2);
+    harness.get_by_label("Refresh");
+
+    let app = &harness.state().1;
+    assert_eq!(app.refresh_key(&todo), "", "⌘R refines here");
+    assert_eq!(app.refresh_key(&ready), "⌘R");
 }

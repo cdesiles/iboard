@@ -156,23 +156,18 @@ impl IboardApp {
         }
     }
 
-    /// Ask AI…, in the Reader of an issue not done; Asking… while the agent
-    /// works, to stop it.
-    pub(super) fn ask_button(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let asking = self.asking(path);
-        let (icon, label, hint) = match asking {
-            true => (
-                Icon::Thinking,
+    /// Asking…, beside the AI split button while the agent works on an ask:
+    /// a click stops it.
+    pub(super) fn asking_button(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let hint = "The agent works on your ask: stop it  ⌘K";
+        if self.asking(path)
+            && widgets::button(
+                ui,
+                ButtonKind::Review,
+                Some(Icon::Thinking),
                 "Asking…",
-                "The agent works on your ask: stop it  ⌘K",
-            ),
-            false => (
-                Icon::Review,
-                "Ask AI…",
-                "Ask the agent for something on this issue: \"take care of point 1\"  ⌘K",
-            ),
-        };
-        if widgets::button(ui, ButtonKind::Review, Some(icon), label, Some("⌘K"))
+                Some("⌘K"),
+            )
             .on_hover_text(hint)
             .clicked()
         {

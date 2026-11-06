@@ -39,6 +39,9 @@ pub(super) struct Reader {
     pub(super) preview_rect: Rect,
     /// The images already reported missing, by issue and link.
     pub(super) reported: HashSet<(PathBuf, String)>,
+    /// The issue whose `read-h1` has scrolled out of view: its title joins
+    /// the breadcrumb.
+    pub(super) title_away: Option<PathBuf>,
 }
 
 impl Default for Reader {
@@ -47,6 +50,7 @@ impl Default for Reader {
             cache: CommonMarkCache::default(),
             preview_rect: Rect::NOTHING,
             reported: HashSet::new(),
+            title_away: None,
         }
     }
 }
@@ -256,6 +260,11 @@ impl IboardApp {
             paint_edit_outline(ui, outline);
         }
         self.reader.preview_rect = outline;
+        let away = outcome.title_away.then(|| path.to_path_buf());
+        if self.reader.title_away != away {
+            self.reader.title_away = away;
+            ui.ctx().request_repaint();
+        }
 
         self.report_missing_images(path, &outcome.missing);
         if !outcome.edits.is_empty() {
@@ -293,6 +302,7 @@ impl IboardApp {
             body: Rect::NOTHING,
             edits: Vec::new(),
             missing: Vec::new(),
+            title_away: false,
         };
         let mut note_actions = Vec::new();
         let cache = &mut self.reader.cache;
@@ -324,6 +334,9 @@ impl IboardApp {
                         let drawn = issue_blocks(ui, cache, path, sheet.text, notes.as_mut());
                         outcome.edits = drawn.edits;
                         outcome.missing = drawn.missing;
+                        let view_top = ui.clip_rect().top();
+                        outcome.title_away =
+                            drawn.title_bottom.is_none_or(|bottom| bottom < view_top);
                         note_actions = drawn.actions;
                     });
                     outcome.body = body.response.rect;
@@ -378,6 +391,8 @@ struct SheetOutcome {
     edits: Vec<(Range<usize>, String)>,
     /// The links of the images that could not be shown.
     missing: Vec<String>,
+    /// The page's title is out of view, scrolled away or never there.
+    title_away: bool,
 }
 
 /// What drawing the issue's blocks did.
@@ -385,6 +400,8 @@ struct DrawnBlocks {
     edits: Vec<(Range<usize>, String)>,
     actions: Vec<NoteAction>,
     missing: Vec<String>,
+    /// Where the first `# ` heading ends, if there is one.
+    title_bottom: Option<f32>,
 }
 
 /// The reader's two blocks: the sheet, and under it the "Not written yet"
@@ -553,6 +570,7 @@ fn issue_blocks(
     let mut actions = Vec::new();
     let mut missing = Vec::new();
     let mut below: f32 = 0.0;
+    let mut title_bottom = None;
     for (index, range) in blocks.iter().enumerate() {
         let block = &text[range.clone()];
         let parsed = prose::parse(block);
@@ -577,6 +595,9 @@ fn issue_blocks(
                 None => viewer_block(ui, cache, path, block, &mut missing),
             })
             .inner;
+        if title_bottom.is_none() && block.trim_start().starts_with("# ") {
+            title_bottom = Some(shown.rect.bottom());
+        }
         if let Some(edited) = shown.edited {
             edits.push((range.clone(), edited));
         }
@@ -593,6 +614,7 @@ fn issue_blocks(
         edits,
         actions,
         missing,
+        title_bottom,
     }
 }
 

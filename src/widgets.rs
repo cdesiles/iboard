@@ -14,6 +14,7 @@ use crate::theme::{self, Icon};
 
 mod button;
 mod dialog;
+mod dynamic_button;
 mod key_hints;
 mod menu;
 mod modal;
@@ -22,7 +23,7 @@ mod select;
 
 pub use button::{
     ButtonKind, CARD_ACTION, Tone, action_button, button, hover_fade, icon_button, split_button,
-    text_button_width,
+    text_button_width, wide_button,
 };
 pub use dialog::{
     Answer, Ask, FooterClick, confirm, confirm_buttons, dashed_rect, discard_bar, enter_confirms,
@@ -30,10 +31,11 @@ pub use dialog::{
     modal_footer_with, modal_frame, modal_header, paint_focus_halo, paint_focus_ring,
     popover_frame, rule, segmented, text_entry, text_field,
 };
+pub use dynamic_button::DynamicButton;
 pub use key_hints::{key_hints, key_hints_shown, sliding_hints, sliding_kbd};
 pub use menu::{
-    Drag, MENU_ROW_H, MenuOption, RowLook, menu_group, menu_head, menu_note, menu_option, menu_row,
-    menu_row_lifted, menu_separator,
+    ActionTone, Drag, MENU_ROW_H, MenuAction, MenuOption, RowLook, menu_action, menu_group,
+    menu_head, menu_note, menu_option, menu_row, menu_row_lifted, menu_separator,
 };
 pub use modal::{focus_here, modal, modal_body_max, settle_modals};
 pub use pill::{
@@ -231,28 +233,18 @@ pub fn project_trigger_id() -> egui::Id {
     egui::Id::new("project-trigger")
 }
 
-/// The project menu's trigger: the project's name, its path and a chevron.
-/// Transparent at rest; `surface-hover` and a `line-strong` edge on hover and
-/// while the menu is open. The path truncates into the width left.
-pub fn project_trigger(ui: &mut Ui, project: &str, path: &str, open: bool) -> Response {
+/// The project menu's trigger: the project's name and a chevron. Transparent
+/// at rest; `surface-hover` with no edge on hover and while the menu is open.
+/// A long name truncates into the width left.
+pub fn project_trigger(ui: &mut Ui, project: &str, open: bool) -> Response {
     const HEIGHT: f32 = 28.0;
     const PAD: f32 = 6.0;
+    const GAP: f32 = 4.0;
     let p = theme::palette(ui);
-    let backdrop = ui.painter().add(egui::Shape::Noop);
-    let size = Vec2::new(ui.available_width(), HEIGHT);
-    let layout = egui::Layout::left_to_right(egui::Align::Center);
-    let row = ui.allocate_ui_with_layout(size, layout, |ui| {
-        ui.set_min_height(HEIGHT);
-        ui.spacing_mut().item_spacing.x = PAD;
-        ui.add_space(PAD);
-        let name = egui::RichText::new(project).font(theme::ui_title());
-        ui.label(name.color(p.ink));
-        let trail = egui::RichText::new(path).font(theme::meta());
-        ui.add(egui::Label::new(trail.color(p.ink_muted)).truncate());
-        let (icon, _) = ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
-        theme::paint_icon(ui.painter(), Icon::ChevronDown, icon, p.ink_muted);
-    });
-    let rect = row.response.rect.with_max_x(row.response.rect.max.x + PAD);
+    let chrome = 2.0 * PAD + GAP + theme::ICON_SIZE;
+    let text = text_width(ui, project, theme::ui_title()).ceil();
+    let width = (text + chrome).min(ui.available_width());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, HEIGHT), Sense::hover());
     let response = ui
         .interact(rect, project_trigger_id(), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -260,15 +252,30 @@ pub fn project_trigger(ui: &mut Ui, project: &str, path: &str, open: bool) -> Re
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Switch project")
     });
     let fade = hover_fade(ui.ctx(), response.id, response.hovered());
-    ui.painter().set(
-        backdrop,
-        egui::epaint::RectShape::filled(
-            rect,
-            CornerRadius::same(theme::RADIUS_SM),
-            p.surface_hover
-                .gamma_multiply(if open { 1.0 } else { fade }),
-        ),
+    ui.painter().rect_filled(
+        rect,
+        CornerRadius::same(theme::RADIUS_SM),
+        p.surface_hover
+            .gamma_multiply(if open { 1.0 } else { fade }),
     );
+    let name_rect = Rect::from_min_size(
+        rect.min + Vec2::new(PAD, 0.0),
+        Vec2::new(width - chrome, HEIGHT),
+    );
+    let mut name = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(name_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let label = egui::RichText::new(project)
+        .font(theme::ui_title())
+        .color(p.ink);
+    name.add(egui::Label::new(label).truncate());
+    let icon = Rect::from_center_size(
+        Pos2::new(rect.max.x - PAD - theme::ICON_SIZE / 2.0, rect.center().y),
+        Vec2::splat(theme::ICON_SIZE),
+    );
+    theme::paint_icon(ui.painter(), Icon::ChevronDown, icon, p.ink_muted);
     focus_ring(ui, &response, theme::RADIUS_SM);
     response
 }
@@ -299,22 +306,52 @@ pub fn tilt_layer(ctx: &egui::Context, layer: egui::LayerId, origin: egui::Pos2,
 
 /// A breadcrumb segment that links back: `ink-muted`, `surface-hover` on hover.
 pub fn crumb(ui: &mut Ui, text: &str, font: FontId) -> Response {
+    crumb_marked(ui, text, font, None)
+}
+
+/// The room a [`crumb_marked`]'s mark takes, and the gap after it.
+const CRUMB_MARK: f32 = theme::STATUS_ICON + CRUMB_PAD;
+
+/// A [`crumb`] with a column's status mark before its text.
+pub fn crumb_marked(
+    ui: &mut Ui,
+    text: &str,
+    font: FontId,
+    mark: Option<theme::Status>,
+) -> Response {
     let p = theme::palette(ui);
     let normal = galley(ui, text, font.clone(), p.ink_muted);
+    let mark_w = if mark.is_some() { CRUMB_MARK } else { 0.0 };
     // A 24pt hit area, however small the text.
-    let size = Vec2::new(normal.size().x + 2.0 * CRUMB_PAD, theme::CONTROL_H);
+    let size = Vec2::new(mark_w + normal.size().x + 2.0 * CRUMB_PAD, theme::CONTROL_H);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, ui.is_enabled(), text));
     if ui.is_rect_visible(rect) {
-        let text_rect = Rect::from_center_size(rect.center(), normal.size());
+        let text_rect = Rect::from_min_size(
+            Pos2::new(
+                rect.min.x + CRUMB_PAD + mark_w,
+                rect.center().y - normal.size().y / 2.0,
+            ),
+            normal.size(),
+        );
         let fade = hover_fade(ui.ctx(), response.id, response.hovered());
         ui.painter().rect_filled(
             rect,
             CornerRadius::same(theme::RADIUS_SM),
             p.surface_hover.gamma_multiply(fade),
         );
+        if let Some(status) = mark {
+            let icon = Rect::from_center_size(
+                Pos2::new(
+                    rect.min.x + CRUMB_PAD + theme::STATUS_ICON / 2.0,
+                    rect.center().y,
+                ),
+                Vec2::splat(theme::STATUS_ICON),
+            );
+            theme::status_icon(ui.painter(), status, icon, p);
+        }
         let color = if response.hovered() {
             // Underlined 3pt below the baseline-ish bottom of the text.
             let y = text_rect.max.y + 1.0;

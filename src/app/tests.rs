@@ -13,6 +13,7 @@ mod editor;
 mod enrich;
 mod groups;
 mod handover;
+mod header;
 mod images;
 mod kit;
 mod labelling;

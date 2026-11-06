@@ -87,7 +87,9 @@ fn done_issues_offer_no_draft_design() {
 
     let offers_draft = |mut app: IboardApp, path: &Path| {
         app.open_issue(path.to_path_buf());
-        let harness = kittest(app);
+        let mut harness = kittest(app);
+        harness.get_by_label("More actions").click();
+        harness.run_steps(2);
         let offered = harness.query_by_label("Draft design").is_some();
         (offered, harness.into_state().1)
     };

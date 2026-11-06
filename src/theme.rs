@@ -293,6 +293,13 @@ pub const TITLEBAR_LEAD: f32 = 80.0;
 pub const TITLEBAR_LIGHT_Y: f32 = 20.0;
 /// The close button's centre from the window's left; the others follow every 20pt.
 pub const TITLEBAR_LIGHT_X: f32 = 20.0;
+
+/// The centres of the three traffic lights, from the window's top left.
+pub fn traffic_light_centres() -> [egui::Pos2; 3] {
+    [0.0, 1.0, 2.0]
+        .map(|nth| egui::Pos2::new(TITLEBAR_LIGHT_X + nth * TITLEBAR_LIGHT_X, TITLEBAR_LIGHT_Y))
+}
+
 /// Scrollbar thumb at rest and while scrolling.
 pub const SCROLL_THUMB: f32 = 4.0;
 /// Scrollbar thumb under the pointer and while dragged.

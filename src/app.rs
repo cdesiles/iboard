@@ -42,6 +42,7 @@ use iboard::prompts;
 
 mod agenda;
 mod agent_log;
+mod ai_button;
 mod all;
 mod ask;
 mod board;
@@ -77,6 +78,7 @@ mod side_panel;
 mod split;
 mod stats;
 mod status;
+mod traffic_lights;
 mod update;
 mod welcome;
 mod windows;
@@ -104,9 +106,6 @@ const RESCAN_EVERY: Duration = Duration::from_secs(2);
 /// On macOS the header bar doubles as the window's title bar (the native
 /// title is hidden and the content runs under the traffic lights).
 pub const UNIFIED_TITLEBAR: bool = cfg!(target_os = "macos");
-
-/// Room the macOS traffic lights take at the left of the header bar.
-const TRAFFIC_LIGHTS_WIDTH: f32 = 80.0;
 
 /// Directory done issues are archived into, under the issues root. It starts
 /// with a dot, so discovery never reads it back.
@@ -637,7 +636,7 @@ impl IboardApp {
         let p = theme::palette(ui);
         let gutter = theme::SPACE_5;
         let header_left = if UNIFIED_TITLEBAR {
-            TRAFFIC_LIGHTS_WIDTH
+            theme::TITLEBAR_LEAD
         } else {
             gutter
         };
@@ -742,6 +741,8 @@ fn past_reviews(
 
 impl eframe::App for IboardApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        #[cfg(target_os = "macos")]
+        traffic_lights::keep_placed(ctx);
         self.frame_logic(ctx);
     }
 

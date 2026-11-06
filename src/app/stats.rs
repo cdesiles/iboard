@@ -157,6 +157,7 @@ impl IboardApp {
         if self.welcoming() {
             return;
         }
+        self.project_menu = None;
         if self.showing_group() {
             let notice = "Stats measure one project: open it from the project menu";
             self.session.notice = Some((notice.to_string(), Instant::now()));

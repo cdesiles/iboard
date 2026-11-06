@@ -327,16 +327,24 @@ fn refresh_keeps_the_old_numbers_until_the_new_ones_land() {
     ));
 }
 
-/// The board's Stats button opens the panel, as Tools › Project Stats… does.
+/// The ProjectMenu's Stats row opens the panel, as Tools › Project Stats… does,
+/// and the menu closes behind it.
 #[test]
-fn the_stats_button_opens_the_panel() {
+fn the_project_menus_stats_row_opens_the_panel() {
     let (_dir, located) = project("stats-button");
     let app = IboardApp::from_located(located);
     let mut harness = kittest(app);
     assert!(harness.state().1.session.stats.is_none());
+    assert!(
+        harness.query_by_label("Stats").is_none(),
+        "not in the header"
+    );
+    harness.get_by_label("Switch project").click();
+    harness.run_steps(2);
     harness.get_by_label("Stats").click();
     harness.run_steps(2);
     assert!(harness.state().1.session.stats.is_some());
+    assert!(harness.state().1.project_menu.is_none());
     assert!(measured(&mut harness.state_mut().1));
 }
 

@@ -291,10 +291,35 @@ pub fn button(
     label: &str,
     shortcut: Option<&str>,
 ) -> Response {
+    button_at_least(ui, kind, icon, label, shortcut, 0.0)
+}
+
+/// A [`button`] as wide as the room there is, its content at its left: the
+/// ProjectMenu's Stats row.
+pub fn wide_button(
+    ui: &mut Ui,
+    kind: ButtonKind,
+    icon: Option<Icon>,
+    label: &str,
+    shortcut: Option<&str>,
+) -> Response {
+    let width = ui.available_width();
+    button_at_least(ui, kind, icon, label, shortcut, width)
+}
+
+fn button_at_least(
+    ui: &mut Ui,
+    kind: ButtonKind,
+    icon: Option<Icon>,
+    label: &str,
+    shortcut: Option<&str>,
+    min_width: f32,
+) -> Response {
     let kind = kind.when(ui.is_enabled());
     let content = button_content(ui, kind, icon, label, shortcut);
+    let width = content.width.max(min_width);
     let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(content.width, theme::CONTROL_H), Sense::click());
+        ui.allocate_exact_size(Vec2::new(width, theme::CONTROL_H), Sense::click());
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
     });

@@ -134,12 +134,12 @@ fn play_builds_each_card_in_its_own_project() {
 }
 
 #[test]
-fn the_header_names_the_group_instead_of_a_path() {
+fn the_header_names_the_group() {
     use egui_kittest::kittest::Queryable;
     let (_scratch, _app_dir, _site_dir, app) = two_projects("all-header");
     let harness = kittest(app);
     harness.get_by_label("Clients");
-    harness.get_by_label("group · 2 projects");
+    assert!(harness.query_by_label("group · 2 projects").is_none());
     assert!(harness.query_by_label("Stats").is_none(), "no Stats button");
 }
 

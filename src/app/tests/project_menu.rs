@@ -54,6 +54,7 @@ fn the_menu_lists_the_projects_and_its_three_actions() {
         "alpha",
         "beta",
         "gamma",
+        "Stats",
         "Add project…",
         "Edit groups…",
         "Reorder",
@@ -64,6 +65,45 @@ fn the_menu_lists_the_projects_and_its_three_actions() {
     let app = &harness.state().1;
     assert!(app.project_menu.is_none(), "picking closes the menu");
     assert!(app.located.project_dir.ends_with("gamma"));
+}
+
+/// Rows are 42pt, and the trigger holds the name and no path.
+#[test]
+fn the_rows_are_42pt_and_the_trigger_has_no_path() {
+    let (_scratch, _config, projects, app) = three_projects("menu-rows");
+    let mut harness = kittest(app);
+    open(&mut harness);
+    assert_eq!(harness.get_by_label("beta").rect().height(), 42.0);
+    let path = display_path(&projects[0]);
+    let in_trigger = harness.get_by_label("Switch project").rect();
+    let path_rects = harness.query_all_by_label(&path).map(|node| node.rect());
+    assert!(
+        path_rects
+            .into_iter()
+            .all(|rect| !rect.intersects(in_trigger))
+    );
+}
+
+/// On a group's board Stats stays in the menu; the status bar says why it
+/// shows nothing, and `⌘I` says the same.
+#[test]
+fn stats_on_a_groups_board_says_it_measures_one_project() {
+    let (_scratch, _config, projects, mut app) = three_projects("menu-group-stats");
+    app.workspace = Some(crate::workspace::Workspace {
+        groups: vec![crate::workspace::Group {
+            name: "Clients".to_string(),
+            repos: projects.clone(),
+        }],
+    });
+    app.open_group("Clients");
+    let mut harness = kittest(app);
+    open(&mut harness);
+    press(&mut harness, "Stats");
+    let app = &harness.state().1;
+    assert!(app.session.stats.is_none());
+    assert!(app.project_menu.is_none());
+    let notice = &app.session.notice.as_ref().unwrap().0;
+    assert!(notice.contains("Stats measure one project"), "{notice}");
 }
 
 #[test]

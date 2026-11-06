@@ -174,6 +174,7 @@ impl IboardApp {
             Action::Close => {}
             Action::Open(Pick::Group(name)) => self.open_group(&name),
             Action::Open(Pick::Project(path)) => self.open_project(path),
+            Action::Stats => self.open_stats(),
             Action::EditGroups => self.open_groups(false),
             Action::Add => {
                 if !self.add_picked_projects() {

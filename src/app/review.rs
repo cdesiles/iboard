@@ -4,8 +4,8 @@ use super::side_panel::side_panel;
 use super::split::{self, Split};
 use super::{
     Align, ButtonKind, Color32, CommonMarkCache, CommonMarkViewer, Duration, Frame, HashMap,
-    HashSet, IboardApp, Icon, Job, Layout, Palette, Path, PathBuf, Pos2, Report, ReviewMode,
-    RichText, Sense, Vec2, agent, file_name, job, prompts, reviews, theme, widgets,
+    HashSet, IboardApp, Job, Layout, Palette, Path, PathBuf, Report, ReviewMode, RichText, Vec2,
+    agent, file_name, job, prompts, reviews, theme, widgets,
 };
 
 impl IboardApp {
@@ -219,120 +219,6 @@ impl IboardApp {
             editor.replace(proposal);
         }
         self.session.review = None;
-    }
-
-    /// What the Review button says on `path`: its icon, label, hint and key.
-    fn review_button_look(&self, path: &Path) -> (Icon, &'static str, &'static str, &'static str) {
-        let refine = self.session.refine.as_ref();
-        let hidden = refine.filter(|refine| refine.path == path && refine.hidden);
-        match hidden {
-            _ if self.review_is_running(path) => (
-                Icon::Thinking,
-                "Reviewing…",
-                "The review runs in the background: cancel it (⌘⇧R)",
-                "⌘⇧R",
-            ),
-            Some(refine) if refine.is_running() => (
-                Icon::Thinking,
-                "Refining…",
-                "The challenger is answering: back to the refinement (⌘R)",
-                "⌘R",
-            ),
-            Some(_) => (
-                Icon::Review,
-                "Refinement waiting",
-                "The challenger waits for your answer: back to the refinement (⌘R)",
-                "⌘R",
-            ),
-            None if self.prefs.agent.configured() => (
-                Icon::Review,
-                "Refine",
-                "Refine this issue in a conversation with a challenger (⌘R)",
-                "⌘R",
-            ),
-            None => (
-                Icon::Review,
-                "Refine",
-                "No agent is set up yet: choose one in Settings › AI review (⌘, or the caret)",
-                "⌘R",
-            ),
-        }
-    }
-
-    /// The Review split button, rightmost in the Reader and Editor header: the
-    /// main part refines the issue, back to a session hidden there (or cancels
-    /// a running review), the caret opens a menu with the reviews, naming what
-    /// runs and leading to the AI settings.
-    pub(super) fn review_button(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let running = self.review_is_running(path);
-        let configured = self.prefs.agent.configured();
-        let (icon, label, hint, key) = self.review_button_look(path);
-        let (main, caret) = widgets::split_button(
-            ui,
-            egui::Id::new("review-button"),
-            ButtonKind::Review,
-            Some(icon),
-            label,
-            Some(key),
-            running || configured,
-        );
-        if main.on_hover_text(hint).clicked() {
-            if running {
-                self.cancel_review_run(path);
-            } else if configured {
-                self.start_refinement(path);
-            } else {
-                self.open_config();
-            }
-        }
-        let options = "Review options";
-        let caret = caret.on_hover_text(options);
-        caret.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), options)
-        });
-        let runs_with = if configured {
-            self.prefs.agent.label()
-        } else {
-            "No agent set up yet".to_string()
-        };
-        let other_scope = match self.prefs.agent.scope {
-            ReviewMode::Quick => ReviewMode::Deep,
-            ReviewMode::Deep => ReviewMode::Quick,
-        };
-        let picked = review_menu(&caret, &runs_with, other_scope);
-        self.apply_review_menu(path, picked, other_scope);
-        self.ready_button(ui, path, "Review ready", "The review is in: show it");
-    }
-
-    /// Runs the Review menu's pick. While a review runs, its reviews and
-    /// Refine do nothing; with no agent set up, they open Settings as AI
-    /// settings does.
-    fn apply_review_menu(
-        &mut self,
-        path: &Path,
-        picked: Option<ReviewMenu>,
-        other_scope: ReviewMode,
-    ) {
-        let running = self.review_is_running(path);
-        let configured = self.prefs.agent.configured();
-        let draft = self.session.editing().is_some();
-        match picked {
-            Some(ReviewMenu::Review | ReviewMenu::OtherScope | ReviewMenu::Refine) if running => {}
-            Some(ReviewMenu::Review) if configured => self.start_review(path, draft),
-            Some(ReviewMenu::OtherScope) if configured => {
-                self.start_review_in(path, draft, other_scope);
-            }
-            Some(ReviewMenu::Refine) if configured => self.start_refinement(path),
-            Some(
-                ReviewMenu::Review
-                | ReviewMenu::OtherScope
-                | ReviewMenu::Refine
-                | ReviewMenu::Settings,
-            ) => {
-                self.open_config();
-            }
-            None => {}
-        }
     }
 
     /// Review ready, or Update ready, beside its button once the answer on
@@ -631,85 +517,6 @@ impl CardReviews<'_> {
         }
         self.past.get(path).map(|past| past.card_pill(p))
     }
-}
-
-/// Width of the Review button's menu, in points.
-const REVIEW_MENU_WIDTH: f32 = 240.0;
-
-/// A choice made in the Review button's menu.
-enum ReviewMenu {
-    Review,
-    /// A review in the scope Settings › AI review did not choose.
-    OtherScope,
-    Refine,
-    Settings,
-}
-
-/// The Review button's menu, under its caret: Refine, the review in either
-/// scope, what the agent runs with, and AI settings.
-fn review_menu(
-    caret: &egui::Response,
-    runs_with: &str,
-    other_scope: ReviewMode,
-) -> Option<ReviewMenu> {
-    egui::Popup::menu(caret)
-        .width(REVIEW_MENU_WIDTH)
-        .align(egui::RectAlign::BOTTOM_END)
-        .show(|ui| {
-            ui.set_min_width(REVIEW_MENU_WIDTH);
-            ui.spacing_mut().item_spacing = Vec2::ZERO;
-            let p = theme::palette(ui);
-            let mut picked = None;
-            let option = |ui: &mut egui::Ui, name: &str, meta: &str| {
-                widgets::menu_option(
-                    ui,
-                    widgets::MenuOption {
-                        name,
-                        mono: false,
-                        muted: false,
-                        meta,
-                        meta_is_key: true,
-                        checked: false,
-                        active: false,
-                    },
-                )
-            };
-            if option(ui, "Refine with a challenger", "⌘R").clicked() {
-                picked = Some(ReviewMenu::Refine);
-            }
-            if option(ui, "Review this issue", "⌘⇧R").clicked() {
-                picked = Some(ReviewMenu::Review);
-            }
-            let (other, meta) = match other_scope {
-                ReviewMode::Deep => ("Deep review", "reads the repo"),
-                ReviewMode::Quick => ("Quick review", "ticket only"),
-            };
-            if option(ui, other, meta).clicked() {
-                picked = Some(ReviewMenu::OtherScope);
-            }
-            ui.add_space(theme::SPACE_2);
-            ui.separator();
-            widgets::menu_group(ui, "Runs with");
-            let (rect, _) = ui.allocate_exact_size(
-                Vec2::new(ui.available_width(), theme::CONTROL_H),
-                Sense::hover(),
-            );
-            ui.painter().text(
-                Pos2::new(
-                    rect.min.x + 2.0 * theme::SPACE_3 + theme::ICON_SIZE,
-                    rect.center().y,
-                ),
-                egui::Align2::LEFT_CENTER,
-                runs_with,
-                theme::meta(),
-                p.ink,
-            );
-            if option(ui, "AI settings…", "⌘,").clicked() {
-                picked = Some(ReviewMenu::Settings);
-            }
-            picked
-        })
-        .and_then(|inner| inner.inner)
 }
 
 /// The label column of a finding's row, and the height of its first line.
