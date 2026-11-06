@@ -28,6 +28,7 @@ mod refine;
 mod review;
 mod select;
 mod settings;
+mod splitting;
 mod stats;
 mod unsaved;
 mod welcome;

@@ -99,12 +99,10 @@ impl IboardApp {
         let Some(content) = self.review_content(&target.path, target.draft) else {
             return;
         };
-        let previous = review.split.is_none().then(|| review.review.raw.clone());
+        let previous = review.review.raw.clone();
         let notes = self.reviewer_notes(&target.path);
         let mut prompt = prompts::review_prompt(&content, target.mode, &notes);
-        if let Some(raw) = previous {
-            prompt.push_str(&format!("\n\nA previous review said:\n{raw}"));
-        }
+        prompt.push_str(&format!("\n\nA previous review said:\n{previous}"));
         prompt.push_str(&format!("\n\nFollow-up: {follow_up}"));
         self.run_review(target, &content, prompt);
     }
@@ -315,19 +313,10 @@ impl IboardApp {
         match action {
             Some(PanelAction::Cancel) => self.close_review(),
             Some(PanelAction::Dismiss) => self.session.review = None,
-            Some(PanelAction::Retry) => {
-                let target =
-                    self.session.review.as_ref().map(|review| {
-                        (review.path.clone(), review.review.draft, review.review.mode)
-                    });
-                if let Some((path, draft, mode)) = target {
-                    self.start_review_in(&path, draft, mode);
-                }
-            }
+            Some(PanelAction::Split) => self.start_split(),
             Some(PanelAction::Again) => self.ask_again(),
             Some(PanelAction::OpenFollowUp) | None => {}
             Some(PanelAction::Apply) => self.apply_review_proposal(),
-            Some(PanelAction::Split) => self.start_split(),
             Some(PanelAction::CreateSplit) => self.create_split(),
             Some(PanelAction::BackToReview) => self.back_to_review(),
         }
@@ -403,9 +392,9 @@ pub(super) struct ReviewState {
 
 impl ReviewState {
     /// The rewrite Apply and `⌘↩` take to the editor: the review's, while no
-    /// split shows in its place.
+    /// split runs or shows its tickets in its place.
     pub(super) fn proposal(&self) -> Option<&str> {
-        if self.split.is_some() {
+        if matches!(self.split, Some(Split::Cutting { .. } | Split::Ready(_))) {
             return None;
         }
         self.review.report.as_ref()?.proposal.as_deref()
@@ -603,7 +592,6 @@ const PANEL_FOOT_H: f32 = theme::CONTROL_H + 2.0 * theme::SPACE_3 + 1.0;
 enum PanelAction {
     Apply,
     Cancel,
-    Retry,
     Again,
     OpenFollowUp,
     Dismiss,
@@ -702,6 +690,14 @@ fn review_body(
         }),
         (Some(Split::Failed(error)), _) => padded(ui, |ui| {
             ui.label(RichText::new(error.as_str()).color(p.danger));
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                let retry = PanelAction::Split;
+                let kind = ButtonKind::Secondary;
+                widgets::action_button(ui, &mut action, kind, "Retry", None, retry);
+                let back = PanelAction::BackToReview;
+                widgets::action_button(ui, &mut action, kind, "Back to review", None, back);
+            });
         }),
         (Some(Split::Ready(drafts)), _) => padded(ui, |ui| split::drafts_ui(ui, drafts)),
         (None, None) => padded(ui, |ui| {
@@ -834,16 +830,6 @@ fn review_footer(ui: &mut egui::Ui, review: &ReviewState) -> Option<PanelAction>
                     PanelAction::Apply,
                 );
             });
-            if matches!(review.split, Some(Split::Failed(_))) {
-                widgets::action_button(
-                    ui,
-                    &mut action,
-                    ButtonKind::Secondary,
-                    "Retry",
-                    None,
-                    PanelAction::Retry,
-                );
-            }
             let (kind, ask) = match review.follow_up.as_deref().map(str::trim) {
                 None => (ButtonKind::Secondary, PanelAction::OpenFollowUp),
                 Some("") => (ButtonKind::Secondary.when(false), PanelAction::Again),

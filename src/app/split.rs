@@ -38,12 +38,14 @@ pub(super) struct SplitDone {
 }
 
 impl IboardApp {
-    /// Asks the agent to cut the reviewed issue, giving it the Size finding.
+    /// Asks the agent to cut the reviewed issue, giving it the Size finding;
+    /// after a failed split, asks again.
     pub(super) fn start_split(&mut self) {
         let Some(review) = self.session.review.as_ref() else {
             return;
         };
-        let (None, Some(report)) = (&review.split, &review.review.report) else {
+        let (None | Some(Split::Failed(_)), Some(report)) = (&review.split, &review.review.report)
+        else {
             return;
         };
         let reason = report
@@ -95,11 +97,10 @@ impl IboardApp {
         None
     }
 
-    /// "Back to review": the findings the split started from.
+    /// "Back to review": the findings the split started from, dropping the
+    /// split, failed or not.
     pub(super) fn back_to_review(&mut self) {
-        if let Some(review) = self.session.review.as_mut()
-            && let Some(Split::Cutting { .. } | Split::Ready(_)) = review.split
-        {
+        if let Some(review) = self.session.review.as_mut() {
             review.split = None;
         }
     }
