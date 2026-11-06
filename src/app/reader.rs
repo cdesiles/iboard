@@ -39,6 +39,8 @@ pub(super) struct Reader {
     /// `preview_rect` where it shows: a long page runs on under the bars and
     /// the "Not written yet" block.
     pub(super) sheet_rect: Rect,
+    /// The part of the rest area, the page below the text, that shows.
+    pub(super) rest_rect: Rect,
     /// When the pointer last went down off the sheet.
     pub(super) stray_press: f64,
     /// What a key asked of the page's scroll, and whether down.
@@ -59,6 +61,7 @@ impl Default for Reader {
             cache: CommonMarkCache::default(),
             preview_rect: Rect::NOTHING,
             sheet_rect: Rect::NOTHING,
+            rest_rect: Rect::NOTHING,
             stray_press: f64::NEG_INFINITY,
             scroll: None,
             blocks: Vec::new(),
@@ -69,6 +72,13 @@ impl Default for Reader {
 }
 
 impl Reader {
+    /// Whether a click just now could pair up with a press off the page, as
+    /// the click that closed a menu: no double-click on what it uncovered.
+    pub(super) fn stray_double_click(&self, ctx: &egui::Context) -> bool {
+        let delay = ctx.options(|o| o.input_options.max_double_click_delay);
+        ctx.input(|i| i.time - self.stray_press <= delay)
+    }
+
     /// The line of the file drawn at height `y`: the block's first for prose,
     /// and in a block of several lines the one as far down as `y` is. Between
     /// blocks, the next one's.
@@ -298,6 +308,7 @@ impl IboardApp {
         }
         self.reader.preview_rect = outline;
         self.reader.sheet_rect = outline.intersect(outcome.view);
+        self.reader.rest_rect = outcome.rest.intersect(outcome.view);
         let away = outcome.title_away.then(|| path.to_path_buf());
         if self.reader.title_away != away {
             self.reader.title_away = away;
@@ -340,12 +351,14 @@ impl IboardApp {
         let mut outcome = SheetOutcome {
             body: Rect::NOTHING,
             view: Rect::NOTHING,
+            rest: Rect::NOTHING,
             edits: Vec::new(),
             missing: Vec::new(),
             title_away: false,
             blocks: Vec::new(),
         };
         let mut note_actions = Vec::new();
+        let stray = self.reader.stray_double_click(ui.ctx());
         let scroll = self.reader.scroll.take().map(|(stride, down)| {
             let by = match stride {
                 Stride::Line => LINE_STRIDE,
@@ -400,12 +413,13 @@ impl IboardApp {
                         Vec2::new(ui.available_width(), rest_height),
                         Sense::click(),
                     );
+                    outcome.rest = rest;
                     if sheet.editable {
                         let response = response.on_hover_cursor(egui::CursorIcon::Text);
                         response.widget_info(|| {
                             egui::WidgetInfo::labeled(egui::WidgetType::Button, true, REST_HINT)
                         });
-                        if response.double_clicked() {
+                        if response.double_clicked() && !stray {
                             intents.push(Intent::EditAtEnd(path.to_path_buf()));
                         }
                         paint_rest_hint(ui, rest);
@@ -447,6 +461,8 @@ struct SheetOutcome {
     body: Rect,
     /// The part of the pane the page scrolls in.
     view: Rect,
+    /// The empty rest of the sheet, below the text.
+    rest: Rect,
     /// The blocks a ticked checkbox changed.
     edits: Vec<(Range<usize>, String)>,
     /// The links of the images that could not be shown.

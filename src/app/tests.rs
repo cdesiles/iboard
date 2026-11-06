@@ -29,6 +29,7 @@ mod review;
 mod select;
 mod settings;
 mod stats;
+mod unsaved;
 mod welcome;
 mod workspace;
 use kit::{Kit, fake_agent, kittest, kittest_with, press, press_nth};

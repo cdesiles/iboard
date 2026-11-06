@@ -4,6 +4,7 @@
 
 use super::editor::EditorState;
 use super::reader::Stride;
+use super::review::RunKind;
 use super::{
     Confirm, DetailMode, IboardApp, Instant, Job, Key, LeaveChoice, PathBuf, RESCAN_EVERY, Screen,
     Vec2, job, quitting, scan, settings_ui, widgets,
@@ -16,8 +17,6 @@ const SWIPE_BACK: f32 = 120.0;
 struct KeyContext {
     /// A text field has focus.
     typing: bool,
-    /// The delete confirmation is up.
-    confirming: bool,
     place: Place,
     /// The open issue's text can be edited.
     editable: bool,
@@ -105,17 +104,15 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     let mut out = command_keys(input, cx);
     if let Place::Board(selected) = &cx.place
         && !cx.typing
-        && !cx.confirming
     {
         out.extend(board_keys(input, selected.clone()));
     }
     let ctrl = input.modifiers.ctrl && !input.modifiers.mac_cmd && !input.modifiers.alt;
-    if matches!(cx.place, Place::Board(_)) && !cx.confirming && ctrl && pressed(Key::Tab) {
+    if matches!(cx.place, Place::Board(_)) && ctrl && pressed(Key::Tab) {
         out.push(Command::SwitchProject(!input.modifiers.shift));
     }
     if let Place::Issue(path, DetailMode::Preview) = &cx.place
         && !cx.typing
-        && !cx.confirming
         && !cx.popup
     {
         if plain && pressed(Key::L) {
@@ -129,7 +126,7 @@ fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     // `Del` (or Backspace) asks to delete the selected card, or the issue the
     // reader shows. In the editor the key belongs to the text.
     let delete = plain && (pressed(Key::Delete) || pressed(Key::Backspace));
-    if delete && !cx.typing && !cx.confirming {
+    if delete && !cx.typing {
         out.extend(cx.place.target().cloned().map(Command::Delete));
     }
     out
@@ -150,7 +147,7 @@ fn command_keys(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
     let open = cx.place.open();
     let refine = open.filter(|_| cx.refinable).cloned();
     let review = match &cx.place {
-        Place::Board(Some((path, _))) if cx.refinable && !cx.typing && !cx.confirming => Some(path),
+        Place::Board(Some((path, _))) if cx.refinable && !cx.typing => Some(path),
         place => place.open(),
     };
     [
@@ -256,8 +253,8 @@ impl IboardApp {
             self.watch_config();
         }
         let welcoming = self.welcoming();
-        if !self.modal_keys(ctx, confirming) && !welcoming {
-            self.screen_keys(ctx, confirming);
+        if !confirming && !self.modal_keys(ctx) && !welcoming {
+            self.screen_keys(ctx);
         }
         self.autosave();
         if !welcoming {
@@ -288,9 +285,9 @@ impl IboardApp {
     }
 
     /// The dialog up owns the keyboard: Settings, which `⌘,` closes as it
-    /// opened it, Groups, the project menu, Project stats, Ask AI or
-    /// NewIssueModal. True when one does.
-    fn modal_keys(&mut self, ctx: &egui::Context, confirming: bool) -> bool {
+    /// opened it, Groups, Commits, the project menu, Project stats, Ask AI,
+    /// NewIssueModal or the refinement. True when one does.
+    fn modal_keys(&mut self, ctx: &egui::Context) -> bool {
         if self.settings.is_some() {
             if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma))
                 && self
@@ -302,7 +299,7 @@ impl IboardApp {
             }
             return true;
         }
-        if self.groups_dialog.is_some() {
+        if self.groups_dialog.is_some() || self.session.commits.is_some() {
             return true;
         }
         if self.project_menu.is_some() {
@@ -311,9 +308,11 @@ impl IboardApp {
             self.stats_keys(ctx);
         } else if self.session.ask_draft.is_some() {
             self.ask_keys(ctx);
-        } else if self.composer_open() && !confirming {
+        } else if self.composer_open() {
             self.new_issue_keys(ctx);
             self.paste_images(ctx);
+        } else if self.refinement_shown() {
+            self.escape_keys(ctx);
         } else {
             return false;
         }
@@ -323,18 +322,16 @@ impl IboardApp {
     /// The keys of the screen on show, while no dialog owns the keyboard:
     /// `esc`, a paste, the Diff's own keys, the shortcuts, the swipe back and
     /// the double-click that edits.
-    fn screen_keys(&mut self, ctx: &egui::Context, confirming: bool) {
-        if !confirming {
-            self.project_trigger_keys(ctx);
-            self.escape_keys(ctx);
-            self.paste_images(ctx);
-        }
-        if matches!(self.session.screen, Screen::Diff) && !confirming {
+    fn screen_keys(&mut self, ctx: &egui::Context) {
+        self.project_trigger_keys(ctx);
+        self.escape_keys(ctx);
+        self.paste_images(ctx);
+        if matches!(self.session.screen, Screen::Diff) {
             self.diff_keys(ctx);
         }
-        let cx = self.key_context(ctx, confirming || self.refinement_shown());
+        let cx = self.key_context(ctx);
         let mut commands = ctx.input(|i| keymap(i, &cx));
-        if !cx.confirming && !matches!(cx.place, Place::Board(_)) && self.swiped_back(ctx) {
+        if !matches!(cx.place, Place::Board(_)) && self.swiped_back(ctx) {
             commands.push(Command::Back);
         }
         for command in commands {
@@ -346,18 +343,16 @@ impl IboardApp {
         {
             self.go(to);
         }
-        let delay = ctx.options(|o| o.input_options.max_double_click_delay);
         // A double-click on the sheet, both its clicks, edits at that line.
         if cx.editable
-            && !cx.confirming
             && !self.writing_note()
+            && !self.reader.stray_double_click(ctx)
             && let Place::Issue(path, DetailMode::Preview) = cx.place
             && let Some(pos) = ctx.input(|i| {
                 i.pointer
                     .button_double_clicked(egui::PointerButton::Primary)
                     .then(|| i.pointer.interact_pos())
                     .flatten()
-                    .filter(|_| i.time - self.reader.stray_press > delay)
             })
             && self.on_the_sheet(ctx, pos)
         {
@@ -368,14 +363,18 @@ impl IboardApp {
     /// Whether `pos` is on the Reader's sheet with nothing over it: no
     /// dialog, no menu, no header or status bar the page scrolled under.
     fn on_the_sheet(&self, ctx: &egui::Context, pos: egui::Pos2) -> bool {
-        self.reader.sheet_rect.contains(pos)
-            && self.session.confirm.is_none()
+        self.reader.sheet_rect.contains(pos) && self.uncovered(ctx, pos)
+    }
+
+    /// Whether what is at `pos` on the Reader's page has nothing over it.
+    fn uncovered(&self, ctx: &egui::Context, pos: egui::Pos2) -> bool {
+        self.session.confirm.is_none()
             && self.session.label_picker.is_none()
             && !egui::Popup::is_any_open(ctx)
             && ctx.layer_id_at(pos) == Some(egui::LayerId::background())
     }
 
-    /// Remembers a press off the sheet: the click that closes a menu or a
+    /// Remembers a press off the sheet and the rest below it: the click that closes a menu or a
     /// dialog is not the first half of a double-click on what it uncovers.
     fn note_stray_press(&mut self, ctx: &egui::Context) {
         let press = ctx.input(|i| {
@@ -386,6 +385,7 @@ impl IboardApp {
                 .map(|pos| (pos, i.time))
         });
         if let Some((pos, time)) = press
+            && !(self.reader.rest_rect.contains(pos) && self.uncovered(ctx, pos))
             && !self.on_the_sheet(ctx, pos)
         {
             self.reader.stray_press = time;
@@ -478,13 +478,13 @@ impl IboardApp {
         }
     }
 
-    /// The delete confirmation owns Escape and Enter while it is up. True
-    /// while it is.
+    /// The confirmation owns Escape and Enter while it is up, and no other
+    /// key acts behind it. True while it is.
     fn confirm_keys(&mut self, ctx: &egui::Context) -> bool {
         let Some(confirm) = self.session.confirm.clone() else {
             return false;
         };
-        if ctx.input(|i| i.key_pressed(Key::Escape)) {
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
             self.session.confirm = None;
         } else if widgets::enter_confirms(ctx) && ctx.input(|i| i.key_pressed(Key::Enter)) {
             match confirm {
@@ -548,7 +548,7 @@ impl IboardApp {
         }
     }
 
-    fn key_context(&self, ctx: &egui::Context, confirming: bool) -> KeyContext {
+    fn key_context(&self, ctx: &egui::Context) -> KeyContext {
         let place = match &self.session.screen {
             Screen::Board => Place::Board(self.selected_issue().map(|path| {
                 let done = self
@@ -569,7 +569,6 @@ impl IboardApp {
         };
         KeyContext {
             typing: ctx.memory(|m| m.focused().is_some()),
-            confirming,
             editable: open.is_some_and(|path| self.can_edit(path)),
             refinable: open
                 .or(selected)
@@ -594,7 +593,7 @@ impl IboardApp {
             Command::Settings => self.open_settings(self.settings_tab),
             Command::Refine(path) => self.start_refinement(&path),
             Command::ToggleReview(path) => {
-                if self.review_is_running(&path) {
+                if self.session.review_runs.runs(&path, RunKind::Review) {
                     self.cancel_review_run(&path);
                 } else {
                     let draft = self.session.editing().is_some();

@@ -9,6 +9,7 @@ use egui_kittest::kittest::Queryable;
 use super::kit::{Kit, fake_agent, press};
 use super::reading::{double_click, kit};
 use super::*;
+use crate::app::review::RunKind;
 
 const SLOW: &str = "sleep 30 # {prompt}";
 
@@ -299,4 +300,227 @@ fn the_edit_outline_fades_in() {
     painted(&ctx, &mut app, vec![moved(away)]);
     let (_, gone) = painted(&ctx, &mut app, vec![]);
     assert_eq!(edge(&gone), None, "out at once");
+}
+
+type Modal = fn(&mut IboardApp, &Path);
+
+fn delete_dialog(app: &mut IboardApp, file: &Path) {
+    app.session.confirm = Some(Confirm::Delete(vec![file.to_path_buf()]));
+}
+
+fn quit_dialog(app: &mut IboardApp, _: &Path) {
+    app.session.confirm = Some(Confirm::Quit(1));
+}
+
+/// Only the keys of the modal up may act: nothing starts, opens or leaves
+/// behind any of them.
+#[test]
+fn the_command_keys_wait_behind_a_modal() {
+    let modals: [(&str, Modal); 7] = [
+        ("delete", delete_dialog),
+        ("quit", quit_dialog),
+        ("commits", |app, file| app.open_commits(file)),
+        ("settings", |app, _| {
+            app.open_settings(settings_ui::Tab::Review);
+        }),
+        ("stats", |app, _| app.open_stats()),
+        ("ask", |app, file| app.toggle_ask(file)),
+        ("menu", |app, _| {
+            app.project_menu = Some(crate::project_menu::Menu::new(&app.menu_entries()));
+        }),
+    ];
+    let command = Modifiers::COMMAND;
+    for (name, up) in modals {
+        let (_dir, file, mut harness) = opened_in("modal-keys", "todo");
+        up(&mut harness.state_mut().1, &file);
+        harness.run_steps(2);
+        for (modifiers, key) in [
+            (command, Key::U),
+            (command | Modifiers::SHIFT, Key::R),
+            (command, Key::R),
+            (command, Key::OpenBracket),
+        ] {
+            hit(&mut harness, modifiers, key);
+        }
+        let app = &harness.state().1;
+        assert!(!app.review_is_running(&file), "{name}: a run started");
+        assert!(app.session.refine.is_none(), "{name}: a refinement started");
+        assert_eq!(app.session.reading(), Some(file.as_path()), "{name}: left");
+    }
+    for (name, up) in [("delete", delete_dialog as Modal), ("quit", quit_dialog)] {
+        let (_dir, file, mut harness) = opened_in("dialog-keys", "todo");
+        up(&mut harness.state_mut().1, &file);
+        harness.run_steps(2);
+        for key in [Key::N, Key::K, Key::Comma] {
+            hit(&mut harness, command, key);
+        }
+        let app = &harness.state().1;
+        assert!(!app.composer_open(), "{name}: ⌘N");
+        assert!(app.session.ask_draft.is_none(), "{name}: ⌘K");
+        assert!(app.settings.is_none(), "{name}: ⌘,");
+        assert!(app.session.confirm.is_some(), "{name}: still asking");
+    }
+}
+
+#[test]
+fn the_board_keys_wait_behind_a_dialog() {
+    let (_dir, file, mut harness) = board_with("board-dialog-keys", "todo");
+    delete_dialog(&mut harness.state_mut().1, &file);
+    harness.run_steps(2);
+    for key in [Key::I, Key::U, Key::N, Key::Comma] {
+        hit(&mut harness, Modifiers::COMMAND, key);
+    }
+    let app = &harness.state().1;
+    assert!(app.session.stats.is_none(), "⌘I");
+    assert!(!app.review_is_running(&file), "⌘U");
+    assert!(!app.composer_open(), "⌘N");
+    assert!(app.settings.is_none(), "⌘,");
+}
+
+/// The quit dialog comes up over whatever is open, and `esc` is its own.
+#[test]
+fn the_quit_dialog_keeps_the_keys_from_the_modal_under_it() {
+    let (_dir, _file, mut harness) = opened_in("quit-over-settings", "todo");
+    let app = &mut harness.state_mut().1;
+    app.open_settings(settings_ui::Tab::Review);
+    quit_dialog(app, Path::new(""));
+    harness.run_steps(2);
+    hit(&mut harness, Modifiers::COMMAND, Key::Comma);
+    assert!(harness.state().1.settings.is_some(), "⌘,");
+    hit(&mut harness, Modifiers::NONE, Key::Escape);
+    let app = &harness.state().1;
+    assert!(app.session.confirm.is_none(), "esc answers the dialog");
+    assert!(app.settings.is_some(), "and only the dialog");
+
+    let (_dir, _file, mut harness) = opened_in("quit-over-stats", "todo");
+    let app = &mut harness.state_mut().1;
+    app.open_stats();
+    quit_dialog(app, Path::new(""));
+    harness.run_steps(2);
+    hit(&mut harness, Modifiers::NONE, Key::Escape);
+    let app = &harness.state().1;
+    assert!(app.session.confirm.is_none() && app.session.stats.is_some());
+}
+
+/// `esc` closes the Commits dialog, not the screen behind it too.
+#[test]
+fn esc_closes_the_commits_dialog_and_nothing_else() {
+    let (_dir, file, mut harness) = opened_in("commits-esc", "todo");
+    harness.state_mut().1.open_commits(&file);
+    harness.run_steps(2);
+    hit(&mut harness, Modifiers::NONE, Key::Escape);
+    let app = &harness.state().1;
+    assert!(app.session.commits.is_none());
+    assert_eq!(app.session.reading(), Some(file.as_path()));
+}
+
+/// The Refine modal keeps `esc` and `⌘↩`: nothing else reaches the page, and
+/// a review, which would end the conversation, does not start behind it.
+#[test]
+fn the_command_keys_wait_behind_the_refine_modal() {
+    let (_dir, file, mut harness) = opened_in("refine-modal-keys", "todo");
+    harness.state_mut().1.start_refinement(&file);
+    harness.run_steps(2);
+    let command = Modifiers::COMMAND;
+    for (modifiers, key) in [
+        (command | Modifiers::SHIFT, Key::R),
+        (command, Key::U),
+        (command, Key::N),
+        (command, Key::OpenBracket),
+    ] {
+        hit(&mut harness, modifiers, key);
+    }
+    let app = &harness.state().1;
+    assert!(app.refinement_shown(), "the conversation stays");
+    assert!(!app.review_is_running(&file));
+    assert!(!app.composer_open());
+    hit(&mut harness, Modifiers::NONE, Key::Escape);
+    assert!(app_refine_stopped_or_hidden(&harness), "esc is its own");
+}
+
+/// `esc` stops the turn on its way first, then hides the panel.
+fn app_refine_stopped_or_hidden(harness: &Kit) -> bool {
+    let app = &harness.state().1;
+    !app.refinement_shown() || app.session.refine.as_ref().is_some_and(|r| !r.is_running())
+}
+
+fn with_run(column: &str, kind: RunKind) -> (Scratch, PathBuf, Kit) {
+    let (dir, file, mut harness) = opened_in("run-keys", column);
+    let app = &mut harness.state_mut().1;
+    app.start_update(&file);
+    app.session.review_runs.running.get_mut(&file).unwrap().kind = kind;
+    harness.run_steps(2);
+    (dir, file, harness)
+}
+
+/// A key acts on its own job: `⌘U` on Update, `⌘⇧R` on Review.
+#[test]
+fn command_u_and_command_shift_r_leave_each_others_run_alone() {
+    let (command, review) = (Modifiers::COMMAND, Modifiers::COMMAND | Modifiers::SHIFT);
+    for (modifiers, key, other, own) in [
+        (command, Key::U, RunKind::Review, RunKind::Update),
+        (review, Key::R, RunKind::Update, RunKind::Review),
+    ] {
+        let (_dir, file, mut harness) = with_run("todo", other);
+        hit(&mut harness, modifiers, key);
+        let running = &harness.state().1.session.review_runs.running;
+        assert_eq!(running.get(&file).map(|run| run.kind), Some(other));
+
+        let (_dir, file, mut harness) = with_run("todo", own);
+        hit(&mut harness, modifiers, key);
+        assert!(!harness.state().1.review_is_running(&file), "{own:?}");
+    }
+}
+
+/// The menu's Update row does what the key does while a Review runs: nothing.
+#[test]
+fn the_update_row_leaves_a_running_review_alone() {
+    let (_dir, file, mut harness) = with_run("todo", RunKind::Review);
+    press(&mut harness, "AI actions");
+    press(&mut harness, "Update from the code");
+    assert!(harness.state().1.review_is_running(&file));
+}
+
+/// A Review that went on to Ready shows on the Update face, which says it
+/// cancels it, and does: the key stays Update's.
+#[test]
+fn the_face_of_a_running_review_still_cancels_it_on_ready() {
+    let (_dir, file, mut harness) = with_run("ready", RunKind::Review);
+    hit(&mut harness, Modifiers::COMMAND, Key::U);
+    assert!(harness.state().1.review_is_running(&file));
+    press(&mut harness, "Reviewing…");
+    assert!(!harness.state().1.review_is_running(&file));
+}
+
+/// Two clicks a frame apart, as a hand makes them.
+fn two_clicks(harness: &mut Kit, at: egui::Pos2) {
+    harness.event(moved(at));
+    harness.step();
+    for _ in 0..2 {
+        harness.event(button(at, true));
+        harness.event(button(at, false));
+        harness.step();
+    }
+    harness.run_steps(2);
+}
+
+const REST_HINT: &str = "Double-click below the text to keep writing";
+
+/// The rest of the sheet, below the text: the first click closes the menu, so
+/// the pair is no double-click; on the bare page it edits, at the end.
+#[test]
+fn the_click_that_closes_a_menu_does_not_edit_from_the_rest_area() {
+    let (_dir, file, mut harness) = board_with("double-rest", "todo");
+    harness.state_mut().1.open_issue(file);
+    harness.run_steps(2);
+    let at = harness.get_by_label(REST_HINT).rect().center();
+
+    press(&mut harness, "AI actions");
+    harness.run_steps(40);
+    two_clicks(&mut harness, at);
+    assert!(!editing(&harness), "the first click closed the menu");
+
+    harness.run_steps(40);
+    two_clicks(&mut harness, at);
+    assert!(editing(&harness), "once the page is bare, it edits");
 }

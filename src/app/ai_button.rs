@@ -32,15 +32,15 @@ impl IboardApp {
     /// The face while a run works on `path`: a click or its key cancels it.
     fn running_face(&self, path: &Path) -> Option<Face> {
         let kind = self.session.review_runs.running.get(path)?.kind;
-        let (hint, key) = match kind {
-            RunKind::Review => ("The review runs in the background: cancel it (⌘⇧R)", "⌘⇧R"),
-            RunKind::Update => ("The agent is checking the project: cancel it  ⌘U", "⌘U"),
+        let hint = match kind {
+            RunKind::Review => "The review runs in the background: cancel it (⌘⇧R)",
+            RunKind::Update => "The agent is checking the project: cancel it  ⌘U",
         };
         Some(Face {
             icon: Icon::Thinking,
             label: kind.running(),
             hint,
-            key,
+            key: kind.key(),
             enabled: true,
         })
     }
@@ -134,10 +134,10 @@ impl IboardApp {
             face.enabled,
         );
         if main.on_hover_text(face.hint).clicked() {
-            if !todo {
-                self.toggle_update(path);
-            } else if self.review_is_running(path) {
+            if self.review_is_running(path) {
                 self.cancel_review_run(path);
+            } else if !todo {
+                self.toggle_update(path);
             } else {
                 self.start_refinement(path);
             }

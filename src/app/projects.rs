@@ -68,7 +68,7 @@ impl IboardApp {
             .collect();
     }
 
-    fn menu_entries(&self) -> Entries {
+    pub(super) fn menu_entries(&self) -> Entries {
         let groups = self
             .workspace
             .iter()

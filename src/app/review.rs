@@ -210,6 +210,7 @@ impl IboardApp {
 
     /// The proposed rewrite, when the agent offered one: the editor opens with
     /// it as an unsaved draft, so saving or discarding is the accept or refuse.
+    /// Over unsaved text the editor asks first, the panel staying to read.
     pub(super) fn apply_review_proposal(&mut self) {
         let Some(review) = self.session.review.as_ref() else {
             return;
@@ -219,12 +220,9 @@ impl IboardApp {
             return;
         };
         self.open_editor(&path);
-        if let Some(editor) = self.session.editor.as_mut()
-            && editor.path == path
-        {
-            editor.replace(proposal);
+        if self.offer_to_editor(&path, proposal) {
+            self.session.review = None;
         }
-        self.session.review = None;
     }
 
     /// Review ready, or Update ready, beside its button once the answer on
@@ -293,7 +291,14 @@ impl IboardApp {
             });
             widgets::rule(ui);
             widgets::footer_bar(ui, theme::SPACE_4, |ui| {
-                widgets::button(ui, ButtonKind::Secondary, None, "Cancel", Some("⌘⇧R")).clicked()
+                widgets::button(
+                    ui,
+                    ButtonKind::Secondary,
+                    None,
+                    "Cancel",
+                    Some(run.kind.key()),
+                )
+                .clicked()
             })
             .inner
         });
@@ -349,6 +354,14 @@ impl RunKind {
         match self {
             RunKind::Review => "Reviewing…",
             RunKind::Update => "Updating…",
+        }
+    }
+
+    /// The key that cancels a run of this kind, and only this kind.
+    pub(super) fn key(self) -> &'static str {
+        match self {
+            RunKind::Review => "⌘⇧R",
+            RunKind::Update => "⌘U",
         }
     }
 
@@ -419,6 +432,11 @@ pub(super) struct ReviewRun {
 impl ReviewRuns {
     pub(super) fn is_running(&self, path: &Path) -> bool {
         self.running.contains_key(path)
+    }
+
+    /// Whether a run of `kind` works on `path`.
+    pub(super) fn runs(&self, path: &Path, kind: RunKind) -> bool {
+        self.running.get(path).is_some_and(|run| run.kind == kind)
     }
 
     pub(super) fn is_ready(&self, path: &Path) -> bool {

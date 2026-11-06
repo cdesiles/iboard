@@ -35,13 +35,14 @@ impl IboardApp {
 
     /// The button and `⌘U`: starts an update, or cancels the one running; with
     /// no agent set up, Settings open instead. A run on an issue that reached
-    /// Done can still be cancelled or shown.
+    /// Done can still be cancelled or shown. A Review running is left alone, as
+    /// the AI menu leaves it: its key is `⌘⇧R`.
     pub(super) fn toggle_update(&mut self, path: &Path) {
         if self.session.review_runs.is_ready(path) {
             self.show_past_review(path.to_path_buf());
-        } else if self.review_is_running(path) {
+        } else if self.session.review_runs.runs(path, RunKind::Update) {
             self.cancel_review_run(path);
-        } else if self.updatable(path) {
+        } else if self.updatable(path) && !self.review_is_running(path) {
             if self.prefs.agent.configured() {
                 self.start_update(path);
             } else {

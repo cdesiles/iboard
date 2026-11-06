@@ -23,6 +23,8 @@ pub(super) struct EditorState {
     baseline_name: String,
     /// Newer on-disk content that arrived while we have unsaved edits.
     conflict: Option<String>,
+    /// An agent's proposal that would replace unsaved text, asked about.
+    offered: Option<String>,
     last_edit: Option<Instant>,
     pub(super) error: Option<String>,
     /// The line the caret lands on when the field next takes focus; without
@@ -40,6 +42,7 @@ impl EditorState {
             baseline_name: name.clone(),
             name,
             conflict: None,
+            offered: None,
             last_edit: None,
             error: None,
             caret_line: None,
@@ -58,7 +61,19 @@ impl EditorState {
     /// The buffer becomes `text`, an unsaved edit: an agent's proposal.
     pub(super) fn replace(&mut self, text: String) {
         self.text = text;
+        self.offered = None;
         self.mark_edited();
+    }
+
+    /// An agent's proposal: the buffer becomes it unless that would lose
+    /// unsaved text, which is asked about first. True when it became it.
+    fn offer(&mut self, text: String) -> bool {
+        if self.text == self.baseline || self.text == text {
+            self.replace(text);
+            return true;
+        }
+        self.offered = Some(text);
+        false
     }
 
     /// Unsaved edits, no conflict, and no keystroke for `AUTOSAVE_AFTER`.
@@ -153,6 +168,7 @@ impl EditorState {
         self.text = disk.to_string();
         self.baseline = disk.to_string();
         self.conflict = None;
+        self.offered = None;
         self.last_edit = None;
         self.error = None;
     }
@@ -162,6 +178,7 @@ impl EditorState {
         self.text = self.baseline.clone();
         self.name = self.baseline_name.clone();
         self.conflict = None;
+        self.offered = None;
         self.last_edit = None;
         self.error = None;
     }
@@ -255,6 +272,16 @@ impl IboardApp {
         self.session.screen = Screen::Detail(path.to_path_buf(), DetailMode::Edit);
     }
 
+    /// Hands an agent's `proposal` to the editor on `path`. True when it took
+    /// it; false when there is none, or when it asks first.
+    pub(super) fn offer_to_editor(&mut self, path: &Path, proposal: String) -> bool {
+        self.session
+            .editor
+            .as_mut()
+            .filter(|editor| editor.path == path)
+            .is_some_and(|editor| editor.offer(proposal))
+    }
+
     /// Saves unsaved edits unless they conflict with the file on disk.
     pub(super) fn save_pending(&mut self) {
         self.flush_autosave(false);
@@ -334,6 +361,7 @@ impl IboardApp {
             .unwrap_or_default();
         let prompting = self.session.leave_prompt.is_some();
         let mut conflict = (false, false);
+        let mut replaced = false;
         let mut answer = None;
         page_column(ui, |ui| {
             let Some(editor) = self.session.editor.as_mut() else {
@@ -353,9 +381,16 @@ impl IboardApp {
                 ui.add_space(theme::SPACE_2);
                 conflict = conflict_row(ui, editor);
             }
+            if editor.offered.is_some() {
+                ui.add_space(theme::SPACE_2);
+                replaced = offer_row(ui, editor);
+            }
             ui.add_space(theme::SPACE_3);
             editor_text(ui, editor, focus_editor);
         });
+        if replaced {
+            self.session.review = None;
+        }
         let (reload, keep) = conflict;
         if reload {
             self.reload_editor_from_disk();
@@ -421,26 +456,57 @@ fn leave_prompt_row(ui: &mut egui::Ui, editor: &EditorState) -> Option<LeaveChoi
     answer
 }
 
-/// The file changed on disk while it was edited: Reload or Keep mine.
-fn conflict_row(ui: &mut egui::Ui, editor: &EditorState) -> (bool, bool) {
+/// The `danger` line of a question on the draft, and its two answers: each
+/// a label and what it does. Whether each was pressed.
+fn choice_row(
+    ui: &mut egui::Ui,
+    line: String,
+    first: (&str, &str),
+    second: (&str, &str),
+) -> (bool, bool) {
     let p = theme::palette(ui);
+    let answer = |ui: &mut egui::Ui, (label, hint): (&str, &str)| {
+        widgets::button(ui, ButtonKind::Secondary, None, label, None)
+            .on_hover_text(hint)
+            .clicked()
+    };
     ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(format!(
-                "{} changed on disk since you started editing.",
-                editor.baseline_name
-            ))
-            .color(p.danger),
-        );
-        let reload = widgets::button(ui, ButtonKind::Secondary, None, "Reload", None)
-            .on_hover_text("Drop your edits and load the file from disk")
-            .clicked();
-        let keep = widgets::button(ui, ButtonKind::Secondary, None, "Keep mine", None)
-            .on_hover_text("Overwrite the file on disk with your version")
-            .clicked();
-        (reload, keep)
+        ui.label(RichText::new(line).color(p.danger));
+        (answer(ui, first), answer(ui, second))
     })
     .inner
+}
+
+/// The file changed on disk while it was edited: Reload or Keep mine.
+fn conflict_row(ui: &mut egui::Ui, editor: &EditorState) -> (bool, bool) {
+    choice_row(
+        ui,
+        format!(
+            "{} changed on disk since you started editing.",
+            editor.baseline_name
+        ),
+        ("Reload", "Drop your edits and load the file from disk"),
+        ("Keep mine", "Overwrite the file on disk with your version"),
+    )
+}
+
+/// An agent's proposal would replace the text being edited: Replace mine or
+/// Keep mine. True when it replaced it.
+fn offer_row(ui: &mut egui::Ui, editor: &mut EditorState) -> bool {
+    let (replace, keep) = choice_row(
+        ui,
+        format!(
+            "The agent's proposal would replace your changes to {}.",
+            editor.baseline_name
+        ),
+        ("Replace mine", "Drop your changes for the agent's proposal"),
+        ("Keep mine", "Leave your text as it is"),
+    );
+    if keep {
+        editor.offered = None;
+    }
+    let proposal = editor.offered.take_if(|_| replace);
+    proposal.map(|text| editor.replace(text)).is_some()
 }
 
 /// The editor's text field.

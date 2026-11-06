@@ -422,3 +422,25 @@ fn a_narrow_panel_folds_the_reasoning() {
     assert!(harness.query_by_label("Who needs it?").is_some());
     assert!(harness.query_by_label("Drop it").is_some());
 }
+
+/// Applying a refinement over unsaved text asks, as applying a review does.
+#[test]
+fn applying_a_refinement_over_unsaved_text_keeps_it() {
+    let (_dir, file, mut app) = refining(
+        "refine-over-unsaved",
+        "printf 'Fine.\\nPROPOSAL:\\n# Spec' # {prompt}",
+    );
+    app.prefs.auto = false;
+    app.start_refinement(&file);
+    assert!(until(|| {
+        app.poll_refinement();
+        turns(&app) == 1
+    }));
+    assert!(app.session.refine.as_ref().unwrap().proposal().is_some());
+    app.open_editor(&file);
+    let mine = "# Demo\n\nMine.";
+    app.session.editor.as_mut().unwrap().text = mine.to_string();
+    app.apply_refinement();
+    assert_eq!(app.session.editor.as_ref().unwrap().text, mine);
+    assert_eq!(app.session.editing(), Some(file.as_path()));
+}

@@ -348,11 +348,7 @@ impl IboardApp {
             return;
         };
         self.start_editing(&path);
-        if let Some(editor) = self.session.editor.as_mut()
-            && editor.path == path
-        {
-            editor.replace(proposal);
-        }
+        self.offer_to_editor(&path, proposal);
         if let Some(refine) = self.session.refine.as_mut() {
             refine.hidden = true;
         }
