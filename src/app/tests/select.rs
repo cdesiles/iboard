@@ -1,4 +1,4 @@
-//! The selection: a click, the arrows, shift-clicks, its clear button, and
+//! The selection: a click, the arrows, shift- and command-clicks, its clear button, and
 //! actions and drags that carry every picked card.
 
 use super::*;
@@ -26,35 +26,66 @@ fn card_center(ctx: &egui::Context, path: &Path) -> egui::Pos2 {
         .center()
 }
 
-/// A press and release at `at`, `shift` held or not.
-fn click(ctx: &egui::Context, app: &mut IboardApp, at: egui::Pos2, shift: bool) {
-    let modifiers = egui::Modifiers {
-        shift,
-        ..Default::default()
-    };
+/// A press and release at `at`, with `modifiers` held.
+fn click_with(
+    ctx: &egui::Context,
+    app: &mut IboardApp,
+    at: egui::Pos2,
+    modifiers: egui::Modifiers,
+) {
     let held = egui::Event::ModifiersChanged(modifiers);
     draw(ctx, app, vec![held.clone(), moved(at)]);
     draw(ctx, app, vec![held.clone(), button(at, true)]);
     draw(ctx, app, vec![held, button(at, false)]);
 }
 
+fn click(ctx: &egui::Context, app: &mut IboardApp, at: egui::Pos2, shift: bool) {
+    let modifiers = if shift {
+        egui::Modifiers::SHIFT
+    } else {
+        egui::Modifiers::NONE
+    };
+    click_with(ctx, app, at, modifiers);
+}
+
 #[test]
-fn shift_clicks_pick_cards_and_unpick_them() {
-    let (_dir, mut app, [a, b, _]) = board("pick");
+fn command_clicks_pick_cards_and_unpick_them() {
+    let (_dir, mut app, [a, _, c]) = board("pick");
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let command = egui::Modifiers::COMMAND;
+
+    click_with(&ctx, &mut app, card_center(&ctx, &a), command);
+    click_with(&ctx, &mut app, card_center(&ctx, &c), command);
+    assert!(matches!(app.session.screen, Screen::Board), "nothing opens");
+    assert_eq!(app.session.picked, [a.clone(), c.clone()], "no range");
+
+    click_with(&ctx, &mut app, card_center(&ctx, &a), command);
+    assert_eq!(
+        app.session.picked,
+        std::slice::from_ref(&c),
+        "a picked card leaves"
+    );
+}
+
+#[test]
+fn shift_click_picks_every_card_from_the_selected_one() {
+    let (_dir, mut app, [a, b, c]) = board("range");
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
 
+    click(&ctx, &mut app, card_center(&ctx, &c), false);
     click(&ctx, &mut app, card_center(&ctx, &a), true);
-    click(&ctx, &mut app, card_center(&ctx, &b), true);
     assert!(matches!(app.session.screen, Screen::Board), "nothing opens");
-    assert_eq!(app.session.picked, [a.clone(), b.clone()]);
+    assert_eq!(app.session.picked, [a.clone(), b.clone(), c.clone()]);
 
-    click(&ctx, &mut app, card_center(&ctx, &a), true);
+    click(&ctx, &mut app, card_center(&ctx, &b), true);
     assert_eq!(
         app.session.picked,
-        std::slice::from_ref(&b),
-        "a picked card leaves"
+        [b.clone(), c.clone()],
+        "the range is drawn again from the same anchor"
     );
+    assert_eq!(app.session.selected.as_deref(), Some(c.as_path()));
 }
 
 #[test]

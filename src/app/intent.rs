@@ -8,8 +8,10 @@ use super::{IboardApp, Path, PathBuf};
 pub(super) enum Intent {
     Open(PathBuf),
     Select(PathBuf),
-    /// Shift-click: the issue joins or leaves the multi-selection.
+    /// Command-click: the issue joins or leaves the multi-selection.
     Pick(PathBuf),
+    /// Shift-click: the cards from the selected one to the issue.
+    PickRange(PathBuf),
     /// The column header's "Clear selection".
     ClearPicked,
     /// Run the AI review on the issue, in the background.
@@ -65,6 +67,7 @@ impl CardAction {
             CardAction::Open => Intent::Open(path),
             CardAction::Select => Intent::Select(path),
             CardAction::Pick => Intent::Pick(path),
+            CardAction::PickRange => Intent::PickRange(path),
             CardAction::Delete => Intent::Delete(path),
             CardAction::Archive => Intent::Archive(path),
             CardAction::Diff => Intent::Diff(path),
@@ -87,6 +90,7 @@ impl IboardApp {
                 Intent::Open(path) => self.open_issue(path),
                 Intent::Select(path) => self.select(path),
                 Intent::Pick(path) => self.pick(path),
+                Intent::PickRange(path) => self.pick_range(path),
                 Intent::ClearPicked => {
                     self.session.picked.clear();
                     self.session.selected = None;

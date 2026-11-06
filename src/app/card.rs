@@ -27,8 +27,10 @@ pub(super) enum CardAction {
     Open,
     /// A plain click: the card becomes the only one selected.
     Select,
-    /// Shift-click: add the issue to the multi-selection, or take it out.
+    /// Command-click: add the issue to the multi-selection, or take it out.
     Pick,
+    /// Shift-click: pick every card from the selected one to this one.
+    PickRange,
     /// Delete the issue's file.
     Delete,
     /// Move a done issue to `.archive`.
@@ -94,8 +96,8 @@ pub(super) enum CardLook {
     },
 }
 
-/// Draws one issue card. A click selects it, a shift-click picks it into the
-/// multi-selection, its Expand action or a double click reads it; dragging the
+/// Draws one issue card. A click selects it, a command-click picks it into the
+/// multi-selection, a shift-click picks the range up to it, its Expand action or a double click reads it; dragging the
 /// card carries it to another column, with a copy following the cursor. Returns the action the card asked for (if any)
 /// and the rect it occupies.
 pub(super) fn issue_card(
@@ -187,11 +189,13 @@ pub(super) fn issue_card(
         at_work(ui, response.rect, since);
     }
     card_edge(ui, &response, look);
-    let shift = ui.input(|i| i.modifiers.shift);
-    let click = if response.double_clicked() && !shift {
+    let modifiers = ui.input(|i| i.modifiers);
+    let click = if response.double_clicked() && !modifiers.shift && !modifiers.command {
         Some(CardAction::Open)
     } else if response.clicked() {
-        Some(if shift {
+        Some(if modifiers.shift {
+            CardAction::PickRange
+        } else if modifiers.command {
             CardAction::Pick
         } else {
             CardAction::Select

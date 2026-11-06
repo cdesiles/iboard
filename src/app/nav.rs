@@ -148,7 +148,20 @@ impl IboardApp {
         self.session.selected = Some(path);
     }
 
-    /// Shift-click: a picked card leaves the multi-selection, any other joins
+    /// Shift-click: every visible card from the selected one to `path`, in
+    /// board order, becomes the multi-selection. The selected card stays the
+    /// anchor, so another shift-click redraws the range from it.
+    pub(super) fn pick_range(&mut self, path: PathBuf) {
+        let order: Vec<PathBuf> = self.visible_grid().into_iter().flatten().collect();
+        let at = |target: &Path| order.iter().position(|p| p == target);
+        let anchor = self.session.selected.as_deref().and_then(at);
+        let (Some(anchor), Some(end)) = (anchor, at(&path)) else {
+            return self.select(path);
+        };
+        self.session.picked = order[anchor.min(end)..=anchor.max(end)].to_vec();
+    }
+
+    /// Command-click: a picked card leaves the multi-selection, any other joins
     /// it, along with the card selected before.
     pub(super) fn pick(&mut self, path: PathBuf) {
         let picked = &mut self.session.picked;

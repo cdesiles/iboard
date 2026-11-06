@@ -301,7 +301,7 @@ struct Session {
     selected: Option<PathBuf>,
     /// Scroll the selected card into view on the next frame.
     scroll_to_selected: bool,
-    /// The cards shift-clicked together; their actions and drags apply to
+    /// The cards shift- or command-clicked together; their actions and drags apply to
     /// all of them.
     picked: Vec<PathBuf>,
     /// How far a two-finger swipe to the right has gone; `None` until the
