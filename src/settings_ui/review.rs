@@ -369,7 +369,6 @@ impl Dialog {
                     egui::ScrollArea::vertical()
                         .content_margin(theme::scroll_margin(0.0, 0.0))
                         .max_height(MODEL_LIST_MAX_H),
-                    true,
                     |ui| {
                         if let Some(row) =
                             model_list(ui, &rows, menu.highlight, &current, default.as_deref())

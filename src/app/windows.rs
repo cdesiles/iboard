@@ -394,7 +394,6 @@ fn commit_list(ui: &mut egui::Ui, list: &[commits::Commit]) -> Option<Vec<String
             .content_margin(theme::scroll_margin(0.0, 0.0))
             .max_height(260.0)
             .auto_shrink([false, true]),
-        true,
         |ui| {
             ui.spacing_mut().item_spacing.y = theme::SPACE_1;
             for commit in list {

@@ -334,7 +334,7 @@ impl Panel {
             );
             ui.separator();
             ui.vertical(|ui| {
-                theme::scroll_area(ui, filling("design-content"), true, |ui| {
+                theme::scroll_area(ui, filling("design-content"), |ui| {
                     self.content(ui, system, render_available, agent_ready, &mut action);
                 });
             });
@@ -356,7 +356,7 @@ impl Panel {
 
         let query = self.search.trim().to_lowercase();
         if !query.is_empty() {
-            theme::scroll_area(ui, filling("rail-hits"), false, |ui| {
+            theme::scroll_area(ui, filling("rail-hits"), |ui| {
                 self.search_hits(ui, system, &query);
             });
             return;
@@ -389,7 +389,7 @@ impl Panel {
         if self.components_open {
             main.disable();
         }
-        theme::scroll_area(&mut main, filling("rail-main-scroll"), false, |ui| {
+        theme::scroll_area(&mut main, filling("rail-main-scroll"), |ui| {
             self.categories(ui, system);
         });
 
@@ -402,7 +402,7 @@ impl Panel {
         }
         components.add_space(theme::SPACE_2);
         let rows = filling("rail-components-scroll");
-        theme::scroll_area(&mut components, rows, false, |ui| {
+        theme::scroll_area(&mut components, rows, |ui| {
             self.component_rows(ui, system);
         });
     }

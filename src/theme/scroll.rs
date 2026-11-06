@@ -13,19 +13,18 @@ use egui::{
 };
 
 use super::{
-    RADIUS_PILL, SCROLL_HIT, SCROLL_THUMB, SCROLL_THUMB_HOVER, SCROLL_THUMB_MIN, motion, palette,
+    RADIUS_PILL, SCROLL_FADE, SCROLL_HIT, SCROLL_LINGER, SCROLL_THUMB, SCROLL_THUMB_HOVER,
+    SCROLL_THUMB_MIN, motion, palette,
 };
 
-/// How long the thumb stays `ink-muted` after the last movement.
-const SCROLLING_SECS: f64 = 0.8;
 /// How long the thumb takes to change width or colour.
 const CHANGE_SECS: f32 = 0.12;
 /// How much of the pane a click in the strip pages by.
 const PAGE: f32 = 0.9;
 /// The gap between the thumb and the pane's edges.
 const INSET: f32 = 2.0;
-/// The right padding that keeps content clear of the widest thumb, with the
-/// same 4pt gap the thumb keeps at rest.
+/// The right padding that keeps content clear of the widest thumb, with a
+/// 4pt gap.
 pub const SCROLL_CLEAR: f32 = INSET + SCROLL_THUMB_HOVER + 4.0;
 
 /// A pane's padding inside its scroll area, so it scrolls with the content
@@ -66,7 +65,9 @@ pub(super) fn style() -> ScrollStyle {
 #[derive(Clone, Copy)]
 struct Seen {
     offset: Vec2,
-    moved_at: f64,
+    /// The last time it scrolled or the pointer held the thumb up.
+    stirred_at: f64,
+    shown: f32,
     inner: Rect,
     overflow: Vec2b,
     area: Id,
@@ -90,14 +91,6 @@ impl Seen {
                 .is_some_and(|bar| bar.is_pointer_button_down_on())
         })
     }
-
-    /// Whether the widget holding the keyboard is in this pane; `None` while
-    /// no widget holds it.
-    fn holds_focus(&self, ui: &Ui) -> Option<bool> {
-        let holder = ui.ctx().memory(egui::Memory::focused)?;
-        let holder = ui.ctx().read_response(holder)?;
-        Some(holder.layer_id == ui.layer_id() && self.inner.intersects(holder.rect))
-    }
 }
 
 /// What a scroll area hands its content.
@@ -117,19 +110,15 @@ impl Content {
     }
 }
 
-/// Shows `area` with the design system's thumb: `line-strong` at rest,
-/// `ink-muted` while scrolling or pointed at, `accent` while dragged, and
-/// `line` when the pane (or the window) does not have focus.
-///
-/// A widget holding the keyboard decides by where it is. `focused` says
-/// whether this pane has the keyboard while no widget holds it.
+/// Shows `area` with the design system's thumb: none at rest, 4pt `scrollbar`
+/// while scrolling, 8pt `scrollbar-active` with the pointer at the edge and
+/// 8pt `accent` while dragged.
 pub fn scroll_area<R>(
     ui: &mut Ui,
     area: ScrollArea,
-    focused: bool,
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> ScrollAreaOutput<R> {
-    themed(ui, area, focused, |ui, area, content| {
+    themed(ui, area, |ui, area, content| {
         area.show(ui, |ui| {
             ui.set_style(content.style.clone());
             let inner = add_contents(ui);
@@ -143,12 +132,11 @@ pub fn scroll_area<R>(
 pub fn scroll_rows<R>(
     ui: &mut Ui,
     area: ScrollArea,
-    focused: bool,
     row_height: f32,
     rows: usize,
     add_contents: impl FnOnce(&mut Ui, std::ops::Range<usize>) -> R,
 ) -> ScrollAreaOutput<R> {
-    themed(ui, area, focused, |ui, area, content| {
+    themed(ui, area, |ui, area, content| {
         area.show_rows(ui, row_height, rows, |ui, range| {
             ui.set_style(content.style.clone());
             let inner = add_contents(ui, range);
@@ -225,17 +213,65 @@ fn page_strips<R>(ui: &Ui, output: &ScrollAreaOutput<R>, overflow: Vec2b) -> Vec
     page
 }
 
-/// The thumb's width and colour, in `ui`'s style.
-fn style_thumb(ui: &mut Ui, thumb: Color32, widened: f32) {
+/// How the thumb looks this frame.
+struct Thumb {
+    colour: Color32,
+    widened: f32,
+    /// From 0, hidden, to 1, fully there.
+    shown: f32,
+    /// The pointer keeps it up, at the edge or dragging it.
+    held: bool,
+}
+
+impl Thumb {
+    fn now(ui: &Ui, key: Id, seen: Option<Seen>) -> Self {
+        let ctx = ui.ctx();
+        let p = palette(ui);
+        let pointed = seen.zip(ctx.pointer_hover_pos()).is_some_and(|(seen, at)| {
+            seen.points(at) && ctx.layer_id_at(at) == Some(ui.layer_id())
+        });
+        let dragged = seen.is_some_and(|seen| seen.dragged(ctx));
+        let held = pointed || dragged;
+        let now = ctx.input(|i| i.time);
+        let lingering = seen.is_some_and(|seen| now - seen.stirred_at < f64::from(SCROLL_LINGER));
+        let fade = if held { 0.0 } else { motion(ctx, SCROLL_FADE) };
+        let shown = ctx.animate_bool_with_time(key.with("shown"), held || lingering, fade);
+        let target = if dragged {
+            p.accent
+        } else if pointed {
+            p.scrollbar_active
+        } else {
+            p.scrollbar
+        };
+        let was_hidden = seen.is_none_or(|seen| seen.shown == 0.0);
+        let change = if was_hidden {
+            0.0
+        } else {
+            motion(ctx, CHANGE_SECS)
+        };
+        Self {
+            colour: animate_color(ctx, key.with("colour"), target, change),
+            widened: ctx.animate_bool_with_time(key.with("wide"), held, change),
+            shown,
+            held,
+        }
+    }
+}
+
+/// The thumb's width, colour and opacity, in `ui`'s style.
+fn style_thumb(ui: &mut Ui, thumb: &Thumb) {
     let scroll = &mut ui.spacing_mut().scroll;
-    scroll.floating_width = lerp(SCROLL_THUMB..=SCROLL_THUMB_HOVER, widened);
+    scroll.floating_width = lerp(SCROLL_THUMB..=SCROLL_THUMB_HOVER, thumb.widened);
+    scroll.dormant_handle_opacity = thumb.shown;
+    scroll.active_handle_opacity = thumb.shown;
+    scroll.interact_handle_opacity = thumb.shown;
     let widgets = &mut ui.visuals_mut().widgets;
     for visuals in [
         &mut widgets.inactive,
         &mut widgets.hovered,
         &mut widgets.active,
     ] {
-        visuals.fg_stroke.color = thumb;
+        visuals.fg_stroke.color = thumb.colour;
         visuals.corner_radius = CornerRadius::same(RADIUS_PILL);
     }
 }
@@ -245,10 +281,8 @@ fn style_thumb(ui: &mut Ui, thumb: Color32, widened: f32) {
 fn themed<R>(
     ui: &mut Ui,
     area: ScrollArea,
-    focused: bool,
     show: impl FnOnce(&mut Ui, ScrollArea, Content) -> ScrollAreaOutput<R>,
 ) -> ScrollAreaOutput<R> {
-    let p = palette(ui);
     let key = ui.next_auto_id().with("scroll-thumb");
     let (page_key, refocus_key) = (key.with("page"), key.with("refocus"));
     let ctx = ui.ctx().clone();
@@ -261,26 +295,7 @@ fn themed<R>(
     }) {
         ctx.memory_mut(|m| m.request_focus(holder));
     }
-    let scrolling = seen.is_some_and(|seen| now - seen.moved_at < SCROLLING_SECS);
-    let pointed = seen
-        .zip(ctx.pointer_hover_pos())
-        .is_some_and(|(seen, at)| seen.points(at));
-    let dragged = seen.is_some_and(|seen| seen.dragged(&ctx));
-    let holds = seen.and_then(|seen| seen.holds_focus(ui));
-    let active = ctx.input(|i| i.viewport().focused.unwrap_or(true))
-        && ctx.memory(|m| m.is_above_modal_layer(ui.layer_id()));
-    let target = if dragged {
-        p.accent
-    } else if scrolling || pointed {
-        p.ink_muted
-    } else if holds.unwrap_or(focused) && active {
-        p.line_strong
-    } else {
-        p.line
-    };
-    let change = motion(&ctx, CHANGE_SECS);
-    let thumb = animate_color(&ctx, key.with("colour"), target, change);
-    let widened = ctx.animate_bool_with_time(key.with("wide"), pointed || dragged, change);
+    let thumb = Thumb::now(ui, key, seen);
 
     let content = Content {
         style: ui.style().clone(),
@@ -290,7 +305,7 @@ fn themed<R>(
     };
     let output = ui
         .scope(|ui| {
-            style_thumb(ui, thumb, widened);
+            style_thumb(ui, &thumb);
             // The rail is only known once shown: last frame's, moved to where
             // this frame starts, and redrawn below if its size changed.
             let area = match seen {
@@ -325,13 +340,17 @@ fn themed<R>(
     }
 
     let offset = output.state.offset;
-    let moved_at = match seen {
-        Some(seen) if seen.offset == offset => seen.moved_at,
-        Some(_) => now,
-        None => f64::NEG_INFINITY,
+    let moved = seen.is_some_and(|seen| seen.area == output.id && seen.offset != offset);
+    let stirred_at = if moved || thumb.held {
+        now
+    } else {
+        seen.map_or(f64::NEG_INFINITY, |seen| seen.stirred_at)
     };
-    if now - moved_at < SCROLLING_SECS {
-        ctx.request_repaint_after(std::time::Duration::from_secs_f64(SCROLLING_SECS));
+    let linger_left = f64::from(SCROLL_LINGER) - (now - stirred_at);
+    if moved {
+        ctx.request_repaint();
+    } else if !thumb.held && linger_left > 0.0 {
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(linger_left));
     }
     if seen.is_none_or(|seen| seen.inner.size() != output.inner_rect.size()) {
         ctx.request_repaint();
@@ -342,7 +361,8 @@ fn themed<R>(
             key,
             Seen {
                 offset,
-                moved_at,
+                stirred_at,
+                shown: thumb.shown,
                 inner: output.inner_rect,
                 overflow,
                 area: output.id,
@@ -389,7 +409,7 @@ mod tests {
     /// A pane of 1000pt of content under a text field; returns its offset.
     fn tall(ui: &mut Ui, field: &mut String) -> f32 {
         let area = ScrollArea::vertical().id_salt("tall").auto_shrink(false);
-        scroll_area(ui, area, true, |ui| {
+        scroll_area(ui, area, |ui| {
             ui.add(egui::TextEdit::singleline(field).id(Id::new("field")));
             ui.allocate_space(Vec2::new(10.0, 1000.0));
         })
@@ -469,45 +489,204 @@ mod tests {
         assert!(ctx.memory(|m| m.has_focus(id)), "the thumb");
     }
 
-    /// The thumb's colour once settled, for a pane beside a text field, with
-    /// the keyboard on nothing, on a field in the pane or on the one beside.
-    fn settled_colour(focused: bool, holder: Option<&str>) -> (Color32, &'static theme::Palette) {
-        let ctx = themed_ctx();
-        let (mut colour, mut seen_palette) = (Color32::TRANSPARENT, None);
-        let (mut inside, mut beside) = (String::new(), String::new());
-        for _ in 0..4 {
-            frame(&ctx, vec![], |ui| {
-                seen_palette = Some(palette(ui));
-                let area = ScrollArea::vertical()
-                    .id_salt("pane")
-                    .auto_shrink(false)
-                    .max_height(100.0);
-                themed(ui, area, focused, |ui, area, _| {
-                    colour = ui.visuals().widgets.inactive.fg_stroke.color;
-                    area.show(ui, |ui| {
-                        ui.add(egui::TextEdit::singleline(&mut inside).id(Id::new("inside")));
-                        ui.allocate_space(Vec2::new(10.0, 400.0));
-                    })
-                });
-                ui.add(egui::TextEdit::singleline(&mut beside).id(Id::new("beside")));
-                if let Some(holder) = holder {
-                    ui.memory_mut(|m| m.request_focus(Id::new(holder)));
+    /// One frame at `time`; returns the width and colour of the thumb painted.
+    fn painted(
+        ctx: &Context,
+        time: f64,
+        events: Vec<Event>,
+        draw: impl FnMut(&mut Ui),
+    ) -> Option<(f32, Color32)> {
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(PANE))),
+            time: Some(time),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, draw);
+        output.textures_delta.clear();
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Rect(rect)
+                    if rect.rect.max.x == PANE - INSET
+                        && rect.rect.height() >= SCROLL_THUMB_MIN
+                        && rect.fill.a() > 0 =>
+                {
+                    Some((rect.rect.width(), rect.fill))
                 }
+                _ => None,
+            })
+    }
+
+    /// A pane called `salt` of `height`, jumped to `jump` when asked.
+    fn pane(ui: &mut Ui, salt: &str, height: f32, jump: Option<f32>) {
+        let mut area = ScrollArea::vertical().id_salt(salt).auto_shrink(false);
+        if let Some(jump) = jump {
+            area = area.vertical_scroll_offset(jump);
+        }
+        scroll_area(ui, area, |ui| ui.allocate_space(Vec2::new(10.0, height)));
+    }
+
+    /// The colours of the thumb's states, as the theme has them.
+    fn colours(ctx: &Context) -> &'static theme::Palette {
+        let mut seen = None;
+        frame(ctx, vec![], |ui| seen = Some(palette(ui)));
+        seen.unwrap()
+    }
+
+    /// A context with the pane settled, just after time 0.
+    fn settled(reduce: bool) -> Context {
+        let ctx = themed_ctx();
+        theme::set_reduced_motion(&ctx, reduce);
+        for at in 0..3 {
+            painted(&ctx, f64::from(at) / 60.0, vec![], |ui| {
+                pane(ui, "pane", 1000.0, None);
             });
         }
-        (colour, seen_palette.unwrap())
+        ctx
+    }
+
+    const LINGER: f64 = SCROLL_LINGER as f64;
+    const FADE: f64 = SCROLL_FADE as f64;
+
+    #[test]
+    fn nothing_shows_at_rest() {
+        let ctx = settled(false);
+        let thumb = painted(&ctx, 5.0, vec![], |ui| pane(ui, "pane", 1000.0, None));
+        assert_eq!(thumb, None);
     }
 
     #[test]
-    fn only_the_pane_with_the_keyboard_keeps_its_rest_colour() {
-        let (colour, p) = settled_colour(true, None);
-        assert_eq!(colour, p.line_strong, "the pane that has the keyboard");
-        let (colour, p) = settled_colour(false, None);
-        assert_eq!(colour, p.line, "another pane has it");
-        let (colour, p) = settled_colour(false, Some("inside"));
-        assert_eq!(colour, p.line_strong, "it holds the focused field");
-        let (colour, p) = settled_colour(true, Some("beside"));
-        assert_eq!(colour, p.line, "a field elsewhere holds the keyboard");
+    fn scrolling_fades_a_narrow_thumb_in_and_out_after_the_linger() {
+        let ctx = settled(false);
+        let p = colours(&ctx);
+        let at = |ctx: &Context, time: f64, jump: Option<f32>| {
+            painted(ctx, time, vec![], |ui| pane(ui, "pane", 1000.0, jump))
+        };
+        at(&ctx, 1.0, Some(300.0));
+        let (width, fading_in) = at(&ctx, 1.0 + 1.0 / 60.0, None).expect("it fades in");
+        assert_eq!(width, SCROLL_THUMB);
+        assert!(fading_in.a() < 255, "not there at once: {fading_in:?}");
+        for step in 2..30 {
+            at(&ctx, 1.0 + f64::from(step) / 60.0, None);
+        }
+        let (width, colour) = at(&ctx, 1.0 + LINGER - 0.1, None).expect("it lingers");
+        assert_eq!((width, colour), (SCROLL_THUMB, p.scrollbar));
+        at(&ctx, 1.0 + LINGER + 0.01, None);
+        let (_, fading_out) = at(&ctx, 1.0 + LINGER + 0.02, None).expect("it fades out");
+        assert!(fading_out.a() < 255, "not gone at once: {fading_out:?}");
+        for step in 0..20 {
+            at(&ctx, 1.0 + LINGER + 0.03 + f64::from(step) / 60.0, None);
+        }
+        assert_eq!(at(&ctx, 1.0 + LINGER + FADE + 1.0, None), None);
+    }
+
+    #[test]
+    fn reduced_motion_skips_the_fades() {
+        let ctx = settled(true);
+        let p = colours(&ctx);
+        let at = |ctx: &Context, time: f64, jump: Option<f32>| {
+            painted(ctx, time, vec![], |ui| pane(ui, "pane", 1000.0, jump))
+        };
+        at(&ctx, 1.0, Some(300.0));
+        assert_eq!(
+            at(&ctx, 1.0 + 1.0 / 60.0, None),
+            Some((SCROLL_THUMB, p.scrollbar)),
+            "in one frame"
+        );
+        at(&ctx, 1.0 + LINGER + 0.01, None);
+        assert_eq!(at(&ctx, 1.0 + LINGER + 0.02, None), None, "out in one");
+    }
+
+    #[test]
+    fn the_edge_strip_shows_the_wide_thumb_at_once_until_the_linger_ends() {
+        let ctx = settled(false);
+        let p = colours(&ctx);
+        let edge = Pos2::new(PANE - SCROLL_HIT + 1.0, 100.0);
+        let draw = |ui: &mut Ui| pane(ui, "pane", 1000.0, None);
+        painted(&ctx, 1.0, vec![Event::PointerMoved(edge)], draw);
+        assert_eq!(
+            painted(&ctx, 1.0 + 1.0 / 60.0, vec![], draw),
+            Some((SCROLL_THUMB_HOVER, p.scrollbar_active)),
+            "at once"
+        );
+        assert!(
+            painted(&ctx, 4.0, vec![], draw).is_some(),
+            "it stays while the pointer does"
+        );
+        let away = Pos2::new(50.0, 100.0);
+        painted(&ctx, 4.1, vec![Event::PointerMoved(away)], draw);
+        assert!(
+            painted(&ctx, 4.0 + LINGER - 0.1, vec![], draw).is_some(),
+            "it lingers once the pointer left"
+        );
+        painted(&ctx, 4.1 + LINGER + 0.01, vec![], draw);
+        for step in 0..20 {
+            painted(&ctx, 4.2 + LINGER + f64::from(step) / 60.0, vec![], draw);
+        }
+        assert_eq!(painted(&ctx, 7.0, vec![], draw), None);
+    }
+
+    #[test]
+    fn a_drag_is_wide_and_accent_even_with_the_pointer_out_of_the_strip() {
+        let ctx = settled(true);
+        let p = colours(&ctx);
+        let on = Pos2::new(PANE - 3.0, 10.0);
+        let out = Pos2::new(50.0, 60.0);
+        let draw = |ui: &mut Ui| pane(ui, "pane", 1000.0, None);
+        painted(&ctx, 1.0, vec![Event::PointerMoved(on)], draw);
+        painted(&ctx, 1.1, vec![Event::PointerMoved(on)], draw);
+        painted(&ctx, 1.2, vec![button(on, true)], draw);
+        painted(&ctx, 1.3, vec![Event::PointerMoved(out)], draw);
+        let dragging = Some((SCROLL_THUMB_HOVER, p.accent));
+        assert_eq!(painted(&ctx, 1.4, vec![], draw), dragging);
+        assert_eq!(
+            painted(&ctx, 5.0, vec![], draw),
+            dragging,
+            "no linger ends it"
+        );
+    }
+
+    #[test]
+    fn a_pane_with_room_to_spare_has_no_thumb() {
+        let ctx = themed_ctx();
+        let draw = |ui: &mut Ui| pane(ui, "pane", 10.0, None);
+        let edge = Pos2::new(PANE - 3.0, 100.0);
+        for at in 0..3 {
+            painted(&ctx, f64::from(at), vec![Event::PointerMoved(edge)], draw);
+        }
+        assert_eq!(painted(&ctx, 4.0, vec![], draw), None);
+    }
+
+    #[test]
+    fn the_strip_under_something_on_top_does_not_wake_the_thumb() {
+        let ctx = settled(true);
+        let edge = Pos2::new(PANE - 3.0, 100.0);
+        let draw = |ui: &mut Ui| {
+            pane(ui, "pane", 1000.0, None);
+            egui::Area::new(Id::new("over"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(Pos2::ZERO)
+                .show(ui.ctx(), |ui| ui.allocate_space(Vec2::splat(PANE)));
+        };
+        painted(&ctx, 1.0, vec![Event::PointerMoved(edge)], draw);
+        for at in 2..5 {
+            painted(&ctx, f64::from(at), vec![], draw);
+        }
+        assert_eq!(painted(&ctx, 6.0, vec![], draw), None);
+    }
+
+    #[test]
+    fn opening_another_pane_in_the_same_place_is_no_scrolling() {
+        let ctx = settled(true);
+        painted(&ctx, 1.0, vec![], |ui| {
+            pane(ui, "pane", 1000.0, Some(300.0))
+        });
+        painted(&ctx, 5.0, vec![], |ui| pane(ui, "pane", 1000.0, None));
+        painted(&ctx, 6.0, vec![], |ui| pane(ui, "other", 1000.0, None));
+        let thumb = painted(&ctx, 6.1, vec![], |ui| pane(ui, "other", 1000.0, None));
+        assert_eq!(thumb, None);
     }
 
     #[test]

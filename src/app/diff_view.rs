@@ -393,7 +393,6 @@ fn file_list(ui: &mut egui::Ui, view: &mut DiffView) {
                     .id_salt("diff-files")
                     .content_margin(theme::scroll_margin(0.0, 0.0))
                     .auto_shrink([false, false]),
-                false,
                 |ui| {
                     for (at, row) in view.rows.iter().enumerate() {
                         let Row::File(c, f) = *row else {
@@ -456,7 +455,7 @@ fn diff_rows(ui: &mut egui::Ui, view: &mut DiffView) {
     }
     let dark = ui.visuals().dark_mode;
     let mut expand = None;
-    let output = theme::scroll_rows(ui, area, true, ROW_H, view.rows.len(), |ui, range| {
+    let output = theme::scroll_rows(ui, area, ROW_H, view.rows.len(), |ui, range| {
         ui.spacing_mut().item_spacing.y = 0.0;
         for at in range {
             let row = view.rows[at];

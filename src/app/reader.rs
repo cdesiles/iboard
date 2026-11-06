@@ -303,7 +303,6 @@ impl IboardApp {
                 .id_salt(("detail", path))
                 .auto_shrink([false, false])
                 .max_height(layout.scroll_height),
-            true,
             |ui| {
                 page(ui, |ui| {
                     let top = ui.cursor().min.y;

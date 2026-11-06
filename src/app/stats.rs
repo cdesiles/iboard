@@ -257,7 +257,6 @@ impl IboardApp {
                     egui::ScrollArea::vertical()
                         .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
                         .auto_shrink([false, false]),
-                    true,
                     |ui| {
                         if let Some(draft) = stats_body(ui, panel) {
                             ask = Some(draft);

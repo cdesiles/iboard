@@ -60,7 +60,6 @@ impl IboardApp {
             egui::ScrollArea::horizontal()
                 .id_salt("board")
                 .auto_shrink([false, false]),
-            true,
             |ui| {
                 ui.add_space(gutter);
                 ui.horizontal_top(|ui| {
@@ -229,8 +228,6 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
                             ..MarginF32::ZERO
                         })
                         .auto_shrink([false, false]),
-                    view.selected
-                        .is_some_and(|selected| visible.iter().any(|issue| issue.path == selected)),
                     |ui| {
                         ui.set_width(view.width);
                         ui.spacing_mut().item_spacing.y = theme::SPACE_3;

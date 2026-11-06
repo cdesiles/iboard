@@ -460,7 +460,6 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                         theme::SPACE_6 + 1.0 - FRAME_W,
                     ))
                     .auto_shrink([false, false]),
-                true,
                 |ui| {
                     let id = egui::Id::new(EDITOR_ID);
                     let mut output = egui::TextEdit::multiline(&mut editor.text)

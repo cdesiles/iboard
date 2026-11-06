@@ -175,7 +175,6 @@ impl Dialog {
                             .content_margin(theme::scroll_margin(theme::SPACE_4, theme::SPACE_2))
                             .max_height(rows_height + 2.0 * theme::SPACE_2)
                             .auto_shrink([false, true]),
-                        true,
                         |ui| {
                             ui.spacing_mut().item_spacing.y = theme::SPACE_2;
                             for (index, (name, hex)) in rows.iter_mut().enumerate() {

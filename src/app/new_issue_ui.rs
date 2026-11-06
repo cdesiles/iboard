@@ -360,7 +360,6 @@ fn notes_field(ui: &mut egui::Ui, composer: &mut Composer, ink: Color32, room: f
             .id_salt("new-issue-notes")
             .max_height(room)
             .auto_shrink([false, false]),
-        false,
         |ui| {
             let rows = (room / 22.0).floor().max(3.0) as usize;
             ui.add_enabled(
@@ -419,7 +418,6 @@ fn issue_pane(
             .id_salt("new-issue-sheet")
             .content_margin(theme::scroll_margin(gutter, gutter))
             .auto_shrink([false, false]),
-        true,
         |ui| {
             ui.vertical_centered(|ui| {
                 ui.set_max_width(page_w);

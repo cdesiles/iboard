@@ -353,7 +353,6 @@ fn history_list(ui: &mut egui::Ui, list: &[Commit]) {
             .content_margin(theme::scroll_margin(0.0, 0.0))
             .max_height(HISTORY_H)
             .auto_shrink([false, true]),
-        true,
         |ui| {
             ui.spacing_mut().item_spacing.y = theme::SPACE_1;
             for commit in list {

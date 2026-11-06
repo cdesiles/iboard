@@ -208,7 +208,6 @@ impl Dialog {
                         .content_margin(theme::scroll_margin(theme::SPACE_5, theme::SPACE_5))
                         .max_height(widgets::modal_body_max(ctx.content_rect()))
                         .auto_shrink([false, true]),
-                    true,
                     |ui| {
                         widgets::focus_here(ui);
                         self.body(ui, projects);

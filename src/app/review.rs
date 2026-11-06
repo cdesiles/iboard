@@ -368,7 +368,6 @@ impl IboardApp {
                     .id_salt("review-body")
                     .max_height(room)
                     .auto_shrink([false, true]),
-                true,
                 |ui| review_content(ui, &mut review, cache),
             )
             .inner;

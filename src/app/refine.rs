@@ -442,7 +442,6 @@ fn refine_ui(
                 .id_salt("refine-panes")
                 .max_height(pane_h)
                 .auto_shrink([false, true]),
-            true,
             |ui| {
                 ui.set_min_height(STACKED_MIN_H.min(pane_h));
                 unfold = why_pane(ui, refine, cache, true);
@@ -468,7 +467,6 @@ fn refine_ui(
                             .id_salt("refine-why")
                             .max_height(pane_h)
                             .auto_shrink([false, false]),
-                        false,
                         |ui| why_pane(ui, refine, cache, false),
                     )
                     .inner
@@ -490,7 +488,6 @@ fn refine_ui(
                             .id_salt("refine-pick")
                             .max_height(pane_h)
                             .auto_shrink([false, false]),
-                        true,
                         |ui| pick_pane(ui, refine, why.response.rect.height()),
                     );
                 },

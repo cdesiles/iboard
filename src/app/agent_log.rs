@@ -109,7 +109,6 @@ impl IboardApp {
                     .content_margin(theme::scroll_margin(theme::SPACE_4, theme::SPACE_4))
                     .stick_to_bottom(true)
                     .auto_shrink(false),
-                false,
                 |ui| {
                     if log.text.is_empty() {
                         ui.label(

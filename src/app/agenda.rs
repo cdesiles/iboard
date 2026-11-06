@@ -270,7 +270,6 @@ fn scrolled_grid(
                 ..MarginF32::ZERO
             })
             .stick_to_right(true),
-        true,
         |ui| grid(ui, agenda, days, shape, pulse),
     );
 }

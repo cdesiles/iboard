@@ -334,7 +334,6 @@ fn label_list(
             .content_margin(theme::scroll_margin(0.0, 0.0))
             .max_height(LIST_MAX_H)
             .auto_shrink([false, true]),
-        true,
         |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::splat(4.0);
