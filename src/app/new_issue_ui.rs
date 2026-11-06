@@ -425,7 +425,7 @@ fn issue_pane(
                 ui.set_max_width(page_w);
                 Frame::new()
                     .fill(p.surface)
-                    .stroke(Stroke::new(1.0, p.line))
+                    .stroke(Stroke::new(1.0, p.line_soft))
                     .corner_radius(CornerRadius::same(theme::RADIUS_MD))
                     .inner_margin(Vec2::new(theme::SPACE_7, theme::SPACE_6))
                     .show(ui, |ui| {
@@ -633,8 +633,14 @@ fn receipt(ui: &mut egui::Ui, composer: &Composer, actions: &mut Vec<ComposeActi
     if drafted.notes_hash != new_issue::notes_hash(&composer.description) {
         line(ui, p.surface_sunken, &mut |ui| {
             ui.label(small("Your notes changed since this draft", p.status_doing));
-            if widgets::button(ui, ButtonKind::Review, Some(Icon::Review), "Redraft", None)
-                .clicked()
+            if widgets::button(
+                ui,
+                ButtonKind::ReviewHairline,
+                Some(Icon::Review),
+                "Redraft",
+                None,
+            )
+            .clicked()
             {
                 actions.push(ComposeAction::Draft);
             }
@@ -833,7 +839,7 @@ fn title_row(ui: &mut egui::Ui, composer: &mut Composer, known: &Labels) {
     } else {
         ui.painter().extend(Shape::dashed_line(
             &rule,
-            Stroke::new(1.0, p.line_strong),
+            Stroke::new(1.0, p.line),
             4.0,
             3.0,
         ));
@@ -964,17 +970,13 @@ fn foot(
                         "Draft with Review"
                     };
                     let blocked = view.blocked.filter(|_| !drafting);
-                    let kind = if drafting || blocked.is_some() {
-                        ButtonKind::Disabled
-                    } else {
-                        ButtonKind::Review
-                    };
+                    let kind = ButtonKind::ReviewHairline.when(!drafting && blocked.is_none());
                     let draft = widgets::button(ui, kind, Some(Icon::Review), label, Some("⌘⇧R"));
                     let draft = match blocked {
                         Some(why) => draft.on_hover_text(why),
                         None => draft,
                     };
-                    if draft.clicked() && kind == ButtonKind::Review {
+                    if draft.clicked() && kind == ButtonKind::ReviewHairline {
                         actions.push(ComposeAction::Draft);
                     }
                     if widgets::button(ui, ButtonKind::Secondary, None, "Close", Some("esc"))

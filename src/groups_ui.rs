@@ -325,14 +325,14 @@ impl Dialog {
                 });
             })
             .response;
-        widgets::dashed_rect(ui.painter(), response.rect, theme::RADIUS_MD, p.line_strong);
+        widgets::dashed_rect(ui.painter(), response.rect, theme::RADIUS_MD, p.line);
     }
 
     fn group_block(&mut self, ui: &mut egui::Ui, at: usize, projects: &[PathBuf]) {
         let p = theme::palette(ui);
         let edge = match self.draft.groups[at].new {
             true => p.accent,
-            false => p.line_strong,
+            false => p.line_soft,
         };
         let block = Frame::new()
             .stroke(Stroke::new(1.0, edge))
@@ -444,7 +444,7 @@ impl Dialog {
                 });
             })
             .response;
-        widgets::dashed_rect(ui.painter(), response.rect, theme::RADIUS_SM, p.line_strong);
+        widgets::dashed_rect(ui.painter(), response.rect, theme::RADIUS_SM, p.line);
     }
 
     fn project_rows(&mut self, ui: &mut egui::Ui, at: usize) {

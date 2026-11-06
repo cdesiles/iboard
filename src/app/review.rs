@@ -702,7 +702,7 @@ fn review_menu(
                 ),
                 egui::Align2::LEFT_CENTER,
                 runs_with,
-                egui::FontId::monospace(12.0),
+                theme::meta(),
                 p.ink,
             );
             if option(ui, "AI settings…", "⌘,").clicked() {
@@ -888,10 +888,15 @@ fn finding_row(ui: &mut egui::Ui, finding: &agent::Finding) -> bool {
                 }
                 if splits {
                     ui.add_space(theme::SPACE_1);
-                    split =
-                        widgets::button(ui, ButtonKind::Review, None, "Split into tickets…", None)
-                            .on_hover_text("Ask the agent to cut this issue into smaller ones")
-                            .clicked();
+                    split = widgets::button(
+                        ui,
+                        ButtonKind::ReviewHairline,
+                        None,
+                        "Split into tickets…",
+                        None,
+                    )
+                    .on_hover_text("Ask the agent to cut this issue into smaller ones")
+                    .clicked();
                 }
             });
         });
@@ -916,11 +921,7 @@ fn review_footer(ui: &mut egui::Ui, review: &ReviewState) -> Option<PanelAction>
         Some(Split::Ready(drafts)) => {
             let kept = drafts.iter().filter(|draft| draft.include).count();
             let create = format!("Create {kept} tickets");
-            let kind = if kept > 0 {
-                ButtonKind::Primary
-            } else {
-                ButtonKind::Disabled
-            };
+            let kind = ButtonKind::Primary.when(kept > 0);
             widgets::action_button(
                 ui,
                 &mut action,
@@ -969,7 +970,7 @@ fn review_footer(ui: &mut egui::Ui, review: &ReviewState) -> Option<PanelAction>
             }
             let (kind, ask) = match review.follow_up.as_deref().map(str::trim) {
                 None => (ButtonKind::Secondary, PanelAction::OpenFollowUp),
-                Some("") => (ButtonKind::Disabled, PanelAction::Again),
+                Some("") => (ButtonKind::Secondary.when(false), PanelAction::Again),
                 Some(_) => (ButtonKind::Secondary, PanelAction::Again),
             };
             widgets::action_button(ui, &mut action, kind, "Ask again", None, ask);

@@ -408,7 +408,8 @@ fn resume_pill(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction> {
             widgets::popover_frame(ui)
                 .inner_margin(theme::SPACE_2)
                 .show(ui, |ui| {
-                    resume = widgets::button(ui, ButtonKind::Review, None, label, None).clicked();
+                    resume = widgets::button(ui, ButtonKind::ReviewHairline, None, label, None)
+                        .clicked();
                 });
         });
     resume.then_some(RefineAction::Show)
@@ -814,11 +815,7 @@ fn choice_card(
             p.ink_muted,
         )
     } else {
-        (
-            p.surface,
-            egui::Stroke::new(1.0, p.line_strong),
-            p.ink_muted,
-        )
+        (p.surface, egui::Stroke::new(1.0, p.line_soft), p.ink_muted)
     };
     let painter = ui.painter();
     let radius = CornerRadius::same(theme::RADIUS_MD);
@@ -829,15 +826,8 @@ fn choice_card(
         .first()
         .map_or(title_h, |row| row.rect().height());
     let line_center = top + first_line / 2.0;
-    let edge_color = if picked { p.accent } else { p.line_strong };
     let number = (index + 1).to_string();
-    widgets::paint_kbd_in(
-        ui,
-        &number,
-        Pos2::new(rect.min.x + pad.x, line_center),
-        edge_color,
-        key,
-    );
+    widgets::paint_kbd_in(ui, &number, Pos2::new(rect.min.x + pad.x, line_center), key);
     let text_x = rect.min.x + pad.x + lead;
     painter.galley(Pos2::new(text_x, top), title_text, p.ink);
     if let Some(text) = detail_text {
@@ -964,7 +954,7 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
         widgets::action_button(
             ui,
             &mut action,
-            ButtonKind::Disabled,
+            ButtonKind::Send.when(false),
             "Send",
             Some("⌘↩"),
             RefineAction::Send,
@@ -979,11 +969,7 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
         );
         return action;
     }
-    let send = if refine.answer().is_some() {
-        ButtonKind::Send
-    } else {
-        ButtonKind::Disabled
-    };
+    let send = ButtonKind::Send.when(refine.answer().is_some());
     widgets::action_button(
         ui,
         &mut action,
@@ -1006,7 +992,7 @@ fn footer_buttons(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction
         widgets::action_button(
             ui,
             &mut action,
-            ButtonKind::Review,
+            ButtonKind::ReviewHairline,
             "Apply to draft",
             None,
             RefineAction::Apply,

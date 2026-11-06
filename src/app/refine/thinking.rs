@@ -49,7 +49,7 @@ pub(super) fn thinking_pick(ui: &mut egui::Ui, elapsed: std::time::Duration, tur
     for key in 1..=4 {
         Frame::new()
             .fill(p.surface)
-            .stroke(Stroke::new(1.0, p.line))
+            .stroke(Stroke::new(1.0, p.line_soft))
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
             .inner_margin(Margin::symmetric(12, 10))
             .show(ui, |ui| {

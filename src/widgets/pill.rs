@@ -161,7 +161,7 @@ pub fn chip(ui: &mut Ui, text: &str, current: bool) -> Response {
         let (fill, edge, ink) = if lit {
             (p.accent_soft, p.accent, p.accent)
         } else {
-            (p.surface, p.line_strong, p.ink)
+            (p.surface, p.line_soft, p.ink)
         };
         let painter = ui.painter();
         painter.rect(
@@ -185,12 +185,12 @@ pub fn chip(ui: &mut Ui, text: &str, current: bool) -> Response {
     response
 }
 
-/// An 18pt tag in `meta`: `line-strong` edge on `surface`. Clickable when the
+/// An 18pt tag in `meta`: no edge, on `surface-sunken`. Clickable when the
 /// caller acts on it.
 pub fn tag(ui: &mut Ui, text: &str) -> Response {
     let p = theme::palette(ui);
-    let fills = [p.surface, p.surface_hover];
-    tag_with(ui, text, fills, p.line_strong, p.ink_muted)
+    let fills = [p.surface_sunken, p.surface_hover];
+    tag_with(ui, text, fills, Color32::TRANSPARENT, p.ink_muted)
 }
 
 /// The tag of what Review wrote: `review` on `review-soft`.

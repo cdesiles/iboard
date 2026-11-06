@@ -99,7 +99,7 @@ fn label_row(
                 ui,
                 egui::TextEdit::singleline(&mut rename.text)
                     .hint_text("name")
-                    .font(FontId::monospace(12.0))
+                    .font(theme::ui_small())
                     .margin(Vec2::new(theme::SPACE_2, 4.0))
                     .char_limit(labels::MAX_LABEL_CHARS)
                     .desired_width(140.0),
@@ -165,7 +165,7 @@ impl Dialog {
             help(ui, "No labels yet. Add one below.", p.ink_muted);
         } else {
             Frame::new()
-                .stroke(Stroke::new(1.0, p.line_strong))
+                .stroke(Stroke::new(1.0, p.line_soft))
                 .corner_radius(CornerRadius::same(theme::RADIUS_MD))
                 .show(ui, |ui| {
                     theme::scroll_area(
@@ -224,7 +224,7 @@ impl Dialog {
             ui.spacing_mut().item_spacing.x = theme::SPACE_3;
             widgets::text_entry(
                 ui,
-                widgets::field_edit(ui, &mut self.new_label, "name", FontId::monospace(12.0))
+                widgets::field_edit(ui, &mut self.new_label, "name", theme::ui_small())
                     .desired_width(140.0),
             );
             hex_field(ui, &mut self.new_hex, "#rrggbb");

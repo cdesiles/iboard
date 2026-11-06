@@ -41,12 +41,11 @@ pub fn menu_option(ui: &mut Ui, option: MenuOption<'_>) -> Response {
     });
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
+        let fade = super::hover_fade(ui.ctx(), response.id, response.hovered());
         let fill = if option.active {
             p.accent_soft
-        } else if response.hovered() {
-            p.surface_hover
         } else {
-            Color32::TRANSPARENT
+            p.surface_hover.gamma_multiply(fade)
         };
         painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), fill);
         let check = Rect::from_min_size(
@@ -61,17 +60,17 @@ pub fn menu_option(ui: &mut Ui, option: MenuOption<'_>) -> Response {
         }
         let mut right = rect.max.x - theme::SPACE_3;
         if !option.meta.is_empty() {
-            let font = if option.meta_is_key {
-                theme::meta_mono()
+            let (font, ink) = if option.meta_is_key {
+                (theme::meta_mono(), p.ink_faint)
             } else {
-                theme::meta()
+                (theme::meta(), p.ink_muted)
             };
-            let meta = galley(ui, option.meta, font, p.ink_muted);
+            let meta = galley(ui, option.meta, font, ink);
             right -= meta.size().x;
             painter.galley(
                 Pos2::new(right, rect.center().y - meta.size().y / 2.0),
                 meta,
-                p.ink_muted,
+                ink,
             );
             right -= theme::SPACE_3;
         }
@@ -172,10 +171,9 @@ pub fn menu_row(ui: &mut Ui, width: f32, title: &str, detail: &str, look: RowLoo
         let hovered = response.hovered();
         let fill = if look.active {
             p.accent_soft
-        } else if hovered {
-            p.surface_hover
         } else {
-            Color32::TRANSPARENT
+            let fade = super::hover_fade(ui.ctx(), response.id, hovered);
+            p.surface_hover.gamma_multiply(fade)
         };
         ui.painter()
             .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), look.fade(fill));
@@ -202,7 +200,7 @@ pub fn menu_row_lifted(ui: &Ui, (title, detail): (&str, &str), pointer: Pos2) {
         rect,
         CornerRadius::same(theme::RADIUS_SM),
         p.surface,
-        Stroke::new(1.0, p.line_strong),
+        Stroke::new(1.0, p.line),
         StrokeKind::Inside,
     );
     let look = RowLook {

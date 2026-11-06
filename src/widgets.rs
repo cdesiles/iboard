@@ -21,7 +21,7 @@ mod pill;
 mod select;
 
 pub use button::{
-    ButtonKind, CARD_ACTION, Tone, action_button, button, icon_button, split_button,
+    ButtonKind, CARD_ACTION, Tone, action_button, button, hover_fade, icon_button, split_button,
     text_button_width,
 };
 pub use dialog::{
@@ -169,33 +169,19 @@ fn checkbox_named(ui: &mut Ui, checked: &mut bool, label: &str, name: &str) -> R
 /// returns its width. Used where the hint sits on top of another widget.
 pub fn paint_kbd(ui: &Ui, key: &str, left_center: Pos2) -> f32 {
     let p = theme::palette(ui);
-    paint_kbd_in(ui, key, left_center, p.line_strong, p.ink_muted)
+    paint_kbd_in(ui, key, left_center, p.ink_muted)
 }
 
-/// A key cap in its own edge and ink colours: `accent` on a picked choice.
-pub fn paint_kbd_in(ui: &Ui, key: &str, left_center: Pos2, edge: Color32, ink: Color32) -> f32 {
+/// A key cap in its own ink: `accent` on a picked choice. A hint, not a
+/// control, so `surface-sunken` and no edge.
+pub fn paint_kbd_in(ui: &Ui, key: &str, left_center: Pos2, ink: Color32) -> f32 {
     let p = theme::palette(ui);
     let text = galley(ui, key, theme::meta_mono(), ink);
     let size = Vec2::new((text.size().x + 8.0).max(18.0), 16.0);
     let rect = Rect::from_min_size(Pos2::new(left_center.x, left_center.y - size.y / 2.0), size);
     let painter = ui.painter();
-    painter.rect(
-        rect,
-        CornerRadius::same(theme::RADIUS_SM),
-        p.surface,
-        Stroke::new(1.0, edge),
-        StrokeKind::Inside,
-    );
-    // The heavier bottom edge that makes it read as a key.
-    painter.line_segment(
-        [
-            Pos2::new(rect.min.x + 2.0, rect.max.y - 1.0),
-            Pos2::new(rect.max.x - 2.0, rect.max.y - 1.0),
-        ],
-        Stroke::new(1.0, edge),
-    );
-    let text_pos = rect.center() - text.size() / 2.0;
-    painter.galley(text_pos, text, ink);
+    painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_sunken);
+    painter.galley(rect.center() - text.size() / 2.0, text, ink);
     size.x
 }
 
@@ -252,18 +238,16 @@ pub fn project_trigger(ui: &mut Ui, project: &str, path: &str, open: bool) -> Re
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Switch project")
     });
-    if open || response.hovered() {
-        ui.painter().set(
-            backdrop,
-            egui::epaint::RectShape::new(
-                rect,
-                CornerRadius::same(theme::RADIUS_SM),
-                p.surface_hover,
-                Stroke::new(1.0, p.line_strong),
-                StrokeKind::Inside,
-            ),
-        );
-    }
+    let fade = hover_fade(ui.ctx(), response.id, response.hovered());
+    ui.painter().set(
+        backdrop,
+        egui::epaint::RectShape::filled(
+            rect,
+            CornerRadius::same(theme::RADIUS_SM),
+            p.surface_hover
+                .gamma_multiply(if open { 1.0 } else { fade }),
+        ),
+    );
     focus_ring(ui, &response, theme::RADIUS_SM);
     response
 }
@@ -304,9 +288,13 @@ pub fn crumb(ui: &mut Ui, text: &str, font: FontId) -> Response {
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, ui.is_enabled(), text));
     if ui.is_rect_visible(rect) {
         let text_rect = Rect::from_center_size(rect.center(), normal.size());
+        let fade = hover_fade(ui.ctx(), response.id, response.hovered());
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(theme::RADIUS_SM),
+            p.surface_hover.gamma_multiply(fade),
+        );
         let color = if response.hovered() {
-            ui.painter()
-                .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_hover);
             // Underlined 3pt below the baseline-ish bottom of the text.
             let y = text_rect.max.y + 1.0;
             ui.painter().line_segment(
@@ -437,6 +425,46 @@ pub fn meter(ui: &mut Ui, done: usize, total: usize) {
 mod tests {
     use super::*;
     use crate::labels::Rgb;
+
+    #[test]
+    fn a_key_cap_is_sunken_with_no_edge() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut palette = None;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            palette = Some(theme::palette(ui));
+            paint_kbd(ui, "⌘S", Pos2::new(10.0, 10.0));
+        });
+        output.textures_delta.clear();
+        let p = palette.unwrap();
+        let cap = output
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Rect(rect) => Some(rect.clone()),
+                _ => None,
+            });
+        let cap = cap.expect("a key cap paints a box");
+        assert_eq!(cap.fill, p.surface_sunken);
+        assert_eq!(cap.stroke.width, 0.0);
+    }
+
+    #[test]
+    fn modal_menu_and_popover_frames_use_line() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let p = theme::palette(ui);
+            assert_eq!(popover_frame(ui).stroke.color, p.line);
+            assert_eq!(modal_frame(ui).stroke.color, p.line);
+            assert_eq!(ui.visuals().window_stroke.color, p.line);
+        })
+        .textures_delta
+        .clear();
+    }
 
     #[test]
     fn a_menu_row_renders_its_two_lines() {

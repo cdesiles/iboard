@@ -599,7 +599,7 @@ pub(super) fn empty_well(ui: &mut egui::Ui, message: &str, width: f32) {
             });
         })
         .response;
-    dashed_rect(ui.painter(), response.rect, theme::RADIUS_MD, p.line_strong);
+    dashed_rect(ui.painter(), response.rect, theme::RADIUS_MD, p.line);
 }
 
 pub(super) use crate::widgets::dashed_rect;

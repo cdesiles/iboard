@@ -438,7 +438,7 @@ fn block<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let p = theme::palette(ui);
     Frame::new()
         .fill(p.surface)
-        .stroke(Stroke::new(1.0, p.line))
+        .stroke(Stroke::new(1.0, p.line_soft))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .inner_margin(Vec2::new(14.0, theme::SPACE_4))
         .show(ui, |ui| {

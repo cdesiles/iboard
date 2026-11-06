@@ -310,11 +310,7 @@ fn note_composer(ui: &mut egui::Ui, draft: &mut NoteDraft) -> Option<NoteAction>
                 Layout::right_to_left(Align::Center),
                 |ui| {
                     ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    let kind = if draft.text.trim().is_empty() {
-                        ButtonKind::Disabled
-                    } else {
-                        ButtonKind::Review
-                    };
+                    let kind = ButtonKind::ReviewHairline.when(!draft.text.trim().is_empty());
                     if widgets::button(ui, kind, None, "Comment", Some("⌘↩")).clicked() || submit
                     {
                         action = Some(NoteAction::Save);

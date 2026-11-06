@@ -9,66 +9,128 @@ use egui::{
 use super::{focus_ring, galley};
 use crate::theme::{self, Icon};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ButtonKind {
-    /// `surface` fill, `line-strong` edge: Refresh, Discard.
+    /// No edge, no fill: Refresh, the controls of the header bar.
+    Header,
+    /// A `line-soft` hairline, no fill: modal feet, dialogs, content blocks.
     Secondary,
-    /// `accent` fill: the one main action of a screen.
+    /// `primary` fill: the one filled button of a screen.
     Primary,
-    /// No edge, `ink-muted`: navigation and icon buttons.
+    /// No edge, `ink-muted`: the quiet action beside a louder one.
     Ghost,
-    /// `review` text and edge on `surface`: the AI Review button.
+    /// `review` label, no edge: the AI split button in the header.
     Review,
-    /// Filled `review`: Send in the refinement, the one main action there.
+    /// `review` label on a `line-soft` hairline, away from the header.
+    ReviewHairline,
+    /// Filled `review`: what sends to an agent, the one main action there.
     Send,
     /// Filled `danger`: the confirming button of a destructive dialog.
     Danger,
-    /// `danger` text and edge on `surface`: Delete in the Reader and Editor
-    /// header, which still asks to confirm.
-    DangerOutline,
-    /// A secondary button with a leading chevron and its key in `ink-muted`:
-    /// Board, at the far left of the Reader and Editor header.
+    /// `ink-muted` at rest, `danger` on `danger-soft` only under the pointer:
+    /// Delete, which still asks to confirm.
+    Delete,
+    /// The header's first control: a leading chevron and its key, no edge.
     Back,
-    /// Keeps the shape but drops to a `line` edge and `ink-faint`.
-    Disabled,
-    /// A secondary button whose popup is open (Add label): `accent` edge and
-    /// text on `accent-soft`.
+    /// A button whose popup or pane is open: `accent` on `accent-soft`.
     Open,
+    /// A disabled [`Self::Header`], [`Self::Ghost`] or [`Self::Review`].
+    DisabledBare,
+    /// A disabled [`Self::Secondary`].
+    DisabledHairline,
+    /// A disabled filled button, on `surface-sunken`.
+    DisabledFilled,
 }
 
-/// The fill, hover fill, edge and ink of a button kind.
-fn button_colors(p: &theme::Palette, kind: ButtonKind) -> (Color32, Color32, Color32, Color32) {
-    match kind {
-        ButtonKind::Secondary | ButtonKind::Back => {
-            (p.surface, p.surface_hover, p.line_strong, p.ink)
+impl ButtonKind {
+    /// This kind while `enabled`, else its disabled look, which keeps the
+    /// shape and drops to `ink-faint`.
+    #[must_use]
+    pub fn when(self, enabled: bool) -> Self {
+        if enabled {
+            return self;
         }
-        ButtonKind::Primary => (p.accent, p.accent, p.accent, p.on_accent),
-        ButtonKind::Ghost => (
-            Color32::TRANSPARENT,
-            p.surface_hover,
-            Color32::TRANSPARENT,
-            p.ink_muted,
-        ),
-        ButtonKind::Review => (p.surface, p.review_soft, p.review, p.review),
-        ButtonKind::Send => (p.review, p.review, p.review, p.on_review),
-        ButtonKind::Danger => (p.danger, p.danger, p.danger, p.on_danger),
-        ButtonKind::DangerOutline => (p.surface, p.danger_soft, p.danger, p.danger),
-        ButtonKind::Disabled => (p.surface, p.surface, p.line, p.ink_faint),
-        ButtonKind::Open => (p.accent_soft, p.accent_soft, p.accent, p.accent),
+        match self {
+            Self::Primary | Self::Send | Self::Danger | Self::DisabledFilled => {
+                Self::DisabledFilled
+            }
+            Self::Secondary | Self::ReviewHairline | Self::Open | Self::DisabledHairline => {
+                Self::DisabledHairline
+            }
+            Self::Header
+            | Self::Ghost
+            | Self::Review
+            | Self::Delete
+            | Self::Back
+            | Self::DisabledBare => Self::DisabledBare,
+        }
     }
 }
 
-/// A disabled ui draws every kind as [`ButtonKind::Disabled`].
-fn drawn_kind(ui: &Ui, kind: ButtonKind) -> ButtonKind {
-    if ui.is_enabled() {
-        kind
+/// How a button kind paints: at rest, and under the pointer.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Look {
+    fill: Color32,
+    hover_fill: Color32,
+    edge: Color32,
+    ink: Color32,
+    hover_ink: Color32,
+    key: Color32,
+}
+
+/// What share of a filled button's label colour its key hint takes.
+const FILLED_KEY: f32 = 0.72;
+
+fn button_look(p: &theme::Palette, kind: ButtonKind) -> Look {
+    let none = Color32::TRANSPARENT;
+    let plain = |fill, hover_fill, edge, ink: Color32| Look {
+        fill,
+        hover_fill,
+        edge,
+        ink,
+        hover_ink: ink,
+        key: p.ink_muted,
+    };
+    let filled = |fill, hover_fill, ink: Color32| Look {
+        key: ink.gamma_multiply(FILLED_KEY),
+        ..plain(fill, hover_fill, none, ink)
+    };
+    match kind {
+        ButtonKind::Header | ButtonKind::Back => plain(none, p.surface_hover, none, p.ink),
+        ButtonKind::Secondary => plain(none, p.surface_hover, p.line_soft, p.ink),
+        ButtonKind::Primary => filled(p.primary, p.primary_hover, p.on_primary),
+        ButtonKind::Ghost => Look {
+            hover_ink: p.ink,
+            ..plain(none, p.surface_hover, none, p.ink_muted)
+        },
+        ButtonKind::Review => plain(none, p.review_soft, none, p.review),
+        ButtonKind::ReviewHairline => plain(none, p.review_soft, p.line_soft, p.review),
+        ButtonKind::Send => filled(p.review, p.review, p.on_review),
+        ButtonKind::Danger => filled(p.danger, p.danger, p.on_danger),
+        ButtonKind::Delete => Look {
+            hover_ink: p.danger,
+            ..plain(none, p.danger_soft, none, p.ink_muted)
+        },
+        ButtonKind::Open => plain(p.accent_soft, p.accent_soft, p.accent, p.accent),
+        ButtonKind::DisabledBare => plain(none, none, none, p.ink_faint),
+        ButtonKind::DisabledHairline => plain(none, none, p.line_soft, p.ink_faint),
+        ButtonKind::DisabledFilled => plain(p.surface_sunken, p.surface_sunken, none, p.ink_faint),
+    }
+}
+
+/// How far a hover has faded in under `id`: over `motion-hover` going in, at
+/// once going out. A keyboard selection never comes through here.
+pub fn hover_fade(ctx: &egui::Context, id: egui::Id, hovered: bool) -> f32 {
+    let secs = if hovered {
+        theme::motion(ctx, theme::MOTION_HOVER)
     } else {
-        ButtonKind::Disabled
-    }
+        0.0
+    };
+    ctx.animate_bool_with_time(id.with("hover-fade"), hovered, secs)
 }
 
-/// The ui's painter, without the fade egui puts on a disabled ui: `line` and
-/// `ink-faint` are already what a disabled button looks like.
+/// The ui's painter, without the fade egui puts on a disabled ui: a disabled
+/// look is already what a disabled button looks like.
 fn unfaded_painter(ui: &Ui) -> egui::Painter {
     let mut painter = ui.painter().clone();
     if !ui.is_enabled() {
@@ -111,7 +173,7 @@ fn button_content(
     label: &str,
     shortcut: Option<&str>,
 ) -> ButtonContent {
-    let ink = button_colors(theme::palette(ui), kind).3;
+    let ink = button_look(theme::palette(ui), kind).ink;
     let text = (!label.is_empty()).then(|| galley(ui, label, theme::ui_button(), ink));
     // An icon button keeps its key in its tooltip.
     let reveal = match (shortcut, &text) {
@@ -158,20 +220,15 @@ fn paint_button(
     if !ui.is_rect_visible(rect) {
         return;
     }
-    let p = theme::palette(ui);
-    let (fill, hover_fill, edge, ink) = button_colors(p, kind);
-    let hovered = response.hovered();
-    let ink = if kind == ButtonKind::Ghost && hovered {
-        p.ink
-    } else {
-        ink
-    };
+    let look = button_look(theme::palette(ui), kind);
+    let fade = hover_fade(ui.ctx(), response.id, response.hovered());
+    let ink = look.ink.lerp_to_gamma(look.hover_ink, fade);
     let painter = unfaded_painter(ui);
     painter.rect(
         rect,
         radius,
-        if hovered { hover_fill } else { fill },
-        Stroke::new(1.0, edge),
+        look.fill.lerp_to_gamma(look.hover_fill, fade),
+        Stroke::new(1.0, look.edge),
         StrokeKind::Inside,
     );
 
@@ -208,11 +265,6 @@ fn paint_button(
     }
     if let Some(hint) = hint {
         let size = hint.size();
-        let hint_ink = if kind == ButtonKind::Back {
-            p.ink_muted
-        } else {
-            ink
-        };
         // Sliding out, the key comes from behind the right padding.
         let shown = rect.with_max_x(rect.max.x - theme::SPACE_3);
         painter
@@ -220,7 +272,7 @@ fn paint_button(
             .galley_with_override_text_color(
                 Pos2::new(x, center_y - size.y / 2.0),
                 hint,
-                hint_ink.gamma_multiply(reveal),
+                look.key.gamma_multiply(reveal),
             );
     }
 }
@@ -239,7 +291,7 @@ pub fn button(
     label: &str,
     shortcut: Option<&str>,
 ) -> Response {
-    let kind = drawn_kind(ui, kind);
+    let kind = kind.when(ui.is_enabled());
     let content = button_content(ui, kind, icon, label, shortcut);
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(content.width, theme::CONTROL_H), Sense::click());
@@ -287,11 +339,7 @@ pub fn split_button(
     shortcut: Option<&str>,
     main_enabled: bool,
 ) -> (Response, Response) {
-    let main_kind = if main_enabled {
-        kind
-    } else {
-        ButtonKind::Disabled
-    };
+    let main_kind = kind.when(main_enabled);
     let content = button_content(ui, main_kind, icon, label, shortcut);
     let size = Vec2::new(content.width + SPLIT_CARET_W, theme::CONTROL_H);
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
@@ -320,11 +368,10 @@ pub fn split_button(
             se: 0,
         },
     );
-    // The caret shares the main part's right edge as its divider.
     let caret_content = button_content(ui, kind, Some(Icon::ChevronDown), "", None);
     paint_button(
         ui,
-        caret_rect.with_min_x(caret_rect.min.x - 1.0),
+        caret_rect,
         &caret,
         kind,
         caret_content,
@@ -334,6 +381,11 @@ pub fn split_button(
             ne: r,
             se: r,
         },
+    );
+    ui.painter().vline(
+        caret_rect.min.x,
+        rect.shrink2(Vec2::new(0.0, theme::SPACE_2)).y_range(),
+        Stroke::new(1.0, theme::palette(ui).line_soft),
     );
     focus_ring(ui, &main, theme::RADIUS_SM);
     focus_ring(ui, &caret, theme::RADIUS_SM);
@@ -351,10 +403,10 @@ pub enum Tone {
     Danger,
     /// Review: drawn in the reserved `review` hue, rest and hover.
     Review,
-    /// The trigger of an open popup (Add label): `accent` edge and icon on
+    /// The trigger of an open popup (Add label): `accent` icon on
     /// `accent-soft`, hovered or not.
     Open,
-    /// 20×20 and never an edge, as Todo's `+`.
+    /// 20×20, as Todo's `+`.
     Ghost,
 }
 
@@ -362,9 +414,9 @@ pub enum Tone {
 const GHOST_ACTION: f32 = 20.0;
 
 /// An icon-only 22×22 card action with a caller-chosen id, so tests can find
-/// it: no edge at rest, `surface-hover` and a `line-strong` edge on its own
-/// hover. A `Danger` action (delete) turns `danger` only then. Disabled, it
-/// is `ink-faint` whatever its tone.
+/// it: never an edge, `surface-hover` fading in on its own hover. A `Danger`
+/// action (delete) turns `danger` only then. Disabled, it is `ink-faint`
+/// whatever its tone.
 pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Tone) -> Response {
     let size = if tone == Tone::Ghost {
         GHOST_ACTION
@@ -382,35 +434,27 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), name));
     if ui.is_rect_visible(rect) {
         let p = theme::palette(ui);
-        let hovered = response.hovered() || tone == Tone::Open;
-        let ink = match (hovered, tone) {
-            _ if !ui.is_enabled() => p.ink_faint,
-            (_, Tone::Review) => p.review,
-            (_, Tone::Open) => p.accent,
-            (true, Tone::Danger) => p.danger,
-            (true, Tone::Plain | Tone::Ghost) => p.ink,
-            _ => p.ink_muted,
+        let fade = if tone == Tone::Open {
+            1.0
+        } else {
+            hover_fade(ui.ctx(), response.id, response.hovered())
         };
-        if hovered {
-            let edge = match tone {
-                Tone::Danger => p.danger,
-                Tone::Review => p.review,
-                Tone::Open => p.accent,
-                Tone::Plain => p.line_strong,
-                Tone::Ghost => Color32::TRANSPARENT,
-            };
-            ui.painter().rect(
-                rect,
-                CornerRadius::same(theme::RADIUS_SM),
-                match tone {
-                    Tone::Review => p.review_soft,
-                    Tone::Open => p.accent_soft,
-                    _ => p.surface_hover,
-                },
-                Stroke::new(1.0, edge),
-                StrokeKind::Inside,
-            );
-        }
+        let (fill, rest, lit) = match tone {
+            Tone::Review => (p.review_soft, p.review, p.review),
+            Tone::Open => (p.accent_soft, p.accent, p.accent),
+            Tone::Danger => (p.surface_hover, p.ink_muted, p.danger),
+            Tone::Plain | Tone::Ghost => (p.surface_hover, p.ink_muted, p.ink),
+        };
+        let ink = if ui.is_enabled() {
+            rest.lerp_to_gamma(lit, fade)
+        } else {
+            p.ink_faint
+        };
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(theme::RADIUS_SM),
+            fill.gamma_multiply(fade),
+        );
         let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_SIZE));
         let painter = unfaded_painter(ui);
         if size == CARD_ACTION {
@@ -426,34 +470,196 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::Event;
     use egui::epaint::Shape;
 
-    #[test]
-    fn a_disabled_button_draws_line_and_ink_faint_whatever_its_kind() {
+    fn context() -> egui::Context {
         let ctx = egui::Context::default();
         theme::install(&ctx);
+        theme::apply(&ctx, crate::general::Appearance::Light);
         ctx.run_ui(egui::RawInput::default(), |_| {})
             .textures_delta
             .clear();
-        let mut palette = None;
-        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            palette = Some(theme::palette(ui));
+        ctx
+    }
+
+    /// One pass at `time` with the pointer at `pointer`; returns the shapes.
+    fn pass(
+        ctx: &egui::Context,
+        time: f64,
+        pointer: Pos2,
+        body: impl FnMut(&mut Ui),
+    ) -> Vec<Shape> {
+        let input = egui::RawInput {
+            time: Some(time),
+            predicted_dt: 0.02,
+            events: vec![Event::PointerMoved(pointer)],
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, body);
+        output.textures_delta.clear();
+        output.shapes.into_iter().map(|s| s.shape).collect()
+    }
+
+    fn box_of(shapes: &[Shape]) -> (Color32, Color32) {
+        shapes
+            .iter()
+            .find_map(|shape| match shape {
+                Shape::Rect(rect) => Some((rect.fill, rect.stroke.color)),
+                _ => None,
+            })
+            .expect("a button paints a box")
+    }
+
+    #[test]
+    fn where_a_button_sits_decides_its_edge() {
+        let p = &theme::LIGHT;
+        let none = Color32::TRANSPARENT;
+        for (kind, edge) in [
+            (ButtonKind::Header, none),
+            (ButtonKind::Back, none),
+            (ButtonKind::Ghost, none),
+            (ButtonKind::Review, none),
+            (ButtonKind::Delete, none),
+            (ButtonKind::Secondary, p.line_soft),
+            (ButtonKind::ReviewHairline, p.line_soft),
+            (ButtonKind::Primary, none),
+        ] {
+            assert_eq!(button_look(p, kind).edge, edge, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn the_primary_is_ink_and_only_delete_under_the_pointer_is_red() {
+        let p = &theme::LIGHT;
+        let primary = button_look(p, ButtonKind::Primary);
+        assert_eq!(
+            (primary.fill, primary.hover_fill, primary.ink),
+            (p.primary, p.primary_hover, p.on_primary)
+        );
+        assert_eq!(primary.key, p.on_primary.gamma_multiply(0.72));
+        let delete = button_look(p, ButtonKind::Delete);
+        assert_eq!(
+            (delete.ink, delete.fill),
+            (p.ink_muted, Color32::TRANSPARENT)
+        );
+        assert_eq!(
+            (delete.hover_ink, delete.hover_fill),
+            (p.danger, p.danger_soft)
+        );
+    }
+
+    #[test]
+    fn a_disabled_button_keeps_its_shape_and_drops_to_ink_faint() {
+        let p = &theme::LIGHT;
+        let none = Color32::TRANSPARENT;
+        for (kind, fill, edge) in [
+            (ButtonKind::Primary, p.surface_sunken, none),
+            (ButtonKind::Send, p.surface_sunken, none),
+            (ButtonKind::Secondary, none, p.line_soft),
+            (ButtonKind::ReviewHairline, none, p.line_soft),
+            (ButtonKind::Header, none, none),
+            (ButtonKind::Review, none, none),
+        ] {
+            let look = button_look(p, kind.when(false));
+            assert_eq!((look.fill, look.edge, look.ink), (fill, edge, p.ink_faint));
+            assert_eq!(look.hover_fill, fill, "{kind:?} has no hover");
+            assert_eq!(kind.when(true), kind);
+        }
+    }
+
+    #[test]
+    fn a_disabled_ui_draws_the_disabled_look_at_full_strength() {
+        let ctx = context();
+        let shapes = pass(&ctx, 0.0, Pos2::new(900.0, 900.0), |ui| {
             ui.add_enabled_ui(false, |ui| {
                 button(ui, ButtonKind::Primary, None, "New issue", None);
             });
         });
-        output.textures_delta.clear();
-        let p = palette.unwrap();
-        let shapes: Vec<Shape> = output.shapes.into_iter().map(|s| s.shape).collect();
-        let edge = shapes.iter().find_map(|shape| match shape {
-            Shape::Rect(rect) => Some((rect.fill, rect.stroke.color)),
-            _ => None,
-        });
-        assert_eq!(edge, Some((p.surface, p.line)));
+        let p = &theme::LIGHT;
+        assert_eq!(box_of(&shapes), (p.surface_sunken, Color32::TRANSPARENT));
         let ink = shapes.iter().find_map(|shape| match shape {
             Shape::Text(text) => text.override_text_color,
             _ => None,
         });
         assert_eq!(ink, Some(p.ink_faint));
+    }
+
+    /// The fill of a secondary button at the window's corner, in one pass.
+    fn button_fill(ctx: &egui::Context, time: f64, pointer: Pos2) -> Color32 {
+        let shapes = pass(ctx, time, pointer, |ui| {
+            button(ui, ButtonKind::Secondary, None, "Close", None);
+        });
+        box_of(&shapes).0
+    }
+
+    #[test]
+    fn hover_fades_in_over_motion_hover_and_out_at_once() {
+        let ctx = context();
+        let away = Pos2::new(900.0, 900.0);
+        let mut over = Pos2::ZERO;
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            over = button(ui, ButtonKind::Secondary, None, "Close", None)
+                .rect
+                .center();
+        })
+        .textures_delta
+        .clear();
+        let p = &theme::LIGHT;
+        assert_eq!(button_fill(&ctx, 0.0, away), Color32::TRANSPARENT);
+        button_fill(&ctx, 0.02, over);
+        let rising = button_fill(&ctx, 0.04, over);
+        assert_ne!(rising, p.surface_hover, "still fading in");
+        assert_ne!(rising, Color32::TRANSPARENT, "already fading in");
+        for step in 0..8 {
+            button_fill(&ctx, 0.06 + f64::from(step) * 0.02, over);
+        }
+        assert_eq!(button_fill(&ctx, 0.3, over), p.surface_hover);
+        button_fill(&ctx, 0.32, away);
+        assert_eq!(
+            button_fill(&ctx, 0.34, away),
+            Color32::TRANSPARENT,
+            "out at once"
+        );
+    }
+
+    #[test]
+    fn reduced_motion_lands_a_hover_in_one_frame() {
+        let ctx = context();
+        theme::set_reduced_motion(&ctx, true);
+        let fade = |hovered| {
+            let mut fade = 0.0;
+            pass(&ctx, 0.0, Pos2::ZERO, |ui| {
+                fade = hover_fade(ui.ctx(), egui::Id::new("row"), hovered);
+            });
+            fade
+        };
+        assert_eq!(fade(false), 0.0);
+        assert_eq!(fade(true), 1.0);
+    }
+
+    #[test]
+    fn a_card_action_never_draws_an_edge() {
+        let ctx = context();
+        let id = egui::Id::new("action");
+        let mut over = Pos2::ZERO;
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            over = icon_button(ui, Icon::Trash, id, "Delete", Tone::Danger)
+                .rect
+                .center();
+        })
+        .textures_delta
+        .clear();
+        let mut last = Vec::new();
+        for frame in 0..10 {
+            last = pass(&ctx, f64::from(frame) * 0.05, over, |ui| {
+                icon_button(ui, Icon::Trash, id, "Delete", Tone::Danger);
+            });
+        }
+        assert_eq!(box_of(&last).0, theme::LIGHT.surface_hover);
+        let edged = last.iter().any(|shape| {
+            matches!(shape, Shape::Rect(rect) if rect.stroke.width > 0.0 && rect.stroke.color.a() > 0)
+        });
+        assert!(!edged, "no edge, even on its own hover");
     }
 }

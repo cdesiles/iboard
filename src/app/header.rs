@@ -96,14 +96,14 @@ impl IboardApp {
             widgets::button(ui, ButtonKind::Back, Some(Icon::Back), "Board", Some("esc"))
                 .on_hover_text(hint)
                 .clicked();
-        // A 16pt `line-strong` divider between the button and the trail.
+        // A 16pt `line` divider between the button and the trail.
         let (divider, _) = ui.allocate_exact_size(Vec2::new(1.0, theme::CONTROL_H), Sense::hover());
         ui.painter().line_segment(
             [
                 Pos2::new(divider.center().x, divider.center().y - 8.0),
                 Pos2::new(divider.center().x, divider.center().y + 8.0),
             ],
-            Stroke::new(1.0, p.line_strong),
+            Stroke::new(1.0, p.line),
         );
         ui.spacing_mut().item_spacing.x = theme::SPACE_1;
         let column = self
@@ -166,14 +166,14 @@ impl IboardApp {
         }
         self.refresh_button(ui);
         if !self.showing_group()
-            && widgets::button(ui, ButtonKind::Secondary, None, "Stats", Some("⌘I"))
+            && widgets::button(ui, ButtonKind::Header, None, "Stats", Some("⌘I"))
                 .on_hover_text("Project stats: what the commits say, and the Agenda  ⌘I")
                 .clicked()
         {
             self.open_stats();
         }
         if self.design_reachable()
-            && widgets::button(ui, ButtonKind::Secondary, None, "Design", None)
+            && widgets::button(ui, ButtonKind::Header, None, "Design", None)
                 .on_hover_text("Browse the project's design system")
                 .clicked()
         {
@@ -212,7 +212,7 @@ impl IboardApp {
             {
                 self.save_and_preview();
             }
-            if widgets::button(ui, ButtonKind::Secondary, None, "Discard", None)
+            if widgets::button(ui, ButtonKind::Header, None, "Discard", None)
                 .on_hover_text("Drop unsaved changes and go back to the issue")
                 .clicked()
             {
@@ -221,15 +221,9 @@ impl IboardApp {
         }
         if reading
             && self.can_edit(&path)
-            && widgets::button(
-                ui,
-                ButtonKind::Secondary,
-                Some(Icon::Edit),
-                "Edit",
-                Some("E"),
-            )
-            .on_hover_text("Edit this issue  E")
-            .clicked()
+            && widgets::button(ui, ButtonKind::Header, Some(Icon::Edit), "Edit", Some("E"))
+                .on_hover_text("Edit this issue  E")
+                .clicked()
         {
             self.start_editing(&path);
         }
@@ -245,7 +239,7 @@ impl IboardApp {
         if reading
             && !done
             && self.design_reachable()
-            && widgets::button(ui, ButtonKind::Secondary, None, "Draft design", None)
+            && widgets::button(ui, ButtonKind::Header, None, "Draft design", None)
                 .on_hover_text("Ask the agent for a static mockup of this change")
                 .clicked()
         {
@@ -265,7 +259,7 @@ impl IboardApp {
             .filter(|column| Some(&column.dir) != here.as_ref())
             .map(|column| (column.name.clone(), column.dir.clone()))
             .collect();
-        let button = widgets::button(ui, ButtonKind::Secondary, None, "Move to…", None)
+        let button = widgets::button(ui, ButtonKind::Header, None, "Move to…", None)
             .on_hover_text("Send this issue to another column");
         let picked = egui::Popup::menu(&button)
             .width(MOVE_MENU_WIDTH)
@@ -298,7 +292,7 @@ impl IboardApp {
             if open {
                 ButtonKind::Open
             } else {
-                ButtonKind::Secondary
+                ButtonKind::Header
             },
             Some(Icon::Commit),
             "Commits",
@@ -327,7 +321,7 @@ impl IboardApp {
             && !done
             && widgets::button(
                 ui,
-                ButtonKind::DangerOutline,
+                ButtonKind::Delete,
                 Some(Icon::Trash),
                 "Delete",
                 delete_key,
@@ -349,7 +343,7 @@ impl IboardApp {
                 if open {
                     ButtonKind::Open
                 } else {
-                    ButtonKind::Secondary
+                    ButtonKind::Header
                 },
                 Some(Icon::TagPlus),
                 "Add label",
@@ -364,15 +358,9 @@ impl IboardApp {
         if exists
             && done
             && self.session.reading().is_some()
-            && widgets::button(
-                ui,
-                ButtonKind::Secondary,
-                Some(Icon::Archive),
-                "Archive",
-                None,
-            )
-            .on_hover_text(format!("Move to {ARCHIVE_DIR}/"))
-            .clicked()
+            && widgets::button(ui, ButtonKind::Header, Some(Icon::Archive), "Archive", None)
+                .on_hover_text(format!("Move to {ARCHIVE_DIR}/"))
+                .clicked()
         {
             self.archive_issue(&path);
         }
@@ -394,15 +382,9 @@ impl IboardApp {
         } else {
             (Some("⌘R"), "Reload from disk  ⌘R")
         };
-        if widgets::button(
-            ui,
-            ButtonKind::Secondary,
-            Some(Icon::Refresh),
-            "Refresh",
-            key,
-        )
-        .on_hover_text(tooltip)
-        .clicked()
+        if widgets::button(ui, ButtonKind::Header, Some(Icon::Refresh), "Refresh", key)
+            .on_hover_text(tooltip)
+            .clicked()
         {
             self.refresh();
         }

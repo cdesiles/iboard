@@ -130,7 +130,7 @@ impl Dialog {
         let mut fix: Option<Engine> = None;
         let mut focused: Option<Rect> = None;
         Frame::new()
-            .stroke(Stroke::new(1.0, p.line_strong))
+            .stroke(Stroke::new(1.0, p.line_soft))
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;

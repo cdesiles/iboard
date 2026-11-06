@@ -193,7 +193,7 @@ pub(super) fn radius(ui: &mut egui::Ui, system: &DesignSystem) {
                 rect,
                 CornerRadius::same(px.clamp(0.0, 28.0) as u8),
                 p.surface_sunken,
-                Stroke::new(1.0, p.line_strong),
+                Stroke::new(1.0, p.line),
                 StrokeKind::Inside,
             );
             ui.vertical(|ui| {
@@ -357,7 +357,7 @@ fn swatch(ui: &mut egui::Ui, color: Color32, hover: &str) -> egui::Response {
             rect,
             CornerRadius::same(theme::RADIUS_SM),
             color,
-            Stroke::new(1.0, p.line_strong),
+            Stroke::new(1.0, p.line),
             StrokeKind::Inside,
         );
     }

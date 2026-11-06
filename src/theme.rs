@@ -635,7 +635,7 @@ fn visuals(theme: Theme, p: &Palette) -> egui::Visuals {
     v.error_fg_color = p.danger;
     v.panel_fill = p.bg;
     v.window_fill = p.surface;
-    v.window_stroke = Stroke::new(1.0, p.line_strong);
+    v.window_stroke = Stroke::new(1.0, p.line);
     v.window_corner_radius = CornerRadius::same(RADIUS_MD);
     v.menu_corner_radius = CornerRadius::same(RADIUS_MD);
     let shadow = Shadow {

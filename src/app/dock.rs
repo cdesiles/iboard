@@ -140,7 +140,7 @@ fn drop_zone(ui: &mut egui::Ui, rect: Rect, zone: DropZone, asks: bool) -> Optio
         }
         DropZone::Archive => {
             painter.rect_filled(rect, radius, p.surface_sunken);
-            dashed_rect(painter, rect, theme::RADIUS_MD, p.line_strong);
+            dashed_rect(painter, rect, theme::RADIUS_MD, p.line);
             p.ink_muted
         }
         DropZone::Delete if over => {

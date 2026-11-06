@@ -235,7 +235,7 @@ fn filter_field(
         egui::TextEdit::singleline(&mut picker.text)
             .id(egui::Id::new("label_picker_field"))
             .hint_text("Add a label")
-            .font(FontId::monospace(12.0))
+            .font(theme::ui_small())
             .desired_width(width)
             .margin(Margin::symmetric(6, 4)),
     );

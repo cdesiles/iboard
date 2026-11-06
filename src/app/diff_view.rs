@@ -405,9 +405,7 @@ fn file_list(ui: &mut egui::Ui, view: &mut DiffView) {
                                 ui.spacing_mut().item_spacing.x = theme::SPACE_2;
                                 ui.add(
                                     egui::Label::new(
-                                        RichText::new(file.path())
-                                            .font(egui::FontId::monospace(11.0))
-                                            .color(p.ink),
+                                        RichText::new(file.path()).font(theme::meta()).color(p.ink),
                                     )
                                     .truncate()
                                     .sense(Sense::click()),

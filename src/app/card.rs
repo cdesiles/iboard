@@ -271,8 +271,11 @@ fn card_edge(ui: &egui::Ui, response: &egui::Response, look: CardLook) {
     let p = theme::palette(ui);
     let edge = match look {
         CardLook::Selected { .. } => Some(Stroke::new(2.0, p.accent)),
-        _ if response.hovered() && !response.dragged() => Some(Stroke::new(1.0, p.line_strong)),
-        _ => None,
+        _ => {
+            let hovered = response.hovered() && !response.dragged();
+            let fade = widgets::hover_fade(ui.ctx(), response.id, hovered);
+            (fade > 0.0).then(|| Stroke::new(1.0, p.line_strong.gamma_multiply(fade)))
+        }
     };
     if let Some(edge) = edge {
         ui.painter().rect_stroke(
@@ -374,7 +377,7 @@ fn card_body(
     let inner = width - 2.0 * padding.x - 2.0 * border;
     let shown = Frame::new()
         .fill(card_fill(p, look))
-        .stroke(Stroke::new(border, p.line))
+        .stroke(Stroke::new(border, p.line_soft))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .inner_margin(padding)
         .show(ui, |ui| {

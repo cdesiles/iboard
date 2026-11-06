@@ -82,7 +82,7 @@ pub(super) fn agenda_ui(
     let mut retry = false;
     Frame::new()
         .fill(p.surface)
-        .stroke(Stroke::new(1.0, p.line))
+        .stroke(Stroke::new(1.0, p.line_soft))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -422,7 +422,7 @@ fn fold_mark(painter: &egui::Painter, p: &theme::Palette, x: f32, top: f32) {
     let fold = Rect::from_min_size(Pos2::new(x, top), Vec2::new(FOLD_W, 7.0 * DAY));
     painter.extend(Shape::dashed_line(
         &[fold.center_top(), fold.center_bottom()],
-        Stroke::new(1.0, p.line_strong),
+        Stroke::new(1.0, p.line),
         3.0,
         3.0,
     ));

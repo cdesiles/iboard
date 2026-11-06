@@ -53,13 +53,12 @@ pub fn paint_focus_halo(ui: &Ui, rect: Rect, radius: u8) {
     );
 }
 
-/// The raised `surface` card of a modal, menu or popover: a `line-strong`
-/// edge, `radius-md` corners and the popup shadow.
+/// The raised `surface` card of a modal, menu or popover: a `line` edge, `radius-md` corners and the popup shadow.
 pub fn popover_frame(ui: &Ui) -> Frame {
     let p = theme::palette(ui);
     Frame::new()
         .fill(p.surface)
-        .stroke(Stroke::new(1.0, p.line_strong))
+        .stroke(Stroke::new(1.0, p.line))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .shadow(ui.visuals().popup_shadow)
 }
@@ -347,7 +346,6 @@ pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &s
     let mut picked = None;
     Frame::new()
         .fill(p.surface_sunken)
-        .stroke(Stroke::new(1.0, p.line_strong))
         .corner_radius(CornerRadius::same(theme::RADIUS_SM))
         .inner_margin(Margin::same(2))
         .show(ui, |ui| {
@@ -358,18 +356,13 @@ pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &s
                     let text = RichText::new(name)
                         .font(theme::ui_button())
                         .color(if active { p.ink } else { p.ink_muted });
-                    let edge = if active {
-                        p.line_strong
-                    } else {
-                        Color32::TRANSPARENT
-                    };
                     let button = egui::Button::new(text)
                         .fill(if active {
                             p.surface
                         } else {
                             Color32::TRANSPARENT
                         })
-                        .stroke(Stroke::new(1.0, edge))
+                        .stroke(Stroke::NONE)
                         .corner_radius(CornerRadius::same(theme::RADIUS_SM - 1))
                         .min_size(Vec2::new(0.0, theme::CONTROL_H - 4.0));
                     let response = ui.add(button);

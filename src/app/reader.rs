@@ -695,7 +695,7 @@ fn not_written_block(
         rect,
         CornerRadius::same(theme::RADIUS_MD),
         p.surface,
-        Stroke::new(1.0, p.line),
+        Stroke::new(1.0, p.line_soft),
         StrokeKind::Inside,
     );
     let inner = rect.shrink2(Vec2::new(theme::SPACE_5, theme::SPACE_4));
@@ -773,11 +773,7 @@ fn not_written_block(
 /// "Draft with Review", or the same button disabled while no agent is set
 /// up. True when it was clicked.
 fn draft_with_review(ui: &mut egui::Ui, review_ready: bool) -> bool {
-    let kind = if review_ready {
-        ButtonKind::Review
-    } else {
-        ButtonKind::Disabled
-    };
+    let kind = ButtonKind::ReviewHairline.when(review_ready);
     let response = widgets::button(
         ui,
         kind,
@@ -804,7 +800,7 @@ pub(super) fn page<R>(
         let p = theme::palette(ui);
         Frame::new()
             .fill(p.surface)
-            .stroke(Stroke::new(1.0, p.line))
+            .stroke(Stroke::new(1.0, p.line_soft))
             .corner_radius(CornerRadius::same(theme::RADIUS_MD))
             .inner_margin(Vec2::new(theme::SPACE_7, theme::SPACE_6))
             .show(ui, |ui| {

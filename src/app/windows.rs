@@ -431,7 +431,7 @@ fn commit_row(ui: &mut egui::Ui, commit: &commits::Commit) -> egui::Response {
         ui.add_space(theme::SPACE_1);
         ui.label(
             RichText::new(&commit.hash)
-                .font(egui::FontId::monospace(12.0))
+                .font(theme::meta())
                 .color(p.accent),
         );
         ui.label(

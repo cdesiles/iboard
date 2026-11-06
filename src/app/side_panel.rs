@@ -14,7 +14,7 @@ pub(super) fn side_panel<R>(
     let p = theme::palette(ui);
     Frame::new()
         .fill(p.surface)
-        .stroke(Stroke::new(1.0, p.line_strong))
+        .stroke(Stroke::new(1.0, p.line_soft))
         .corner_radius(CornerRadius::same(theme::RADIUS_MD))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());

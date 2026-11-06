@@ -48,7 +48,7 @@ impl IboardApp {
         let kind = if open {
             ButtonKind::Open
         } else {
-            ButtonKind::Secondary
+            ButtonKind::Header
         };
         if widgets::button(ui, kind, None, "Agent log", None)
             .on_hover_text("What the build agent does, or did, on this issue")
@@ -149,7 +149,7 @@ fn log_entries(ui: &mut egui::Ui, text: &str, cache: &mut CommonMarkCache) {
             Entry::Step(step) => {
                 ui.label(
                     RichText::new(format!("→ {step}"))
-                        .font(egui::FontId::monospace(11.0))
+                        .font(theme::meta())
                         .color(p.ink_faint),
                 );
             }

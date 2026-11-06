@@ -213,7 +213,7 @@ fn paint(ui: &Ui, response: &Response, panes: Rect, gutter: Rect, width: f32, in
             rect,
             CornerRadius::same(RADIUS_SM),
             p.surface,
-            Stroke::new(1.0, p.line_strong),
+            Stroke::new(1.0, p.line),
             StrokeKind::Inside,
         );
         painter.galley(rect.min + Vec2::new(6.0, 1.0), galley, p.ink);
