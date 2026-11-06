@@ -707,6 +707,9 @@ fn viewer_block(
     let mut edited = block.to_string();
     let broken = images::missing_images(path, block);
     let table = markdown::is_table(block);
+    if !table {
+        quiet_code_blocks(ui);
+    }
     let mut draw = |ui: &mut egui::Ui| {
         let viewer = CommonMarkViewer::new().default_implicit_uri_scheme(image_base_uri(path));
         if broken.is_empty() {
@@ -726,6 +729,16 @@ fn viewer_block(
         rect: shown.rect,
         edited: shown.changed().then_some(edited),
     }
+}
+
+/// The viewer's code block paints its frame twice, from the two strokes it
+/// reads here, and centres its copy icon `2 * button_padding.y` under the top.
+fn quiet_code_blocks(ui: &mut egui::Ui) {
+    let p = theme::palette(ui);
+    let widgets = &mut ui.visuals_mut().widgets;
+    widgets.noninteractive.bg_stroke = Stroke::NONE;
+    widgets.inactive.bg_stroke = Stroke::new(1.0, p.line_soft);
+    ui.spacing_mut().button_padding.y = 0.0;
 }
 
 /// The `file://` base a relative image link in `issue` resolves against: the

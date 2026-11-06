@@ -208,10 +208,16 @@ fn the_sheet_head_follows_the_engine() {
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
     let mut harness = kittest(app);
+    let note = harness
+        .get_by_label("empty title uses the first line")
+        .rect();
     assert!(
         harness
-            .query_by_label(" empty title uses the first line")
-            .is_some()
+            .get_by_label("Add to Todo")
+            .rect()
+            .y_range()
+            .contains(note.center().y),
+        "Manual's note sits in the foot"
     );
     assert!(harness.query_by_label(" named in the background").is_none());
 
@@ -221,7 +227,7 @@ fn the_sheet_head_follows_the_engine() {
     assert!(harness.query_by_label(" named in the background").is_some());
     assert!(
         harness
-            .query_by_label(" empty title uses the first line")
+            .query_by_label("empty title uses the first line")
             .is_none()
     );
 }

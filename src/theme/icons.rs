@@ -109,6 +109,7 @@ pub fn paint_icon_stroked(painter: &Painter, icon: Icon, rect: Rect, color: Colo
 
 /// Lucide's 24-unit grid laid over an icon's rect, and the pen the icons
 /// draw with.
+#[derive(Clone, Copy)]
 struct Grid<'a> {
     painter: &'a Painter,
     rect: Rect,
@@ -275,6 +276,10 @@ fn document_icon(g: &Grid, icon: Icon) {
     }
 }
 
+/// The ribs' share of the bin's stroke: at full weight, 2.3pt apart at 14pt,
+/// they clog.
+const TRASH_RIB_WEIGHT: f32 = 0.625;
+
 /// iboard's soft bin: a round knob on the lid, a tapered body with rounded
 /// bottom corners, two short ribs.
 fn trash_icon(g: &Grid) {
@@ -299,8 +304,12 @@ fn trash_icon(g: &Grid) {
         (17.5, 7.0),
     ];
     g.line(&body);
-    g.segment((10.0, 11.0), (10.0, 16.5));
-    g.segment((14.0, 11.0), (14.0, 16.5));
+    let ribs = Grid {
+        stroke: Stroke::new(g.stroke.width * TRASH_RIB_WEIGHT, g.stroke.color),
+        ..*g
+    };
+    ribs.segment((10.0, 11.0), (10.0, 16.5));
+    ribs.segment((14.0, 11.0), (14.0, 16.5));
 }
 
 /// An agent's work: start and stop the build, watch it think, read its log,

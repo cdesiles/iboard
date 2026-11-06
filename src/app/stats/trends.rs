@@ -5,11 +5,11 @@ use chrono::NaiveDate;
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use iboard::stats::{Cycles, Limits, Snapshot, Stats};
 
-use super::blocks::{Blocks, Part, Phase, clock_note, dim_if_stale, failed_row};
+use super::blocks::{Blocks, Part, Phase, clock_note, dim_if_stale, failed_row, panel_head};
 use super::releases::{Lane, checkbox};
 use super::{
     Align, Color32, Duration, Layout, Measure, Pos2, Rect, RichText, Sense, Shape, Stroke, TREND_H,
-    TREND_LABEL_W, TRENDS_H, Vec2, block, block_label, theme, widgets,
+    TREND_LABEL_W, TRENDS_H, Vec2, block, theme, widgets,
 };
 
 /// The strip at a chart's left that holds its axis bounds.
@@ -127,21 +127,16 @@ pub(super) fn trends(
 ) -> Option<usize> {
     block(ui, |ui| {
         ui.set_min_height(TRENDS_H);
-        let p = theme::palette(ui);
-        let head = ui.horizontal(|ui| {
-            block_label(ui, "Trends");
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let commits = blocks.loaded(Part::Head).map_or(&[][..], |s| &s.snapshots);
-                let text = match hovered.and_then(|at| commits.get(at)) {
-                    Some(s) => format!("{} · {}", s.short, s.day()),
-                    None if commits.is_empty() => String::new(),
-                    None => format!("{} commits, oldest left", commits.len()),
-                };
-                ui.label(RichText::new(text).font(theme::meta()).color(p.ink_muted));
-                checkbox(ui, blocks, show_releases);
-            });
+        let commits = blocks.loaded(Part::Head).map_or(&[][..], |s| &s.snapshots);
+        let caption = match hovered.and_then(|at| commits.get(at)) {
+            Some(s) => format!("{} · {}", s.short, s.day()),
+            None if commits.is_empty() => String::new(),
+            None => format!("{} commits, oldest left", commits.len()),
+        };
+        let head = panel_head(ui, "Trends", &caption, |ui| {
+            checkbox(ui, blocks, show_releases);
         });
-        blocks.settle(ui, Part::Releases, &head.response);
+        blocks.settle(ui, Part::Releases, &head);
         let lane = show_releases.then(|| Lane::begin(ui, blocks)).flatten();
         let mut now_hovered = None;
         let mut bottom = ui.cursor().top();

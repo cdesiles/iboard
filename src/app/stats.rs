@@ -477,7 +477,7 @@ fn block<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
         .inner
 }
 
-/// An uppercase `ui-label`, as tiles and panels are headed.
+/// An uppercase `ui-label`, as tiles are headed.
 fn block_label(ui: &mut egui::Ui, text: &str) {
     let p = theme::palette(ui);
     ui.label(
@@ -485,6 +485,12 @@ fn block_label(ui: &mut egui::Ui, text: &str) {
             .font(theme::ui_label())
             .color(p.ink_muted),
     );
+}
+
+/// A panel's title in `ui-title`, as the Agenda has.
+fn panel_title(ui: &mut egui::Ui, text: &str) {
+    let p = theme::palette(ui);
+    ui.label(RichText::new(text).font(theme::ui_title()).color(p.ink));
 }
 
 /// A pulsing placeholder bar, `share` of the width; blank before

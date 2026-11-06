@@ -3,13 +3,17 @@
 
 use iboard::stats::{self, Limits, Signal, Stats};
 
-use super::blocks::{Blocks, Part, block_head, framed, list_rows};
+use super::blocks::{Blocks, Part, clock_note, framed, list_rows, panel_head};
 use super::{
-    ButtonKind, CornerRadius, Duration, Frame, Icon, RichText, Sense, StatsAsk, TRENDS_H, Vec2,
-    theme, widgets,
+    ButtonKind, CornerRadius, Duration, Frame, Icon, Rect, RichText, Sense, StatsAsk, TRENDS_H,
+    Vec2, theme, widgets,
 };
 
 const NAME: &str = "Refactor watch";
+/// Above and below the hairline between two signals.
+const ROW_PAD: f32 = 10.0;
+/// A signal's icon column; its text starts past it, its detail included.
+const ICON_COLUMN: Vec2 = Vec2::new(16.0, 18.0);
 
 /// The Refactor watch block, on its own job.
 pub(super) fn watch(ui: &mut egui::Ui, blocks: &mut Blocks, limits: &Limits) -> Option<StatsAsk> {
@@ -33,7 +37,7 @@ fn verdict(
     let signals = stats::signals(stats, limits);
     let on = signals.iter().filter(|s| s.on).count();
     let p = theme::palette(ui);
-    block_head(ui, NAME, clock);
+    panel_head(ui, NAME, "", |ui| clock_note(ui, clock));
     let mut ask = None;
     Frame::new()
         .fill(p.surface_sunken)
@@ -76,9 +80,18 @@ fn verdict(
                 ask = Some(StatsAsk::DraftRefactor(title, body));
             }
         });
-    for signal in &signals {
-        signal_row(ui, signal);
-    }
+    ui.add_space(theme::SPACE_2);
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        for (at, signal) in signals.iter().enumerate() {
+            if at > 0 {
+                ui.add_space(ROW_PAD);
+                widgets::rule(ui);
+                ui.add_space(ROW_PAD);
+            }
+            signal_row(ui, signal);
+        }
+    });
     ask
 }
 
@@ -89,25 +102,32 @@ fn signal_row(ui: &mut egui::Ui, signal: &Signal) {
     } else {
         (Icon::Check, p.status_done)
     };
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
-        theme::paint_icon(ui.painter(), icon, rect, color);
-        ui.add(
-            egui::Label::new(
-                RichText::new(&signal.headline)
-                    .font(theme::ui_small())
-                    .color(p.ink),
-            )
-            .wrap(),
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+        let (column, _) = ui.allocate_exact_size(ICON_COLUMN, Sense::hover());
+        let mark = Rect::from_min_size(
+            column.min + Vec2::new(0.0, theme::SPACE_1),
+            Vec2::splat(theme::ICON_SIZE),
         );
+        theme::paint_icon(ui.painter(), icon, mark, color);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+            ui.add(
+                egui::Label::new(
+                    RichText::new(&signal.headline)
+                        .font(theme::ui_body())
+                        .color(p.ink),
+                )
+                .wrap(),
+            );
+            ui.add(
+                egui::Label::new(
+                    RichText::new(&signal.detail)
+                        .font(theme::meta())
+                        .color(p.ink_muted),
+                )
+                .wrap(),
+            );
+        });
     });
-    ui.add(
-        egui::Label::new(
-            RichText::new(&signal.detail)
-                .font(theme::meta())
-                .color(p.ink_muted),
-        )
-        .wrap(),
-    );
 }

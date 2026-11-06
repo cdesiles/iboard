@@ -9,7 +9,7 @@ use iboard::stats::{Need, Source, Stats};
 
 use super::{
     Align, ButtonKind, CornerRadius, Duration, Icon, Job, Layout, Measure, Pos2, Rect, RichText,
-    Sense, Stroke, Vec2, block, block_label, job, placeholder, theme, widgets,
+    Sense, Stroke, Vec2, block, block_label, job, panel_title, placeholder, theme, widgets,
 };
 
 /// How long one block's read may take. A timed-out commit read stays cached,
@@ -19,6 +19,8 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 const CLOCK_AFTER: Duration = Duration::from_secs(2);
 /// The opacity of old numbers while a refresh reads the new ones.
 const STALE_OPACITY: f32 = 0.6;
+/// Between a panel's title and its caption.
+const PANEL_HEAD_GAP: f32 = 10.0;
 /// A row of the list placeholder.
 const LIST_ROW_H: f32 = 28.0;
 /// The name bar's share of each row of the list placeholder.
@@ -224,6 +226,35 @@ pub(super) fn block_head(ui: &mut egui::Ui, name: &str, clock: Option<Duration>)
     });
 }
 
+/// A panel's head: its title and caption on the left, and `controls` from the
+/// right edge, right to left.
+pub(super) fn panel_head(
+    ui: &mut egui::Ui,
+    name: &str,
+    caption: &str,
+    controls: impl FnOnce(&mut egui::Ui),
+) -> egui::Response {
+    let p = theme::palette(ui);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = PANEL_HEAD_GAP;
+        panel_title(ui, name);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            controls(ui);
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(caption)
+                            .font(theme::meta())
+                            .color(p.ink_muted),
+                    )
+                    .truncate(),
+                );
+            });
+        });
+    })
+    .response
+}
+
 /// The Thinking mark and how long it has been, in a right-to-left layout;
 /// nothing before [`CLOCK_AFTER`].
 pub(in crate::app) fn clock_note(ui: &mut egui::Ui, clock: Option<Duration>) {
@@ -255,6 +286,15 @@ pub(in crate::app) fn failure(ui: &mut egui::Ui, what: &str, error: &str) -> boo
     widgets::button(ui, ButtonKind::Ghost, None, "Retry", None).clicked()
 }
 
+/// The head `part` has before its data: a tile's label or a panel's title.
+fn part_head(ui: &mut egui::Ui, part: Part, name: &str, clock: Option<Duration>) {
+    if matches!(part, Part::Tile(_)) {
+        block_head(ui, name, clock);
+    } else {
+        panel_head(ui, name, "", |ui| clock_note(ui, clock));
+    }
+}
+
 /// `part` in a [`block`] at least `height` tall whatever its phase. `loaded`
 /// draws the head itself, as some heads hold controls, and is given the clock.
 pub(super) fn framed<R>(
@@ -278,12 +318,12 @@ pub(super) fn framed<R>(
                     Some(loaded(ui, &stats, clock))
                 }
                 Phase::Waiting { pulse } => {
-                    block_head(ui, name, clock);
+                    part_head(ui, part, name, clock);
                     waiting(ui, pulse);
                     None
                 }
                 Phase::Failed(error) => {
-                    block_head(ui, name, None);
+                    part_head(ui, part, name, None);
                     retry = failure(ui, part.what(), &error);
                     None
                 }

@@ -544,12 +544,10 @@ fn sheet_head(ui: &mut egui::Ui, composer: &Composer, view: &ComposeView) {
         if let Some(error) = &composer.error {
             ui.add(egui::Label::new(meta(error.clone(), p.danger)).truncate());
         } else if display.is_empty() {
-            let unnamed = match composer.engine {
-                Some(_) => " named in the background",
-                None => " empty title uses the first line",
-            };
             ui.label(meta(view.folder.to_string(), p.ink_muted));
-            ui.label(meta(unnamed.into(), p.ink_faint));
+            if composer.engine.is_some() {
+                ui.label(meta(" named in the background".into(), p.ink_faint));
+            }
         } else {
             let (name, taken) = match view.dir {
                 Some(dir) => crate::issue::new_file_name(dir, &title),
@@ -993,6 +991,16 @@ fn foot(
                     }
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                        if composer.engine.is_none()
+                            && labels::display_title(&composer.written_title()).is_empty()
+                        {
+                            let p = theme::palette(ui);
+                            ui.label(
+                                RichText::new("empty title uses the first line")
+                                    .font(theme::meta())
+                                    .color(p.ink_faint),
+                            );
+                        }
                         let hints: &[(&str, &str)] = if drafting {
                             &[("esc", "stop, keep what arrived")]
                         } else if composer.description.trim().is_empty() {

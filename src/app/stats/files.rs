@@ -6,10 +6,10 @@ use std::path::Path;
 use iboard::commits::{self, Commit};
 use iboard::stats::FileStat;
 
-use super::blocks::{Blocks, Part, clock_note, framed, list_rows};
+use super::blocks::{Blocks, Part, clock_note, framed, list_rows, panel_head};
 use super::{
     Align, ButtonKind, Color32, CornerRadius, Duration, FileSort, Icon, Job, Layout, Pos2, Rect,
-    RichText, Sense, Stroke, Vec2, block_label, theme, thousands, widgets,
+    RichText, Sense, Stroke, Vec2, theme, thousands, widgets,
 };
 
 /// The files listed before "Show all".
@@ -63,7 +63,6 @@ fn table(
     all: &mut bool,
     clock: Option<Duration>,
 ) -> Option<String> {
-    let p = theme::palette(ui);
     let mut rows: Vec<&FileStat> = files.iter().collect();
     match sort {
         FileSort::Lines => {}
@@ -71,25 +70,18 @@ fn table(
         FileSort::Changes => rows.sort_by_key(|f| std::cmp::Reverse(f.changes)),
     }
     let shown = if *all { rows.len() } else { FILES_SHOWN };
-    ui.horizontal(|ui| {
-        block_label(ui, NAME);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let mut options = FileSort::ALL;
-            options.reverse();
-            if let Some(picked) = widgets::segmented(ui, *sort, &options) {
-                *sort = picked;
-            }
-            clock_note(ui, clock);
-            let cap = format!(
-                "top {} of {} · code lines, no blanks or comments",
-                shown.min(rows.len()),
-                rows.len()
-            );
-            ui.add(
-                egui::Label::new(RichText::new(cap).font(theme::meta()).color(p.ink_muted))
-                    .truncate(),
-            );
-        });
+    let caption = format!(
+        "top {} of {} · code lines, no blanks or comments",
+        shown.min(rows.len()),
+        rows.len()
+    );
+    panel_head(ui, NAME, &caption, |ui| {
+        let mut options = FileSort::ALL;
+        options.reverse();
+        if let Some(picked) = widgets::segmented(ui, *sort, &options) {
+            *sort = picked;
+        }
+        clock_note(ui, clock);
     });
     let largest = files.first().map_or(1, |f| f.code.max(1));
     let mut opened = None;

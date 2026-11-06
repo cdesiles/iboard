@@ -84,7 +84,7 @@ fn the_stats_panel_measures_the_history_and_walks_the_agenda() {
     for label in [
         "MEDIAN CYCLE TIME",
         "Lines of code trend",
-        "REFACTOR WATCH",
+        "Refactor watch",
         "No refactor needed now",
         "src/lib.rs",
         "Agenda",
@@ -244,7 +244,7 @@ fn nothing_moves_as_the_blocks_fill() {
     }
     let mut harness = tall(app);
     let tops = |harness: &kit::Kit| {
-        ["BIGGEST FILES", "Agenda"].map(|label| harness.get_by_label(label).rect().top())
+        ["Biggest files", "Agenda"].map(|label| harness.get_by_label(label).rect().top())
     };
     let before = tops(&harness);
     assert_eq!(harness.get_all_by_label("Loading stats").count(), 1);
@@ -577,4 +577,24 @@ fn the_agenda_names_the_project_of_a_days_other_commits() {
     assert!(settled(&mut harness));
     harness.run_steps(2);
     harness.get_by_label(&format!("2 more in {name}"));
+}
+
+/// A signal's detail lines up with its headline, past the icon's column, and
+/// the panels head themselves in plain case.
+#[test]
+fn the_watch_indents_its_details_under_plain_headed_panels() {
+    let (_dir, located) = project("stats-watch");
+    let mut app = IboardApp::from_located(located);
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+    for title in ["Trends", "Refactor watch", "Biggest files"] {
+        harness.get_by_label(title);
+    }
+    let title = harness.get_by_label("Refactor watch").rect();
+    let headline = harness.get_by_label("Cycle time is steady").rect();
+    let detail = harness.get_by_label("too few issues closed to tell").rect();
+    assert_eq!(detail.left(), headline.left());
+    assert!(headline.left() >= title.left() + 24.0, "{headline:?}");
 }

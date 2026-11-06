@@ -237,3 +237,19 @@ fn a_ghost_tile_holds_its_whole_heading() {
         tile.width()
     );
 }
+
+/// The viewer's copy icon stays on a code block's first line.
+#[test]
+fn a_code_blocks_copy_icon_sits_on_its_first_line() {
+    let (_dir, _file, harness) = opened("copy-icon", "# Demo\n\n```\none line\n```\n");
+    let block = harness.get_by_role(Role::MultilineTextInput).rect();
+    let icon = harness.get_by_label("\u{1F5D0}").rect();
+    assert!(
+        block.y_range().contains(icon.center().y),
+        "{icon:?} in {block:?}"
+    );
+    assert!(
+        icon.center().y < block.center().y + 1.0,
+        "{icon:?} in {block:?}"
+    );
+}
