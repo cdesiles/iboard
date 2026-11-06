@@ -4,8 +4,8 @@ use super::side_panel::side_panel;
 use super::split::{self, Split};
 use super::{
     Align, ButtonKind, Color32, CommonMarkCache, CommonMarkViewer, Duration, Frame, HashMap,
-    IboardApp, Job, Layout, Palette, Path, PathBuf, Report, ReviewMode, RichText, Vec2, agent,
-    file_name, job, prompts, reviews, theme, widgets,
+    IboardApp, Job, Layout, Palette, Path, PathBuf, Report, ReviewMode, RichText, Screen, Vec2,
+    agent, file_name, job, prompts, reviews, theme, widgets,
 };
 
 impl IboardApp {
@@ -195,12 +195,16 @@ impl IboardApp {
             .then_some(job::POLL_EVERY)
     }
 
-    /// Whether the review panel shows a proposal `⌘↩` would apply.
+    /// Whether the review panel shows a proposal `⌘↩` would apply: it is on
+    /// screen, beside the issue it reviews.
     pub(super) fn proposal_shown(&self) -> bool {
+        let Screen::Detail(open, _) = &self.session.screen else {
+            return false;
+        };
         self.session
             .review
             .as_ref()
-            .is_some_and(|review| review.proposal().is_some())
+            .is_some_and(|review| review.path == *open && review.proposal().is_some())
     }
 
     /// Whether a review of `path` is running in the background.

@@ -553,3 +553,26 @@ fn the_click_that_closes_a_menu_does_not_edit_from_the_rest_area() {
     two_clicks(&mut harness, at);
     assert!(editing(&harness), "once the page is bare, it edits");
 }
+
+/// `⌘↩` applies a proposal only while its panel shows beside the issue: on
+/// the board, where the panel is hidden, it applies nothing.
+#[test]
+fn cmd_enter_applies_only_a_review_on_screen() {
+    let (_dir, file, mut app) = super::review::open_issue_with_review("apply-on-screen");
+    assert!(app.proposal_shown());
+    app.back_to_board();
+    assert!(app.session.review.is_some());
+    assert!(!app.proposal_shown(), "the panel is hidden on the board");
+
+    let ctx = themed_ctx();
+    let events = vec![
+        egui::Event::ModifiersChanged(Modifiers::COMMAND),
+        key(Key::Enter, Modifiers::COMMAND),
+    ];
+    frame(&ctx, &mut app, events);
+    assert!(app.session.editor.is_none(), "nothing opens the editor");
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "# Demo\n\nContext.\n"
+    );
+}
