@@ -1,16 +1,16 @@
 # LabelPicker
 
-A small popover that adds labels to one issue without opening the Editor. It opens under its trigger, the card's tag-plus action or the Reader's **Add label** button (which turns `Open` while the picker shows), lists the labels already on the board, most used first, and stays open for the next label. Done issues have no trigger: their labels are settled.
+A small popover that adds labels to one issue without opening the Editor. It opens under its trigger, the card's tag-plus action or the Reader's **Add label** dynamic icon button (between Edit and Delete, see HeaderBar; it keeps its label pill and `accent` open state while the picker shows), lists the labels already on the board, most used first, and stays open for the next label. Done issues have no trigger: their labels are settled.
 
 ## Anatomy
 
-A popover frame: 264pt wide, `surface` on a `line-strong` edge, `radius-md`, `shadow-popover`, 8pt inside, rows 6pt apart. Right-aligned with its trigger and 4pt below it (`space-2`); flipped above when it would leave the window, centred when the trigger has scrolled away.
+A popover frame: 264pt wide, `surface` on a `line` edge (a popover is not a control, so it takes the quiet edge), `radius-md`, `shadow-popover`, 8pt inside, rows 6pt apart. Right-aligned with its trigger and 4pt below it (`space-2`); flipped above when it would leave the window, centred when the trigger has scrolled away.
 
-1. **Field.** A mono 12pt text field, "Add a label" as its placeholder, focused on open.
+1. **Field.** A `ui-body` Inter text field (labels are words, not code), "Add a label" as its placeholder, focused on open.
 2. **Hint line.** `meta` in `ink-muted`, the label itself in `ink` at the `ui-strong` weight. It says what `↩` will do.
-3. **Group head.** "ON THIS BOARD" in `ui-label`, `ink-muted`, then the count of labels shown in `meta`.
-4. **Labels.** The board's labels as 18pt Label pills, 4pt apart, wrapping, scrolling after five rows (106pt). Typing filters them.
-5. **Key hints.** `↩ add`, `↓ pick`, `esc close`, 12pt apart (`space-4`).
+3. **Group head.** "On this board" in title case, `ui-strong` 12pt `ink-muted`, then the count of labels shown in `meta`.
+4. **Labels.** The board's labels as 18pt Label pills (neutral with a colour dot, see Label), 4pt apart, wrapping, scrolling after five rows (106pt). Typing filters them.
+5. **Key hints.** `↩ add`, `↓ pick`, `esc close`, 12pt apart (`space-4`). Hidden at rest like every footer hint; they slide out while ⌘ is held. The hint line already says what `↩` does.
 
 ## States
 
@@ -25,7 +25,7 @@ A popover frame: 264pt wide, `surface` on a `line-strong` edge, `radius-md`, `sh
 | Write failed | the error, in `danger` | unchanged |
 | No labels on the board | "Type a new label, or pick one below" | "No labels on this board yet. Type one above." in `ui-small` |
 
-A label **off** the issue is the ordinary Label pill: its colour as a soft tint, or `ink-muted` on `surface-sunken` without one. Clicking it adds it ("Add bug" tooltip). A label **on** the issue is drawn on `surface` with a `line` edge, a `status-done` check and its name in `ink-muted`; clicking it takes it off ("Remove bug"). Just added or removed, its edge is `status-done` for 1.2s.
+A label **off** the issue is the ordinary Label pill: neutral with its colour as a dot (tinted only for a loud label such as bug), or with no dot when it has no colour. Clicking it adds it ("Add bug" tooltip). A label **on** the issue is drawn on `surface` with a `line` edge, a `status-done` check in place of its dot and its name in `ink-muted`; clicking it takes it off ("Remove bug"). Just added or removed, its edge is `status-done` for 1.2s.
 
 ## Tokens used
 

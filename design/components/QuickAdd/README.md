@@ -15,13 +15,13 @@ An inline composer at the top of the Todo column. You describe the issue; iboard
 
 | State | Title row | Description | Meta line |
 | --- | --- | --- | --- |
-| Idle | Placeholder "Title is named from the description" in `ink-faint`, and a `meta` tag naming the engine (`on-device` or `review agent`). Clicking the row lets you type a title yourself. | Focused, placeholder "Describe the issue". | `todo/` + "named on save" in `ink-faint`; `↩ add`, `esc close`. |
+| Idle | Placeholder "Title is named from the description" in `ink-faint`, and a `meta` tag naming the engine (`on-device` or `review agent`). Clicking the row lets you type a title yourself. | Focused, placeholder "Describe the issue". | `todo/` + "named in the background" in `ink-faint`; `↩ add`, `esc close`. |
 | Typing | Unchanged. | Grows from 3 to 8 lines. | `↩ add`, `⇧↩ new line`. |
-| Manual | Engine Off or unavailable. An empty line with a dashed `line-strong` rule, placeholder "Add a title", tag "auto title off". | Unchanged. | "empty title uses the first line". |
+| Manual | Engine Off or unavailable. An empty line with a dashed `line` rule, placeholder "Add a title", tag "auto title off". | Unchanged. | "empty title uses the first line". |
 
 ## Keys
 
-- `↩` never waits. With a title you typed, it writes the file under that title. With an empty title and an engine ready, it writes `todo/unnamed-ticket-xxxx.md` (xxxx random) and closes, so the next ticket can be written straight away. The title lands within 15s, with either engine, whatever the number of namings running: it renames the file and sets the heading, wherever the issue has moved to, and the card reads "Naming…" until then. See below.
+- `↩` never waits. With a title you typed, it writes the file under that title. With an empty title and an engine ready, it writes `todo/unnamed-ticket-xxxx.md` (xxxx random) and closes, so the next ticket can be written straight away. The title lands within 15s, with either engine, whatever the number of namings running: it renames the file and sets the heading, wherever the issue has moved to, and the card reads "Naming…" until then.
 - `⌘↩` does the same and opens the Editor on the new file.
 - `⇧↩` inserts a new line in the description. `esc` closes the composer. An empty description never creates a file.
 - Saving is never blocked. With no title and no engine (Manual) the first line of the description, cut at a word boundary to 80 characters, becomes the title. On a timeout or a failure the issue stays `unnamed-ticket-xxxx`, as file name and title, with its text as written; quitting with a naming under way leaves the same.
@@ -31,10 +31,11 @@ An inline composer at the top of the Todo column. You describe the issue; iboard
 - A file renamed by hand, or a heading edited meanwhile, keeps what it has: the engine's title is dropped.
 - The Reader, the selection and every panel open on the issue follow the rename, and its images come along. A pressed pointer holds the rename back until it lifts.
 - The Editor is never disturbed: while it is open on the issue, or holds unsaved edits of it, the title waits; when it closes, the title lands unless the heading was edited.
+- Meanwhile the card's title reads `unnamed-ticket-xxxx` and "Naming…" sits under it as its last row, in `meta` `ink-muted`, at rest too; no spinner, nothing to click.
 
 ## Labels
 
-Typing `[bug] ` at the start of the title turns it into a Label tag as soon as the `]` is typed; `⌫` right after the tag turns it back into text. The file keeps the brackets (`# [Bug] Fix login redirect`), but the slug is made from the title without them: `todo/fix-login-redirect.md`. Inferred titles never invent labels.
+Typing `[bug] ` at the start of the title turns it into a Label tag as soon as the `]` is typed; `⌫` right after the tag turns it back into text. The file keeps the brackets (`# [Bug] Fix login redirect`), but the slug is made from the title without them: `todo/fix-login-redirect.md`. Titles from the engine never invent labels.
 
 ## What gets written
 
@@ -42,6 +43,6 @@ Typing `[bug] ` at the start of the title turns it into a Label tag as soon as t
 
 ## A long description in a narrow column
 
-The description stops growing at 8 lines (144pt), so the whole composer never exceeds about 210pt, roughly two cards. Past that it scrolls inside its frame, and its last line fades out to show there is more. The composer is sticky at the top of the Todo column, so the cards under it scroll beneath it and the other columns are not affected. Anything that needs more room than a quick note goes to the Editor with `⌘↩`, which writes the issue on the way. This keeps the board usable without a separate capture mode. A full-width capture sheet would be a follow-up, only worth doing if long notes turn out to be the usual case.
+The description stops growing at 8 lines (144pt), so the whole composer never exceeds about 210pt, roughly two cards. Past that it scrolls inside its frame, and its last line fades out to show there is more. The composer is sticky at the top of the Todo column, so the cards under it scroll beneath it and the other columns are not affected. Anything that needs more room than a quick note goes to the Editor with `⌘↩`, which writes the issue on the way; its title lands once the Editor closes. This keeps the board usable without a separate capture mode. A full-width capture sheet would be a follow-up, only worth doing if long notes turn out to be the usual case.
 
-The consumer provides the Todo folder path, the engine state (`apple`, `agent`, `off`, or unavailable with a reason), `infer_title(description) -> Result<String>` and `create(title, description) -> Result<PathBuf>`. Emits ComposerOpened, TitleEdited, IssueCreated, TitleInferenceRequested, TitleInferred (the file renamed), TitleInferenceFailed (it stays unnamed), ComposerClosed.
+The consumer provides the Todo folder path, the engine state (`apple`, `agent`, `off`, or unavailable with a reason), `infer_title(description) -> Result<String>` (15s budget) and `create(title, description) -> Result<PathBuf>`. Emits ComposerOpened, TitleEdited, IssueCreated, TitleInferenceRequested, TitleInferred (the file renamed), TitleInferenceFailed (it stays unnamed), ComposerClosed.

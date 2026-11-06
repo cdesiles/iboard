@@ -316,12 +316,14 @@ fn tokens(system: &DesignSystem) {
         .map(|theme| theme.id.as_str())
         .collect();
 
-    let sections: [(&str, &[Token]); 5] = [
+    let sections: [(&str, &[Token]); 7] = [
         ("color", &system.tokens.color),
         ("spacing", &system.tokens.spacing),
         ("radius", &system.tokens.radius),
         ("size", &system.tokens.size),
         ("shadow", &system.tokens.shadow),
+        ("opacity", &system.tokens.opacity),
+        ("motion", &system.tokens.motion),
     ];
     for (label, list) in sections {
         println!("{label} ({})", list.len());

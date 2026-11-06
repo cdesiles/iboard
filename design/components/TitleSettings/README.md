@@ -4,13 +4,13 @@ The **Titles** tab of the Settings dialog: which engine names new issues from th
 
 ## Where it lives
 
-The one dialog becomes **Settings** (`⌘,`), with five tabs in its header: *General* (GeneralSettings), *AI review* (ReviewSettings), *AI build*, *Titles* and *Labels*. A second dialog would need its own shortcut and menu entry for a single radio choice. A tab keeps `⌘,` as the only door, and the Review agent choice can point straight at the tab next door. `⌘,` reopens the last tab used; the Review menu's "AI settings…" opens AI review, and clicking the engine tag in the composer opens Titles.
+The one dialog becomes **Settings** (`⌘,`), with five tabs in its header: *General* (GeneralSettings), *AI review* and *AI build* (ReviewSettings), *Titles* and *Labels* (SettingsLabels). A second dialog would need its own shortcut and menu entry for a single radio choice. A tab keeps `⌘,` as the only door, and the Review agent choice can point straight at the tab next door. `⌘,` reopens the last tab used; the Review menu's "AI settings…" opens AI review, and clicking the engine tag in the composer opens Titles.
 
-Tabs are a segmented control (`surface-sunken` track, active tab on `surface` with a `line-strong` edge), 24pt tall, right of the "Settings" title.
+Tabs are a segmented control (`surface-sunken` track, active tab on `surface` with a soft shadow, no edge), 24pt tall, right of the "Settings" title.
 
 ## The choice
 
-"Name new issues with", a radio list framed in `line-strong`. The selected row takes `accent-soft`. Each row has the name in `ui-strong`, a state in `meta` on the right (dot plus word), and one line of `ui-small` help:
+"Name new issues with", a radio list framed in `line-soft`. The selected row takes `accent-soft`. Each row has the name in `ui-strong`, a state in `meta` on the right (dot plus word), and one line of `ui-small` help:
 
 | Engine | Help line | State when ready |
 | --- | --- | --- |

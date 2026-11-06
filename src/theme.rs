@@ -32,25 +32,36 @@ use egui::{
 pub struct Palette {
     /// App ground: board, header, status bar.
     pub bg: Color32,
-    /// Cards, reader page, editor, inputs, buttons.
+    /// Cards, reader page, editor, inputs, menus and modals.
     pub surface: Color32,
-    /// Hover fill for buttons, crumbs and menu rows.
+    /// Hover fill for edgeless buttons, crumbs, menu rows and card actions.
     pub surface_hover: Color32,
-    /// Inline code, empty-column well.
+    /// Inline code, key caps, neutral label pills, empty-column well.
     pub surface_sunken: Color32,
-    /// Card borders, dividers, bar rules. Decorative only.
+    /// Dividers only: bar rules, modal rules and frames.
     pub line: Color32,
-    /// Every control edge.
+    /// Card edges at rest, the hairline of secondary buttons in modal feet.
+    pub line_soft: Color32,
+    /// Only edges that identify a control, and a card under the pointer.
     pub line_strong: Color32,
+    /// Scrollbar thumb while scrolling.
+    pub scrollbar: Color32,
+    /// Scrollbar thumb under the pointer.
+    pub scrollbar_active: Color32,
     pub ink: Color32,
     pub ink_muted: Color32,
     pub ink_faint: Color32,
-    /// Selection, primary button fill, links, focus ring.
+    /// Selected, focused or a link, nothing else. Not a button fill.
     pub accent: Color32,
     /// The soft 3pt glow around a focused text field, outside its border.
     pub focus_halo: Color32,
     pub accent_soft: Color32,
     pub on_accent: Color32,
+    /// The one filled button per screen.
+    pub primary: Color32,
+    pub primary_hover: Color32,
+    /// Label on `primary`.
+    pub on_primary: Color32,
     pub status_todo: Color32,
     pub status_ready: Color32,
     pub status_doing: Color32,
@@ -73,6 +84,30 @@ pub struct Palette {
     pub popover_shadow: Color32,
     /// Under a modal, above the scrim.
     pub modal_shadow: Color32,
+    pub label_red: Color32,
+    pub label_orange: Color32,
+    pub label_ochre: Color32,
+    pub label_green: Color32,
+    pub label_teal: Color32,
+    pub label_pink: Color32,
+    pub label_grey: Color32,
+    /// `label-tint` in this theme: a loud label pill's colour over `surface`.
+    pub label_tint: f32,
+}
+
+impl Palette {
+    /// The `label-*` colours by hue, in token order.
+    pub fn label_colors(&self) -> [(&'static str, Color32); 7] {
+        [
+            ("red", self.label_red),
+            ("orange", self.label_orange),
+            ("ochre", self.label_ochre),
+            ("green", self.label_green),
+            ("teal", self.label_teal),
+            ("pink", self.label_pink),
+            ("grey", self.label_grey),
+        ]
+    }
 }
 
 const fn hex(rgb: u32) -> Color32 {
@@ -82,10 +117,13 @@ const fn hex(rgb: u32) -> Color32 {
 pub const LIGHT: Palette = Palette {
     bg: hex(0xf4f5f7),
     surface: hex(0xffffff),
-    surface_hover: hex(0xeef0f3),
+    surface_hover: hex(0xe9ebef),
     surface_sunken: hex(0xeceef2),
     line: hex(0xcfd4db),
+    line_soft: hex(0xdfe2e7),
     line_strong: hex(0x7c8491),
+    scrollbar: hex(0xbfc4cb),
+    scrollbar_active: hex(0xa1a7b0),
     ink: hex(0x15181d),
     ink_muted: hex(0x4d5562),
     ink_faint: hex(0x626a78),
@@ -93,6 +131,9 @@ pub const LIGHT: Palette = Palette {
     focus_halo: Color32::from_rgba_premultiplied(9, 17, 39, 51),
     accent_soft: hex(0xe4eafb),
     on_accent: hex(0xffffff),
+    primary: hex(0x15181d),
+    primary_hover: hex(0x2e333b),
+    on_primary: hex(0xffffff),
     status_todo: hex(0x5e6878),
     status_ready: hex(0x0f6e78),
     status_doing: hex(0xa04f00),
@@ -106,6 +147,14 @@ pub const LIGHT: Palette = Palette {
     scrim: Color32::from_rgba_premultiplied(7, 8, 9, 82),
     popover_shadow: Color32::from_rgba_premultiplied(3, 3, 3, 31),
     modal_shadow: Color32::from_rgba_premultiplied(4, 4, 5, 46),
+    label_red: hex(0xbc3228),
+    label_orange: hex(0xa65400),
+    label_ochre: hex(0x826600),
+    label_green: hex(0x287639),
+    label_teal: hex(0x0c7380),
+    label_pink: hex(0xb33270),
+    label_grey: hex(0x646c79),
+    label_tint: 0.10,
 };
 
 pub const DARK: Palette = Palette {
@@ -114,7 +163,10 @@ pub const DARK: Palette = Palette {
     surface_hover: hex(0x262a2f),
     surface_sunken: hex(0x111316),
     line: hex(0x353a42),
+    line_soft: hex(0x2d3138),
     line_strong: hex(0x737c89),
+    scrollbar: hex(0x737c89),
+    scrollbar_active: hex(0xa7aeb9),
     ink: hex(0xe7e9ec),
     ink_muted: hex(0xa7aeb9),
     ink_faint: hex(0x8c939e),
@@ -122,6 +174,9 @@ pub const DARK: Palette = Palette {
     focus_halo: Color32::from_rgba_premultiplied(35, 43, 66, 66),
     accent_soft: hex(0x222c47),
     on_accent: hex(0x0b1433),
+    primary: hex(0xe7e9ec),
+    primary_hover: hex(0xc9cdd3),
+    on_primary: hex(0x15171a),
     status_todo: hex(0xa4adba),
     status_ready: hex(0x4fc4cf),
     status_doing: hex(0xeda24a),
@@ -135,6 +190,14 @@ pub const DARK: Palette = Palette {
     scrim: Color32::from_rgba_premultiplied(0, 0, 0, 140),
     popover_shadow: Color32::from_rgba_premultiplied(0, 0, 0, 128),
     modal_shadow: Color32::from_rgba_premultiplied(0, 0, 0, 153),
+    label_red: hex(0xf28b7d),
+    label_orange: hex(0xeda05a),
+    label_ochre: hex(0xd6b44c),
+    label_green: hex(0x6dca8b),
+    label_teal: hex(0x5ec4cf),
+    label_pink: hex(0xf08dbe),
+    label_grey: hex(0x9ca3ad),
+    label_tint: 0.16,
 };
 
 /// The palette of the theme the given UI is drawn in.
@@ -171,16 +234,9 @@ pub fn contrast_ratio(a: Color32, b: Color32) -> f32 {
     (hi + 0.05) / (lo + 0.05)
 }
 
-/// Blends `color` into `base`, keeping mostly `base`: a soft tint of a label
-/// colour that reads as a chip fill in the current theme.
-pub fn tint(color: Color32, base: Color32) -> Color32 {
-    let keep = if luminance(base) < 0.5 { 0.80 } else { 0.86 };
-    let lerp = |a: u8, b: u8| (a as f32 * (1.0 - keep) + b as f32 * keep).round() as u8;
-    Color32::from_rgb(
-        lerp(color.r(), base.r()),
-        lerp(color.g(), base.g()),
-        lerp(color.b(), base.b()),
-    )
+/// A loud label pill's fill: `color` at `label-tint` over `surface`.
+pub fn label_tint(color: Color32, p: &Palette) -> Color32 {
+    p.surface.lerp_to_gamma(color, p.label_tint)
 }
 
 // Spacing (`space-*`), radii and fixed sizes.
@@ -202,12 +258,24 @@ pub const RADIUS_PILL: u8 = 9;
 pub const CONTROL_H: f32 = 24.0;
 pub const BAR_H: f32 = 40.0;
 pub const STATUSBAR_H: f32 = 24.0;
-/// Narrowest column before the board scrolls sideways. The design system says
-/// 280; 200 lets four columns (Todo, Ready, Doing, Done) fit the 880pt
-/// minimum window.
+/// The column status icon's box.
+pub const STATUS_ICON: f32 = 14.0;
+/// Narrowest column before the board scrolls sideways: four columns fit the
+/// 880pt minimum window.
 pub const COLUMN_MIN: f32 = 200.0;
 pub const COLUMN_MAX: f32 = 420.0;
-pub const READER_MAX: f32 = 720.0;
+/// Reader and editor sheet: `READ_MEASURE` plus 32pt each side.
+pub const READER_MAX: f32 = 624.0;
+/// The reader's text column at `read-body`: about 75 characters a line.
+pub const READ_MEASURE: f32 = 560.0;
+/// The top strip the traffic lights occupy; no modal frame enters it.
+pub const TITLEBAR_H: f32 = 28.0;
+/// The header bar's leading width that the traffic lights take.
+pub const TITLEBAR_LEAD: f32 = 80.0;
+/// The traffic lights' centre line, from the window's top.
+pub const TITLEBAR_LIGHT_Y: f32 = 20.0;
+/// The close button's centre from the window's left; the others follow every 20pt.
+pub const TITLEBAR_LIGHT_X: f32 = 20.0;
 /// Scrollbar thumb at rest and while scrolling.
 pub const SCROLL_THUMB: f32 = 4.0;
 /// Scrollbar thumb under the pointer and while dragged.
@@ -321,17 +389,29 @@ pub fn ui_label() -> FontId {
 }
 /// Letter spacing of `ui-label` (0.06em at 11pt).
 pub const LABEL_TRACKING: f32 = 0.66;
-/// `meta`: counts, file names, kbd hints, status bar.
+/// `meta`: paths, file names, counts, dates, the status bar, modal context.
 pub fn meta() -> FontId {
+    FontId::proportional(12.0)
+}
+/// `meta-mono`: key caps only.
+pub fn meta_mono() -> FontId {
     FontId::new(11.0, family(MONO_MEDIUM))
 }
 /// `read-h1`: the issue title in the reader.
 pub fn read_h1() -> FontId {
     FontId::new(20.0, family(SANS_SEMIBOLD))
 }
+/// `read-h2`: `##` headings in the reader.
+pub fn read_h2() -> FontId {
+    FontId::new(16.0, family(SANS_SEMIBOLD))
+}
+/// `read-h3`: `###` headings and deeper in the reader.
+pub fn read_h3() -> FontId {
+    FontId::new(14.0, family(SANS_SEMIBOLD))
+}
 /// `read-body`: the issue's prose in the reader.
 pub fn read_body() -> FontId {
-    FontId::proportional(14.0)
+    FontId::proportional(15.0)
 }
 /// `edit-body`: the plain-text editor.
 pub fn edit_body() -> FontId {
@@ -445,6 +525,18 @@ pub fn reduced_motion(ctx: &egui::Context) -> bool {
 pub fn motion(ctx: &egui::Context, secs: f32) -> f32 {
     if reduced_motion(ctx) { 0.0 } else { secs }
 }
+
+// The `motion` tokens, in seconds. Pass an animation's through [`motion`].
+/// Hover fills fading in; fading out is instant.
+pub const MOTION_HOVER: f32 = 0.1;
+/// Key hints sliding out beside their control, and back.
+pub const MOTION_HINT: f32 = 0.12;
+/// How long ⌘ alone is held before key hints show.
+pub const HINT_HOLD: f32 = 0.5;
+/// How long a scrollbar stays after the last movement or the pointer leaving.
+pub const SCROLL_LINGER: f32 = 0.8;
+/// A scrollbar thumb fading in and out.
+pub const SCROLL_FADE: f32 = 0.15;
 
 /// Nothing of a Skeleton shows before this, so a fast answer never flashes.
 pub const SKELETON_AFTER: Duration = Duration::from_millis(300);
@@ -606,9 +698,6 @@ mod tests {
     /// Colour tokens with no `Palette` field: `focus` is `{accent}`.
     const UNMAPPED_COLORS: [&str; 1] = ["focus"];
 
-    /// Sizes the theme overrides on purpose; see [`COLUMN_MIN`].
-    const OVERRIDDEN_SIZES: [&str; 1] = ["column-min"];
-
     fn tokens() -> Tokens {
         DesignSystem::load(Path::new(env!("CARGO_MANIFEST_DIR")))
             .unwrap()
@@ -622,14 +711,17 @@ mod tests {
             .unwrap_or_else(|| panic!("tokens.json has no {name}"))
     }
 
-    fn colors(p: &Palette) -> [(&'static str, Color32); 26] {
-        [
+    fn colors(p: &Palette) -> Vec<(String, Color32)> {
+        let named = [
             ("bg", p.bg),
             ("surface", p.surface),
             ("surface-hover", p.surface_hover),
             ("surface-sunken", p.surface_sunken),
             ("line", p.line),
+            ("line-soft", p.line_soft),
             ("line-strong", p.line_strong),
+            ("scrollbar", p.scrollbar),
+            ("scrollbar-active", p.scrollbar_active),
             ("ink", p.ink),
             ("ink-muted", p.ink_muted),
             ("ink-faint", p.ink_faint),
@@ -637,6 +729,9 @@ mod tests {
             ("focus-halo", p.focus_halo),
             ("accent-soft", p.accent_soft),
             ("on-accent", p.on_accent),
+            ("primary", p.primary),
+            ("primary-hover", p.primary_hover),
+            ("on-primary", p.on_primary),
             ("status-todo", p.status_todo),
             ("status-ready", p.status_ready),
             ("status-doing", p.status_doing),
@@ -650,7 +745,15 @@ mod tests {
             ("scrim", p.scrim),
             ("shadow-popover", p.popover_shadow),
             ("shadow-modal", p.modal_shadow),
-        ]
+        ];
+        let labels = p
+            .label_colors()
+            .map(|(hue, color)| (format!("label-{hue}"), color));
+        named
+            .map(|(name, color)| (name.to_string(), color))
+            .into_iter()
+            .chain(labels)
+            .collect()
     }
 
     /// The colour in a token value: `#rrggbb`, or `rgba(…)` premultiplied
@@ -697,21 +800,29 @@ mod tests {
         let all = || tokens.color.iter().chain(&tokens.shadow);
         for (theme, palette) in [("light", &LIGHT), ("dark", &DARK)] {
             for (name, color) in colors(palette) {
-                let value = find(all(), name)
+                let token = find(all(), &name);
+                let value = token
                     .value
                     .theme(theme)
                     .unwrap_or_else(|| panic!("{name} has no {theme} value"));
+                let value = match value.strip_prefix('{') {
+                    Some(reference) => find(all(), reference.trim_end_matches('}'))
+                        .value
+                        .theme(theme)
+                        .unwrap(),
+                    None => value,
+                };
                 assert!(
                     same(color_of(value), color),
                     "{theme} {name}: tokens.json says {value}, theme.rs has {color:?}"
                 );
             }
         }
-        let mapped = colors(&LIGHT).map(|(name, _)| name);
+        let mapped = colors(&LIGHT);
         for token in all() {
             let name = token.name.as_str();
             assert!(
-                mapped.contains(&name) || UNMAPPED_COLORS.contains(&name),
+                mapped.iter().any(|(known, _)| known == name) || UNMAPPED_COLORS.contains(&name),
                 "{name} has no Palette field: add one, or list it in UNMAPPED_COLORS"
             );
         }
@@ -757,8 +868,15 @@ mod tests {
             ("control-h", CONTROL_H),
             ("bar-h", BAR_H),
             ("statusbar-h", STATUSBAR_H),
+            ("status-icon", STATUS_ICON),
+            ("column-min", COLUMN_MIN),
             ("column-max", COLUMN_MAX),
             ("reader-max", READER_MAX),
+            ("read-measure", READ_MEASURE),
+            ("titlebar-h", TITLEBAR_H),
+            ("titlebar-lead", TITLEBAR_LEAD),
+            ("titlebar-light-y", TITLEBAR_LIGHT_Y),
+            ("titlebar-light-x", TITLEBAR_LIGHT_X),
             ("scroll-thumb", SCROLL_THUMB),
             ("scroll-thumb-hover", SCROLL_THUMB_HOVER),
             ("scroll-hit", SCROLL_HIT),
@@ -777,11 +895,43 @@ mod tests {
         let mapped = points.map(|(name, _)| name);
         for token in all() {
             let name = token.name.as_str();
-            assert!(
-                mapped.contains(&name) || OVERRIDDEN_SIZES.contains(&name),
-                "{name} has no theme constant: add one, or list it in OVERRIDDEN_SIZES"
-            );
+            assert!(mapped.contains(&name), "{name} has no theme constant");
         }
+    }
+
+    #[test]
+    fn motion_matches_its_tokens_in_seconds() {
+        let tokens = tokens();
+        let known = [
+            ("motion-hover", MOTION_HOVER),
+            ("motion-hint", MOTION_HINT),
+            ("hint-hold", HINT_HOLD),
+            ("scroll-linger", SCROLL_LINGER),
+            ("scroll-fade", SCROLL_FADE),
+        ];
+        assert_eq!(tokens.motion.len(), known.len());
+        for (name, secs) in known {
+            let value = find(&tokens.motion, name).value.theme("light").unwrap();
+            let millis: f32 = value.trim_end_matches("ms").parse().unwrap();
+            assert_eq!(millis / 1000.0, secs, "{name}: tokens.json says {value}");
+        }
+    }
+
+    #[test]
+    fn label_tints_match_their_tokens_over_surface() {
+        let tokens = tokens();
+        for (name, palette) in [("label-tint", &LIGHT), ("label-tint-dark", &DARK)] {
+            let value = find(&tokens.opacity, name).value.theme("light").unwrap();
+            assert_eq!(value.parse::<f32>().unwrap(), palette.label_tint, "{name}");
+        }
+        assert_eq!(tokens.opacity.len(), 2);
+        let (ink, surface) = (LIGHT.label_red, LIGHT.surface);
+        let fill = label_tint(ink, &LIGHT);
+        assert_eq!(fill, surface.lerp_to_gamma(ink, 0.10));
+        assert!(
+            contrast_ratio(ink, fill) >= 4.5,
+            "a loud pill stays readable"
+        );
     }
 
     #[test]
@@ -793,9 +943,12 @@ mod tests {
             ("ui-small", ui_small()),
             ("ui-label", ui_label()),
             ("read-h1", read_h1()),
+            ("read-h2", read_h2()),
+            ("read-h3", read_h3()),
             ("read-body", read_body()),
             ("edit-body", edit_body()),
             ("meta", meta()),
+            ("meta-mono", meta_mono()),
         ];
         let weight = |family: &FontFamily| match family {
             FontFamily::Name(name) if name.ends_with("-semibold") => 600,

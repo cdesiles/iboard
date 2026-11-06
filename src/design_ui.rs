@@ -26,7 +26,7 @@ use crate::widgets::{self, ButtonKind};
 
 mod pages;
 
-use pages::{assets, colors, files, overview, radius, shadows, size, spacing, typography};
+use pages::{assets, colors, files, overview, plain_tokens, radius, shadows, spacing, typography};
 
 /// Width of the browser's category sidebar.
 const SIDEBAR_W: f32 = 200.0;
@@ -68,6 +68,8 @@ enum Category {
     Radius,
     Shadows,
     Size,
+    Opacity,
+    Motion,
     Components,
     Assets,
     Files,
@@ -75,7 +77,7 @@ enum Category {
 
 impl Category {
     /// Every category, in sidebar order.
-    const ALL: [Category; 10] = [
+    const ALL: [Category; 12] = [
         Category::Overview,
         Category::Colors,
         Category::Typography,
@@ -83,6 +85,8 @@ impl Category {
         Category::Radius,
         Category::Shadows,
         Category::Size,
+        Category::Opacity,
+        Category::Motion,
         Category::Components,
         Category::Assets,
         Category::Files,
@@ -97,6 +101,8 @@ impl Category {
             Category::Radius => "Corner radius",
             Category::Shadows => "Shadows",
             Category::Size => "Size",
+            Category::Opacity => "Opacity",
+            Category::Motion => "Motion",
             Category::Components => "Components",
             Category::Assets => "Assets",
             Category::Files => "Files",
@@ -506,7 +512,15 @@ impl Panel {
             Category::Spacing => spacing(ui, system),
             Category::Radius => radius(ui, system),
             Category::Shadows => shadows(ui, system),
-            Category::Size => size(ui, system),
+            Category::Size => {
+                plain_tokens(ui, &system.tokens.size, system.tokens.size_note.as_deref())
+            }
+            Category::Opacity => plain_tokens(ui, &system.tokens.opacity, None),
+            Category::Motion => plain_tokens(
+                ui,
+                &system.tokens.motion,
+                system.tokens.motion_note.as_deref(),
+            ),
             Category::Components => {
                 self.components(ui, system, render_available, agent_ready, action)
             }
@@ -888,6 +902,8 @@ fn search(system: &DesignSystem, query: &str) -> Vec<Hit> {
     token_hits(Category::Radius, &system.tokens.radius);
     token_hits(Category::Shadows, &system.tokens.shadow);
     token_hits(Category::Size, &system.tokens.size);
+    token_hits(Category::Opacity, &system.tokens.opacity);
+    token_hits(Category::Motion, &system.tokens.motion);
     for component in &system.components {
         if matches(&component.name) {
             hits.push(Hit {

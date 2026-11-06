@@ -4,7 +4,7 @@ Commits per day across every project iboard supervises, so you can see at a glan
 
 ## Anatomy
 
-- **Head**: "Agenda", a project filter token when one is set, and the range as a segmented control: `4w` `12w` `26w` `1y` (default 12w, remembered).
+- **Head**: "Agenda", a project filter token when one is set, and the range as a segmented control: `4w` `12w` `26w` `1y` (default 12w, remembered in `[agenda]` of `iboard.toml`).
 - **Summary** in `meta`: "**105** commits · 3 projects · 23 active days · 9-day streak". The streak only shows from 2 days.
 - **Heatmap**: one column per week, Monday on top. Month names above the week where the month starts, `Mon` `Wed` `Fri` on the left, all in `meta`. Days are 18pt squares with a 3pt gap and 4pt radius.
 - **Legend** under the grid, with the counts each shade stands for ("1–4 5–8 9–12 13+") and the today mark.
@@ -15,12 +15,12 @@ Commits per day across every project iboard supervises, so you can see at a glan
 
 - One hue, light to dark, for magnitude. 0 commits is `surface-sunken`. Levels 1–4 are `accent` mixed into `surface` at 30%, 52%, 76% and 100% (the same steps in dark, where the mix goes towards the light accent). Projects have no colours of their own: their names are the identity.
 - The scale is rebuilt from what is shown. `step = ceil(busiest day / 4)`, so level 1 is 1…step, level 2 is up to 2×step, and so on. A quiet project filtered on its own still shows its rhythm. The legend always prints the real counts.
-- **Today**: a 2pt `ink` ring inside the cell, whatever its shade. **Selected**: the 2pt `focus` ring outside. **Hover**: a 1pt `line-strong` outline. Days to come are not drawn, so the current week's column is as tall as the days so far.
+- **Today**: a 2pt `ink` ring inside the cell, whatever its shade. **Selected**: the 2pt `focus` ring outside. **Hover**: a 1pt `line-strong` outline (the cell is the control). Days to come are not drawn, so the current week's column is as tall as the days so far.
 
 ## Range and folding
 
 - Columns are always 18pt; a short range just takes less width and leaves room for the day panel.
-- In `26w` and `1y`, a run of 4 or more empty weeks is folded into one dashed `line-strong` column. The summary names each fold: "Folded, no commits: 11 May to 2 Aug". Short gaps stay, because a quiet week is information.
+- In `26w` and `1y`, a run of 4 or more empty weeks (never the current week) is folded into one dashed `line` column. The summary names each fold: "Folded, no commits: 11 May to 2 Aug". Short gaps stay, because a quiet week is information.
 - Below 640pt of window width the day panel moves under the grid.
 
 ## Behaviour

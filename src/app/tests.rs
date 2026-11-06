@@ -526,7 +526,7 @@ fn hovering_a_card_action_shows_the_pointer_cursor() {
 #[test]
 fn shortcut_glyphs_exist_in_their_fonts() {
     let ctx = themed_ctx();
-    for font in [theme::meta(), theme::ui_button()] {
+    for font in [theme::meta_mono(), theme::ui_button()] {
         for glyph in ['⌘', '↩'] {
             assert!(
                 ctx.fonts_mut(|f| f.has_glyph(&font, glyph)),

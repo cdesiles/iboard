@@ -32,6 +32,17 @@ One sample per week: the last commit of the week (Monday start). Earlier weeks a
 - Limits (refactor above 130, floor 70%) are dashed `status-doing` lines with their label on the left, under the line when the series runs above it.
 - Marks follow the chart rules: 2pt lines, 4pt hover dot ringed in `surface`, `line` grid at the axis bounds only, axis text in `meta`.
 
+## Releases
+
+Release tags drawn on the trends, so a jump in complexity or a dip in coverage can be read against what shipped.
+
+- **Which tags**: tags matching `release_tags` in Settings › Stats, `v*` by default (`v0.4.0`, `v1.2`). A tag that doesn't parse as a version still shows, labelled with its name. Annotated tags use the tagger date, lightweight ones the commit date.
+- **Marker**: a 1pt dotted line in `ink-faint`, full height, through all four charts at the tag's day (placed inside its week, not snapped to the sample). Dotted so it never reads as the solid crosshair or the dashed `status-doing` limits. No colour: a release is context, not a state.
+- **Lane**: one 16pt row above the first chart holds the tag names, 11pt Inter 500 in `ink-muted`, centred on their line with a 3pt tick. Patch releases (`x.y.Z` with Z > 0) are a tick only, and their line is drawn at half strength. When two names would touch, the newer keeps its name and the older becomes a tick.
+- **Hover** a name, a tick or a line within 4pt: the line turns solid `ink-muted`, its name `ink`, and a tooltip reads "v0.4.0 · 14 Aug · 37 commits since v0.3.1". The shared crosshair moves to that week as usual. Clicking does nothing.
+- **Opt out**: a **Releases** checkbox in the Trends head, left of the range, checked by default. Unchecked, the lane and every line go, and the charts move up by 16pt. Saved at once in `~/.config/iboard/iboard.toml` as `[stats] show_releases = false`, next to `release_tags = "v*"`. With no matching tag, the checkbox is disabled with the tooltip "No release tags match v*".
+- **Ranges**: on `1y` and `All`, only minor and major releases are drawn; patches come back on `12w` and `26w`.
+
 ## Refactor watch
 
 Four signals, each with its numbers and its limit, marked with an icon and a word as well as the colour (`status-doing` warning triangle, or `status-done` check):
@@ -54,19 +65,21 @@ Columns: File (directory in `ink-faint`, name in `ink`), Lines (number plus a ba
 
 | Screen | Command (user) | Event | Next screen |
 | --- | --- | --- | --- |
-| Any | Open Stats | StatsOpened | Stats; cached samples show at once, the current week rescans |
+| Board | Stats in the ProjectMenu footer, `⌘I` | StatsOpened | Stats; cached samples show at once, the current week rescans |
 | Stats | Refresh, or the repo changes | MetricsScanned | Same screen; tiles, trends and watch update in place |
 | Stats | Hover a trend | (none) | Shared crosshair; row values show that week |
 | Stats | Pick a range | StatsRangeChanged | Trends redrawn for that range |
+| Stats | Toggle Releases | ReleaseMarkersToggled | Trends redrawn with or without the release lines |
+| Any | A new tag matching `release_tags` | TagsScanned | Its line appears on the next scan |
 | Stats | Sort the files | FilesSortChanged | Table reordered |
 | Stats | Draft a refactor issue | RefactorIssueDrafted → ComposerOpened | Board, composer prefilled in Todo |
 | Stats | A tool is missing (no lcov, no complexity tool) | MetricUnavailable | That tile and row say what is missing and how to add it; the rest still shows |
 
-Read model: `WeeklyMetrics` holds one row per week with loc, by_language, complexity, coverage (optional) and cycle median/p85, plus `FileMetrics` for the current commit. Both are fed by `MetricsScanned`.
+Read model: `WeeklyMetrics` holds one row per week with loc, by_language, complexity, coverage (optional) and cycle median/p85, plus `FileMetrics` for the current commit. Both are fed by `MetricsScanned`. `Releases` holds (tag, date, is_patch) from `TagsScanned`, read with `git for-each-ref refs/tags`.
 
 ## States
 
-- **Loading**: Skeleton rules. Tiles and charts keep their labels and axes, with pulsing placeholders.
+- **Loading**: Skeleton rules. Tiles and charts keep their labels and axes, with pulsing placeholders. Each block loads on its own, started once it is on screen, with a 60s timeout; a block that fails says why and offers Retry (ghost), and the others still show.
 - **A metric without data**: its tile says "No coverage report found" and names the file it looks for (`lcov.info`). Its row in Trends shows the same message instead of a chart.
 
-In egui, the trends are hand-painted, each row on its own `Painter`: `Shape::line` for a series, `Shape::dashed_line` for limits in `p.status_doing` and for p85, and a `Mesh` of per-segment quads for the area, since epaint fills only convex polygons. The screen keeps the hovered commit and every row draws its crosshair from it.
+In egui, the trends are hand-painted, each row on its own `Painter`: `Shape::line` for a series, `Shape::dashed_line` for limits in `p.status_doing` and for p85, and a `Mesh` of per-segment quads for the area, since epaint fills only convex polygons. Releases are `Shape::dashed_line` with a 1pt dash and 3pt gap in `p.ink_faint` (half alpha for patches); the lane is one more `Painter` row above the first chart, sharing its x transform. The screen keeps the hovered commit and every row draws its crosshair from it.

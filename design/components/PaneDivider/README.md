@@ -23,10 +23,10 @@ The previous handle was a 8×60 pill on a gutter framed by two rules. Next to th
 
 ## Behaviour
 
-- Each pane keeps at least `column-min` (280pt); a drag stops there rather than collapsing a pane. Pane content never reflows mid-drag beyond the width change itself.
+- Each pane keeps at least 280pt; a drag stops there rather than collapsing a pane. Pane content never reflows mid-drag beyond the width change itself.
 - Within 8pt of the default split, the drag snaps to it.
 - Keys when focused: `← →` move 16pt, `⇧← ⇧→` move 80pt, `↩` resets to the default. A double-click on the gutter resets too.
-- The split is remembered per pair of panes (for example Reader + Agent log) in iboard's view state, not in any issue file.
+- The split is remembered per pair of panes (for example Reader + Agent log) in `[splits]` of `iboard.toml`, not in any issue file.
 - Width changes are instant; only the hover rule fades in (120ms after the 150ms delay), and not at all with reduced motion.
 
 | Command (user) | Event | Next state |

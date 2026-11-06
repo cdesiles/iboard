@@ -139,6 +139,9 @@ pub struct Tokens {
     pub size: Vec<Token>,
     pub size_note: Option<String>,
     pub shadow: Vec<Token>,
+    pub opacity: Vec<Token>,
+    pub motion: Vec<Token>,
+    pub motion_note: Option<String>,
     pub families: BTreeMap<String, String>,
     pub type_groups: Vec<TypeGroup>,
 }
@@ -152,6 +155,8 @@ impl Tokens {
             .chain(&self.radius)
             .chain(&self.size)
             .chain(&self.shadow)
+            .chain(&self.opacity)
+            .chain(&self.motion)
     }
 
     /// The number of type styles across every group.
@@ -199,12 +204,14 @@ impl DesignSystem {
         let themes: Vec<&str> = self.tokens.themes.iter().map(|t| t.id.as_str()).collect();
         out.push_str(&format!("  themes     {}\n", themes.join(", ")));
         out.push_str(&format!(
-            "  tokens     {} color, {} spacing, {} radius, {} size, {} shadow, {} type styles\n",
+            "  tokens     {} color, {} spacing, {} radius, {} size, {} shadow, {} opacity, {} motion, {} type styles\n",
             self.tokens.color.len(),
             self.tokens.spacing.len(),
             self.tokens.radius.len(),
             self.tokens.size.len(),
             self.tokens.shadow.len(),
+            self.tokens.opacity.len(),
+            self.tokens.motion.len(),
             self.tokens.type_style_count(),
         ));
         out.push_str(&format!("  components {}\n", self.components.len()));

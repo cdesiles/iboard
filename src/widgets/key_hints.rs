@@ -10,10 +10,7 @@ use crate::theme;
 
 /// How long ⌘ is held alone before the hints show: longer than a shortcut
 /// takes, so pressing one never shows them.
-pub const HOLD: f64 = 0.5;
-
-/// How long the hints take to slide out or away.
-const SLIDE: f32 = 0.12;
+pub const HOLD: f64 = theme::HINT_HOLD as f64;
 
 /// How far a row of hints travels as it slides out.
 const SLIDE_BY: f32 = theme::SPACE_3;
@@ -77,7 +74,11 @@ pub fn key_hints(ctx: &Context) -> f32 {
         }
         Hold::Up | Hold::Spent => false,
     };
-    ctx.animate_bool_with_time(id.with("slide"), shown, theme::motion(ctx, SLIDE))
+    ctx.animate_bool_with_time(
+        id.with("slide"),
+        shown,
+        theme::motion(ctx, theme::MOTION_HINT),
+    )
 }
 
 /// Whether the key hints are out, even partly.
@@ -106,7 +107,7 @@ pub fn sliding_kbd(ui: &mut Ui, key: &str) {
     if reveal <= 0.0 {
         return;
     }
-    let width = super::text_width(ui, key, theme::meta()) + 8.0;
+    let width = super::text_width(ui, key, theme::meta_mono()) + 8.0;
     let (cap, _) = ui.allocate_exact_size(Vec2::new(width * reveal, 16.0), Sense::hover());
     ui.scope(|ui| {
         ui.multiply_opacity(reveal);

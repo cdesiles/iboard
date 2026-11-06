@@ -1,6 +1,8 @@
 # Kbd
 
-A keyboard hint in `meta` (mono 11pt) with a `line-strong` key outline.
+A key cap: `meta-mono` (JetBrains Mono Medium 11/14) in `ink-muted` on a `surface-sunken` fill, `radius-sm`, padding 1×4. No edge: a key cap is a hint, not a control.
 
 - Use the macOS glyphs: ⌘ ⌥ ⇧ ⌃ ↩ ⌫ ⇥ and the arrows, and the word `esc`. JetBrains Mono draws all of them; never add a symbol it lacks.
-- Show hints in the status bar, inside the filter, beside buttons and in footers only while ⌘ is held: after half a second of ⌘ alone they slide out (120ms), and letting go or pressing anything with ⌘ puts them away. Tooltips and menus always show their keys, and so do the RefinePanel's numbered choices, whose number is their name. Never more than three in the status bar at once.
+- **Hidden at rest.** Holding ⌘ alone for `hint-hold` 0.5s slides hints out over `motion-hint` 120ms: beside buttons (plain mono text after the label, no cap), in the filter field, in modal and popup footers, and in the status bar (at most three). Letting go of ⌘, or pressing any key with it, hides them in one frame.
+- **Always shown**: in tooltips, in menus (right-aligned, `ink-faint`, no cap fill), and on the RefinePanel's numbered choices, whose number is their name.
+- Every preview shows the rest state; the "Board, holding ⌘" card shows the revealed one.

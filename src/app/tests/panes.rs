@@ -22,7 +22,7 @@ fn settle(ctx: &egui::Context, app: &mut IboardApp) {
 /// Scrolls the pane on the left of the window by a good way.
 fn wheel(ctx: &egui::Context, app: &mut IboardApp) {
     theme::set_reduced_motion(ctx, true);
-    let at = egui::pos2(300.0, 400.0);
+    let at = egui::pos2(400.0, 400.0);
     draw(ctx, app, vec![moved(at)]);
     let event = egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,

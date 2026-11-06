@@ -33,13 +33,15 @@ pub(super) fn overview(
     muted(
         ui,
         &format!(
-            "{} components · {} color, {} spacing, {} radius, {} size, {} shadow, {} type styles · themes {}",
+            "{} components · {} color, {} spacing, {} radius, {} size, {} shadow, {} opacity, {} motion, {} type styles · themes {}",
             system.components.len(),
             system.tokens.color.len(),
             system.tokens.spacing.len(),
             system.tokens.radius.len(),
             system.tokens.size.len(),
             system.tokens.shadow.len(),
+            system.tokens.opacity.len(),
+            system.tokens.motion.len(),
             system.tokens.type_style_count(),
             if themes.is_empty() {
                 "—".to_string()
@@ -255,10 +257,10 @@ pub(super) fn shadows(ui: &mut egui::Ui, system: &DesignSystem) {
     }
 }
 
-/// Size: the fixed measurements, with the section's note.
-pub(super) fn size(ui: &mut egui::Ui, system: &DesignSystem) {
+/// Size, Opacity and Motion: one value per token, with the section's note.
+pub(super) fn plain_tokens(ui: &mut egui::Ui, tokens: &[Token], note: Option<&str>) {
     let p = theme::palette(ui);
-    for token in &system.tokens.size {
+    for token in tokens {
         let value = design::css::token_value_for(token, "light").unwrap_or_default();
         ui.horizontal(|ui| {
             ui.add_sized(
@@ -275,7 +277,7 @@ pub(super) fn size(ui: &mut egui::Ui, system: &DesignSystem) {
             }
         });
     }
-    if let Some(note) = &system.tokens.size_note {
+    if let Some(note) = note {
         ui.add_space(theme::SPACE_3);
         muted(ui, note);
     }

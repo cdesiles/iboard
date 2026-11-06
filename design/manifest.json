@@ -4,34 +4,39 @@
   "namespace": "iboard",
   "files": [
     "components/Agenda/README.md",
+    "components/BoardHoldingCmd/README.md",
+    "components/BoardScreen/README.md",
     "components/Button/README.md",
     "components/Checkbox/README.md",
     "components/Column/README.md",
     "components/ConfirmDialog/README.md",
+    "components/DesignPanel/README.md",
     "components/DropZones/README.md",
     "components/Editor/README.md",
     "components/FilterField/README.md",
     "components/GeneralSettings/README.md",
+    "components/GroupsDialog/README.md",
     "components/HeaderBar/README.md",
+    "components/Icons/README.md",
     "components/IssueCard/README.md",
     "components/Kbd/README.md",
     "components/Label/README.md",
     "components/LabelPicker/README.md",
     "components/Logo/README.md",
-    "components/Logo/files/iboard-glyph-dark.svg",
-    "components/Logo/files/iboard-glyph-light.svg",
-    "components/Logo/files/iboard-icon-small.svg",
-    "components/Logo/files/iboard-icon.svg",
-    "components/Logo/files/iboard-wordmark-dark.svg",
-    "components/Logo/files/iboard-wordmark-light.svg",
+    "components/MarginComment/README.md",
+    "components/Modal/README.md",
+    "components/NewIssueModal/README.md",
     "components/PaneDivider/README.md",
+    "components/ProjectMenu/README.md",
     "components/QuickAdd/README.md",
     "components/Reader/README.md",
+    "components/ReaderScreen/README.md",
     "components/RefinePanel/README.md",
     "components/ReviewButton/README.md",
     "components/ReviewPanel/README.md",
     "components/ReviewSettings/README.md",
     "components/Scrollbar/README.md",
+    "components/SettingsLabels/README.md",
     "components/Skeleton/README.md",
     "components/StatsScreen/README.md",
     "components/StatusBar/README.md",
@@ -39,6 +44,7 @@
     "components/TextField/README.md",
     "components/Thinking/README.md",
     "components/TitleSettings/README.md",
+    "components/WelcomeScreen/README.md",
     "components/bundle.css",
     "tokens.css"
   ],
@@ -50,19 +56,26 @@
       "summary": "Commits per day across every project iboard supervises, so you can see at a glance when work happened, on what, and open any day to read its commits."
     },
     {
+      "name": "BoardHoldingCmd",
+      "group": "Screens",
+      "summary": "The board after ⌘ alone has been held for hint-hold 0.5s.",
+      "page": true
+    },
+    {
       "name": "BoardScreen",
       "group": "Screens",
+      "summary": "The board at rest, the screen iboard opens on.",
       "page": true
     },
     {
       "name": "Button",
       "group": "Controls",
-      "summary": "Buttons are 24pt-tall verbs with a line-strong edge, so they stay visible while taking little room."
+      "summary": "Buttons are 24pt-tall verbs."
     },
     {
       "name": "Checkbox",
       "group": "Controls",
-      "summary": "A 14pt checkbox with a line-strong edge and a 12pt label, used for Auto (auto-reload from disk and save on leave)."
+      "summary": "A 14pt checkbox with a line-strong edge and a 12pt label, used in Settings › General, for instance for Auto (reload from disk and save as you type)."
     },
     {
       "name": "Column",
@@ -72,12 +85,17 @@
     {
       "name": "ConfirmDialog",
       "group": "Board",
-      "summary": "A small modal, centred in the window over a dimmed board, that asks before an action that cannot be undone from iboard."
+      "summary": "A small modal, centred in the window over a dimmed board, that asks before an action that cannot be undone from iboard: deleting an issue, and deleting a proje…"
+    },
+    {
+      "name": "DesignPanel",
+      "group": "Board",
+      "summary": "The project's design system, browsed in egui."
     },
     {
       "name": "DropZones",
       "group": "Board",
-      "summary": "Two large drop targets, Archive and Delete, that slide up from the bottom of the board only while a card is being dragged."
+      "summary": "Two large drop targets, Archive and Delete, one at a time, that slide up from the bottom of the board only while a card is being dragged."
     },
     {
       "name": "Editor",
@@ -92,32 +110,42 @@
     {
       "name": "GeneralSettings",
       "group": "Board",
-      "summary": "The General tab of the Settings dialog (⌘,), first of three: General, AI review, Titles."
+      "summary": "The General tab of the Settings dialog (⌘,), first of five: General, AI review, AI build, Titles, Labels."
+    },
+    {
+      "name": "GroupsDialog",
+      "group": "Board",
+      "summary": "Creates and edits project groups."
     },
     {
       "name": "HeaderBar",
       "group": "Navigation",
-      "summary": "The one top bar: 40pt tall, bg ground, a line rule below."
+      "summary": "The one top bar: bar-h 40pt, bg ground, a line rule below."
+    },
+    {
+      "name": "Icons",
+      "group": "Foundations",
+      "summary": "The line icons iboard draws on the 24pt grid: 14pt in buttons and card actions, 18pt in the Delete and Archive drop zones, always currentColor with round caps…"
     },
     {
       "name": "IssueCard",
       "group": "Board",
-      "summary": "An issue on the board: its labels, the file's first heading as title, its first paragraph as summary, its file name as meta."
+      "summary": "An issue on the board: its labels, the file's first heading as title, its first paragraph as summary."
     },
     {
       "name": "Kbd",
       "group": "Controls",
-      "summary": "A keyboard hint in meta (mono 11pt) with a line-strong key outline."
+      "summary": "A key cap: meta-mono (JetBrains Mono Medium 11/14) in ink-muted on a surface-sunken fill, radius-sm, padding 1×4."
     },
     {
       "name": "Label",
       "group": "Board",
-      "summary": "A short tag that groups issues, read straight from the title. # [Discovery] Offline mode gives the label discovery, and # [BUG] Hover actions gives bug."
+      "summary": "A short tag that groups issues, read straight from the title."
     },
     {
       "name": "LabelPicker",
       "group": "Board",
-      "summary": "Adds labels to one issue without opening the Editor."
+      "summary": "A small popover that adds labels to one issue without opening the Editor."
     },
     {
       "name": "Logo",
@@ -125,9 +153,30 @@
       "summary": "An i whose dot is a card."
     },
     {
+      "name": "MarginComment",
+      "group": "AI review",
+      "summary": "A note the author leaves on one block of the Reader, for the next AI review."
+    },
+    {
+      "name": "Modal",
+      "group": "Foundations",
+      "summary": "One frame for everything that stops the board until you answer it: a confirmation, a settings form, a document, or a work surface where you and an agent write…"
+    },
+    {
+      "name": "NewIssueModal",
+      "group": "Board",
+      "summary": "Where a new issue gets written: a large modal over the board, with your notes on the left and the issue file, exactly as it will be written, on the right.",
+      "page": true
+    },
+    {
       "name": "PaneDivider",
       "group": "Foundations",
       "summary": "The resize handle between two panes side by side (Reader and Agent log, Reader and Review panel, the two panes of RefinePanel)."
+    },
+    {
+      "name": "ProjectMenu",
+      "group": "Navigation",
+      "summary": "The menu under the header's project name and path, top left of the Board: pick a group (each group is its own board: its projects seen as one) or a single proj…"
     },
     {
       "name": "QuickAdd",
@@ -137,7 +186,13 @@
     {
       "name": "Reader",
       "group": "Issue",
-      "summary": "The rendered markdown of one issue, laid out as a sheet: a surface page up to reader-max (720pt) wide, centred, that always reaches down to the status bar."
+      "summary": "The rendered markdown of one issue, laid out as a sheet: a surface page with a line-soft edge, reader-max (624pt) wide, centred, that always reaches down to th…"
+    },
+    {
+      "name": "ReaderScreen",
+      "group": "Screens",
+      "summary": "The Reader at rest: header (Board, breadcrumb with the column's status icon, the Edit, Add label and Delete icons, the AI split button, …), the sheet (labels,…",
+      "page": true
     },
     {
       "name": "RefinePanel",
@@ -166,6 +221,11 @@
       "summary": "One overlay scrollbar for every scrolling pane (Reader sheet, Editor, a column, the RefinePanel reasoning, popup lists)."
     },
     {
+      "name": "SettingsLabels",
+      "group": "Board",
+      "summary": "The Labels tab of the Settings dialog (⌘,), last of five: General, AI review, AI build, Titles, Labels."
+    },
+    {
       "name": "Skeleton",
       "group": "Foundations",
       "summary": "Loading blocks shaped like what is coming, for anything that takes more than a moment: stats gathered from git history, charts, lists, and the RefinePanel whil…"
@@ -179,7 +239,7 @@
     {
       "name": "StatusBar",
       "group": "Navigation",
-      "summary": "A 24pt strip at the bottom of the window in meta, ink-muted on bg with a line rule above."
+      "summary": "A 24pt strip at the bottom of the window in meta (Inter 12/16), ink-muted on bg, with a line rule above."
     },
     {
       "name": "StatusPill",
@@ -200,6 +260,12 @@
       "name": "TitleSettings",
       "group": "AI review",
       "summary": "The Titles tab of the Settings dialog: which engine names new issues from their description."
+    },
+    {
+      "name": "WelcomeScreen",
+      "group": "Screens",
+      "summary": "What a bare iboard shows, from the Dock most of all, when there is nothing to open: no recent project still has its issues, the current folder is in no project…",
+      "page": true
     }
   ],
   "assetGroups": []

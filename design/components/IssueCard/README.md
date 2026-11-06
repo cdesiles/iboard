@@ -1,19 +1,32 @@
 # IssueCard
 
-An issue on the board: its labels, the file's first heading as title, its first paragraph as summary, its file name as meta.
+An issue on the board: its labels, the file's first heading as title, its first paragraph as summary. The file name is not on the card at rest.
 
-- `surface` fill, `line` border, `radius-md`, padding 10×12, `space-2` between rows.
-- Title `ui-strong` `ink`, one or two lines. Summary `ui-small` `ink-muted`, clamped to three lines. Meta `meta` `ink-muted`.
-- Hover: border to `line-strong`. Selected (keyboard or single click): `accent` 2pt edge on `accent-soft`.
-- A click selects the card, and only it; it never opens it. `↩`, a double click or **Expand** opens the Reader.
-- **Expand** sits in the card's top right corner, 6pt in, over the card's fill, and shows on hover like the other actions: "Expand  ↩", with the outward arrows icon. With a multi-selection only the card with focus offers it, and `↩` opens the first picked card in board order.
+## At rest
+
+- `surface` fill, `line-soft` edge (1.19:1 on `bg` light, 1.38:1 dark: the white fill does the work), `radius-md`, padding 10×12.
+- Rows, top to bottom, `space-3` (8pt) apart:
+  1. **Labels** (see Label), after the review verdict pill when there is one; only when the issue has either.
+  2. **Title**, `ui-strong` `ink`, at most two lines, ellipsis.
+  3. **Summary**, `ui-small` `ink-muted`, at most two lines, ellipsis.
+  4. **Done only**: the date it was finished (`YYYY-MM-DD`), `meta` (Inter) `ink-muted`.
+- No file name, no actions, no shadow, no coloured stripe, no avatar.
+- Done cards keep full contrast.
+
+## Hover, selection, focus
+
+- **Hover**: edge to `line-strong`, fading in over `motion-hover` 100ms.
+- **Selected** (keyboard or single click): `accent` 2pt edge on `accent-soft`, in one frame.
+- On hover, on the selected card, on keyboard focus and while its LabelPicker is open, a **strip** is laid over the card's bottom 28pt on the card's own fill: the file name (`meta`, `ink-muted`, truncates with an ellipsis), the date on Done, then the actions. It covers the last summary line or the date row and never changes the card's height, so nothing below moves. A card with neither summary nor date keeps 28pt under its title for it.
+- **Expand** sits in the card's top right corner, 6pt in, over the card's fill, and shows with the strip: "Expand  ↩", the outward arrows icon. With a multi-selection only the card with focus offers it.
+- Actions, left to right: Add label, Review (the selected Todo card, once an agent is set up), then Delete. Done cards offer Show the agent log, Show the diff and Archive instead: done issues are archived, never deleted, and keep the labels they have. Each is a 22×22 icon button, 14pt line icon at 1.5pt stroke, `ink-muted`, no edge; on its own hover `surface-hover`, Review turns `review` and Delete turns `danger` only then. Tooltips name the key: "Add label  L", "Review  ⌘⇧R", "Show the agent log", "Show the diff", "Archive  A", "Delete  Del".
+- Actions are their own click targets, so pressing one never opens the issue. Delete always goes through ConfirmDialog (unless asking is off); Archive acts at once (it only moves the file to `.archive/`). Add label opens the LabelPicker under the action cluster. Show the diff opens the Diff screen on every commit that closed the issue (`closes <file>.md`), or says in the status bar that none did. Show the agent log opens the Reader with the build agent's log beside it, or says that no agent built the issue.
+
+## Behaviour
+
+- A click selects the card, and only it; it never opens it. `↩`, a double click or **Expand** opens the Reader. With a multi-selection, `↩` opens the first picked card in board order.
 - Shift-click picks the card into a multi-selection without opening it; shift-clicking a picked card takes it out. Picked cards share the selected look. An action on a picked card (Delete, Archive, Add label) applies to every picked card, and dragging one carries them all, landing together in board order. Delete asks once for all of them.
-- Meta row, left to right in `meta` `ink-muted`: file name (takes the remaining width, truncates with an ellipsis), date (`YYYY-MM-DD`, Done only), then the action slot.
-- **Actions appear on hover only.** Left to right: Add label (it opens the LabelPicker under it), Review on the selected Todo card once an agent is set up, then Delete. Done cards offer Show the agent log, Show the diff and Archive instead: done issues are archived, never deleted, and keep the labels they have. They are hidden at rest and shown when the pointer is over the card, on the selected card, and when the card has keyboard focus. Their slot is always reserved, 70pt, so the file name and date never move when they appear.
-- Each action is a 22×22 icon button with a 14pt line icon at 1.5pt stroke, `ink-muted`, no border. On its own hover it gets `surface-hover` and a `line-strong` edge; Delete turns `danger` only then. Review uses `review` instead. Tooltips name the key: "Add label  L", "Review  ⌘⇧R", "Show the agent log", "Show the diff", "Archive  A", "Delete  Del".
-- Actions are their own click targets, so pressing one never opens the issue. Delete always goes through ConfirmDialog; Archive acts at once (it only moves the file to `.archive/`). Show the diff opens the Diff screen on every commit that closed the issue (`closes <file>.md`), or says in the status bar that none did. Show the agent log opens the Reader with the build agent's log beside it, or says that no agent built the issue.
-- **AI build.** The card the build agent takes flashes `status-doing` for 0.6s as it lands in Doing; while the agent works, its 2pt `status-doing` edge breathes and a light runs along its foot. Its meta row shows the time spent, `mm:ss` in `status-doing`, left of the actions. It offers Stop ("Stop the AI build") in Delete's place and no Retry, since the agent is still on it. With no build running, Doing's cards offer Retry ("Retry with AI", the refresh icon), which starts the agent on it over, beside Delete.
+- Clicking a label filters the board by it and never opens the issue.
+- **Review verdict.** The last review's verdict (Pass, Challenge, Block) is a StatusPill first in the label row; `ink-faint` once the issue changed since. A click reopens the review. While a review runs in the background the pill says "Reviewing…", then "Review ready" in `review` once it lands, until a click opens the issue with its review panel.
+- **AI build.** The card the build agent takes flashes `status-doing` for 0.6s as it lands in Doing (skipped with reduced motion); while the agent works, its 2pt `status-doing` edge breathes and a light runs along its foot (a steady edge with reduced motion). Its strip stays shown and holds the time spent, `mm:ss` in `status-doing`, left of the actions. It offers Stop ("Stop the AI build") in Delete's place and no Retry, since the agent is still on it. With no build running, Doing's cards offer Retry ("Retry with AI", the refresh icon), which starts the agent on it over, beside Delete.
 - Dragging a card opens the DropZones dock as a second way to archive or delete. The card being dragged stays in place at 40% opacity; a lifted copy follows the pointer.
-- **Review verdict.** The last review's verdict (Pass, Challenge, Block) is a StatusPill in the card's top left, first of the label row; `ink-faint` once the issue changed since. A click reopens the review. While a review runs in the background the pill says "Reviewing…", then "Review ready" in `review` once it lands, until a click opens the issue with its review panel.
-- **Labels** sit on their own row above the title, after the verdict, read from the `[Brackets]` at the start of the title (see Label). The title shows without them. A card with no label and no review has no label row, so it is not taller. Clicking a label filters the board by it and never opens the issue.
-- No drop shadow, no colored side stripe, no avatar.

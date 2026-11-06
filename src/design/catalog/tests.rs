@@ -34,6 +34,13 @@ fn the_catalog_carries_every_component_and_the_tokens() {
     assert!(html.contains(".ib-btn"), "bundle inlined");
     assert!(html.contains("[data-theme=\"dark\"]"), "dark theme block");
     assert!(html.contains("id=\"ds-q\""), "search box");
+    assert!(
+        html.contains("--hint-hold: 500ms;"),
+        "motion tokens inlined"
+    );
+    for section in ["cat-opacity", "cat-motion"] {
+        assert!(html.contains(section), "missing {section}");
+    }
     for component in repo().components {
         assert!(
             html.contains(&format!(">{}</h2>", component.name)),

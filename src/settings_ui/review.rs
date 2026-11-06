@@ -55,6 +55,7 @@ fn model_list(
         let option = widgets::menu_option(
             ui,
             MenuOption {
+                meta_is_key: false,
                 name,
                 mono: !row.value.is_empty(),
                 muted: false,
@@ -188,6 +189,7 @@ impl Dialog {
                     if widgets::menu_option(
                         ui,
                         MenuOption {
+                            meta_is_key: false,
                             name,
                             mono: false,
                             muted: missing,
@@ -271,6 +273,7 @@ impl Dialog {
                     if widgets::menu_option(
                         ui,
                         MenuOption {
+                            meta_is_key: false,
                             name: &option.name(),
                             mono: false,
                             muted: false,

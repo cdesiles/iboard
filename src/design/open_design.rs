@@ -156,9 +156,26 @@ fn route(tokens: &mut Tokens, token: Token) {
         || token.name.starts_with("tracking-")
     {
         tokens.size.push(token);
+    } else if is_duration(&token.value) {
+        tokens.motion.push(token);
+    } else if is_opacity(&token.value) {
+        tokens.opacity.push(token);
     } else {
         tokens.color.push(token);
     }
+}
+
+/// `150ms` or `2s`.
+fn is_duration(value: &TokenValue) -> bool {
+    let text = value_string(value);
+    let number = text.strip_suffix("ms").or_else(|| text.strip_suffix('s'));
+    number.is_some_and(|number| number.parse::<f32>().is_ok())
+}
+
+/// A bare number from 0 to 1.
+fn is_opacity(value: &TokenValue) -> bool {
+    let number = value_string(value).parse::<f32>();
+    number.is_ok_and(|number| (0.0..=1.0).contains(&number))
 }
 
 fn value_string(value: &TokenValue) -> String {
@@ -282,6 +299,18 @@ mod tests {
         let names: Vec<&str> = tokens.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, vec!["bg", "accent", "accent-hover"]);
         assert_eq!(tokens[0].value.theme("light"), Some("#ffffff"));
+    }
+
+    #[test]
+    fn durations_and_bare_fractions_go_to_their_own_sections() {
+        let mut tokens = Tokens::default();
+        let css = ":root {\n  --fade: 150ms;\n  --tint: 0.10;\n  --bg: #fff;\n}\n";
+        for token in parse_tokens_css(css) {
+            route(&mut tokens, token);
+        }
+        assert_eq!(tokens.motion[0].name, "fade");
+        assert_eq!(tokens.opacity[0].name, "tint");
+        assert_eq!(tokens.color[0].name, "bg");
     }
 
     #[test]

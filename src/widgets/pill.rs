@@ -95,7 +95,7 @@ fn label_look(p: &theme::Palette, color: Option<Rgb>, lit: bool) -> (Color32, St
     }
     let (fill, ink) = match color.map(theme::rgb) {
         Some(color) => {
-            let fill = theme::tint(color, p.surface);
+            let fill = theme::label_tint(color, p);
             let ink = if theme::contrast_ratio(color, fill) >= 4.5 {
                 color
             } else {

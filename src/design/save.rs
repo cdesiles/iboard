@@ -86,6 +86,13 @@ impl DesignSystem {
             self.tokens.size_note.as_deref(),
         );
         set_section(obj, "shadow", &self.tokens.shadow, None);
+        set_section(obj, "opacity", &self.tokens.opacity, None);
+        set_section(
+            obj,
+            "motion",
+            &self.tokens.motion,
+            self.tokens.motion_note.as_deref(),
+        );
 
         let ty = obj
             .entry("type".to_string())

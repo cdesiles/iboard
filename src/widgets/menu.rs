@@ -12,13 +12,15 @@ use super::{focus_ring, galley, galley_truncated, help, rule};
 use crate::theme::{self, Icon};
 
 /// One 24pt row of a select menu: a tick when `checked`, the name (in mono
-/// for model IDs, `ink-muted` when `muted`), and a `meta` note at the right.
+/// for model IDs, `ink-muted` when `muted`), and a `meta` note at the right,
+/// in `meta-mono` when `meta_is_key`.
 /// `active` is the keyboard highlight, an `accent-soft` fill.
 pub struct MenuOption<'a> {
     pub name: &'a str,
     pub mono: bool,
     pub muted: bool,
     pub meta: &'a str,
+    pub meta_is_key: bool,
     pub checked: bool,
     pub active: bool,
 }
@@ -59,7 +61,12 @@ pub fn menu_option(ui: &mut Ui, option: MenuOption<'_>) -> Response {
         }
         let mut right = rect.max.x - theme::SPACE_3;
         if !option.meta.is_empty() {
-            let meta = galley(ui, option.meta, theme::meta(), p.ink_muted);
+            let font = if option.meta_is_key {
+                theme::meta_mono()
+            } else {
+                theme::meta()
+            };
+            let meta = galley(ui, option.meta, font, p.ink_muted);
             right -= meta.size().x;
             painter.galley(
                 Pos2::new(right, rect.center().y - meta.size().y / 2.0),

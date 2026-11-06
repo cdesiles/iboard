@@ -14,11 +14,11 @@ Opened from the ProjectMenu's footer: **Edit groups…**. With no group yet it o
 
 ## Layout
 
-- A Modal M over `scrim`: `surface`, `modal-m` (480pt, since paths are long), `line-strong` edge, `radius-md`, `shadow-modal`. Same head and foot as Settings: title "Project groups" in `ui-title` and a ghost close button; foot with the config path in `meta` on the left, an Unsaved pill once something changed, then **Cancel** `esc` and **Save** `⌘↩` (primary).
+- A Modal M over `scrim`: `surface`, `modal-m` (480pt, since paths are long), `line` edge, `radius-md`, `shadow-modal`. Same head and foot as Settings: title "Project groups" in `ui-title` and a ghost close button; foot with the config path in `meta` on the left, an Unsaved pill once something changed, then **Cancel** `esc` and **Save** `⌘↩` (primary).
 - Body scrolls past 520pt. It opens with one help line: "Each group is a board of its own projects. Removing a project here never touches its issues/ folder."
-- **One bordered block per group**, in file order, `line-strong` edge, `radius-md`:
+- **One bordered block per group**, in file order, `line-soft` edge, `radius-md`:
   - **Head:** the name as a text field (`ui-body` 500, always editable, so rename is just typing), the project count in `meta` ("2 projects", "1 project"), and a delete-group icon button (iboard's trash, `ib-act--danger`, tooltip "Delete group (asks first)").
-  - **Project rows:** folder name in `ui-body` 500, path in `meta` mono, a `line` rule between rows. A remove button (×, `ib-act`) shows on hover, selection or focus, tooltip "Remove from this group. The folder is not touched. (Del)".
+  - **Project rows:** folder name in `ui-body` 500, path in `meta` (Inter), a `line` rule between rows. A remove button (×, `ib-act`) shows on hover, selection or focus, tooltip "Remove from this group. The folder is not touched. (Del)".
   - **Foot:** **Add project** (secondary, plus icon).
 - Under the last block, **New group** (secondary, plus, `⌘N`).
 

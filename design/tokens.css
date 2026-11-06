@@ -1,30 +1,48 @@
 /* iboard — generated from tokens.json */
+@font-face { font-family: "Inter"; src: url("fonts/Inter-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/Inter-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/Inter-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
 :root, [data-theme="light"] {
   --bg: #f4f5f7; /* App ground: board, header, status bar. */
-  --surface: #ffffff; /* Cards, reader page, editor, inputs, buttons. */
-  --surface-hover: #eef0f3; /* Hover fill for buttons, crumbs and menu rows. */
-  --surface-sunken: #eceef2; /* Inline code, empty-column well, editor gutter. */
-  --line: #cfd4db; /* Card borders, dividers, header and status bar rules. Decorative only, never the only edge of a control. */
-  --line-strong: #7c8491; /* Every control edge: input, button, checkbox, kbd. 3.2:1 or better on every surface in both themes. */
+  --surface: #ffffff; /* Cards, reader page, editor, inputs, menus and modals. */
+  --surface-hover: #e9ebef; /* Hover fill for edgeless buttons, crumbs, menu rows and card actions, on bg or surface (light: 1.11:1 on bg, 1.22:1 on surface; dark: 1.24:1 on bg, 1.13:1 on surface). Fades in over motion-hover. */
+  --surface-sunken: #eceef2; /* Inline code, key caps, neutral label pills, the empty-column well, editor gutter. */
+  --line: #cfd4db; /* Dividers only: header and status bar rules, modal head and foot rules, the sheet's rules, a modal frame's edge. Decorative, never the edge of a control or a card. */
+  --line-soft: #dfe2e7; /* Card edges at rest; hairline of secondary buttons in modal feet and dialogs. Decorative. */
+  --line-strong: #7c8491; /* Only edges that identify a control: text fields, checkboxes, radios; plus a card or ghost tile under the pointer. 3.2:1 or better on every surface in both themes (WCAG 1.4.11). Text buttons, labels and key caps have no line-strong edge. */
+  --scrollbar: #bfc4cb; /* Scrollbar thumb while scrolling. Hidden at rest: no thumb until the pane scrolls or the pointer reaches its edge. Light 1.75:1 on surface, dark 3.9:1. */
+  --scrollbar-active: #a1a7b0; /* Scrollbar thumb under the pointer (8pt). Light 2.4:1 on surface; dark matches ink-muted. */
   --ink: #15181d; /* Primary text on bg, surface, surface-hover, surface-sunken. */
-  --ink-muted: #4d5562; /* Card summaries, path, counts, status bar text. At least 6.4:1 on all surfaces. */
-  --ink-faint: #626a78; /* Placeholders, separators, empty-state text. At least 4.5:1 on all surfaces; never smaller than 11px. */
-  --accent: #2b54c4; /* Selection, primary button fill, links, focus ring. */
+  --ink-muted: #4d5562; /* Secondary text: summaries, paths, counts, dates, word counts, the status bar, modal context. At least 6.4:1 on all surfaces. */
+  --ink-faint: #626a78; /* Placeholders, separators, empty-state text, menu key caps. At least 4.5:1 on all surfaces; never smaller than 11px. */
+  --accent: #2b54c4; /* Blue means selected, focused or a link, nothing else: selected card, focus ring, links, active filter, dragging scrollbar. Not a button fill (see primary). */
   --accent-soft: #e4eafb; /* Selected card fill, text selection, active crumb. */
-  --on-accent: #ffffff; /* Text and icons on accent fills. */
+  --on-accent: #ffffff; /* Text and icons on an accent fill (checked checkbox, and the primary button if primary is switched back to accent). */
+  --primary: var(--ink); /* Fill of the one filled button per screen (New issue, Save, Add to Todo). An ink fill, so blue stays for selection and focus. Alternative kept for comparison: set to {accent} with on-primary {on-accent}. */
+  --primary-hover: #2e333b; /* Primary under the pointer. */
+  --on-primary: #ffffff; /* Label on primary. */
   --focus: var(--accent); /* 2px keyboard focus ring on every focusable element. */
   --focus-halo: rgba(43,84,196,0.20); /* Soft 3px glow around a focused text field, textarea, composer or editor, outside its single focus-coloured border. Never a second ring. */
-  --status-todo: #5e6878; /* Todo column marker and label. Always shown with the word Todo. */
-  --status-ready: #0f6e78; /* Ready column marker: refined issues queued for an agent to take. */
-  --status-doing: #a04f00; /* Doing column marker; unsaved-changes pill in the editor. */
-  --status-done: #1d7347; /* Done column marker; Saved pill; Pass verdict in a review. */
-  --review: #7a3fd1; /* Violet. The AI review button and the Challenge verdict. Reserved: nothing else uses this hue. Kept clearly apart from the blue accent and from danger red. */
+  --status-todo: #5e6878; /* Todo column icon: an empty circle. Always shown with the word Todo. */
+  --status-ready: #0f6e78; /* Ready column icon: a dotted circle. Refined issues queued for an agent. */
+  --status-doing: #a04f00; /* Doing column icon: a half-filled circle; Unsaved pill in the status bar. */
+  --status-done: #1d7347; /* Done column icon: a filled circle with a check; Saved pill; Pass verdict in a review. */
+  --review: #7a3fd1; /* Violet. The AI split button (Ask, Update, Review, Refine) and the Challenge verdict. Reserved: nothing else uses this hue. Kept clearly apart from the blue accent and from danger red. */
   --review-soft: #f1ebfc; /* Review panel header fill and the pending-review card flag. */
   --on-review: #ffffff; /* Text on a review fill. */
-  --danger: #b42318; /* Write failures, conflicting file on disk, Block verdict. */
+  --danger: #b42318; /* Write failures, conflicting file on disk, Block verdict, and Delete inside the … menu and the ConfirmDialog. Never at rest in a header. */
   --danger-soft: #fdecea; /* Delete drop zone when a card is over it. danger text reads 5.7:1 on it. */
-  --on-danger: #ffffff; /* Label on the danger-filled Delete button in the confirmation dialog. */
+  --on-danger: #ffffff; /* Label on the danger-filled Delete button in the ConfirmDialog. */
   --scrim: rgba(21,24,29,0.32); /* Dims the board behind a modal confirmation. */
+  --label-red: #bc3228; /* Label dot (6pt) inside a neutral pill; bug by default. Text colour of a loud (tinted) pill, at least 4.5:1 on its tint. No blue (selection) and no violet (review) in this set. */
+  --label-orange: #a65400; /* Label dot (6pt) inside a neutral pill. Text colour of a loud (tinted) pill, at least 4.5:1 on its tint. No blue (selection) and no violet (review) in this set. */
+  --label-ochre: #826600; /* Label dot (6pt) inside a neutral pill. Text colour of a loud (tinted) pill, at least 4.5:1 on its tint. No blue (selection) and no violet (review) in this set. */
+  --label-green: #287639; /* Label dot (6pt) inside a neutral pill. Text colour of a loud (tinted) pill, at least 4.5:1 on its tint. No blue (selection) and no violet (review) in this set. */
+  --label-teal: #0c7380; /* Label dot (6pt) inside a neutral pill. Text colour of a loud (tinted) pill, at least 4.5:1 on its tint. No blue (selection) and no violet (review) in this set. */
+  --label-pink: #b33270; /* Label dot (6pt) inside a neutral pill. Text colour of a loud (tinted) pill, at least 4.5:1 on its tint. No blue (selection) and no violet (review) in this set. */
+  --label-grey: #646c79; /* Label dot (6pt) inside a neutral pill; the fallback. Text colour of a loud (tinted) pill, at least 4.5:1 on its tint. No blue (selection) and no violet (review) in this set. */
   --shadow-popover: 0 4px 16px rgba(21,24,29,0.12); /* Review panel, menus and a dragged card. Cards stay flat; modals use shadow-modal. */
   --shadow-modal: 0 12px 40px rgba(21,24,29,0.18); /* Modals only (S to XL), above the scrim. Stronger than shadow-popover because a modal floats over everything. */
 }
@@ -34,13 +52,19 @@
   --surface-hover: #262a2f;
   --surface-sunken: #111316;
   --line: #353a42;
+  --line-soft: #2d3138;
   --line-strong: #737c89;
+  --scrollbar: #737c89;
+  --scrollbar-active: #a7aeb9;
   --ink: #e7e9ec;
   --ink-muted: #a7aeb9;
   --ink-faint: #8c939e;
   --accent: #86a4ff;
   --accent-soft: #222c47;
   --on-accent: #0b1433;
+  --primary: var(--ink);
+  --primary-hover: #c9cdd3;
+  --on-primary: #15171a;
   --focus: var(--accent);
   --focus-halo: rgba(134,164,255,0.26);
   --status-todo: #a4adba;
@@ -54,13 +78,20 @@
   --danger-soft: #3d1a17;
   --on-danger: #3a0d08;
   --scrim: rgba(0,0,0,0.55);
+  --label-red: #f28b7d;
+  --label-orange: #eda05a;
+  --label-ochre: #d6b44c;
+  --label-green: #6dca8b;
+  --label-teal: #5ec4cf;
+  --label-pink: #f08dbe;
+  --label-grey: #9ca3ad;
   --shadow-popover: 0 4px 16px rgba(0,0,0,0.5);
   --shadow-modal: 0 12px 40px rgba(0,0,0,0.6);
 }
 :root {
   --space-1: 2px; /* Icon to label nudges, kbd padding. */
-  --space-2: 4px; /* Gap inside a card between title and summary. */
-  --space-3: 8px; /* Gap between cards and between header controls. */
+  --space-2: 4px; /* Gap between labels, icon to text in pills. */
+  --space-3: 8px; /* Gap between cards, between a card's rows (labels, title, summary), between header controls. */
   --space-4: 12px; /* Card horizontal padding, review row padding. */
   --space-5: 16px; /* Window gutter, column gap. */
   --space-6: 24px; /* Reader page vertical padding. */
@@ -69,32 +100,48 @@
   --radius-md: 6px; /* Cards, reader page, editor, review panel. */
   --radius-pill: 9px; /* 18px-tall pills (Saved, Unsaved, verdicts). */
   --control-h: 24px; /* Buttons, filter input, checkbox row. */
-  --bar-h: 40px; /* Header bar. */
+  --status-icon: 14px; /* Column status icon: 14pt box, 1.5pt stroke, in the status colour. */
+  --bar-h: 40px; /* Header bar. The traffic lights sit on its centre line (titlebar-light-y). */
   --statusbar-h: 24px; /* Bottom status bar. */
-  --column-min: 280px; /* Narrowest column before the board scrolls horizontally. */
+  --column-min: 200px; /* Narrowest column before the board scrolls sideways: four columns fit the 880pt minimum window. */
   --column-max: 420px; /* Widest column; extra width stays empty on the right. */
-  --reader-max: 720px; /* Reader and editor page width. */
+  --reader-max: 624px; /* Reader and editor sheet width: read-measure plus 32pt padding each side. */
+  --read-measure: 560px; /* Text column of the reader at read-body: about 75 characters per line (measured 70 to 79 on prose). */
   --scroll-thumb: 4px; /* Scrollbar thumb width at rest and while scrolling. Overlay: takes no layout width. */
   --scroll-thumb-hover: 8px; /* Scrollbar thumb width under the pointer and while dragging. */
-  --scroll-hit: 12px; /* Scrollbar pointer target along the pane's edge, wider than the thumb so a trackpad finds it. */
+  --scroll-hit: 12px; /* Pointer strip along the pane's edge, wider than the thumb so a trackpad finds it. The pointer entering it reveals a hidden thumb. */
   --scroll-thumb-min: 24px; /* Shortest thumb on a very long page, the same as control-h. */
   --modal-s: 360px; /* Modal S: one question, one action (ConfirmDialog). */
   --modal-m: 480px; /* Modal M: forms and settings (Settings, GroupsDialog). */
   --modal-l: 760px; /* Modal L: one document, a 720pt sheet with 20pt each side. */
   --modal-xl: 1200px; /* Modal XL maximum width; otherwise the window minus modal-inset each side (NewIssueModal, RefinePanel). */
   --modal-xl-h: 900px; /* Modal XL maximum height; XL is always this tall or the window minus the inset, so nothing jumps while content streams in. */
-  --modal-inset: 32px; /* Gap kept between the window edge and a modal; 16 under 720pt of window width. */
+  --modal-inset: 32px; /* Gap kept between the window and a modal: 16 at the sides and bottom under 720pt of window width, but always 32 at the top, below the traffic lights (titlebar-h). */
+  --titlebar-h: 28px; /* Top strip the traffic lights occupy (they span 14 to 26 once centred on the bar). No modal frame enters it; the top modal inset never drops below modal-inset. */
+  --titlebar-lead: 80px; /* Leading width the traffic lights take in the header bar (three 12pt lights, centres 20, 40, 60). Nothing is drawn or clickable there; the project name or the Board button starts after it. */
+  --titlebar-light-y: 20px; /* Centre line of the traffic lights, from the window's top: bar-h / 2. The header's controls and crumbs centre on the same line. */
+  --titlebar-light-x: 20px; /* Centre of the close button from the window's left edge; the next two follow every 20pt. */
+  --label-tint: 0.10; /* A loud label pill's fill in the light theme: its label colour at this opacity over surface. Only for labels marked Stand out (bug by default). */
+  --label-tint-dark: 0.16; /* The same fill in the dark theme, where a 10% tint is too faint on surface. bundle.css swaps it in under [data-theme="dark"]. */
+  --motion-hover: 100ms; /* Hover fills fading in (buttons, crumbs, menu rows, card actions, card edge). Fading out is instant. Keyboard selection never animates. */
+  --motion-hint: 120ms; /* Key hints sliding out beside their control when ⌘ is held, and back. */
+  --hint-hold: 500ms; /* How long ⌘ alone must be held before key hints show. Any other key, or letting go, cancels and hides them. */
+  --scroll-linger: 800ms; /* How long a scrollbar stays after the last scroll movement, or after the pointer leaves the edge strip. */
+  --scroll-fade: 150ms; /* Scrollbar thumb fading in and out. */
   --font-sans: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
-  --text-ui-title: 600 15px/20px var(--font-sans); /* Project name in the header; reader h2. */
+  --text-ui-title: 600 15px/20px var(--font-sans); /* Project name in the header, modal titles. */
   --text-ui-body: 400 13px/18px var(--font-sans); /* Default UI text, inputs, card titles (at 500). */
-  --text-ui-strong: 500 13px/18px var(--font-sans); /* Card title, current crumb, button labels at 12px. */
+  --text-ui-strong: 500 13px/18px var(--font-sans); /* Card title, column titles (title case), current crumb, button labels at 12px. */
   --text-ui-small: 400 12px/17px var(--font-sans); /* Card summary, review findings. */
-  --text-ui-label: 600 11px/14px var(--font-sans); /* Column titles, uppercase only. */
+  --text-ui-label: 600 11px/14px var(--font-sans); /* Uppercase section labels (Not written yet). Column titles use ui-strong in title case; ui-label is the uppercase alternative. */
+  --text-meta: 400 12px/16px var(--font-sans); /* Inter, ink-muted: paths, file names, counts, dates, word counts, the status bar, modal context (in todo/, named on save, Saved for this session). */
   --text-read-h1: 600 20px/26px var(--font-sans); /* Issue title in the reader. */
-  --text-read-body: 400 14px/22px var(--font-sans); /* Rendered markdown paragraphs and lists, max 68ch. */
-  --text-edit-body: 400 13px/20px var(--font-mono); /* The plain-text editor. */
-  --text-meta: 500 11px/14px var(--font-mono); /* Counts, file names, kbd hints, status bar. */
+  --text-read-h2: 600 16px/22px var(--font-sans); /* ## headings in the reader. 24pt above, 6pt below. */
+  --text-read-h3: 600 14px/20px var(--font-sans); /* ### headings and deeper in the reader. 16pt above, 4pt below. */
+  --text-read-body: 400 15px/24px var(--font-sans); /* Rendered markdown paragraphs and lists, in a read-measure (560pt, about 75 characters) column. */
+  --text-edit-body: 400 13px/20px var(--font-mono); /* The plain-text editor, code blocks and diffs. */
+  --text-meta-mono: 500 11px/14px var(--font-mono); /* JetBrains Mono: key caps only (Kbd, key hints in buttons, menus and tooltips). */
 }
 .ui-title {
   font-family: var(--font-sans);
@@ -131,6 +178,13 @@
   font-weight: 600;
   letter-spacing: 0.06em;
 }
+.meta {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
 .read-h1 {
   font-family: var(--font-sans);
   font-size: 20px;
@@ -138,10 +192,24 @@
   font-weight: 600;
   letter-spacing: 0;
 }
-.read-body {
+.read-h2 {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.read-h3 {
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 22px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.read-body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 24px;
   font-weight: 400;
   letter-spacing: 0;
 }
@@ -152,7 +220,7 @@
   font-weight: 400;
   letter-spacing: 0;
 }
-.meta {
+.meta-mono {
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 14px;

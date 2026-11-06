@@ -669,6 +669,7 @@ fn review_menu(
                         mono: false,
                         muted: false,
                         meta,
+                        meta_is_key: true,
                         checked: false,
                         active: false,
                     },

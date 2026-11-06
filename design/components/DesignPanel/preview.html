@@ -3,7 +3,7 @@
 <html lang="en">
 <head><meta charset="utf-8"><title>DesignPanel</title>
 <style>
-.dp{display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--line-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-popover);padding:8px 12px;gap:8px;max-width:760px}
+.dp{display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-md);box-shadow:var(--shadow-popover);padding:8px 12px;gap:8px;max-width:760px}
 .dp__bar{display:flex;align-items:center;gap:8px;font:13px/18px var(--font-sans)}
 .dp__bar b{color:var(--ink);font-weight:600}
 .dp__bar span{color:var(--ink-muted)}
@@ -14,7 +14,7 @@
 .dp__row{display:flex;align-items:center;height:26px;padding:0 8px;border-radius:var(--radius-sm);font:13px/18px var(--font-sans);color:var(--ink-muted)}
 .dp__row.is-open{background:var(--accent-soft);color:var(--ink)}
 .dp__row.is-hover{background:var(--surface-hover)}
-.dp__row em{margin-left:auto;font:normal 11px/14px var(--font-mono);color:var(--ink-faint)}
+.dp__row em{margin-left:auto;font:var(--text-meta,400 12px/16px var(--font-sans));font-style:normal;font-variant-numeric:tabular-nums;color:var(--ink-faint)}
 .dp__back{font-weight:600;color:var(--ink);gap:4px}
 .dp__back svg{width:14px;height:14px;stroke:var(--ink-muted);fill:none;stroke-width:1.6}
 .dp__pane{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;font:13px/18px var(--font-sans);color:var(--ink)}
@@ -24,7 +24,7 @@
 .dp__sw i{width:20px;height:20px;border-radius:var(--radius-sm);border:1px solid var(--line)}
 .dp__head{display:flex;align-items:center;gap:8px}
 .dp__head b{font-weight:600}
-.dp__head em{font:normal 11px/14px var(--font-mono);color:var(--ink-faint)}
+.dp__head em{font:var(--text-meta,400 12px/16px var(--font-sans));font-style:normal;color:var(--ink-faint)}
 .dp__head .ib-btn{margin-left:auto}
 .dp__muted{font-size:11px;color:var(--ink-muted)}
 .dp__card{height:130px;display:grid;place-items:center;background:var(--surface-sunken);border:1px solid var(--line);border-radius:var(--radius-md);color:var(--ink-muted)}

@@ -1,8 +1,14 @@
 # StatusBar
 
-A 24pt strip at the bottom of the window in `meta`, `ink-muted` on `bg` with a `line` rule above.
+A 24pt strip at the bottom of the window in `meta` (Inter 12/16), `ink-muted` on `bg`, with a `line` rule above. It says where you are, once, and stays the same height on every screen.
 
-- Left: the selected or open file path relative to the issues folder, then the issue count or the save state pill.
-- Right: empty at rest; while ⌘ is held, at most three shortcuts that apply to the current screen.
-- This is where a developer looks to know "where am I" and, holding ⌘, "what can I press". Keep it boring and always present.
-- While the QuickAdd composer is open, the hints switch to `↩` add, `⌘↩` add & edit, `esc` close.
+| Screen | Left | Right |
+| --- | --- | --- |
+| Board | The issues folder (`~/workspace/perso/iboard/issues`; it left the header). While filtering: "4 of 9 issues match “bug”". After a delete: "Moved … to the Trash · ⌘Z" | Nothing at rest |
+| Reader | The file path · "modified 15d ago" · checklist progress (a 48pt `status-done` meter and "1/3 done"), or the word count when there are no checkboxes. The sheet no longer repeats any of these. | Nothing at rest |
+| Editor | The file path | The save state pill (Unsaved, Saved, the write error) |
+
+- Separators are `·` in `ink-faint`.
+- No total issue count on the board: the column heads already count.
+- Keep it boring and always present: no animation at rest, no colour but the save state.
+- **Key hints** are hidden at rest. While ⌘ is held, at most three shortcuts that apply to the screen slide in on the right (`↩ open  E edit  ⌘↩ next column` on the board; `E edit  esc board  ⌘⇧R review` in the Reader on Todo, `⌘U update` in its place on Ready and Doing; `⌘S save  esc leave` in the Editor). While the NewIssueModal is open they are its keys: `↩` add, `⌘↩` add & edit, `esc` close.

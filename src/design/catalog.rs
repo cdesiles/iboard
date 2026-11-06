@@ -14,12 +14,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::fonts::{self, FontFace};
-use super::{Component, DesignSystem, css};
+use super::{Component, DesignSystem, Token, css};
 use crate::format;
 
 /// The catalog's categories, in Claude Design's order: `(id, label, icon)`,
 /// the icon being the inner SVG of a 24-unit line pictogram.
-const CATEGORIES: [(&str, &str, &str); 10] = [
+const CATEGORIES: [(&str, &str, &str); 12] = [
     (
         "overview",
         "Overview",
@@ -54,6 +54,16 @@ const CATEGORIES: [(&str, &str, &str); 10] = [
         "size",
         "Size",
         r#"<rect width="16" height="6" x="4" y="4" rx="2"/><rect width="12" height="6" x="6" y="14" rx="2"/>"#,
+    ),
+    (
+        "opacity",
+        "Opacity",
+        r#"<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z"/>"#,
+    ),
+    (
+        "motion",
+        "Motion",
+        r#"<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>"#,
     ),
     (
         "components",
@@ -196,7 +206,28 @@ fn main_panes(system: &DesignSystem, faces: &[FontFace]) -> String {
         ("spacing", spacing(system)),
         ("radius", radius(system)),
         ("shadows", shadows(system)),
-        ("size", size(system)),
+        (
+            "size",
+            plain_tokens(
+                system,
+                "Size",
+                &system.tokens.size,
+                system.tokens.size_note.as_deref(),
+            ),
+        ),
+        (
+            "opacity",
+            plain_tokens(system, "Opacity", &system.tokens.opacity, None),
+        ),
+        (
+            "motion",
+            plain_tokens(
+                system,
+                "Motion",
+                &system.tokens.motion,
+                system.tokens.motion_note.as_deref(),
+            ),
+        ),
         ("components", components_summary(system)),
         ("assets", assets(system)),
         ("files", files_summary(system)),
@@ -294,13 +325,15 @@ fn overview(system: &DesignSystem) -> String {
     );
     out.push_str(&format!(
         "<p class=\"ds-note\">{} components · {} color, {} spacing, {} radius, {} size, \
-         {} shadow, {} type styles · themes {}</p>\n",
+         {} shadow, {} opacity, {} motion, {} type styles · themes {}</p>\n",
         system.components.len(),
         system.tokens.color.len(),
         system.tokens.spacing.len(),
         system.tokens.radius.len(),
         system.tokens.size.len(),
         system.tokens.shadow.len(),
+        system.tokens.opacity.len(),
+        system.tokens.motion.len(),
         system.tokens.type_style_count(),
         themes.join(", "),
     ));
@@ -514,9 +547,14 @@ fn shadows(system: &DesignSystem) -> String {
     out
 }
 
-fn size(system: &DesignSystem) -> String {
-    let mut out = head("Size", &format!("{} tokens", system.tokens.size.len()));
-    for token in &system.tokens.size {
+fn plain_tokens(
+    system: &DesignSystem,
+    title: &str,
+    tokens: &[Token],
+    note: Option<&str>,
+) -> String {
+    let mut out = head(title, &format!("{} tokens", tokens.len()));
+    for token in tokens {
         let value = css::resolved_value(system, token, "light").unwrap_or_default();
         let usage = token
             .usage
@@ -530,7 +568,7 @@ fn size(system: &DesignSystem) -> String {
             escape(&value),
         ));
     }
-    if let Some(note) = &system.tokens.size_note {
+    if let Some(note) = note {
         out.push_str(&format!("<p class=\"ds-note\">{}</p>\n", escape(note)));
     }
     out

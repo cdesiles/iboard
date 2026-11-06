@@ -120,7 +120,7 @@ fn button_content(
     };
     let hint = shortcut
         .filter(|_| reveal > 0.0)
-        .map(|s| galley(ui, s, theme::meta(), ink));
+        .map(|s| galley(ui, s, theme::meta_mono(), ink));
     let (pad_left, icon_gap) = button_insets(kind);
     let width = if text.is_none() && hint.is_none() {
         theme::CONTROL_H

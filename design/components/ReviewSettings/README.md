@@ -6,8 +6,8 @@ The *AI build* tab has the same Tool, Command and Model fields and a Timeout, fo
 
 ## Layout
 
-- A Modal of size M: `modal-m` (480pt) wide on `surface` with a `line-strong` edge, `radius-md` and `shadow-modal`. The body fits its tab and scrolls past 520pt.
-- Header: "Settings" in `ui-title`, left-aligned, then the tabs (*General*, *AI review*, *AI build*, *Titles*, *Labels*) and a ghost close button. No tinted header bar.
+- A Modal of size M: `modal-m` (480pt) wide on `surface` with a `line` edge, `radius-md` and `shadow-modal`. The body fits its tab and scrolls past 520pt.
+- Header: "Settings" in `ui-title`, left-aligned, then the tabs (*General*, *AI review*, *AI build*, *Titles*, *Labels*) and a ghost close button. No tinted header bar. Tabs have no edge; the active one sits on `surface` with a soft shadow.
 - Body: one column of fields, label above control (`ui-strong` 12pt), `space-5` between fields, one line of `ui-small` help under each.
 - Footer: the config path in `meta` on the left, Cancel and Save (primary, `⌘↩`) on the right.
 
@@ -53,7 +53,7 @@ A select with three options, always in this order:
 
 ## Entry point
 
-The Review button becomes a split button: the main part runs the review (`⌘⇧R`), the caret opens a short menu with "Review this issue", a "Runs with" line naming the tool and model, and "AI settings…" (`⌘,`).
+The AI split button (see HeaderBar and ReviewButton) ends its menu with the current tool and model, which opens these settings (`⌘,`).
 
 ## Stored as
 

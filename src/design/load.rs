@@ -190,6 +190,9 @@ fn convert_tokens(raw: RawTokens) -> Tokens {
         size: parse_tokens(raw.size.tokens),
         size_note: raw.size.note,
         shadow: parse_tokens(raw.shadow.tokens),
+        opacity: parse_tokens(raw.opacity.tokens),
+        motion: parse_tokens(raw.motion.tokens),
+        motion_note: raw.motion.note,
         families: raw.type_.families,
         type_groups: raw
             .type_
@@ -298,6 +301,10 @@ struct RawTokens {
     size: RawSection,
     #[serde(default)]
     shadow: RawSection,
+    #[serde(default)]
+    opacity: RawSection,
+    #[serde(default)]
+    motion: RawSection,
 }
 
 #[derive(Debug, Deserialize, Default)]

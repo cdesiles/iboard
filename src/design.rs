@@ -135,8 +135,8 @@ mod tests {
     #[test]
     fn missing_preview_and_readme_are_warnings_not_errors() {
         let system = repo();
-        // BoardScreen and Cover ship a preview without a README today.
-        assert!(system.warnings.iter().any(|w| w.contains("BoardScreen")));
+        // Cover ships a preview without a README.
+        assert!(system.warnings.iter().any(|w| w.contains("Cover")));
         assert!(system.errors().is_empty());
     }
 
@@ -156,6 +156,9 @@ mod tests {
 
         assert_eq!(reloaded.meta, source.meta);
         assert_eq!(reloaded.tokens, source.tokens);
+        assert_eq!(reloaded.tokens.opacity.len(), 2);
+        assert_eq!(reloaded.tokens.motion.len(), 5);
+        assert!(reloaded.tokens.motion_note.is_some());
         assert_eq!(reloaded.components.len(), source.components.len());
         let before: Vec<&str> = source.components.iter().map(|c| c.name.as_str()).collect();
         let after: Vec<&str> = reloaded

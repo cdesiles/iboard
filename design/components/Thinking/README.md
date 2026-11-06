@@ -15,7 +15,7 @@ What iboard shows while an agent works, usually around 10s for a Challenger roun
 
   The whole mark then turns a quarter (a jump, invisible since both poses match), so four quarters walk the square in 6.4s. The two blocks never touch: the blue is out of the corner before the stem arrives.
 - Reduced motion: no animation, the i stands still; the elapsed clock still shows progress.
-- Inline it sits before the label: the ReviewButton reads "[i] Reviewing… `⌘⇧R`".
+- Inline it sits before the label: the ReviewButton reads "[i] Reviewing…", with `⌘⇧R` (which cancels) after it while ⌘ is held.
 
 ## In the RefinePanel
 

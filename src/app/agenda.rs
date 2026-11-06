@@ -17,7 +17,7 @@ use super::{
 const DAY: f32 = 18.0;
 const GAP: f32 = 3.0;
 /// The `Mon` `Wed` `Fri` labels' width, and the month row's height.
-const WEEKDAYS_W: f32 = 26.0;
+const WEEKDAYS_W: f32 = 30.0;
 const MONTHS_H: f32 = 14.0;
 /// A fold of empty weeks.
 const FOLD_W: f32 = 8.0;
@@ -326,7 +326,8 @@ fn grid_days(
     };
     let size = Vec2::new(grid_width(weeks), MONTHS_H + GAP + 7.0 * (DAY + GAP));
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-    let painter = ui.painter_at(rect);
+    // The last week's month name is wider than its column.
+    let painter = ui.painter_at(rect.with_max_x(rect.max.x + theme::SPACE_2));
     let font = theme::meta();
     for (row, name) in [(0, "Mon"), (2, "Wed"), (4, "Fri")] {
         let y = rect.top() + MONTHS_H + GAP + row as f32 * (DAY + GAP) + DAY / 2.0;

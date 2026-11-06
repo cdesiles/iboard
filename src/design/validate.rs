@@ -23,12 +23,14 @@ impl DesignSystem {
 
         let names: BTreeSet<&str> = self.tokens.all().map(|t| t.name.as_str()).collect();
 
-        let sections: [(&str, &[Token]); 5] = [
+        let sections: [(&str, &[Token]); 7] = [
             ("color", &self.tokens.color),
             ("spacing", &self.tokens.spacing),
             ("radius", &self.tokens.radius),
             ("size", &self.tokens.size),
             ("shadow", &self.tokens.shadow),
+            ("opacity", &self.tokens.opacity),
+            ("motion", &self.tokens.motion),
         ];
         for (section, tokens) in sections {
             for token in tokens {

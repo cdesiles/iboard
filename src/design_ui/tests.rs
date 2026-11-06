@@ -25,8 +25,12 @@ fn panel_ctx() -> (egui::Context, egui::RawInput) {
 fn frame(panel: &mut Panel, system: &DesignSystem, render_available: bool) -> Action {
     let (ctx, raw) = panel_ctx();
     let mut action = Action::Keep;
+    // A README's table asks for a second pass, which must not lose the first's action.
     let mut output = ctx.run_ui(raw, |ui| {
-        action = panel.body(ui, Some(system), None, render_available, false);
+        let answer = panel.body(ui, Some(system), None, render_available, false);
+        if matches!(action, Action::Keep) {
+            action = answer;
+        }
     });
     output.textures_delta.clear();
     action
@@ -259,6 +263,21 @@ fn components_are_listed_alphabetically() {
     assert_eq!(all, sorted, "the rail lists components alphabetically");
     assert!(all.contains(&"Button"));
     assert_eq!(names("button"), vec!["Button", "ReviewButton"]);
+}
+
+#[test]
+fn the_opacity_and_motion_pages_list_their_tokens() {
+    for (category, token) in [
+        (Category::Opacity, "label-tint-dark"),
+        (Category::Motion, "scroll-linger"),
+    ] {
+        let panel = Panel {
+            category,
+            ..Panel::default()
+        };
+        let harness = kit(panel, Appearance::Light);
+        assert!(harness.query_by_label(token).is_some(), "{token}");
+    }
 }
 
 #[test]

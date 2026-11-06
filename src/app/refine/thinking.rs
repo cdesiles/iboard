@@ -58,7 +58,7 @@ pub(super) fn thinking_pick(ui: &mut egui::Ui, elapsed: std::time::Duration, tur
                     ui.spacing_mut().item_spacing.x = 10.0;
                     ui.label(
                         RichText::new(key.to_string())
-                            .font(theme::meta())
+                            .font(theme::meta_mono())
                             .color(p.ink_faint),
                     );
                     ui.vertical(|ui| {

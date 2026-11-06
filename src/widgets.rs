@@ -175,7 +175,7 @@ pub fn paint_kbd(ui: &Ui, key: &str, left_center: Pos2) -> f32 {
 /// A key cap in its own edge and ink colours: `accent` on a picked choice.
 pub fn paint_kbd_in(ui: &Ui, key: &str, left_center: Pos2, edge: Color32, ink: Color32) -> f32 {
     let p = theme::palette(ui);
-    let text = galley(ui, key, theme::meta(), ink);
+    let text = galley(ui, key, theme::meta_mono(), ink);
     let size = Vec2::new((text.size().x + 8.0).max(18.0), 16.0);
     let rect = Rect::from_min_size(Pos2::new(left_center.x, left_center.y - size.y / 2.0), size);
     let painter = ui.painter();
@@ -203,7 +203,7 @@ pub fn paint_kbd_in(ui: &Ui, key: &str, left_center: Pos2, edge: Color32, ink: C
 /// caller draws it only while the hints are out, through [`sliding_hints`].
 pub fn hint(ui: &mut Ui, key: &str, action: &str) {
     let p = theme::palette(ui);
-    let text = galley(ui, key, theme::meta(), p.ink_muted);
+    let text = galley(ui, key, theme::meta_mono(), p.ink_muted);
     let key_width = (text.size().x + 8.0).max(18.0);
     ui.spacing_mut().item_spacing.x = theme::SPACE_2;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(key_width, 16.0), Sense::hover());

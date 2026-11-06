@@ -8,16 +8,16 @@ The dialog where a refinement agent (the Challenger) pushes back on an issue and
 | --- | --- | --- |
 | Reasoning and choices in one scroll; choices pushed below the fold | Two panes: reasoning on the left, choices on the right (`bg` well, `line` divider) | You can read the argument and look at the options at the same time; the choices never scroll away |
 | Each choice is one long sentence | A **title** (`ui-strong` 600) and a **detail** (`ui-small`, `ink-muted`) | The four options can be compared by scanning four short titles |
-| Choices look like list text; selected = pale blue fill only | Each choice is a bordered card with a `line-strong` edge, its key in a Kbd and a radio dot; selected = `accent` 2px edge, `accent-soft` fill, filled radio, key in `accent` | Reads as clickable; selection never relies on fill colour alone |
+| Choices look like list text; selected = pale blue fill only | Each choice is a bordered card with a `line-soft` edge (`line-strong` on hover), its key in a Kbd and a radio dot; selected = `accent` 2px edge, `accent-soft` fill, filled radio, key in `accent` | Reads as clickable; selection never relies on fill colour alone |
 | TL;DR in a filled violet box, bold 17pt | `ui-title` 15/22 with a 3px `review` rule on the left | Still the first thing read, but lighter; violet stays the "agent is talking" hint |
-| Prose 15pt across the full 1100pt width | `read-body` 14/22 capped at 68ch | Long lines were the main reading cost |
+| Prose 15pt across the full 1100pt width | `read-body` 15/24 in `read-measure` | Long lines were the main reading cost |
 | One free-text box, unrelated to the choices | The box follows the selection: "Add a note to choice N (optional)" once one is picked, "Or answer in your own words" otherwise | A choice and a nuance can go in the same answer |
 | "Hide", "Dismiss", a quiet "Send ⌘↩" | "End refining" (ghost), "Hide `esc`", and a filled `review` **Send** that names what goes out: "Send choice 1", "Send answer"; disabled with nothing to send | Dismiss vs Hide was unclear; the main action now looks main and says what it does |
-| Header shows tool · model · role in one violet run | Path in mono, role as a `review` pill, tool and model in `meta` `ink-muted` on the right | The file and the role read first; the plumbing reads last |
+| Header shows tool · model · role in one violet run | Path in `ui-strong` Inter, role as a `review` pill, tool and model in `meta` `ink-muted` on the right | The file and the role read first; the plumbing reads last |
 
 ## Layout
 
-- A Modal of size XL: `surface`, `line-strong` edge, `radius-md`, `shadow-modal`, the window minus `modal-inset`, at most 1200 × 900, with a fixed height so nothing jumps while the answer arrives.
+- A Modal of size XL: `surface`, `line` edge, `radius-md`, `shadow-modal`, the window minus `modal-inset`, at most 1200 × 900, over the `scrim`, with a fixed height so nothing jumps while the answer arrives.
 - **Head** (36pt, `review-soft`): "Refining `todo/002-toolbar.md`", the role pill (Challenger), and `tool · model` at the right, truncating first.
 - **Why pane**: TL;DR, then the agent's paragraphs. Inline code on `surface-sunken`. Scrolls on its own.
 - **Pick pane** (320 to 420pt): the question head in `ui-label` ("How should we resolve it?", count in `meta`), the choice cards 8pt apart, then the note field.
