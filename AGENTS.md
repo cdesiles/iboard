@@ -42,6 +42,8 @@ Ticket file names must stay unique across every column: the `closes <file>.md` l
 
 This repo has a design system at design/; tokens in design/tokens.json, components in design/components/.
 
+`design/` is the single source of truth: change the design here and commit it. Claude Design only receives published versions of it, and only source files: `tokens.css`, `api/` and `manifest.json` are generated on its side. Before importing a version made there, diff it against `design/`, since a version that lacks the repo's changes would undo them.
+
 ## Comments
 
 We don't like comments. Use them very wisely, when the case is very tricky.
