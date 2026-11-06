@@ -258,16 +258,28 @@ impl Dialog {
             hex.clear();
             self.colourless.remove(name);
         }
-        if let Some(index) = edits.remove {
-            let (name, _) = self.label_rows.remove(index);
-            self.stand_out.remove(&name);
-            self.colourless.remove(&name);
+        if edits.commit_rename {
+            if edits.remove.is_some_and(|index| {
+                self.rename
+                    .as_ref()
+                    .is_some_and(|rename| rename.index == index)
+            }) {
+                self.rename = None;
+            }
+            self.commit_rename(p);
         }
         if let Some(rename) = edits.start_rename {
             self.rename = Some(rename);
         }
-        if edits.commit_rename {
-            self.commit_rename(p);
+        if let Some(index) = edits.remove {
+            let (name, _) = self.label_rows.remove(index);
+            self.stand_out.remove(&name);
+            self.colourless.remove(&name);
+            match self.rename.as_mut() {
+                Some(rename) if rename.index == index => self.rename = None,
+                Some(rename) if rename.index > index => rename.index -= 1,
+                _ => {}
+            }
         }
 
         ui.add_space(theme::SPACE_5);
@@ -624,5 +636,37 @@ mod tests {
         let labels = state(&harness).labels();
         assert_eq!(labels.style("bug"), LabelStyle::default());
         assert_eq!(labels::table(&labels.entries())["bug"], "");
+    }
+
+    #[test]
+    fn removing_a_row_while_another_is_renamed_renames_the_right_one() {
+        let rows = [
+            ("alpha", "#000000"),
+            ("beta", "#111111"),
+            ("gamma", "#222222"),
+        ];
+        let mut harness = labels_harness(&rows);
+        harness.state_mut().1.rename = Some(Rename {
+            index: 1,
+            text: "renamed".to_string(),
+            focus: true,
+        });
+        harness.run_steps(2);
+        harness
+            .get_all_by_label("Remove this label")
+            .next()
+            .unwrap()
+            .click();
+        harness.run_steps(2);
+        let names: Vec<_> = state(&harness)
+            .label_rows
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        assert_eq!(names, ["renamed", "gamma"]);
+        assert_eq!(
+            state(&harness).renames,
+            [("beta".to_string(), "renamed".to_string())]
+        );
     }
 }
