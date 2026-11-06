@@ -58,11 +58,12 @@ impl EditorState {
         self.last_edit = Some(Instant::now());
     }
 
-    /// The buffer becomes `text`, an unsaved edit: an agent's proposal.
+    /// The buffer becomes `text`, an unsaved edit: an agent's proposal, which
+    /// autosave leaves to the author's next edit or `⌘S`.
     pub(super) fn replace(&mut self, text: String) {
         self.text = text;
         self.offered = None;
-        self.mark_edited();
+        self.last_edit = None;
     }
 
     /// An agent's proposal: the buffer becomes it unless that would lose

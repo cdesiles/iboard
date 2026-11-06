@@ -89,6 +89,23 @@ fn an_update_applied_keeps_the_editors_unsaved_text() {
     assert_eq!(app.session.editing(), Some(file.as_path()));
 }
 
+/// With Auto on, an applied proposal stays unsaved until the author saves it.
+#[test]
+fn an_applied_proposal_waits_for_the_author_with_auto_on() {
+    let (_dir, file, mut app) = open_issue_with_review("apply-auto");
+    let saved = std::fs::read_to_string(&file).unwrap();
+    app.prefs.auto = true;
+    app.apply_review_proposal();
+    let mut harness = kit(app);
+    std::thread::sleep(crate::app::editor::AUTOSAVE_AFTER);
+    harness.run_steps(2);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), saved);
+    assert!(harness.state().1.has_unsaved_edits());
+
+    harness.state_mut().1.save_and_preview();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Demo\n\nBetter.");
+}
+
 /// Discarding the draft drops the question with it.
 #[test]
 fn discarding_the_edits_ends_the_question() {

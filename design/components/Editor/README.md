@@ -8,4 +8,4 @@ The same page in plain text: the raw file, in `edit-body` mono, inside an `accen
 - Markdown markers (`#`, `-`, `**`) may be tinted `ink-muted`; everything else stays `ink`. No preview pane.
 - Leaving with unsaved changes asks inline in the bar: "Save changes to ai-assist.md?" Save · Discard · Keep editing. With Auto on (Settings › General, the default), leaving saves.
 - If the file changed on disk while editing, show a `danger` line in the bar with Reload and Keep mine.
-- Applying an agent's proposal over unsaved edits asks first, in the same place: Replace mine or Keep mine. Unsaved text is never lost silently.
+- Applying an agent's proposal over unsaved edits asks first, in the same place: Replace mine or Keep mine. Unsaved text is never lost silently. An applied proposal is not autosaved, even with Auto on: it waits for the author's next edit or `⌘S`.
