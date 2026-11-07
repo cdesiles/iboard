@@ -1,8 +1,8 @@
 //! Moving, reordering, deleting and archiving issue files, and undoing a delete.
 
 use super::{
-    Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Screen, Undo, atomic_write, discovery,
-    file_name, images, trash,
+    Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Screen, Session, Undo, atomic_write,
+    discovery, file_name, images, trash,
 };
 use crate::priority;
 
@@ -124,62 +124,11 @@ impl IboardApp {
         self.refresh();
     }
 
-    /// Follows renamed files in everything that holds an issue: the
-    /// selection, the reader and editor, every panel open on one, and the
-    /// reviews, asks and builds at work on one.
+    /// Follows renamed files in everything that holds an issue (see
+    /// [`Session::rename`]).
     pub(super) fn apply_renames(&mut self, renames: &[(PathBuf, PathBuf)]) {
         for (old, new) in renames {
-            let follow = |path: &mut PathBuf| {
-                if path == old {
-                    *path = new.clone();
-                }
-            };
-            self.session.review_runs.rename(old, new);
-            if let Some(ask) = self.session.asks.remove(old) {
-                self.session.asks.insert(new.clone(), ask);
-            }
-            if let Some(build) = self.session.build.as_mut() {
-                build.rename(old, new);
-            }
-            if let Some(watch) = self.session.watch.as_mut() {
-                watch.rename(old, new);
-            }
-            if let Some(selected) = self.session.selected.as_mut() {
-                follow(selected);
-            }
-            self.session.picked.iter_mut().for_each(follow);
-            if let Screen::Detail(open, _) = &mut self.session.screen {
-                follow(open);
-            }
-            if let Some(Confirm::Delete(paths)) = self.session.confirm.as_mut() {
-                paths.iter_mut().for_each(follow);
-            }
-            if let Some((path, _)) = self.session.new_card.as_mut() {
-                follow(path);
-            }
-            if let Some((_, path)) = self.session.pending_front.as_mut() {
-                follow(path);
-            }
-            let paths = [
-                self.session.editor.as_mut().map(|editor| &mut editor.path),
-                self.session
-                    .label_picker
-                    .as_mut()
-                    .map(|picker| &mut picker.path),
-                self.session.commits.as_mut().map(|panel| &mut panel.path),
-                self.session.review.as_mut().map(|review| &mut review.path),
-                self.session.refine.as_mut().map(|refine| &mut refine.path),
-                self.session.notes.as_mut().map(|notes| &mut notes.path),
-                self.session
-                    .enrichment
-                    .as_mut()
-                    .map(|enrichment| &mut enrichment.path),
-                self.session.ask_draft.as_mut().map(|draft| &mut draft.path),
-                self.session.agent_log.as_mut().map(|log| &mut log.path),
-            ];
-            for path in paths.into_iter().flatten() {
-                follow(path);
-            }
+            self.session.rename(old, new);
         }
     }
 
@@ -316,7 +265,7 @@ impl IboardApp {
                 let images = self.trash_images(path);
                 self.session.notice =
                     Some((format!("Deleted {}", file_name(path)), Instant::now()));
-                self.let_go(path);
+                self.session.forget(path);
                 self.refresh();
                 Some((trashed, images))
             }
@@ -372,41 +321,8 @@ impl IboardApp {
             self.error = Some(format!("Couldn't archive {}: {err}", self.relative(path)));
             return None;
         }
-        self.let_go(path);
+        self.session.forget(path);
         Some(target)
-    }
-
-    /// Lets go of an issue that left the board: the selections, the editor,
-    /// the reader, the review, refinement or agent log open on it, and its
-    /// review run. An ask or a build at work on it runs on.
-    fn let_go(&mut self, path: &Path) {
-        if self
-            .session
-            .review
-            .as_ref()
-            .is_some_and(|review| review.path == path)
-            || self
-                .session
-                .refine
-                .as_ref()
-                .is_some_and(|refine| refine.path == path)
-        {
-            self.close_review();
-        }
-        self.cancel_review_run(path);
-        if self.session.selected.as_deref() == Some(path) {
-            self.session.selected = None;
-        }
-        self.session.picked.retain(|picked| picked != path);
-        if self.session.editor.as_ref().is_some_and(|e| e.path == path) {
-            self.session.editor = None;
-        }
-        if self.agent_log_open(path) {
-            self.session.agent_log = None;
-        }
-        if matches!(&self.session.screen, Screen::Detail(open, _) if open == path) {
-            self.session.screen = Screen::Board;
-        }
     }
 
     /// Moves a just-composed ticket to position 1, once the pointer has settled.
@@ -432,5 +348,98 @@ impl IboardApp {
             return;
         };
         self.reorder_column(&dir, &[path], Some(&anchor));
+    }
+}
+
+impl Session {
+    /// Every place that holds an issue's path: the selection and picks, the
+    /// detail screen, the delete confirmation, the new card, pending front,
+    /// and every panel open on one.
+    pub(super) fn issue_paths_mut(&mut self) -> impl Iterator<Item = &mut PathBuf> {
+        let open = match &mut self.screen {
+            Screen::Detail(open, _) => Some(open),
+            _ => None,
+        };
+        let confirm = match &mut self.confirm {
+            Some(Confirm::Delete(paths)) => paths.as_mut_slice(),
+            _ => &mut [],
+        };
+        [
+            self.selected.as_mut(),
+            open,
+            self.new_card.as_mut().map(|(path, _)| path),
+            self.pending_front.as_mut().map(|(_, path)| path),
+            self.editor.as_mut().map(|editor| &mut editor.path),
+            self.label_picker.as_mut().map(|picker| &mut picker.path),
+            self.commits.as_mut().map(|panel| &mut panel.path),
+            self.review.as_mut().map(|review| &mut review.path),
+            self.refine.as_mut().map(|refine| &mut refine.path),
+            self.notes.as_mut().map(|notes| &mut notes.path),
+            self.enrichment
+                .as_mut()
+                .map(|enrichment| &mut enrichment.path),
+            self.ask_draft.as_mut().map(|draft| &mut draft.path),
+            self.agent_log.as_mut().map(|log| &mut log.path),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(&mut self.picked)
+        .chain(confirm)
+    }
+
+    /// Follows an issue renamed from `old` to `new` everywhere it is held,
+    /// and in the reviews, asks and builds at work on it.
+    pub(super) fn rename(&mut self, old: &Path, new: &Path) {
+        self.review_runs.rename(old, new);
+        if let Some(ask) = self.asks.remove(old) {
+            self.asks.insert(new.to_path_buf(), ask);
+        }
+        if let Some(build) = self.build.as_mut() {
+            build.rename(old, new);
+        }
+        if let Some(watch) = self.watch.as_mut() {
+            watch.rename(old, new);
+        }
+        for path in self.issue_paths_mut().filter(|path| *path == old) {
+            *path = new.to_path_buf();
+        }
+    }
+
+    /// Lets go of an issue that left the board: closes everything open on
+    /// it and stops its review run. An ask, a build or an enrichment at work
+    /// on it runs on.
+    pub(super) fn forget(&mut self, path: &Path) {
+        self.review_runs.forget(path);
+        if self
+            .review
+            .as_ref()
+            .is_some_and(|review| review.path == path)
+            || self
+                .refine
+                .as_ref()
+                .is_some_and(|refine| refine.path == path)
+        {
+            self.review = None;
+            self.refine = None;
+        }
+        if matches!(&self.screen, Screen::Detail(open, _) if open == path) {
+            self.screen = Screen::Board;
+        }
+        if let Some(Confirm::Delete(paths)) = self.confirm.as_mut() {
+            paths.retain(|held| held != path);
+            if paths.is_empty() {
+                self.confirm = None;
+            }
+        }
+        self.picked.retain(|picked| picked != path);
+        self.selected.take_if(|selected| selected == path);
+        self.new_card.take_if(|(held, _)| held == path);
+        self.pending_front.take_if(|(_, held)| held == path);
+        self.editor.take_if(|editor| editor.path == path);
+        self.label_picker.take_if(|picker| picker.path == path);
+        self.commits.take_if(|panel| panel.path == path);
+        self.notes.take_if(|notes| notes.path == path);
+        self.ask_draft.take_if(|draft| draft.path == path);
+        self.agent_log.take_if(|log| log.path == path);
     }
 }
