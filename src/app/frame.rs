@@ -216,7 +216,7 @@ impl IboardApp {
         }
     }
 
-    fn modal_up(&self) -> bool {
+    pub(super) fn modal_up(&self) -> bool {
         self.session.confirm.is_some()
             || self.settings.is_some()
             || self.groups_dialog.is_some()

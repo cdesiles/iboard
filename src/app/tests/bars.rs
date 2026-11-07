@@ -174,6 +174,77 @@ fn the_status_bar_names_the_composers_keys() {
     assert!(harness.query_all_by_label("close").next().is_some());
 }
 
+/// Holding ⌘ lists every key of the screen on one sheet, and letting go puts
+/// it away with the hints beside the controls.
+#[test]
+fn holding_command_lists_every_key_on_a_sheet() {
+    let dir = scratch_dir("shortcuts-sheet");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut harness = board(&dir);
+    assert!(
+        harness.query_by_label("Keyboard shortcuts").is_none(),
+        "no sheet at rest"
+    );
+
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    harness.run_steps(7);
+    harness.get_by_label("Keyboard shortcuts");
+    harness.get_by_value("⌘N New issue");
+    harness.get_by_value("⌘↩ Next column");
+
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run_steps(1);
+    assert!(harness.query_by_label("Keyboard shortcuts").is_none());
+}
+
+/// The sheet follows the screen: the Editor lists Save and the text's undo,
+/// where the board lists neither.
+#[test]
+fn the_shortcuts_sheet_follows_the_screen() {
+    let dir = scratch_dir("shortcuts-editor");
+    let file = dir.join("issues/todo/a.md");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "# Title\n").unwrap();
+    let mut harness = board(&dir);
+    harness.state_mut().1.open_issue(file.clone());
+    harness.state_mut().1.start_editing(&file);
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    harness.run_steps(7);
+    harness.get_by_value("⌘S Save");
+    harness.get_by_value("⌘Z Undo typing");
+    assert!(
+        harness.query_by_value("⌘↩ Next column").is_none(),
+        "no cards here"
+    );
+}
+
+/// With Auto on the board reads itself: the sheet doesn't offer `⌘R`.
+#[test]
+fn the_shortcuts_sheet_offers_refresh_only_with_auto_off() {
+    let dir = scratch_dir("shortcuts-refresh");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut harness = board(&dir);
+    harness.state_mut().1.prefs.auto = true;
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    harness.run_steps(7);
+    assert!(harness.query_by_value("⌘R Refresh").is_none(), "Auto on");
+    harness.state_mut().1.prefs.auto = false;
+    harness.run_steps(1);
+    harness.get_by_value("⌘R Refresh");
+}
+
+/// A modal owns the screen and already shows its own keys: no sheet over it.
+#[test]
+fn the_shortcuts_sheet_stays_off_a_modal() {
+    let dir = scratch_dir("shortcuts-modal");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut harness = board(&dir);
+    harness.state_mut().1.open_composer();
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    harness.run_steps(7);
+    assert!(harness.query_by_label("Keyboard shortcuts").is_none());
+}
+
 /// A split draft's checkbox reads as what it includes.
 #[test]
 fn a_split_drafts_checkbox_has_a_name() {

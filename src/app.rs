@@ -77,6 +77,7 @@ mod reader;
 mod refine;
 mod release;
 mod review;
+mod shortcuts;
 mod side_panel;
 mod split;
 mod stats;
@@ -689,6 +690,7 @@ impl IboardApp {
                     Screen::Diff => self.diff_ui(ui),
                 }
             });
+        self.shortcuts_sheet(ui);
         self.label_picker_ui(ui);
         self.ask_dialog(ui);
         match self.session.confirm.clone() {
