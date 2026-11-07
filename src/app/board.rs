@@ -11,6 +11,8 @@ use super::{
     RichText, Sense, Stroke, StrokeKind, Vec2, discovery, review, theme, widgets,
 };
 
+mod drop;
+
 /// The start of the gutter after a column, where its thumb floats clear of
 /// the cards.
 const THUMB_LANE: f32 = theme::SCROLL_HIT;
@@ -45,11 +47,21 @@ impl IboardApp {
             ui.ctx().request_repaint();
         }
         let fades = !theme::reduced_motion(ui.ctx());
-        let selected = self.session.selected.clone();
-        let scroll_to_selected = std::mem::take(&mut self.session.scroll_to_selected);
         let running = self.building_now();
-        let agents = self.session.agents;
-        let watching = self.watching_ready();
+        let pass = Pass {
+            width,
+            height,
+            new_card: new_card
+                .as_ref()
+                .map(|(path, left)| (path.as_path(), if fades { *left } else { 1.0 })),
+            scroll_to_selected: std::mem::take(&mut self.session.scroll_to_selected),
+            parked: self.has_parked_note(),
+            builds: Builds {
+                running: &running,
+                agents: self.session.agents,
+                watching: self.watching_ready(),
+            },
+        };
 
         let dragged = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx())
             .and_then(|drag| drag.path.parent().map(Path::to_path_buf));
@@ -77,36 +89,8 @@ impl IboardApp {
                     // The window gutter on the left; item spacing after the last
                     // column gives the same on the right.
                     ui.add_space(gutter);
-                    let parked = self.has_parked_note();
                     for (index, column) in self.board.columns.iter().enumerate() {
-                        let view = ColumnView {
-                            column,
-                            index,
-                            filter: &self.filter_bar.filter,
-                            width,
-                            height,
-                            new_card: new_card.as_ref().map(|(path, left)| {
-                                (path.as_path(), if fades { *left } else { 1.0 })
-                            }),
-                            selected: selected.as_deref(),
-                            scroll_to_selected,
-                            picked: &self.session.picked,
-                            root: &self.board.root,
-                            board: &self.board,
-                            parked: parked && column.accepts_new_issues(),
-                            labels: &self.prefs.labels,
-                            reviews: review::CardReviews {
-                                past: &self.past_reviews,
-                                runs: &self.session.review_runs,
-                            },
-                            can_review: self.prefs.agent.configured(),
-                            namings: &self.session.namings,
-                            builds: Builds {
-                                running: &running,
-                                agents,
-                                watching,
-                            },
-                        };
+                        let view = ColumnView::new(self, pass, index, column);
                         if dragged.as_deref() == Some(column.dir.as_path()) {
                             let left = ui.cursor().min.x;
                             dragged_column = Some(egui::Rangef::new(left, left + width));
@@ -151,11 +135,25 @@ pub(super) fn status_color(p: &Palette, column: &Column) -> Color32 {
     column_status(column).color(p)
 }
 
+/// What every column shares in this frame.
+#[derive(Clone, Copy)]
+struct Pass<'a> {
+    width: f32,
+    height: f32,
+    new_card: Option<(&'a Path, f32)>,
+    scroll_to_selected: bool,
+    /// NewIssueModal holds parked notes.
+    parked: bool,
+    builds: Builds<'a>,
+}
+
 /// Everything `column_ui` needs to know about one column.
 struct ColumnView<'a> {
     column: &'a Column,
     index: usize,
     filter: &'a Filter,
+    /// The column's issues the filter keeps.
+    visible: Vec<&'a Issue>,
     width: f32,
     height: f32,
     /// An issue just created by the composer, and how much of its highlight
@@ -184,14 +182,49 @@ struct ColumnView<'a> {
     builds: Builds<'a>,
 }
 
+impl<'a> ColumnView<'a> {
+    fn new(app: &'a IboardApp, pass: Pass<'a>, index: usize, column: &'a Column) -> Self {
+        let filter = &app.filter_bar.filter;
+        Self {
+            column,
+            index,
+            filter,
+            visible: column
+                .issues
+                .iter()
+                .filter(|issue| filter.matches(issue))
+                .collect(),
+            width: pass.width,
+            height: pass.height,
+            new_card: pass.new_card,
+            selected: app.session.selected.as_deref(),
+            scroll_to_selected: pass.scroll_to_selected,
+            picked: &app.session.picked,
+            root: &app.board.root,
+            board: &app.board,
+            parked: pass.parked && column.accepts_new_issues(),
+            labels: &app.prefs.labels,
+            reviews: review::CardReviews {
+                past: &app.past_reviews,
+                runs: &app.session.review_runs,
+            },
+            can_review: app.prefs.agent.configured(),
+            namings: &app.session.namings,
+            builds: pass.builds,
+        }
+    }
+
+    fn visible_paths(&self) -> Vec<PathBuf> {
+        self.visible
+            .iter()
+            .map(|issue| issue.path.clone())
+            .collect()
+    }
+}
+
 fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
     let column = view.column;
     let mut intents = Vec::new();
-    let visible: Vec<&Issue> = column
-        .issues
-        .iter()
-        .filter(|issue| view.filter.matches(issue))
-        .collect();
     // `todo/`, or empty for the issues at the issues root.
     let folder = match column.dir.strip_prefix(view.root) {
         Ok(relative) if !relative.as_os_str().is_empty() => format!("{}/", relative.display()),
@@ -215,7 +248,7 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
         |ui| {
             ui.set_width(view.width);
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            column_head(ui, view, &visible, &mut intents);
+            column_head(ui, view, &mut intents);
             let lane = Rect::from_min_size(
                 ui.cursor().min,
                 Vec2::new(view.width + THUMB_LANE, ui.available_height()),
@@ -234,7 +267,7 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
                         ui.set_width(view.width);
                         ui.spacing_mut().item_spacing.y = theme::SPACE_3;
                         let over = foreign_drag_over(view, &drop_response);
-                        let cards = column_cards(ui, view, &visible, &folder, over, &mut intents);
+                        let cards = column_cards(ui, view, &folder, over, &mut intents);
                         // While the DropZones dock covers the bottom of the board,
                         // the last cards can still scroll out from under it.
                         if egui::DragAndDrop::has_payload_of_type::<IssueDrag>(ui.ctx()) {
@@ -244,7 +277,7 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
                             && (drop_response.dnd_hover_payload::<IssueDrag>().is_some()
                                 || drop_response.dnd_release_payload::<IssueDrag>().is_some())
                         {
-                            anchor = drop_line(ui, &cards);
+                            anchor = drop::drop_line(ui, &cards);
                         }
                     },
                 );
@@ -252,8 +285,8 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
         },
     );
     // An empty column's well is the highlight.
-    if !visible.is_empty() && foreign_drag_over(view, &drop_response) {
-        highlight_drop(ui, drop_rect);
+    if !view.visible.is_empty() && foreign_drag_over(view, &drop_response) {
+        drop::highlight_drop(ui, drop_rect);
     }
     if let Some(drag) = drop_response.dnd_release_payload::<IssueDrag>() {
         intents.push(Intent::Place {
@@ -268,12 +301,7 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
 /// The column's header: its status icon, its name and its count. Hovered, the
 /// count gives way to the column actions, fading in. A column holding picked
 /// cards offers to clear the multi-selection beside its title.
-fn column_head(
-    ui: &mut egui::Ui,
-    view: &ColumnView,
-    visible: &[&Issue],
-    intents: &mut Vec<Intent>,
-) {
+fn column_head(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent>) {
     let p = theme::palette(ui);
     let column = view.column;
     let (head_rect, _) =
@@ -291,7 +319,8 @@ fn column_head(
             .font(theme::ui_strong())
             .color(p.ink),
     );
-    if visible
+    if view
+        .visible
         .iter()
         .any(|issue| view.picked.contains(&issue.path))
     {
@@ -307,23 +336,20 @@ fn column_head(
         egui::Id::unique(("column_head", view.index)),
         hovered,
     );
-    let acts = has_actions(view, visible);
+    let actions = header_actions(view);
     head.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-        if hovered && acts {
+        if hovered && !actions.is_empty() {
             ui.multiply_opacity(fade);
-            column_actions(ui, view, visible, intents);
+            for action in actions {
+                intents.extend(header_action(ui, view, action));
+            }
             return;
         }
-        // Parked notes keep Todo's `+` and its dot in view.
-        if view.parked {
-            new_issue_button(ui, view, intents);
+        for action in actions.into_iter().filter(|action| action.at_rest(view)) {
+            intents.extend(header_action(ui, view, action));
         }
-        // A running build keeps its Stop in view.
-        if view.builds.active() {
-            build_action(ui, view, visible, intents);
-        }
-        let shown = visible.len();
+        let shown = view.visible.len();
         // Filtered: "2/6", the total in `ink-faint`.
         let mut count = LayoutJob::default();
         let part = |color| egui::TextFormat::simple(theme::meta(), color);
@@ -337,38 +363,83 @@ fn column_head(
     });
 }
 
-/// The hovered header's actions, right to left: Todo's `+`, Ready's play,
-/// Doing's agents and Done's archive.
-/// Whether [`column_actions`] has anything to offer in place of the count.
-fn has_actions(view: &ColumnView, visible: &[&Issue]) -> bool {
-    let column = view.column;
-    let builds = discovery::is_ready_column(&column.dir)
-        && (view.builds.active() || visible.iter().any(|issue| build::buildable(issue)));
-    column.accepts_new_issues()
-        || builds
-        || discovery::is_doing_column(&column.dir)
-        || column.name.eq_ignore_ascii_case("done") && !visible.is_empty()
+/// What a column's header offers, right to left.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HeaderAction {
+    /// Todo's `+`, with an `accent` dot while NewIssueModal holds parked
+    /// notes.
+    NewIssue,
+    /// Ready's play, which hands its issues to the build agent top to bottom.
+    Build,
+    /// Ready's stop, while the build runs or watches Ready for new issues.
+    StopBuild,
+    /// Doing's agents, right to left: `+`, how many, `−`. Down to none, which
+    /// stops the AI build; up to [`build::MAX_AGENTS`].
+    Agents,
+    /// Done's "Archive all", which moves the issues it lists (after the
+    /// filter) to `.archive/`.
+    ArchiveAll,
 }
 
-fn column_actions(
-    ui: &mut egui::Ui,
-    view: &ColumnView,
-    visible: &[&Issue],
-    intents: &mut Vec<Intent>,
-) {
+impl HeaderAction {
+    /// Parked notes keep Todo's `+` and its dot in view, and a running build
+    /// its Stop, while the header is not hovered.
+    fn at_rest(self, view: &ColumnView) -> bool {
+        match self {
+            Self::NewIssue => view.parked,
+            Self::StopBuild => true,
+            Self::Build | Self::Agents | Self::ArchiveAll => false,
+        }
+    }
+}
+
+fn header_actions(view: &ColumnView) -> Vec<HeaderAction> {
     let column = view.column;
+    let mut actions = Vec::new();
     if column.accepts_new_issues() {
-        new_issue_button(ui, view, intents);
+        actions.push(HeaderAction::NewIssue);
     }
-    build_action(ui, view, visible, intents);
-    agents_stepper(ui, view, intents);
-    if column.name.eq_ignore_ascii_case("done") && !visible.is_empty() {
-        done_controls(ui, view, visible, intents);
+    if discovery::is_ready_column(&column.dir) {
+        if view.builds.active() {
+            actions.push(HeaderAction::StopBuild);
+        } else if view.visible.iter().any(|issue| build::buildable(issue)) {
+            actions.push(HeaderAction::Build);
+        }
+    }
+    if discovery::is_doing_column(&column.dir) {
+        actions.push(HeaderAction::Agents);
+    }
+    if column.name.eq_ignore_ascii_case("done") && !view.visible.is_empty() {
+        actions.push(HeaderAction::ArchiveAll);
+    }
+    actions
+}
+
+fn header_action(ui: &mut egui::Ui, view: &ColumnView, action: HeaderAction) -> Option<Intent> {
+    let tone = widgets::Tone::Ghost;
+    let button = |ui: &mut egui::Ui, icon, salt, hover: &str| {
+        let id = egui::Id::unique((salt, view.index));
+        widgets::icon_button(ui, icon, id, hover, tone).clicked()
+    };
+    match action {
+        HeaderAction::NewIssue => new_issue_button(ui, view),
+        HeaderAction::Build => button(ui, Icon::Play, "build", "Build with AI, top to bottom")
+            .then(|| Intent::Build(view.visible_paths())),
+        HeaderAction::StopBuild => {
+            button(ui, Icon::Stop, "build", "Stop the AI build").then_some(Intent::StopBuild)
+        }
+        HeaderAction::Agents => agents_stepper(ui, view),
+        HeaderAction::ArchiveAll => {
+            let count = view.visible.len();
+            let noun = if count == 1 { "issue" } else { "issues" };
+            let hover = format!("Archive all: move the {count} {noun} to {ARCHIVE_DIR}/");
+            button(ui, Icon::Archive, "archive_all", &hover)
+                .then(|| Intent::ArchiveAll(view.visible_paths()))
+        }
     }
 }
 
-/// Todo's `+`, with an `accent` dot while NewIssueModal holds parked notes.
-fn new_issue_button(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent>) {
+fn new_issue_button(ui: &mut egui::Ui, view: &ColumnView) -> Option<Intent> {
     let id = egui::Id::unique(("new_issue", view.index));
     let hover = if view.parked {
         "1 parked note  ⌘N"
@@ -381,49 +452,17 @@ fn new_issue_button(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Inte
         ui.painter()
             .circle_filled(plus.rect.right_top() + Vec2::new(-4.0, 4.0), 3.0, p.accent);
     }
-    if plus.clicked() {
-        intents.push(Intent::Compose);
-    }
+    plus.clicked().then_some(Intent::Compose)
 }
 
-/// Ready's play, which hands its issues to the build agent top to bottom,
-/// or stop while that build runs or watches Ready for new issues.
-fn build_action(
-    ui: &mut egui::Ui,
-    view: &ColumnView,
-    visible: &[&Issue],
-    intents: &mut Vec<Intent>,
-) {
-    if !discovery::is_ready_column(&view.column.dir) {
-        return;
-    }
-    let id = egui::Id::unique(("build", view.index));
-    let tone = widgets::Tone::Ghost;
-    if view.builds.active() {
-        if widgets::icon_button(ui, Icon::Stop, id, "Stop the AI build", tone).clicked() {
-            intents.push(Intent::StopBuild);
-        }
-    } else if visible.iter().any(|issue| build::buildable(issue))
-        && widgets::icon_button(ui, Icon::Play, id, "Build with AI, top to bottom", tone).clicked()
-    {
-        intents.push(Intent::Build(
-            visible.iter().map(|issue| issue.path.clone()).collect(),
-        ));
-    }
-}
-
-/// Doing's agents, right to left: `+`, how many, `−`. Down to none, which
-/// stops the AI build; up to [`build::MAX_AGENTS`].
-fn agents_stepper(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent>) {
-    if !discovery::is_doing_column(&view.column.dir) {
-        return;
-    }
+fn agents_stepper(ui: &mut egui::Ui, view: &ColumnView) -> Option<Intent> {
     let agents = view.builds.agents;
     let tone = widgets::Tone::Ghost;
+    let mut intent = None;
     ui.add_enabled_ui(agents < build::MAX_AGENTS, |ui| {
         let id = egui::Id::unique(("more_agents", view.index));
         if widgets::icon_button(ui, Icon::Plus, id, "One more build agent", tone).clicked() {
-            intents.push(Intent::Agents(agents + 1));
+            intent = Some(Intent::Agents(agents + 1));
         }
     });
     let noun = if agents == 1 { "agent" } else { "agents" };
@@ -436,9 +475,10 @@ fn agents_stepper(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent
     ui.add_enabled_ui(agents > 0, |ui| {
         let id = egui::Id::unique(("fewer_agents", view.index));
         if widgets::icon_button(ui, Icon::Minus, id, "One build agent fewer", tone).clicked() {
-            intents.push(Intent::Agents(agents - 1));
+            intent = Some(Intent::Agents(agents - 1));
         }
     });
+    intent
 }
 
 /// The column's cards, or its empty well.
@@ -446,13 +486,12 @@ fn agents_stepper(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent
 fn column_cards(
     ui: &mut egui::Ui,
     view: &ColumnView,
-    visible: &[&Issue],
     folder: &str,
     over: bool,
     intents: &mut Vec<Intent>,
 ) -> Vec<(PathBuf, Rect)> {
     let column = view.column;
-    if visible.is_empty() {
+    if view.visible.is_empty() {
         let message = if column.issues.is_empty() {
             if folder.is_empty() {
                 "No issues at the root".to_string()
@@ -462,41 +501,16 @@ fn column_cards(
         } else {
             view.filter.empty_message()
         };
-        empty_well(ui, &message, view.width, over);
+        drop::empty_well(ui, &message, view.width, over);
     }
     let mut cards = Vec::new();
-    for issue in visible {
+    for issue in &view.visible {
         let (action, rect) = board_card(ui, view, issue);
         cards.push((issue.path.clone(), rect));
         intents.extend(action.map(|action| action.on(&issue.path)));
     }
 
     cards
-}
-
-/// Done's header controls, shown while it is hovered: "Archive all" moves
-/// the issues it lists (after the filter) to `.archive/`.
-fn done_controls(
-    ui: &mut egui::Ui,
-    view: &ColumnView,
-    visible: &[&Issue],
-    intents: &mut Vec<Intent>,
-) {
-    let noun = if visible.len() == 1 {
-        "issue"
-    } else {
-        "issues"
-    };
-    let hover = format!(
-        "Archive all: move the {} {noun} to {ARCHIVE_DIR}/",
-        visible.len()
-    );
-    let id = egui::Id::unique(("archive_all", view.index));
-    if widgets::icon_button(ui, Icon::Archive, id, &hover, widgets::Tone::Ghost).clicked() {
-        intents.push(Intent::ArchiveAll(
-            visible.iter().map(|issue| issue.path.clone()).collect(),
-        ));
-    }
 }
 
 /// One card on the board, in its look: selected, just written, or plain.
@@ -530,98 +544,11 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
     issue_card(ui, issue, view.width, look, view.labels, extras)
 }
 
-/// Where the dragged card would land: before the first card whose middle is
-/// below the pointer, else last. Draws the `accent` line there and returns the
-/// card it lands in front of.
-fn drop_line(ui: &egui::Ui, cards: &[(PathBuf, Rect)]) -> Option<PathBuf> {
-    let p = theme::palette(ui);
-    let pointer = ui
-        .ctx()
-        .pointer_interact_pos()
-        .or(ui.ctx().pointer_hover_pos());
-    let insert = pointer
-        .map(|pos| {
-            cards
-                .iter()
-                .position(|(_, rect)| pos.y < rect.center().y)
-                .unwrap_or(cards.len())
-        })
-        .unwrap_or(cards.len());
-    let line_y = cards
-        .get(insert)
-        .map(|(_, rect)| rect.min.y - theme::SPACE_3 / 2.0)
-        .or_else(|| {
-            cards
-                .last()
-                .map(|(_, rect)| rect.max.y + theme::SPACE_3 / 2.0)
-        });
-    if let (Some(y), Some((_, first))) = (line_y, cards.first()) {
-        ui.painter().line_segment(
-            [Pos2::new(first.min.x, y), Pos2::new(first.max.x, y)],
-            Stroke::new(2.0, p.accent),
-        );
-    }
-    cards.get(insert).map(|(path, _)| path.clone())
-}
-
 /// A card from another column is over this one.
 fn foreign_drag_over(view: &ColumnView, drop_response: &egui::Response) -> bool {
     drop_response
         .dnd_hover_payload::<IssueDrag>()
         .is_some_and(|drag| !view.board.in_column(&drag.path, &view.column.dir))
-}
-
-/// Highlights the column's cards area, under its header, as a drop target.
-fn highlight_drop(ui: &egui::Ui, drop_rect: Rect) {
-    let p = theme::palette(ui);
-    let rect = drop_rect
-        .with_min_y(drop_rect.min.y + theme::CONTROL_H + theme::SPACE_3 / 2.0)
-        .expand2(Vec2::new(theme::SPACE_2, 0.0))
-        .with_max_y(drop_rect.max.y + theme::SPACE_2);
-    ui.painter().rect_filled(
-        rect,
-        CornerRadius::same(theme::RADIUS_MD),
-        p.accent_soft.gamma_multiply(0.5),
-    );
-    ui.painter().rect_stroke(
-        rect,
-        CornerRadius::same(theme::RADIUS_MD),
-        Stroke::new(2.0, p.accent),
-        StrokeKind::Inside,
-    );
-}
-
-/// The dashed well of an empty column, with no fill. It is also where a
-/// dragged card lands: while one is `over` it, solid `accent` on `accent-soft`.
-fn empty_well(ui: &mut egui::Ui, message: &str, width: f32, over: bool) {
-    let p = theme::palette(ui);
-    let corner = CornerRadius::same(theme::RADIUS_MD);
-    let response = Frame::new()
-        .fill(if over {
-            p.accent_soft
-        } else {
-            Color32::TRANSPARENT
-        })
-        .corner_radius(corner)
-        .inner_margin(theme::SPACE_4)
-        .show(ui, |ui| {
-            ui.set_width(width - 2.0 * theme::SPACE_4);
-            ui.vertical_centered(|ui| {
-                ui.label(
-                    RichText::new(message)
-                        .font(theme::ui_small())
-                        .color(p.ink_faint),
-                );
-            });
-        })
-        .response;
-    if over {
-        let edge = Stroke::new(1.0, p.accent);
-        ui.painter()
-            .rect_stroke(response.rect, corner, edge, StrokeKind::Inside);
-    } else {
-        dashed_rect(ui.painter(), response.rect, theme::RADIUS_MD, p.line);
-    }
 }
 
 pub(super) use crate::widgets::dashed_rect;
