@@ -4,8 +4,8 @@
 use iboard::release;
 
 use super::{
-    Align, ButtonKind, IboardApp, Icon, Instant, Layout, MarginF32, Path, PathBuf, RichText, Vec2,
-    theme, widgets,
+    Align, ButtonKind, Duration, IboardApp, Icon, Instant, Job, Layout, MarginF32, Path, PathBuf,
+    ReviewMode, RichText, Vec2, agent, job, theme, widgets,
 };
 
 /// The three steps of a release, in order.
@@ -64,6 +64,14 @@ pub(super) struct ReleaseFlow {
     pub(super) tag: String,
     pub(super) body: String,
     pub(super) step: ReleaseStep,
+    /// The titles the note lists, as the list the agent was asked to group.
+    titles: Vec<String>,
+    /// The sectioned note the agent is writing, while it runs.
+    writer: Option<Job<Result<String, String>>>,
+    /// Why the agent could not group the note; the raw list stays.
+    note_error: Option<String>,
+    /// The newest tag the note follows, if any: the release window.
+    since: Option<String>,
     note: Option<PathBuf>,
     committed: bool,
     tagged: bool,
@@ -73,19 +81,30 @@ pub(super) struct ReleaseFlow {
 }
 
 impl ReleaseFlow {
-    fn new(project: PathBuf, project_name: String, tag: String, titles: &[String]) -> Self {
+    fn new(
+        project: PathBuf,
+        project_name: String,
+        tag: String,
+        titles: Vec<String>,
+        since: Option<String>,
+        writer: Option<Job<Result<String, String>>>,
+    ) -> Self {
         Self {
             project,
             project_name,
             tag,
-            body: release::note_body(titles),
+            body: release::note_body(&titles),
             step: ReleaseStep::Note,
+            issues: titles.len(),
+            titles,
+            writer,
+            note_error: None,
+            since,
             note: None,
             committed: false,
             tagged: false,
             history: Vec::new(),
             error: None,
-            issues: titles.len(),
         }
     }
 
@@ -115,6 +134,7 @@ impl ReleaseFlow {
                     return Err(format!("{} is already a tag.", self.tag.trim()));
                 }
                 self.note = Some(release::write_note(&self.project, &self.section())?);
+                self.writer = None;
             }
             ReleaseStep::CommitAndTag => {
                 self.check_tag()?;
@@ -154,12 +174,40 @@ impl ReleaseFlow {
                 _ => ReleaseStep::Push,
             };
         }
+        self.writer = None;
         self.error = None;
     }
 
     fn finished(&self) -> bool {
         self.step == ReleaseStep::Push
             && matches!(self.history.last(), Some((ReleaseStep::Push, _)))
+    }
+
+    /// Whether the agent is still grouping the note.
+    fn writing(&self) -> bool {
+        self.writer.is_some()
+    }
+
+    /// Adopts the sectioned note once the agent answers, unless the user has
+    /// typed over the raw list it was asked to group. True while it writes.
+    fn adopt_note(&mut self) -> bool {
+        let Some(writer) = &self.writer else {
+            return false;
+        };
+        let Some(result) = writer.answer() else {
+            return true;
+        };
+        self.writer = None;
+        match result {
+            Ok(text) => {
+                let text = text.trim();
+                if !text.is_empty() && self.body == release::note_body(&self.titles) {
+                    self.body = format!("{text}\n");
+                }
+            }
+            Err(error) => self.note_error = Some(error),
+        }
+        false
     }
 
     /// The modal's body and buttons; `close` when its scrim or `esc` asked.
@@ -181,15 +229,25 @@ impl ReleaseFlow {
                 ui.style_mut().interaction.selectable_labels = false;
                 ui.spacing_mut().item_spacing.y = theme::SPACE_3;
                 self.head(ui, p);
-                self.history_ui(ui, p);
-                match self.step {
-                    ReleaseStep::Note => self.note_ui(ui, p),
-                    ReleaseStep::CommitAndTag => self.commit_ui(ui, p),
-                    ReleaseStep::Push => self.push_ui(ui, p),
-                }
-                if let Some(error) = &self.error {
-                    ui.label(RichText::new(error).font(theme::ui_small()).color(p.danger));
-                }
+                theme::scroll_area(
+                    ui,
+                    egui::ScrollArea::vertical()
+                        .id_salt("release-body")
+                        .max_height(widgets::modal_body_max(ui.ctx().content_rect()))
+                        .auto_shrink([false, true])
+                        .content_margin(theme::scroll_margin(0.0, 0.0)),
+                    |ui| {
+                        self.history_ui(ui, p);
+                        match self.step {
+                            ReleaseStep::Note => self.note_ui(ui, p),
+                            ReleaseStep::CommitAndTag => self.commit_ui(ui, p),
+                            ReleaseStep::Push => self.push_ui(ui, p),
+                        }
+                        if let Some(error) = &self.error {
+                            ui.label(RichText::new(error).font(theme::ui_small()).color(p.danger));
+                        }
+                    },
+                );
                 ui.add_space(theme::SPACE_2);
                 choice = self.footer(ui);
             });
@@ -204,11 +262,16 @@ impl ReleaseFlow {
                 .color(p.ink),
         );
         let noun = if self.issues == 1 { "issue" } else { "issues" };
+        let window = match &self.since {
+            Some(tag) => format!("since {tag}"),
+            None => "in Done".to_string(),
+        };
         ui.label(
             RichText::new(format!(
-                "{} · {} · {noun} in Done",
+                "{} · {} · {} {noun} {window}",
                 self.project_name,
-                self.tag.trim()
+                self.tag.trim(),
+                self.issues
             ))
             .font(theme::meta())
             .color(p.ink_muted),
@@ -245,12 +308,26 @@ impl ReleaseFlow {
                 .color(p.ink_muted),
         );
         widgets::field_label(ui, "Release note");
+        if self.writing() {
+            ui.label(
+                RichText::new("Grouping the note into sections…")
+                    .font(theme::ui_small())
+                    .color(p.ink_muted),
+            );
+        }
         let note = egui::TextEdit::multiline(&mut self.body)
             .hint_text(RichText::new("What changed in this release").color(p.ink_faint))
             .desired_rows(6)
             .desired_width(f32::INFINITY)
             .margin(Vec2::new(theme::SPACE_3, theme::SPACE_2));
         ui.add(note);
+        if let Some(error) = &self.note_error {
+            ui.label(
+                RichText::new(format!("The note stayed a list: {error}"))
+                    .font(theme::ui_small())
+                    .color(p.danger),
+            );
+        }
         ui.label(
             RichText::new(format!(
                 "Written at the top of {} in the project root.",
@@ -301,13 +378,17 @@ impl ReleaseFlow {
         let mut choice = None;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-            let confirm = widgets::button(
-                ui,
-                ButtonKind::Primary,
-                Some(Icon::Release),
-                self.step.action(),
-                Some("⌘↩"),
-            );
+            let confirm = ui
+                .add_enabled_ui(!self.writing(), |ui| {
+                    widgets::button(
+                        ui,
+                        ButtonKind::Primary,
+                        Some(Icon::Release),
+                        self.step.action(),
+                        Some("⌘↩"),
+                    )
+                })
+                .inner;
             if confirm.clicked() {
                 choice = Some(ReleaseChoice::Confirm);
             }
@@ -332,15 +413,35 @@ fn relative(project: &Path, path: &Path) -> String {
 
 impl IboardApp {
     /// Opens the release flow on `paths`, the Done issues its note lists.
+    /// Only the issues done since the newest release tag are kept, and the
+    /// refinement agent groups their titles into sections when it is set up.
     pub(super) fn open_release(&mut self, paths: &[PathBuf]) {
         let project = self.board.project_dir.clone();
+        let last = release::last_release(&project, &self.prefs.releases.tags);
         let tag = release::next_tag(&project, &self.prefs.releases.tags);
         let titles: Vec<String> = paths
             .iter()
             .filter_map(|path| self.board.find(path))
+            .filter(|issue| match (&last, issue.done_at) {
+                (Some((_, since)), Some(done)) => done >= *since,
+                _ => true,
+            })
             .map(|issue| issue.title.clone())
             .collect();
-        let flow = ReleaseFlow::new(project, self.board.name(), tag, &titles);
+        let writer = (self.prefs.agent.configured() && !titles.is_empty()).then(|| {
+            let prompt = release::note_prompt(&titles);
+            let note = project.join(release::NOTE_FILE);
+            let (writer, _) = agent::start_review(
+                &self.prefs.agent,
+                &prompt,
+                &note,
+                Some(project.as_path()),
+                ReviewMode::Quick,
+            );
+            writer
+        });
+        let since = last.map(|(tag, _)| tag);
+        let flow = ReleaseFlow::new(project, self.board.name(), tag, titles, since, writer);
         self.session.release = Some(flow);
     }
 
@@ -357,6 +458,9 @@ impl IboardApp {
             }
             ReleaseChoice::Skip => flow.skip(),
             ReleaseChoice::Confirm => {
+                if flow.writing() {
+                    return;
+                }
                 if let Err(error) = flow.confirm() {
                     flow.error = Some(error);
                     return;
@@ -370,8 +474,18 @@ impl IboardApp {
         }
     }
 
+    /// Adopts the sectioned note once the agent writes it; called every
+    /// frame the modal draws, and asks to draw again while it does.
+    pub(super) fn poll_release(&mut self) -> Option<Duration> {
+        let flow = self.session.release.as_mut()?;
+        flow.adopt_note().then_some(job::POLL_EVERY)
+    }
+
     /// Done's release modal, while a step asks.
     pub(super) fn release_window(&mut self, ui: &egui::Ui) {
+        if let Some(after) = self.poll_release() {
+            ui.ctx().request_repaint_after(after);
+        }
         let Some(flow) = self.session.release.as_mut() else {
             return;
         };

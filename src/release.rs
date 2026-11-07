@@ -3,6 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Local};
+
 use crate::git;
 
 /// The note file at the project root, newest release first.
@@ -28,6 +30,25 @@ fn newest_tag(dir: &Path, pattern: &str) -> Option<String> {
         .map(str::trim)
         .find(|tag| !tag.is_empty())
         .map(str::to_string)
+}
+
+/// The newest tag matching `pattern`, and when it was made: where the
+/// release window of the next version starts.
+pub fn last_release(dir: &Path, pattern: &str) -> Option<(String, DateTime<Local>)> {
+    let tag = newest_tag(dir, pattern)?;
+    let out = git::output(
+        dir,
+        &[
+            "for-each-ref",
+            "--format=%(creatordate:iso-strict)",
+            &format!("refs/tags/{tag}"),
+        ],
+    )
+    .ok()?;
+    let date = DateTime::parse_from_rfc3339(out.trim())
+        .ok()?
+        .with_timezone(&Local);
+    Some((tag, date))
 }
 
 /// `v1.2.3` as `v1.2.4`, keeping the prefix before its first digit.
@@ -60,6 +81,23 @@ pub fn note_body(titles: &[String]) -> String {
         body.push('\n');
     }
     body
+}
+
+/// The instruction for the agent that groups the note: the release's issue
+/// titles into sections, rather than handing back the raw list.
+pub fn note_prompt(titles: &[String]) -> String {
+    format!(
+        "You write the release note of a software project from the titles of the issues it \
+         closes. Group them under a few `### ` headings that fit what they do, such as Added, \
+         Changed, Fixed or Removed. Keep every title's words exactly as written, list every \
+         title once, and invent nothing: the titles below are all there is, so read no file. \
+         Answer with nothing but the sections, each a `### Heading` line then its `- Title` \
+         lines, with no introduction or closing.\n\
+         \n\
+         ---\n\
+         {}",
+        note_body(titles)
+    )
 }
 
 /// A release section: `## v0.3.1 — 7 Nov 2026`, then `body`.
@@ -134,7 +172,7 @@ pub fn push(project: &Path, with_tags: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scratch_git::git;
+    use crate::scratch_git::{git, git_env};
 
     fn repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -162,6 +200,28 @@ mod tests {
     }
 
     #[test]
+    fn the_last_release_names_the_newest_tag_and_when_it_was_made() {
+        let dir = repo();
+        let dir = dir.path();
+        let at = "2026-01-02T03:04:05+00:00";
+        git_env(
+            dir,
+            &[("GIT_COMMITTER_DATE", at)],
+            &["commit", "-q", "--allow-empty", "-m", "second"],
+        );
+        git(dir, &["tag", "v0.3.0"]);
+        let (tag, made) = last_release(dir, "v*").unwrap();
+        assert_eq!(tag, "v0.3.0");
+        assert_eq!(
+            made,
+            DateTime::parse_from_rfc3339(at)
+                .unwrap()
+                .with_timezone(&Local)
+        );
+        assert!(last_release(dir, "rel-*").is_none());
+    }
+
+    #[test]
     fn a_note_lists_the_done_issues_under_a_dated_heading() {
         let titles = ["Add a flag".to_string(), "Fix the box".to_string()];
         let body = note_body(&titles);
@@ -174,6 +234,12 @@ mod tests {
             section("v1.2.1", "8 Nov 2026", "  "),
             "## v1.2.1 — 8 Nov 2026\n"
         );
+    }
+
+    #[test]
+    fn the_note_prompt_asks_for_sections_of_the_same_titles() {
+        let titles = ["Add a flag".to_string(), "Fix the box".to_string()];
+        insta::assert_snapshot!(note_prompt(&titles));
     }
 
     #[test]

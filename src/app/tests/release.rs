@@ -6,7 +6,7 @@ use egui_kittest::kittest::Queryable;
 
 use super::super::release::{ReleaseChoice, ReleaseStep};
 use super::*;
-use crate::scratch_git::git;
+use crate::scratch_git::{git, git_env};
 
 /// A git project with one Done issue and a bare `origin`, so push runs
 /// somewhere real.
@@ -191,4 +191,87 @@ fn the_release_modal_walks_through_its_steps() {
     assert!(harness.state().1.session.release.is_some());
     press(&mut harness, "Cancel");
     assert!(harness.state().1.session.release.is_none());
+}
+
+#[test]
+fn the_agent_groups_the_note_into_sections() {
+    let (dir, mut app) = project("release-agent", &[("done/a.md", "# Alpha\n")]);
+    app.prefs.agent = fake_agent("printf '### Added\\n- Alpha\\n' # {prompt}");
+    app.open_release(&[dir.join("issues/done/a.md")]);
+    assert_eq!(
+        app.session.release.as_ref().unwrap().body,
+        "- Alpha\n",
+        "the raw list shows while the agent writes"
+    );
+
+    assert!(until(|| {
+        app.poll_release();
+        app.session
+            .release
+            .as_ref()
+            .is_some_and(|flow| flow.body == "### Added\n- Alpha\n")
+    }));
+    assert_eq!(app.poll_release(), None, "the note is no longer writing");
+}
+
+#[test]
+fn the_note_lists_only_the_issues_done_since_the_last_release() {
+    let dir = scratch_dir("release-window");
+    let done = dir.join("issues/done");
+    std::fs::create_dir_all(&done).unwrap();
+    let old = done.join("old.md");
+    let new = done.join("new.md");
+    std::fs::write(&old, "# Old\n").unwrap();
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["add", "."]);
+    let january = [
+        ("GIT_AUTHOR_DATE", "2026-01-01T00:00:00+00:00"),
+        ("GIT_COMMITTER_DATE", "2026-01-01T00:00:00+00:00"),
+    ];
+    git_env(&dir, &january, &["commit", "-q", "-m", "old"]);
+    let release = [
+        ("GIT_AUTHOR_DATE", "2026-01-15T00:00:00+00:00"),
+        ("GIT_COMMITTER_DATE", "2026-01-15T00:00:00+00:00"),
+    ];
+    git_env(
+        &dir,
+        &release,
+        &["commit", "-q", "--allow-empty", "-m", "release"],
+    );
+    git(&dir, &["tag", "v0.3.0"]);
+    std::fs::write(&new, "# New\n").unwrap();
+    git(&dir, &["add", "."]);
+    let june = [
+        ("GIT_AUTHOR_DATE", "2026-06-01T00:00:00+00:00"),
+        ("GIT_COMMITTER_DATE", "2026-06-01T00:00:00+00:00"),
+    ];
+    git_env(&dir, &june, &["commit", "-q", "-m", "new"]);
+
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_release(&[old, new]);
+    let flow = app.session.release.as_ref().unwrap();
+    assert_eq!(flow.tag, "v0.3.1");
+    assert_eq!(flow.body, "- New\n", "the old release's issues stay out");
+}
+
+#[test]
+fn a_long_note_scrolls_so_the_buttons_stay_on_screen() {
+    let dir = scratch_dir("release-long");
+    let done = dir.join("issues/done");
+    std::fs::create_dir_all(&done).unwrap();
+    let mut paths = Vec::new();
+    for n in 0..40 {
+        let path = done.join(format!("{n:02}.md"));
+        std::fs::write(&path, format!("# Issue {n}\n")).unwrap();
+        paths.push(path);
+    }
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_release(&paths);
+    let harness = kittest(app);
+
+    let write = harness.get_by_label("Write note").rect();
+    assert!(
+        write.bottom() <= window().bottom(),
+        "the note scrolls, its buttons stay put: {write:?}"
+    );
 }
