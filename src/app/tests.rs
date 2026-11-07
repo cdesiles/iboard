@@ -13,6 +13,7 @@ mod diff;
 mod drag;
 mod editor;
 mod enrich;
+mod filter_look;
 mod groups;
 mod handover;
 mod header;

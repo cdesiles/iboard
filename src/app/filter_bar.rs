@@ -237,6 +237,7 @@ impl FilterBar {
                         .hint_text(RichText::new(hint).color(p.ink_faint))
                         .font(theme::ui_body())
                         .margin(Margin::ZERO)
+                        .align(egui::Align2::LEFT_CENTER)
                         .desired_width(ui.available_width()),
                 )
             })
