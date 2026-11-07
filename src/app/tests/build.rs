@@ -3,6 +3,7 @@
 use egui_kittest::kittest::Queryable;
 
 use super::*;
+use crate::agent::service::{Choice, Field, FieldKind, Permission, Question, QuestionKind};
 use crate::app::build::{self, Builds};
 use crate::app::card::CardBuild;
 use crate::build_log::{self, Entry};
@@ -564,6 +565,102 @@ fn deleting_an_issue_at_work_asks_to_stop_its_agent() {
     assert_eq!(app.build_place(), Some((1, 1)), "the next issue is taken");
     assert_eq!(in_column(&dir, "doing"), ["b.md"]);
     stop_agents(&mut app, &dir, 2);
+}
+
+fn form_question() -> Question {
+    Question {
+        session: "ses_1".into(),
+        id: "frm_1".into(),
+        title: "Which approach?".into(),
+        kind: QuestionKind::Form(vec![Field {
+            key: "approach".into(),
+            title: "Approach".into(),
+            description: String::new(),
+            required: true,
+            hidden: false,
+            kind: FieldKind::Text {
+                options: vec![
+                    Choice {
+                        value: "fast".into(),
+                        label: "Fast".into(),
+                        description: String::new(),
+                    },
+                    Choice {
+                        value: "careful".into(),
+                        label: "Careful".into(),
+                        description: String::new(),
+                    },
+                ],
+                placeholder: String::new(),
+                default: String::new(),
+                custom: false,
+            },
+        }]),
+    }
+}
+
+fn permission_question() -> Question {
+    Question {
+        session: "ses_1".into(),
+        id: "per_1".into(),
+        title: "Allow bash?".into(),
+        kind: QuestionKind::Permission(Permission {
+            action: "bash".into(),
+            resources: vec!["git push origin main".into()],
+            message: Some("Push the branch?".into()),
+        }),
+    }
+}
+
+#[test]
+fn a_build_question_shows_on_its_card_and_the_board_badge() {
+    let (_dir, mut app) = board("build-question", "sleep 30 # {prompt}");
+    let path = ready(&app)[0].clone();
+    app.seed_question(path.clone(), form_question());
+    let mut harness = kittest(app);
+    assert!(
+        harness
+            .get_by_label("Answer: Which approach?")
+            .rect()
+            .width()
+            > 0.0,
+        "the question is on its card"
+    );
+    harness.get_by_label("1 question").click();
+    harness.run_steps(2);
+    assert!(
+        harness.state().1.session.answer.is_some(),
+        "the badge opens its answer"
+    );
+    assert!(harness.get_by_label("Approach").rect().width() > 0.0);
+}
+
+#[test]
+fn answering_a_question_takes_it_off_the_board() {
+    let (_dir, mut app) = board("build-answer", "sleep 30 # {prompt}");
+    let path = ready(&app)[0].clone();
+    app.seed_question(path.clone(), form_question());
+    assert_eq!(app.pending_questions().len(), 1);
+    app.open_answer(path);
+    app.finish_answer_for_test();
+    assert!(until(|| app.poll_answers().is_none()));
+    assert!(app.session.answer.is_none());
+    assert!(app.pending_questions().is_empty());
+    let (notice, _) = app.session.notice.clone().expect("the answer shows");
+    assert_eq!(notice, "Answered Which approach?");
+}
+
+#[test]
+fn a_tool_approval_answers_from_the_same_feed() {
+    let (_dir, mut app) = board("build-permission", "sleep 30 # {prompt}");
+    let path = ready(&app)[0].clone();
+    app.seed_question(path, permission_question());
+    let mut harness = kittest(app);
+    harness.get_by_label("1 question").click();
+    harness.run_steps(2);
+    assert!(harness.get_by_label("Allow once").rect().width() > 0.0);
+    assert!(harness.get_by_label("Always allow").rect().width() > 0.0);
+    assert!(harness.get_by_label("Reject").rect().width() > 0.0);
 }
 
 /// Bug: a queued issue deleted was skipped but still counted as built.

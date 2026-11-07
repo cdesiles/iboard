@@ -48,6 +48,7 @@ impl IboardApp {
         }
         let fades = !theme::reduced_motion(ui.ctx());
         let running = self.building_now();
+        let questions = self.pending_questions();
         let pass = Pass {
             width,
             height,
@@ -61,6 +62,7 @@ impl IboardApp {
                 agents: self.session.agents,
                 watching: self.watching_ready(),
             },
+            questions: &questions,
         };
 
         let dragged = egui::DragAndDrop::payload::<IssueDrag>(ui.ctx())
@@ -145,6 +147,8 @@ struct Pass<'a> {
     /// NewIssueModal holds parked notes.
     parked: bool,
     builds: Builds<'a>,
+    /// The questions the builds wait on, by issue.
+    questions: &'a [(PathBuf, crate::agent::service::Question)],
 }
 
 /// Everything `column_ui` needs to know about one column.
@@ -180,6 +184,8 @@ struct ColumnView<'a> {
     namings: &'a [Naming],
     /// The issues the build agents work on, and how many may.
     builds: Builds<'a>,
+    /// The questions the builds wait on, by issue.
+    questions: &'a [(PathBuf, crate::agent::service::Question)],
 }
 
 impl<'a> ColumnView<'a> {
@@ -211,6 +217,7 @@ impl<'a> ColumnView<'a> {
             can_review: app.prefs.agent.configured(),
             namings: &app.session.namings,
             builds: pass.builds,
+            questions: pass.questions,
         }
     }
 
@@ -664,6 +671,11 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
             && matches!(look, CardLook::Selected { .. }),
         expand: view.picked.is_empty() || view.selected == Some(issue.path.as_path()),
         build: card_build(view.column, issue, view.builds),
+        question: view
+            .questions
+            .iter()
+            .find(|(path, _)| *path == issue.path)
+            .map(|(_, question)| question),
         labelling: discovery::is_editable_column(&view.column.dir),
         active_labels: &view.filter.tokens,
         naming: is_naming(view.namings, &issue.path),

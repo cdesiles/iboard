@@ -5,6 +5,7 @@
 //!
 //! Set `IBOARD_OPENCODE` to another binary to test this without one.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -47,6 +48,310 @@ pub fn session_of(handle: &Handle) -> Option<String> {
 /// Notes that `handle`'s run lives in `session`.
 pub fn remember(handle: &Handle, session: &str) {
     *handle.lock().unwrap_or_else(PoisonError::into_inner) = Some(session.to_string());
+}
+
+/// A form or permission request a build is waiting on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Question {
+    pub session: String,
+    pub id: String,
+    pub title: String,
+    pub kind: QuestionKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuestionKind {
+    Form(Vec<Field>),
+    Permission(Permission),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Permission {
+    pub action: String,
+    pub resources: Vec<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    pub key: String,
+    pub title: String,
+    pub description: String,
+    pub required: bool,
+    pub hidden: bool,
+    pub kind: FieldKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldKind {
+    Text {
+        options: Vec<Choice>,
+        placeholder: String,
+        default: String,
+        custom: bool,
+    },
+    Number {
+        default: String,
+        integer: bool,
+    },
+    Boolean {
+        default: bool,
+    },
+    Multi {
+        options: Vec<Choice>,
+        default: Vec<String>,
+        custom: bool,
+    },
+    External {
+        url: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Choice {
+    pub value: String,
+    pub label: String,
+    pub description: String,
+}
+
+/// How a tool approval is answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionReply {
+    Once,
+    Always,
+    Reject,
+}
+
+impl PermissionReply {
+    fn key(self) -> &'static str {
+        match self {
+            PermissionReply::Once => "once",
+            PermissionReply::Always => "always",
+            PermissionReply::Reject => "reject",
+        }
+    }
+}
+
+/// The pending questions of a project, refreshed by [`follow_questions`].
+#[derive(Clone, Default)]
+pub struct Feed {
+    questions: Arc<Mutex<Vec<Question>>>,
+    settled: Arc<Mutex<HashSet<(String, String)>>>,
+}
+
+impl Feed {
+    /// A feed already holding `questions`, for a board built without a service.
+    pub fn new(questions: Vec<Question>) -> Self {
+        Self {
+            questions: Arc::new(Mutex::new(questions)),
+            settled: Arc::default(),
+        }
+    }
+
+    pub fn questions(&self) -> Vec<Question> {
+        self.questions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Drops a question iboard just answered, before the next poll catches up.
+    pub fn remove(&self, session: &str, id: &str) {
+        self.settled
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert((session.to_string(), id.to_string()));
+        self.questions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|question| question.session != session || question.id != id);
+    }
+}
+
+/// Polls `project`'s pending forms and permission requests in the background
+/// until the job is dropped.
+pub fn follow_questions(project: PathBuf) -> (Job<()>, Feed) {
+    let feed = Feed::default();
+    let writing = feed.clone();
+    let job = Job::spawn(move |cancel| {
+        let mut seen: Option<Vec<Question>> = None;
+        while !cancel.is_cancelled() {
+            if let Ok(mut questions) = pending(&project) {
+                let settled = writing
+                    .settled
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                questions.retain(|question| {
+                    !settled.contains(&(question.session.clone(), question.id.clone()))
+                });
+                if seen.as_ref() != Some(&questions) {
+                    *writing
+                        .questions
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner) = questions.clone();
+                    seen = Some(questions);
+                }
+            }
+            std::thread::sleep(POLL);
+        }
+    });
+    (job, feed)
+}
+
+/// The forms and permission requests `project` waits on.
+pub fn pending(project: &Path) -> Result<Vec<Question>, String> {
+    let forms = list(project, "/api/form");
+    let permissions = list(project, "/api/permission/request");
+    match (forms, permissions) {
+        (Ok(forms), Ok(permissions)) => Ok(questions(forms, permissions)),
+        (Ok(forms), Err(_)) => Ok(questions(forms, Vec::new())),
+        (Err(_), Ok(permissions)) => Ok(questions(Vec::new(), permissions)),
+        (Err(forms), Err(permissions)) => Err(format!("{forms}; {permissions}")),
+    }
+}
+
+fn questions(forms: Vec<Value>, permissions: Vec<Value>) -> Vec<Question> {
+    let forms = forms.iter().filter_map(question_from_form);
+    let permissions = permissions.iter().filter_map(question_from_permission);
+    forms.chain(permissions).collect()
+}
+
+fn list(project: &Path, path: &str) -> Result<Vec<Value>, String> {
+    let directory = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
+    let location = format!("location[directory]={}", directory.display());
+    let reply = match call(project, &["get", path, "--param", &location], None) {
+        Ok(reply) => reply,
+        Err(_) => call(project, &["get", path], None)?,
+    };
+    let value = parse(&reply)?;
+    Ok(value["data"].as_array().cloned().unwrap_or_default())
+}
+
+fn question_from_form(value: &Value) -> Option<Question> {
+    let fields = value["fields"]
+        .as_array()?
+        .iter()
+        .filter_map(field_from)
+        .collect();
+    Some(Question {
+        session: value["sessionID"].as_str()?.to_string(),
+        id: value["id"].as_str()?.to_string(),
+        title: value["title"].as_str()?.to_string(),
+        kind: QuestionKind::Form(fields),
+    })
+}
+
+fn field_from(value: &Value) -> Option<Field> {
+    let key = value["key"].as_str()?.to_string();
+    let kind = match value["type"].as_str()? {
+        "string" => FieldKind::Text {
+            options: choices(value),
+            placeholder: value["placeholder"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            default: value["default"].as_str().unwrap_or_default().to_string(),
+            custom: value["custom"].as_bool().unwrap_or(false),
+        },
+        "number" | "integer" => FieldKind::Number {
+            default: number(value["default"].as_f64()),
+            integer: value["type"] == "integer",
+        },
+        "boolean" => FieldKind::Boolean {
+            default: value["default"].as_bool().unwrap_or(false),
+        },
+        "multiselect" => FieldKind::Multi {
+            options: choices(value),
+            default: value["default"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|value| value.as_str().map(str::to_string))
+                .collect(),
+            custom: value["custom"].as_bool().unwrap_or(false),
+        },
+        "external" => FieldKind::External {
+            url: value["url"].as_str().unwrap_or_default().to_string(),
+        },
+        _ => return None,
+    };
+    Some(Field {
+        title: value["title"].as_str().unwrap_or(&key).to_string(),
+        description: value["description"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
+        required: value["required"].as_bool().unwrap_or(false),
+        hidden: value["hidden"].as_bool().unwrap_or(false),
+        key,
+        kind,
+    })
+}
+
+fn choices(value: &Value) -> Vec<Choice> {
+    value["options"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|option| {
+            let value = option["value"].as_str()?.to_string();
+            Some(Choice {
+                label: option["label"].as_str().unwrap_or(&value).to_string(),
+                description: option["description"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                value,
+            })
+        })
+        .collect()
+}
+
+fn number(value: Option<f64>) -> String {
+    value.map(|value| format!("{value}")).unwrap_or_default()
+}
+
+fn question_from_permission(value: &Value) -> Option<Question> {
+    let action = value["action"].as_str()?.to_string();
+    Some(Question {
+        session: value["sessionID"].as_str()?.to_string(),
+        id: value["id"].as_str()?.to_string(),
+        title: format!("Allow {action}?"),
+        kind: QuestionKind::Permission(Permission {
+            action,
+            resources: value["resources"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|resource| resource.as_str().map(str::to_string))
+                .collect(),
+            message: value["message"].as_str().map(str::to_string),
+        }),
+    })
+}
+
+/// Answers a form `question`, whose keys are its fields' keys.
+pub fn answer_form(
+    project: &Path,
+    session: &str,
+    id: &str,
+    answer: &serde_json::Map<String, Value>,
+) -> Result<(), String> {
+    let path = format!("/api/session/{session}/form/{id}/reply");
+    let body = json!({ "answer": answer }).to_string();
+    call(project, &["post", &path], Some(&body)).map(|_| ())
+}
+
+/// Answers a tool's permission request.
+pub fn answer_permission(
+    project: &Path,
+    session: &str,
+    id: &str,
+    reply: PermissionReply,
+) -> Result<(), String> {
+    let path = format!("/api/session/{session}/permission/{id}/reply");
+    let body = json!({ "decision": reply.key() }).to_string();
+    call(project, &["post", &path], Some(&body)).map(|_| ())
 }
 
 /// A build the service is still running, found again after a restart.
@@ -447,5 +752,77 @@ mod tests {
         assert_eq!(session_of(&handle), None);
         remember(&handle, "ses_42");
         assert_eq!(session_of(&handle).as_deref(), Some("ses_42"));
+    }
+
+    #[test]
+    fn a_form_becomes_a_question_with_its_typed_fields() {
+        let value = json!({
+            "id": "frm_1", "sessionID": "ses_1", "title": "Which approach?",
+            "fields": [
+                {"key": "approach", "type": "string", "title": "Approach",
+                 "required": true, "options": [
+                    {"value": "fast", "label": "Fast", "description": "Ship it"},
+                    {"value": "careful", "label": "Careful"}
+                 ]},
+                {"key": "notes", "type": "string", "placeholder": "Anything else?"},
+                {"key": "count", "type": "integer", "default": 3},
+                {"key": "deploy", "type": "boolean", "default": true},
+                {"key": "areas", "type": "multiselect", "default": ["api"],
+                 "options": [{"value": "api", "label": "API"}]},
+            ]
+        });
+        let question = question_from_form(&value).expect("a form");
+        assert_eq!(question.session, "ses_1");
+        assert_eq!(question.title, "Which approach?");
+        let QuestionKind::Form(fields) = question.kind else {
+            panic!("not a form");
+        };
+        assert_eq!(fields.len(), 5);
+        assert!(fields[0].required);
+        assert!(matches!(
+            &fields[0].kind,
+            FieldKind::Text { options, .. } if options.len() == 2
+        ));
+        assert!(matches!(
+            &fields[2].kind,
+            FieldKind::Number { integer: true, default } if default == "3"
+        ));
+        assert!(matches!(
+            &fields[4].kind,
+            FieldKind::Multi { default, .. } if default == &["api"]
+        ));
+    }
+
+    #[test]
+    fn a_permission_request_becomes_a_question() {
+        let value = json!({
+            "id": "per_1", "sessionID": "ses_1", "action": "bash",
+            "resources": ["git push origin main"],
+            "message": "Push the branch?"
+        });
+        let question = question_from_permission(&value).expect("a request");
+        assert_eq!(question.title, "Allow bash?");
+        let QuestionKind::Permission(permission) = question.kind else {
+            panic!("not a permission");
+        };
+        assert_eq!(permission.resources, ["git push origin main"]);
+        assert_eq!(permission.message.as_deref(), Some("Push the branch?"));
+        assert_eq!(PermissionReply::Once.key(), "once");
+        assert_eq!(PermissionReply::Always.key(), "always");
+        assert_eq!(PermissionReply::Reject.key(), "reject");
+    }
+
+    #[test]
+    fn a_feed_forgets_a_question_once_answered() {
+        let question = Question {
+            session: "ses_1".into(),
+            id: "frm_1".into(),
+            title: "Which approach?".into(),
+            kind: QuestionKind::Form(Vec::new()),
+        };
+        let feed = Feed::new(vec![question.clone()]);
+        assert_eq!(feed.questions(), [question]);
+        feed.remove("ses_1", "frm_1");
+        assert!(feed.questions().is_empty());
     }
 }

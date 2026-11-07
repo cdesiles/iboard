@@ -53,6 +53,7 @@ impl IboardApp {
             self.poll_enrichment(),
             self.poll_build(),
             self.poll_asks(),
+            self.poll_answers(),
             self.poll_stats(),
         ];
         if let Some(after) = wake.into_iter().flatten().min() {
@@ -90,6 +91,8 @@ impl IboardApp {
             self.stats_keys(ctx);
         } else if self.session.ask_draft.is_some() {
             self.ask_keys(ctx);
+        } else if self.session.answer.is_some() {
+            self.answer_keys(ctx);
         } else if self.composer_open() {
             self.new_issue_keys(ctx);
             self.paste_images(ctx);
@@ -223,6 +226,7 @@ impl IboardApp {
             || self.session.commits.is_some()
             || self.session.release.is_some()
             || self.session.ask_draft.is_some()
+            || self.session.answer.is_some()
             || self.composer_open()
             || self.refinement_shown()
     }

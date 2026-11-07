@@ -72,6 +72,7 @@ mod nav;
 mod new_issue_ui;
 mod projects;
 mod prose;
+mod question;
 mod quitting;
 mod reader;
 mod refine;
@@ -344,6 +345,10 @@ struct Session {
     diff: Option<diff_view::DiffView>,
     /// The AI build working through Ready, while it runs.
     build: Option<build::Build>,
+    /// The forms and tool approvals each project's service is waiting on.
+    feeds: HashMap<PathBuf, (Job<()>, agent::service::Feed)>,
+    /// The question open for an answer.
+    answer: Option<question::AnswerDraft>,
     /// The builds the service was still running were looked for, once.
     adopted: bool,
     /// Ready, watched for new issues from Play until Stop.
@@ -393,6 +398,8 @@ impl Default for Session {
             release: None,
             diff: None,
             build: None,
+            feeds: HashMap::new(),
+            answer: None,
             adopted: false,
             watch: None,
             agents: 1,
@@ -696,6 +703,7 @@ impl IboardApp {
         self.shortcuts_sheet(ui);
         self.label_picker_ui(ui);
         self.ask_dialog(ui);
+        self.answer_dialog(ui);
         match self.session.confirm.clone() {
             Some(Confirm::Delete(paths)) => self.confirm_dialog(ui, &paths),
             Some(Confirm::Stop(removal, paths)) => self.stop_dialog(ui, removal, &paths),

@@ -7,6 +7,7 @@ use super::{
     Align, Color32, CornerRadius, Frame, Icon, Instant, Issue, Labels, Layout, LayoutJob, Pos2,
     Rect, RichText, Sense, Stroke, StrokeKind, Vec2, clock, theme, widgets,
 };
+use crate::agent::service::Question;
 
 /// The strip laid over a card's bottom on hover, selection or focus. A card
 /// keeps at least this much under its title, so the strip never changes its
@@ -51,6 +52,8 @@ pub(super) enum CardAction {
     StopBuild,
     /// Hand the issue to the build agent again, from scratch.
     RetryBuild,
+    /// Answer the question the build waits on.
+    Answer,
 }
 
 /// Where a card stands with the AI build.
@@ -73,6 +76,8 @@ pub(super) struct CardExtras<'a> {
     /// do not have focus.
     pub(super) expand: bool,
     pub(super) build: Option<CardBuild>,
+    /// The question the build waits on.
+    pub(super) question: Option<&'a Question>,
     /// Offers Add label: Doing and Done keep the labels they have.
     pub(super) labelling: bool,
     /// The labels the board is filtered by: they show as active.
@@ -477,9 +482,16 @@ fn card_body(
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
             let (review, label_clicks) = card_labels(ui, issue, labels, &extras);
             card_text(ui, issue, inner);
-            card_tail(ui, issue, inner, strip, extras.naming);
             let mut action = None;
             let mut action_rects = Vec::new();
+            if let Some(question) = extras.question {
+                let note = question_note(ui, issue, question);
+                action_rects.push(note.rect);
+                if note.clicked() {
+                    action = Some(CardAction::Answer);
+                }
+            }
+            card_tail(ui, issue, inner, strip, extras.naming);
             if let Some(review) = review {
                 action_rects.push(review.rect);
                 if review.clicked() {
@@ -552,6 +564,53 @@ fn card_labels(
         review
     });
     (review.inner, clicks)
+}
+
+/// The question the build waits on, on its card: a click opens its answer
+/// form.
+fn question_note(ui: &mut egui::Ui, issue: &Issue, question: &Question) -> egui::Response {
+    let p = theme::palette(ui);
+    let shown = Frame::new()
+        .fill(p.surface_sunken)
+        .stroke(Stroke::new(1.0, p.status_doing.gamma_multiply(0.6)))
+        .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+        .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_2))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_2;
+                let (icon, _) =
+                    ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
+                theme::paint_icon(ui.painter(), Icon::Bubble, icon, p.status_doing);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(meta_text("Question".to_owned(), p.status_doing));
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(&question.title)
+                                .font(theme::ui_small())
+                                .color(p.ink),
+                        )
+                        .truncate(),
+                    );
+                });
+            });
+        });
+    let response = ui.interact(
+        shown.response.rect,
+        egui::Id::unique(("card_question", &issue.path)),
+        Sense::click(),
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::Role::Button,
+            true,
+            format!("Answer: {}", question.title),
+        )
+    });
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Answer the build's question")
 }
 
 /// The review running or ready, or the last verdict: a click opens the

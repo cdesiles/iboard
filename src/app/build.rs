@@ -321,6 +321,82 @@ impl IboardApp {
         }
     }
 
+    /// Starts following the service of each project a build runs in, and
+    /// stops following the ones no run uses any more.
+    fn follow_build_questions(&mut self) {
+        let projects: HashSet<PathBuf> = self
+            .session
+            .build
+            .iter()
+            .flat_map(|build| &build.runs)
+            .filter(|run| agent::service::session_of(&run.session).is_some())
+            .map(|run| run.project.clone())
+            .collect();
+        self.session
+            .feeds
+            .retain(|project, _| projects.contains(project));
+        for project in projects {
+            self.session
+                .feeds
+                .entry(project.clone())
+                .or_insert_with(|| agent::service::follow_questions(project));
+        }
+    }
+
+    /// The questions the service waits on, each with the issue its build is
+    /// on.
+    pub(super) fn pending_questions(&self) -> Vec<(PathBuf, agent::service::Question)> {
+        let Some(build) = self.session.build.as_ref() else {
+            return Vec::new();
+        };
+        let mut pending = Vec::new();
+        for run in &build.runs {
+            let Some(session) = agent::service::session_of(&run.session) else {
+                continue;
+            };
+            let Some((_, feed)) = self.session.feeds.get(&run.project) else {
+                continue;
+            };
+            for question in feed
+                .questions()
+                .into_iter()
+                .filter(|question| question.session == session)
+            {
+                pending.push((run.issue.clone(), question));
+            }
+        }
+        pending
+    }
+
+    /// The project whose service waits on `question`.
+    pub(super) fn question_project(&self, question: &agent::service::Question) -> Option<PathBuf> {
+        self.session
+            .build
+            .as_ref()?
+            .runs
+            .iter()
+            .find(|run| {
+                agent::service::session_of(&run.session).as_deref()
+                    == Some(question.session.as_str())
+            })
+            .map(|run| run.project.clone())
+    }
+
+    /// The question the build on `path` waits on, if it does.
+    pub(super) fn question_for(&self, path: &Path) -> Option<agent::service::Question> {
+        self.pending_questions()
+            .into_iter()
+            .find(|(issue, _)| issue == path)
+            .map(|(_, question)| question)
+    }
+
+    /// Forgets a question just answered.
+    pub(super) fn forget_question(&self, question: &agent::service::Question) {
+        for (_, feed) in self.session.feeds.values() {
+            feed.remove(&question.session, &question.id);
+        }
+    }
+
     /// The issues the agents work on, and since when.
     pub(super) fn building_now(&self) -> Vec<(PathBuf, Instant)> {
         self.session
@@ -454,6 +530,7 @@ impl IboardApp {
     pub(super) fn poll_build(&mut self) -> Option<Duration> {
         self.watch_ready();
         self.adopt_builds();
+        self.follow_build_questions();
         let build = self.session.build.as_mut()?;
         let mut finished = Vec::new();
         build.runs.retain(|run| match run.answer.answer() {
@@ -477,6 +554,37 @@ impl IboardApp {
         self.refresh();
         self.fill_agents();
         self.session.build.is_some().then_some(job::POLL_EVERY)
+    }
+
+    /// Puts a build at work on `path` with a service waiting on `question`,
+    /// without starting a service.
+    #[cfg(test)]
+    pub(super) fn seed_question(&mut self, path: PathBuf, question: agent::service::Question) {
+        let project = self.board.project_of(&path).to_path_buf();
+        let session = agent::service::Handle::default();
+        agent::service::remember(&session, &question.session);
+        let mut build = Build::new(Vec::new());
+        build.taken = 1;
+        build.total = 1;
+        build.runs.push(Run {
+            issue: path,
+            answer: Job::spawn(|cancel| {
+                while !cancel.is_cancelled() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Ok(String::new())
+            }),
+            project: project.clone(),
+            session,
+            started: Instant::now(),
+            at: 1,
+        });
+        self.session.build = Some(build);
+        self.session.adopted = true;
+        self.session.feeds.insert(
+            project,
+            (Job::done(()), agent::service::Feed::new(vec![question])),
+        );
     }
 
     /// Where the first issue at work stands in its run: its place, from 1,

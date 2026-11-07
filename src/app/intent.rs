@@ -32,6 +32,8 @@ pub(super) enum Intent {
     StopAgent(PathBuf),
     /// Retry, on a Doing card: a build agent starts the issue over.
     RetryBuild(PathBuf),
+    /// Answer the question the build on the issue waits on.
+    Answer(PathBuf),
     /// Doing's `−` and `+`: how many build agents may work at once.
     Agents(usize),
     /// "Archive all", in Done's hovered header.
@@ -80,6 +82,7 @@ impl CardAction {
             CardAction::AddLabel => Intent::ToggleLabels(path),
             CardAction::StopBuild => Intent::StopAgent(path),
             CardAction::RetryBuild => Intent::RetryBuild(path),
+            CardAction::Answer => Intent::Answer(path),
         }
     }
 }
@@ -110,6 +113,7 @@ impl IboardApp {
                 Intent::StopAgent(path) => self.stop_agent(&path),
                 Intent::Agents(agents) => self.set_agents(agents),
                 Intent::RetryBuild(path) => self.retry_build(path),
+                Intent::Answer(path) => self.open_answer(path),
                 Intent::ToggleLabels(path) => self.toggle_label_picker(path),
                 Intent::FilterBy(label) => self.filter_bar.filter.pick(&label),
                 Intent::ShowLabel(label) => {
