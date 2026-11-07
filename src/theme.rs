@@ -87,29 +87,16 @@ pub struct Palette {
     pub popover_shadow: Color32,
     /// Under a modal, above the scrim.
     pub modal_shadow: Color32,
-    pub label_red: Color32,
-    pub label_orange: Color32,
-    pub label_ochre: Color32,
-    pub label_green: Color32,
-    pub label_teal: Color32,
-    pub label_pink: Color32,
-    pub label_grey: Color32,
+    /// The `label-*` colours, indexed by [`Hue`].
+    pub labels: [Color32; Hue::ALL.len()],
     /// `label-tint` in this theme: a loud label pill's colour over `surface`.
     pub label_tint: f32,
 }
 
 impl Palette {
-    /// The `label-*` colours by hue, in token order.
-    pub fn label_colors(&self) -> [(&'static str, Color32); 7] {
-        [
-            ("red", self.label_red),
-            ("orange", self.label_orange),
-            ("ochre", self.label_ochre),
-            ("green", self.label_green),
-            ("teal", self.label_teal),
-            ("pink", self.label_pink),
-            ("grey", self.label_grey),
-        ]
+    /// The `label-*` colour of `hue`.
+    pub fn label(&self, hue: Hue) -> Color32 {
+        self.labels[hue as usize]
     }
 }
 
@@ -150,13 +137,15 @@ pub const LIGHT: Palette = Palette {
     scrim: Color32::from_rgba_premultiplied(7, 8, 9, 82),
     popover_shadow: Color32::from_rgba_premultiplied(3, 3, 3, 31),
     modal_shadow: Color32::from_rgba_premultiplied(4, 4, 5, 46),
-    label_red: hex(0xbc3228),
-    label_orange: hex(0xa65400),
-    label_ochre: hex(0x826600),
-    label_green: hex(0x287639),
-    label_teal: hex(0x0c7380),
-    label_pink: hex(0xb33270),
-    label_grey: hex(0x646c79),
+    labels: [
+        hex(0xbc3228),
+        hex(0xa65400),
+        hex(0x826600),
+        hex(0x287639),
+        hex(0x0c7380),
+        hex(0xb33270),
+        hex(0x646c79),
+    ],
     label_tint: 0.10,
 };
 
@@ -193,13 +182,15 @@ pub const DARK: Palette = Palette {
     scrim: Color32::from_rgba_premultiplied(0, 0, 0, 140),
     popover_shadow: Color32::from_rgba_premultiplied(0, 0, 0, 128),
     modal_shadow: Color32::from_rgba_premultiplied(0, 0, 0, 153),
-    label_red: hex(0xf28b7d),
-    label_orange: hex(0xeda05a),
-    label_ochre: hex(0xd6b44c),
-    label_green: hex(0x6dca8b),
-    label_teal: hex(0x5ec4cf),
-    label_pink: hex(0xf08dbe),
-    label_grey: hex(0x9ca3ad),
+    labels: [
+        hex(0xf28b7d),
+        hex(0xeda05a),
+        hex(0xd6b44c),
+        hex(0x6dca8b),
+        hex(0x5ec4cf),
+        hex(0xf08dbe),
+        hex(0x9ca3ad),
+    ],
     label_tint: 0.16,
 };
 
@@ -241,13 +232,7 @@ pub fn contrast_ratio(a: Color32, b: Color32) -> f32 {
 /// user's own, unchanged.
 pub fn label_color(color: LabelColor, p: &Palette) -> Color32 {
     match color {
-        LabelColor::Preset(hue) => match hue {
-            Hue::Red => p.label_red,
-            Hue::Ochre => p.label_ochre,
-            Hue::Green => p.label_green,
-            Hue::Teal => p.label_teal,
-            Hue::Grey => p.label_grey,
-        },
+        LabelColor::Preset(hue) => p.label(hue),
         LabelColor::Own(own) => rgb(own),
     }
 }
@@ -330,6 +315,33 @@ pub enum ModalSize {
     Xl,
 }
 
+/// What a [`ModalSize`] is: its width, the height it may grow to, and where
+/// it sits in the window.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ModalSpec {
+    pub width: f32,
+    pub max_height: f32,
+    pub anchor: egui::Align2,
+}
+
+impl ModalSize {
+    /// S and XL are centred, M and L hang from the top, so only their bottom
+    /// edge moves as their content grows. XL is always `max_height` tall.
+    pub const fn spec(self) -> ModalSpec {
+        let (width, max_height, anchor) = match self {
+            Self::S => (MODAL_S, f32::INFINITY, egui::Align2::CENTER_CENTER),
+            Self::M => (MODAL_M, f32::INFINITY, egui::Align2::CENTER_TOP),
+            Self::L => (MODAL_L, f32::INFINITY, egui::Align2::CENTER_TOP),
+            Self::Xl => (MODAL_XL, MODAL_XL_H, egui::Align2::CENTER_CENTER),
+        };
+        ModalSpec {
+            width,
+            max_height,
+            anchor,
+        }
+    }
+}
+
 /// The gap every modal keeps from the edges of `window`.
 pub fn modal_inset(window: Rect) -> f32 {
     if window.width() < MODAL_NARROW_WINDOW {
@@ -348,35 +360,18 @@ pub fn modal_size(size: ModalSize, window: Rect) -> Vec2 {
         (window.width() - 2.0 * inset).max(0.0),
         (window.height() - 2.0 * inset).max(0.0),
     );
-    let width = match size {
-        ModalSize::S => MODAL_S,
-        ModalSize::M => MODAL_M,
-        ModalSize::L => MODAL_L,
-        ModalSize::Xl => MODAL_XL,
-    };
-    let height = match size {
-        ModalSize::Xl => MODAL_XL_H,
-        _ => f32::INFINITY,
-    };
-    Vec2::new(width.min(room.x), height.min(room.y))
+    let spec = size.spec();
+    Vec2::new(spec.width.min(room.x), spec.max_height.min(room.y))
 }
 
-/// Where a modal of `size` sits: S and XL centred, M and L 12% from the
-/// top, so only their bottom edge moves as their content grows.
+/// Where a modal of `size` sits: a top-anchored one 12% from the top.
 pub fn modal_area(id: egui::Id, size: ModalSize, window: Rect, rise: f32) -> egui::Area {
-    let area = egui::Modal::default_area(id);
-    match size {
-        ModalSize::S | ModalSize::Xl => {
-            area.anchor(egui::Align2::CENTER_CENTER, Vec2::new(0.0, rise))
-        }
-        ModalSize::M | ModalSize::L => area.anchor(
-            egui::Align2::CENTER_TOP,
-            Vec2::new(
-                0.0,
-                (window.height() * 0.12).max(modal_inset(window)) + rise,
-            ),
-        ),
-    }
+    let anchor = size.spec().anchor;
+    let top = match anchor.y() {
+        egui::Align::Min => (window.height() * 0.12).max(modal_inset(window)),
+        _ => 0.0,
+    };
+    egui::Modal::default_area(id).anchor(anchor, Vec2::new(0.0, top + rise))
 }
 
 // Font families beyond egui's two built-in ones.
@@ -449,60 +444,50 @@ pub fn edit_body() -> FontId {
 
 /// Inter and JetBrains Mono, with egui's own fonts as fallbacks.
 fn font_definitions() -> FontDefinitions {
-    let mut fonts = FontDefinitions::default();
-    let faces: [(&str, &'static [u8]); 5] = [
+    use FontFamily::{Monospace, Proportional};
+    let faces: [(FontFamily, &str, &'static [u8], FontFamily); 5] = [
         (
+            Proportional,
             "Inter-Regular",
             include_bytes!("../assets/fonts/Inter-Regular.ttf"),
+            Proportional,
         ),
         (
+            family(SANS_MEDIUM),
             "Inter-Medium",
             include_bytes!("../assets/fonts/Inter-Medium.ttf"),
+            Proportional,
         ),
         (
+            family(SANS_SEMIBOLD),
             "Inter-SemiBold",
             include_bytes!("../assets/fonts/Inter-SemiBold.ttf"),
+            Proportional,
         ),
         (
+            Monospace,
             "JetBrainsMono-Regular",
             include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
+            Monospace,
         ),
         (
+            family(MONO_MEDIUM),
             "JetBrainsMono-Medium",
             include_bytes!("../assets/fonts/JetBrainsMono-Medium.ttf"),
+            Monospace,
         ),
     ];
-    for (name, bytes) in faces {
+    let mut fonts = FontDefinitions::default();
+    let defaults = fonts.families.clone();
+    for (family, face, bytes, fallback) in faces {
         fonts
             .font_data
-            .insert(name.to_string(), Arc::new(FontData::from_static(bytes)));
+            .insert(face.to_string(), Arc::new(FontData::from_static(bytes)));
+        let list = std::iter::once(face.to_string())
+            .chain(defaults[&fallback].iter().cloned())
+            .collect();
+        fonts.families.insert(family, list);
     }
-
-    let proportional = fonts.families[&FontFamily::Proportional].clone();
-    let monospace = fonts.families[&FontFamily::Monospace].clone();
-    let with = |primary: &str, fallbacks: &[String]| {
-        let mut list = vec![primary.to_string()];
-        list.extend(fallbacks.iter().cloned());
-        list
-    };
-    fonts.families.insert(
-        FontFamily::Proportional,
-        with("Inter-Regular", &proportional),
-    );
-    fonts.families.insert(
-        FontFamily::Monospace,
-        with("JetBrainsMono-Regular", &monospace),
-    );
-    fonts
-        .families
-        .insert(family(SANS_MEDIUM), with("Inter-Medium", &proportional));
-    fonts
-        .families
-        .insert(family(SANS_SEMIBOLD), with("Inter-SemiBold", &proportional));
-    fonts.families.insert(
-        family(MONO_MEDIUM),
-        with("JetBrainsMono-Medium", &monospace),
-    );
     fonts
 }
 
@@ -777,9 +762,7 @@ mod tests {
             ("shadow-popover", p.popover_shadow),
             ("shadow-modal", p.modal_shadow),
         ];
-        let labels = p
-            .label_colors()
-            .map(|(hue, color)| (format!("label-{hue}"), color));
+        let labels = Hue::ALL.map(|hue| (format!("label-{}", hue.name()), p.label(hue)));
         named
             .map(|(name, color)| (name.to_string(), color))
             .into_iter()
@@ -956,7 +939,7 @@ mod tests {
             assert_eq!(value.parse::<f32>().unwrap(), palette.label_tint, "{name}");
         }
         assert_eq!(tokens.opacity.len(), 2);
-        let (ink, surface) = (LIGHT.label_red, LIGHT.surface);
+        let (ink, surface) = (LIGHT.label(Hue::Red), LIGHT.surface);
         let fill = label_tint(ink, &LIGHT);
         assert_eq!(fill, surface.lerp_to_gamma(ink, 0.10));
         assert!(

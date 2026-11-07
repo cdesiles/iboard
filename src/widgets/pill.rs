@@ -302,7 +302,7 @@ mod tests {
         };
         assert_eq!(
             look(RED, false),
-            (p.surface_sunken, Some(p.label_red), p.ink_muted)
+            (p.surface_sunken, Some(p.label(Hue::Red)), p.ink_muted)
         );
         assert_eq!(
             look(None, false),
@@ -311,7 +311,11 @@ mod tests {
         );
         assert_eq!(
             look(RED, true),
-            (theme::label_tint(p.label_red, p), None, p.label_red)
+            (
+                theme::label_tint(p.label(Hue::Red), p),
+                None,
+                p.label(Hue::Red)
+            )
         );
         assert_eq!(
             look(None, true),
@@ -332,18 +336,18 @@ mod tests {
         );
         assert_eq!(
             theme::label_color(preset, &theme::LIGHT),
-            theme::LIGHT.label_red
+            theme::LIGHT.label(Hue::Red)
         );
         assert_eq!(
             theme::label_color(preset, &theme::DARK),
-            theme::DARK.label_red
+            theme::DARK.label(Hue::Red)
         );
     }
 
     #[test]
     fn every_preset_reads_in_both_themes() {
         for p in [&theme::LIGHT, &theme::DARK] {
-            for hue in [Hue::Red, Hue::Ochre, Hue::Green, Hue::Teal, Hue::Grey] {
+            for hue in Hue::ALL {
                 let color = theme::label_color(LabelColor::Preset(hue), p);
                 let name = hue.name();
                 assert!(
@@ -367,7 +371,7 @@ mod tests {
             stand_out: true,
         };
         let rest = paint(&ctx, style, false, 0.0, AWAY);
-        assert_eq!(rest.ink, p.label_red);
+        assert_eq!(rest.ink, p.label(Hue::Red));
         let over = rest.rect.center();
         paint(&ctx, style, false, 0.02, over);
         let rising = paint(&ctx, style, false, 0.04, over);

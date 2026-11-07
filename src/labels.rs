@@ -39,19 +39,34 @@ const LABEL_STYLE: &str = "label_style";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hue {
     Red,
+    Orange,
     Ochre,
     Green,
     Teal,
+    Pink,
     Grey,
 }
 
 impl Hue {
+    /// Every hue, in token order.
+    pub const ALL: [Self; 7] = [
+        Self::Red,
+        Self::Orange,
+        Self::Ochre,
+        Self::Green,
+        Self::Teal,
+        Self::Pink,
+        Self::Grey,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Red => "red",
+            Self::Orange => "orange",
             Self::Ochre => "ochre",
             Self::Green => "green",
             Self::Teal => "teal",
+            Self::Pink => "pink",
             Self::Grey => "grey",
         }
     }
