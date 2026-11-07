@@ -21,6 +21,18 @@ pub(crate) fn step_of(line: &str) -> Option<String> {
     }
 }
 
+/// The session an event names: OpenCode's `sessionID`, or Claude Code's
+/// `session_id` on its init and result events.
+pub(crate) fn session_of(line: &str) -> Option<String> {
+    let event: serde_json::Value = serde_json::from_str(line).ok()?;
+    event["sessionID"]
+        .as_str()
+        .or_else(|| event["session_id"].as_str())
+        .or_else(|| event["data"]["sessionID"].as_str())
+        .or_else(|| event["data"]["session_id"].as_str())
+        .map(str::to_string)
+}
+
 /// "Reading app/review.rs…": the tool as a verb, and the tail of its target.
 pub(crate) fn describe_tool(tool: &str, input: &serde_json::Value) -> Option<String> {
     let verb = match tool.to_ascii_lowercase().as_str() {

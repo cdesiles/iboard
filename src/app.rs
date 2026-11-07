@@ -70,6 +70,7 @@ mod moves;
 mod naming;
 mod nav;
 mod new_issue_ui;
+mod plan;
 mod projects;
 mod prose;
 mod question;
@@ -234,6 +235,9 @@ pub struct IboardApp {
     /// Where `recents` is persisted; `None` in tests, so they never touch the
     /// user's cache.
     recents_file: Option<PathBuf>,
+    /// The cache folder plans are kept in; `None` in tests, for the same
+    /// reason.
+    plan_dir: Option<PathBuf>,
     /// A window title to apply on the next frame, after a project switch.
     pending_title: Option<String>,
     /// What the iboards started later ask this window to show; `None` when no
@@ -333,6 +337,8 @@ struct Session {
     notes: Option<comments::Notes>,
     /// The Design panel, while it is open.
     design: Option<design_ui::Panel>,
+    /// The Plan panel, from Tools › Plan….
+    plan: Option<plan::Panel>,
     /// The project's design system, loaded when the panel first opens.
     design_system: Option<DesignSystem>,
     /// Why the design system could not be loaded, when it could not.
@@ -386,6 +392,7 @@ impl Default for Session {
             notice: None,
             undo: None,
             design: None,
+            plan: None,
             design_system: None,
             design_error: None,
             design_draft: None,
@@ -472,6 +479,7 @@ impl IboardApp {
         if let Some(file) = &app.recents_file {
             app.recents = recents::read(file);
         }
+        app.plan_dir = settings::cache_dir();
         app.trash = Trash::System;
         // Likewise for the user configuration.
         app.config_file = settings::config_file();
@@ -530,6 +538,7 @@ impl IboardApp {
             send_close: false,
             recents: Vec::new(),
             recents_file: None,
+            plan_dir: None,
             pending_title: None,
             handovers: None,
             prefs: Preferences {
@@ -713,6 +722,7 @@ impl IboardApp {
         self.config_window(ui);
         self.groups_window(ui);
         self.design_window(ui);
+        self.plan_window(ui);
         self.enrichment_window(ui);
         self.commits_window(ui);
         self.release_window(ui);

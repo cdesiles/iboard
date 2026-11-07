@@ -187,6 +187,7 @@ fn each_tool_gets_its_one_shot_arguments() {
         file,
         issue,
         Purpose::Answer(REVIEW_TIMEOUT),
+        None,
     );
     assert_eq!(args(&built), ["run", "--model", "vendor/model", "PROMPT"]);
     let built = command(
@@ -199,6 +200,7 @@ fn each_tool_gets_its_one_shot_arguments() {
             mode: ReviewMode::Quick,
             plan: false,
         },
+        None,
     );
     assert_eq!(args(&built), ["run", "--format", "json", "PROMPT"]);
 
@@ -213,6 +215,7 @@ fn each_tool_gets_its_one_shot_arguments() {
         file,
         issue,
         Purpose::Answer(REVIEW_TIMEOUT),
+        None,
     );
     assert_eq!(args(&built), ["-p", "PROMPT"]);
     let stream = ["-p", "--output-format", "stream-json", "--verbose"];
@@ -220,7 +223,7 @@ fn each_tool_gets_its_one_shot_arguments() {
         mode: ReviewMode::Quick,
         plan: false,
     };
-    let built = command(&claude, "", "PROMPT", file, issue, quick);
+    let built = command(&claude, "", "PROMPT", file, issue, quick, None);
     assert_eq!(
         args(&built),
         [&stream[..], &["--tools", "", "PROMPT"]].concat()
@@ -229,7 +232,7 @@ fn each_tool_gets_its_one_shot_arguments() {
         mode: ReviewMode::Deep,
         plan: false,
     };
-    let built = command(&claude, "", "PROMPT", file, issue, deep);
+    let built = command(&claude, "", "PROMPT", file, issue, deep, None);
     assert_eq!(args(&built), [&stream[..], &["PROMPT"]].concat());
     let built = command(
         &claude,
@@ -238,22 +241,27 @@ fn each_tool_gets_its_one_shot_arguments() {
         file,
         issue,
         Purpose::Build(BuildTimeout::default()),
+        None,
     );
     assert_eq!(
         args(&built),
         [&stream[..], &["--permission-mode", "acceptEdits", "PROMPT"]].concat()
     );
+}
 
+#[test]
+fn a_custom_command_gets_its_placeholders_as_shell_variables() {
     let built = command(
         &custom("llm -m {model} < {prompt} # {issue}"),
         "gpt",
         "PROMPT",
-        file,
-        issue,
+        Path::new("/tmp/prompt.md"),
+        Path::new("/p/todo/a b.md"),
         Purpose::Review {
             mode: ReviewMode::Deep,
             plan: true,
         },
+        None,
     );
     assert_eq!(built.get_program(), "sh");
     assert_eq!(
@@ -274,6 +282,125 @@ fn each_tool_gets_its_one_shot_arguments() {
     assert_eq!(env("IBOARD_PROMPT").as_deref(), Some("/tmp/prompt.md"));
     assert_eq!(env("IBOARD_ISSUE").as_deref(), Some("/p/todo/a b.md"));
     assert_eq!(env("IBOARD_MODE").as_deref(), Some("deep"));
+}
+
+#[test]
+fn a_plan_turn_continues_its_session_and_keeps_the_plan_read_only() {
+    let file = Path::new("/tmp/prompt.md");
+    let issue = Path::new("");
+    let opencode = AgentConfig {
+        tool: Tool::OpenCode,
+        ..AgentConfig::default()
+    };
+    let plan = Purpose::Plan {
+        plan_mode: true,
+        tickets: false,
+    };
+    let built = command(
+        &opencode,
+        "vendor/model",
+        "PROMPT",
+        file,
+        issue,
+        plan,
+        Some("ses_1"),
+    );
+    assert_eq!(
+        args(&built),
+        [
+            "run",
+            "--format",
+            "json",
+            "--agent",
+            "plan",
+            "--session",
+            "ses_1",
+            "--model",
+            "vendor/model",
+            "PROMPT"
+        ]
+    );
+
+    let claude = AgentConfig {
+        tool: Tool::Claude,
+        ..AgentConfig::default()
+    };
+    let tickets = Purpose::Plan {
+        plan_mode: true,
+        tickets: true,
+    };
+    let built = command(&claude, "", "PROMPT", file, issue, tickets, Some("abc"));
+    assert_eq!(
+        args(&built),
+        [
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--permission-mode",
+            "plan",
+            "--resume",
+            "abc",
+            "PROMPT"
+        ]
+    );
+    for purpose in [plan, tickets] {
+        let built = command(&opencode, "", "PROMPT", file, issue, purpose, None);
+        assert!(!args(&built).contains(&"--session".to_string()));
+    }
+}
+
+#[test]
+fn a_custom_command_takes_the_plan_session_and_mode() {
+    let built = command(
+        &custom("printf '%s/%s' {session} {mode} # {prompt}"),
+        "",
+        "PROMPT",
+        Path::new("/tmp/prompt.md"),
+        Path::new(""),
+        Purpose::Plan {
+            plan_mode: true,
+            tickets: true,
+        },
+        Some("iboard-plan-1"),
+    );
+    assert_eq!(
+        args(&built),
+        [
+            "-c",
+            "printf '%s/%s' \"$IBOARD_SESSION\" \"$IBOARD_MODE\" # \"$IBOARD_PROMPT\""
+        ]
+    );
+    let env = |name: &str| {
+        built
+            .get_envs()
+            .find(|(key, _)| *key == name)
+            .and_then(|(_, value)| value)
+            .map(|value| value.to_string_lossy().into_owned())
+    };
+    assert_eq!(env("IBOARD_SESSION").as_deref(), Some("iboard-plan-1"));
+    assert_eq!(env("IBOARD_MODE").as_deref(), Some("tickets"));
+}
+
+#[test]
+fn a_tool_continues_only_when_it_can() {
+    assert!(tool(Tool::OpenCode).continues());
+    assert!(tool(Tool::Claude).continues());
+    assert!(!custom("llm < {prompt}").continues());
+    assert!(custom("tool --session {session} < {prompt}").continues());
+}
+
+#[test]
+fn streamed_events_name_their_session() {
+    assert_eq!(
+        session_of(r#"{"type":"step_start","sessionID":"ses_1"}"#).as_deref(),
+        Some("ses_1")
+    );
+    assert_eq!(
+        session_of(r#"{"type":"system","subtype":"init","session_id":"abc"}"#).as_deref(),
+        Some("abc")
+    );
+    assert_eq!(session_of(OPENCODE), None);
 }
 
 /// Events recorded from `opencode run --format json` and

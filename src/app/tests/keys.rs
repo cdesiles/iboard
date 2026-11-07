@@ -379,15 +379,15 @@ fn the_menu_bar_picks_wait_behind_a_modal() {
         let app = &mut harness.state_mut().1;
         up(app, &file);
         let had_settings = app.settings.is_some();
-        app.menu_picks(true, true);
+        app.menu_picks(true, true, false);
         assert!(app.session.stats.is_none(), "{name}: stats opened");
         assert_eq!(app.settings.is_some(), had_settings, "{name}: settings");
     }
     let (_dir, _file, mut harness) = opened_in("menu-picks-free", "todo");
     let app = &mut harness.state_mut().1;
-    app.menu_picks(false, true);
+    app.menu_picks(false, true, false);
     assert!(app.session.stats.is_some(), "stats");
-    app.menu_picks(true, false);
+    app.menu_picks(true, false, false);
     assert!(app.settings.is_some(), "settings over the stats screen");
 }
 

@@ -55,6 +55,7 @@ impl IboardApp {
             self.poll_asks(),
             self.poll_answers(),
             self.poll_stats(),
+            self.poll_plan(),
         ];
         if let Some(after) = wake.into_iter().flatten().min() {
             ctx.request_repaint_after(after);
@@ -192,6 +193,7 @@ impl IboardApp {
         self.menu_picks(
             iboard::menu::take_settings_request(),
             iboard::menu::take_stats_request(),
+            iboard::menu::take_plan_request(),
         );
         let close_requested = ctx.input(|i| i.viewport().close_requested());
         if close_requested && !self.closing {
@@ -205,9 +207,9 @@ impl IboardApp {
         }
     }
 
-    /// Settings or Project Stats picked from the menu bar. A modal stops the
-    /// board until it is answered, so a pick made under one is dropped.
-    pub(super) fn menu_picks(&mut self, settings: bool, stats: bool) {
+    /// Settings, Plan or Project Stats picked from the menu bar. A modal stops
+    /// the board until it is answered, so a pick made under one is dropped.
+    pub(super) fn menu_picks(&mut self, settings: bool, stats: bool, plan: bool) {
         if self.modal_up() {
             return;
         }
@@ -216,6 +218,9 @@ impl IboardApp {
         }
         if stats {
             self.open_stats();
+        }
+        if plan {
+            self.open_plan();
         }
     }
 

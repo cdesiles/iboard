@@ -58,7 +58,15 @@ fn run_draft(
     let prompt_path = prompt_file
         .as_ref()
         .map_or(Path::new(""), files::TempFile::path);
-    let mut command = command(config, &model, prompt, prompt_path, issue, Purpose::Draft);
+    let mut command = command(
+        config,
+        &model,
+        prompt,
+        prompt_path,
+        issue,
+        Purpose::Draft,
+        None,
+    );
     if let Some(dir) = project.map(Workspace::of) {
         command.current_dir(dir.dir);
     }

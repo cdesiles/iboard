@@ -44,7 +44,8 @@ pub enum Tool {
     #[default]
     OpenCode,
     Claude,
-    /// Any command the user writes, with `{prompt}`, `{model}` and `{issue}`.
+    /// Any command the user writes, with `{prompt}`, `{model}`, `{issue}`,
+    /// `{mode}` and `{session}`.
     Custom,
 }
 
@@ -166,6 +167,15 @@ impl AgentConfig {
         Ok(())
     }
 
+    /// Whether the tool can continue a conversation itself. A custom command
+    /// does only when it takes `{session}`; otherwise the plan is replayed.
+    pub fn continues(&self) -> bool {
+        match self.tool {
+            Tool::OpenCode | Tool::Claude => true,
+            Tool::Custom => self.command.contains("{session}"),
+        }
+    }
+
     fn to_raw(&self) -> RawAgent {
         let model = self.model.trim();
         RawAgent {
@@ -283,6 +293,9 @@ const DRAFT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// review, the agent writes a whole page.
 pub const DESIGN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
+/// How long one plan turn may take.
+pub const PLAN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
 /// How long a build or an ask may work: Settings › AI build's Timeout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildTimeout(Option<u64>);
@@ -338,11 +351,12 @@ impl BuildTimeout {
 }
 
 /// The shell variables a custom command's placeholders become.
-const PLACEHOLDERS: [(&str, &str); 4] = [
+const PLACEHOLDERS: [(&str, &str); 5] = [
     ("{prompt}", "IBOARD_PROMPT"),
     ("{model}", "IBOARD_MODEL"),
     ("{issue}", "IBOARD_ISSUE"),
     ("{mode}", "IBOARD_MODE"),
+    ("{session}", "IBOARD_SESSION"),
 ];
 
 /// How far a review goes: Quick judges the issue's text alone, without
@@ -441,8 +455,8 @@ impl Leash {
 }
 
 /// What a run of the agent is for: a plain answer, a review (in plan mode
-/// when `plan`), implementing an issue, which edits the repository, or what
-/// its author asked on a leash.
+/// when `plan`), implementing an issue, which edits the repository, what its
+/// author asked on a leash, or one turn of a plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Purpose {
     Answer(Duration),
@@ -454,6 +468,11 @@ enum Purpose {
     Ask(Leash, BuildTimeout),
     /// A new issue drafted from its author's notes, its text streamed.
     Draft,
+    /// One turn of a plan, read-only; `tickets` asks for the split answer.
+    Plan {
+        plan_mode: bool,
+        tickets: bool,
+    },
 }
 
 impl Purpose {
@@ -465,6 +484,8 @@ impl Purpose {
             Purpose::Build(_) => "build",
             Purpose::Ask(..) => "ask",
             Purpose::Draft => "draft",
+            Purpose::Plan { tickets: true, .. } => "tickets",
+            Purpose::Plan { .. } => "plan",
         }
     }
 
@@ -480,6 +501,7 @@ impl Purpose {
             Purpose::Review { .. } => Some(REVIEW_TIMEOUT),
             Purpose::Build(timeout) | Purpose::Ask(_, timeout) => timeout.limit(),
             Purpose::Draft => Some(DRAFT_TIMEOUT),
+            Purpose::Plan { .. } => Some(PLAN_TIMEOUT),
         }
     }
 }
@@ -507,6 +529,7 @@ fn command(
     prompt_file: &Path,
     issue: &Path,
     purpose: Purpose,
+    session: Option<&str>,
 ) -> Command {
     let mut command = match config.tool {
         Tool::Custom => {
@@ -517,16 +540,17 @@ fn command(
                 .env("IBOARD_PROMPT", prompt_file)
                 .env("IBOARD_MODEL", model)
                 .env("IBOARD_ISSUE", issue)
-                .env("IBOARD_MODE", purpose.key());
+                .env("IBOARD_MODE", purpose.key())
+                .env("IBOARD_SESSION", session.unwrap_or_default());
             command
         }
         tool => {
             let mut command = Command::new(tool.program());
             // `opencode run "…"` and `claude -p "…"` answer once and exit.
             command.arg(if tool == Tool::OpenCode { "run" } else { "-p" });
-            // A review or a build streams its steps as JSON events, so iboard
-            // can say what the agent is doing; a quick review gets no built-in
-            // tools, a build may edit files.
+            // A review, a build or a plan streams its steps as JSON events, so
+            // iboard can say what the agent is doing; a quick review gets no
+            // built-in tools, a build may edit files.
             match (tool, purpose) {
                 (_, Purpose::Answer(_)) => {}
                 (Tool::OpenCode, _) => {
@@ -552,7 +576,10 @@ fn command(
                 }
             }
             if let Purpose::Review { plan: true, .. }
-            | Purpose::Ask(Leash { edits: false, .. }, _) = purpose
+            | Purpose::Ask(Leash { edits: false, .. }, _)
+            | Purpose::Plan {
+                plan_mode: true, ..
+            } = purpose
             {
                 command.args(tool.plan_args());
             }
@@ -560,6 +587,17 @@ fn command(
                 let denied = leash.denied();
                 if !denied.is_empty() {
                     command.arg("--disallowedTools").arg(denied.join(","));
+                }
+            }
+            if let Some(session) = session.filter(|_| matches!(purpose, Purpose::Plan { .. })) {
+                match tool {
+                    Tool::OpenCode => {
+                        command.arg("--session").arg(session);
+                    }
+                    Tool::Claude => {
+                        command.arg("--resume").arg(session);
+                    }
+                    Tool::Custom => {}
                 }
             }
             if !model.is_empty() {
@@ -603,7 +641,7 @@ pub fn run(
 ) -> Result<String, String> {
     let workspace = project.map(Workspace::of);
     let purpose = Purpose::Answer(timeout);
-    run_with(
+    chat::run_with(
         config,
         prompt,
         issue,
@@ -636,73 +674,6 @@ fn prompt_file(config: &AgentConfig, prompt: &str) -> Result<Option<files::TempF
     files::TempFile::write("prompt", "md", prompt)
         .map(Some)
         .map_err(|err| format!("Couldn't write the prompt to the temp folder: {err}"))
-}
-
-/// [`run`] for `purpose`, in `workspace` when set; the agent's steps land in
-/// `progress` as they come.
-fn run_with(
-    config: &AgentConfig,
-    prompt: &str,
-    issue: &Path,
-    cancel: &Cancel,
-    purpose: Purpose,
-    progress: Option<&Progress>,
-    workspace: Option<&Workspace>,
-) -> Result<String, String> {
-    let model = match config.model.trim() {
-        "" if config.tool != Tool::Custom => default_model(config.tool).unwrap_or_default(),
-        model => model.to_string(),
-    };
-    let custom = config.tool == Tool::Custom;
-    let prompt_file = prompt_file(config, prompt)?;
-    let what = match config.tool {
-        Tool::Custom => "the custom command",
-        tool => tool.key(),
-    };
-    let prompt_path = prompt_file
-        .as_ref()
-        .map_or(Path::new(""), files::TempFile::path);
-    let mut command = command(config, &model, prompt, prompt_path, issue, purpose);
-    if let Some(workspace) = workspace {
-        command.current_dir(workspace.dir);
-        if direnv::applies(DIRENV.load(Ordering::Relaxed), workspace.dir)
-            && let Some(binary) = find_binary("direnv")
-        {
-            command = direnv::wrap(&command, &binary, workspace.dir);
-        }
-    }
-    let mut log = workspace
-        .and_then(|workspace| workspace.log)
-        .and_then(|log| build_log::open(log).ok());
-    let streams = progress.filter(|_| !custom);
-    let output = process::run_with(command, what, cancel, purpose.timeout(), |line| {
-        if let Some(progress) = streams
-            && let Some(step) = step_of(line)
-        {
-            *progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(step);
-        }
-        if let Some(log) = log.as_mut() {
-            for entry in build_log::entries(line) {
-                let _ = build_log::write_line(log, &entry);
-            }
-        }
-    });
-    drop(prompt_file);
-    let output = output?;
-    let failure = stream_error(&output.stdout);
-    let answer = output
-        .into_result("the agent")
-        .map_err(|err| failure.clone().unwrap_or(err))?;
-    let answer = match streams {
-        Some(_) => final_answer(&answer),
-        None => answer,
-    };
-    match answer.trim() {
-        "" if !purpose.works() => {
-            Err(failure.unwrap_or_else(|| "the agent returned no answer".to_string()))
-        }
-        answer => Ok(answer.to_string()),
-    }
 }
 
 /// [`run`] on a background thread. Dropping the job stops the agent.
@@ -763,7 +734,7 @@ fn review(
     let run = |plan| {
         let purpose = Purpose::Review { mode, plan };
         let (issue, steps) = (&subject.issue, Some(progress));
-        run_with(
+        chat::run_with(
             config,
             prompt,
             issue,
@@ -901,7 +872,7 @@ fn start_logged(
                 };
                 service::start(&build, cancel, steps, &mine)
             }
-            purpose => run_with(
+            purpose => chat::run_with(
                 &config,
                 &prompt,
                 &issue,
@@ -926,14 +897,17 @@ fn model_of(config: &AgentConfig) -> String {
 }
 
 mod answer;
+mod chat;
 mod direnv;
 mod draft;
 pub mod service;
 mod stream;
 mod tools;
 
-pub(crate) use stream::{describe_tool, step_of};
+pub(crate) use stream::{describe_tool, session_of, step_of};
 use stream::{final_answer, stream_error};
+
+pub use chat::{Chat, start_plan};
 
 pub use answer::{
     Axis, Challenge, Draft, Finding, Report, Verdict, choice_parts, parse, parse_refinement,

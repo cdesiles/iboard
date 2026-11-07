@@ -25,6 +25,7 @@ mod modals;
 mod moves;
 mod naming;
 mod panes;
+mod plan;
 mod project_menu;
 mod quitting;
 mod reading;

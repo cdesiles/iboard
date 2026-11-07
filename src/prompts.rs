@@ -9,6 +9,7 @@
 use crate::agent::{Leash, ReviewMode};
 use crate::design::{DesignSystem, css};
 use crate::markdown;
+use crate::plan::{Plan, Speaker};
 
 /// The design context: the brief, the token contract and the component
 /// inventory, ready to splice into a prompt or to show as-is.
@@ -291,6 +292,66 @@ pub fn draft_prompt(notes: &str, sections: &[String], labels: &[String]) -> Stri
     )
 }
 
+/// The instruction for one turn of a plan: an open conversation that can end
+/// in tickets. `history` replays the whole transcript when the tool cannot
+/// continue its session; otherwise only the author's latest words go out.
+pub fn plan_prompt(plan: &Plan, tickets: bool, history: bool) -> String {
+    let kind = plan.kind();
+    let sections = kind
+        .sections()
+        .iter()
+        .map(|section| format!("- {section}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut prompt = format!(
+        "You plan one piece of work with its author, in an open conversation, before it \
+         becomes tickets. Read the project's own instructions first (AGENTS.md, CLAUDE.md, \
+         CONTRIBUTING.md, whichever exist) and follow them. You may read the repository and \
+         its design system; change nothing. The plan's kind is {name}: {blurb}.\n\
+         \n\
+         Drive the conversation toward these sections, but follow the author's lead:\n\
+         {sections}\n\
+         \n\
+         Each turn, say what you understood, then ask at most three questions or objections, \
+         the most important first. Be direct and brief. Do not write tickets until the author \
+         asks for them; until then, help them decide what the work is.",
+        name = kind.name(),
+        blurb = kind.blurb(),
+    );
+    if tickets {
+        prompt.push_str(&format!(
+            "\n\n\
+             The author now asks you to turn the conversation so far into tickets. Answer with \
+             nothing but the issues, each starting with a line `{SPLIT_MARK}`, then a \
+             `# [{label}] Title` line, then its body in markdown. Write 2 to 6 tickets, in the \
+             order they should be done. Each ticket must be finishable on its own, and its body \
+             must carry the reasoning from the conversation: the need, what was weighed, and \
+             what was decided. Keep it to 6 to 20 lines.",
+            label = kind.label(),
+        ));
+    }
+    if history {
+        prompt.push_str("\n\n---\nThe conversation so far:\n");
+        for turn in &plan.turns {
+            prompt.push_str(&format!(
+                "\n{}: {}\n",
+                speaker(turn.speaker),
+                turn.text.trim()
+            ));
+        }
+    } else if !tickets && let Some(said) = plan.last_author() {
+        prompt.push_str(&format!("\n\n---\nThe author says:\n{}", said.trim()));
+    }
+    prompt
+}
+
+fn speaker(speaker: Speaker) -> &'static str {
+    match speaker {
+        Speaker::Author => "Author",
+        Speaker::Agent => "Agent",
+    }
+}
+
 /// The line each ticket of a split answer starts with.
 pub const SPLIT_MARK: &str = "=== TICKET ===";
 
@@ -426,6 +487,7 @@ pub fn clean_html_reply(reply: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plan::Kind;
     use std::path::Path;
 
     const ISSUE: &str = "# Taller header\n\nThe header should be 48pt.\n";
@@ -620,6 +682,58 @@ mod tests {
         assert!(prompt.contains("A review said about its size: Three files, cut per file."));
         assert!(prompt.contains(SPLIT_MARK));
         assert!(prompt.ends_with("# [refactor] Big"));
+    }
+
+    fn calendar_plan() -> Plan {
+        let mut plan = Plan::fresh();
+        plan.ask("A calendar view for the board");
+        plan.answer("Who reads it: someone planning a week, or a release?");
+        plan
+    }
+
+    #[test]
+    fn the_plan_prompt() {
+        insta::assert_snapshot!(plan_prompt(&calendar_plan(), false, true));
+    }
+
+    #[test]
+    fn the_plan_tickets_prompt() {
+        insta::assert_snapshot!(plan_prompt(&calendar_plan(), true, false));
+    }
+
+    #[test]
+    fn the_plan_prompt_switches_sections_with_the_kind() {
+        let mut plan = Plan::fresh();
+        plan.ask("The board crashes when a column is empty");
+        let bug = plan_prompt(&plan, false, true);
+        assert!(bug.contains("Bug review"));
+        assert!(bug.contains("Steps to reproduce"));
+        assert!(!bug.contains("Out of scope"));
+
+        plan.set_kind(Kind::Debt);
+        let debt = plan_prompt(&plan, false, true);
+        assert!(debt.contains("Tech debt review"));
+        assert!(debt.contains("Where it costs"));
+        assert!(!debt.contains("Steps to reproduce"));
+    }
+
+    #[test]
+    fn a_continued_plan_only_sends_the_latest_words() {
+        let plan = calendar_plan();
+        let continued = plan_prompt(&plan, false, false);
+        assert!(continued.contains("The author says:"));
+        assert!(!continued.contains("Who reads it"));
+        let replayed = plan_prompt(&plan, false, true);
+        assert!(replayed.contains("Author: A calendar view for the board"));
+        assert!(replayed.contains("Agent: Who reads it"));
+    }
+
+    #[test]
+    fn the_plan_tickets_prompt_carries_the_reasoning_and_the_mark() {
+        let prompt = plan_prompt(&calendar_plan(), true, true);
+        assert!(prompt.contains(SPLIT_MARK));
+        assert!(prompt.contains("# [feat] Title"));
+        assert!(prompt.contains("carry the reasoning"));
     }
 
     #[test]
