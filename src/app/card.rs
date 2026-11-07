@@ -5,7 +5,7 @@ use super::labelling::{label_picker_open, set_label_anchor};
 use super::review::ReviewPill;
 use super::{
     Align, Color32, CornerRadius, Frame, Icon, Instant, Issue, Labels, Layout, LayoutJob, Pos2,
-    Rect, RichText, Sense, Stroke, StrokeKind, Vec2, stopwatch, theme, widgets,
+    Rect, RichText, Sense, Stroke, StrokeKind, Vec2, clock, theme, widgets,
 };
 
 /// The strip laid over a card's bottom on hover, selection or focus. A card
@@ -272,7 +272,7 @@ fn card_strip(
     if let Some(CardBuild::Running(since)) = extras.build {
         build_timer(&mut ui, issue, since);
     } else if let Some(took) = issue.built_in {
-        ui.label(meta_text(stopwatch(took), p.ink_muted));
+        ui.label(meta_text(clock(took), p.ink_muted));
     }
     if let Some(done_at) = issue.done_at {
         ui.label(meta_text(done_date(done_at), p.ink_muted))
@@ -722,14 +722,14 @@ fn card_buttons(done: bool, extras: &CardExtras) -> Vec<CardButton> {
     buttons
 }
 
-/// How long the build agent has been on the issue, `mm:ss` in `status-doing`.
+/// How long the build agent has been on the issue, in `status-doing`.
 fn build_timer(ui: &mut egui::Ui, issue: &Issue, since: Instant) {
     let color = theme::palette(ui).status_doing;
     ui.scope_builder(
         egui::UiBuilder::new()
             .id(egui::Id::new(("card_build_timer", &issue.path)))
             .sense(Sense::hover()),
-        |ui| ui.label(meta_text(stopwatch(since.elapsed()), color)),
+        |ui| ui.label(meta_text(clock(since.elapsed()), color)),
     );
 }
 

@@ -463,7 +463,12 @@ fn the_panel_shows_a_running_review() {
     harness.run_steps(2);
     harness.get_by_label("Review of 01-demo.md");
     harness.get_by_label("The agent is reading the issue…");
-    harness.get_by_label_contains("0:0");
+    assert!(
+        ["0s", "1s"]
+            .iter()
+            .any(|clock| harness.query_by_label(clock).is_some()),
+        "the clock counts whole seconds"
+    );
 
     let runs = &harness.state().1.session.review_runs;
     *runs.running[&file].progress.lock().unwrap() = Some("Reading src/app.rs…".to_string());

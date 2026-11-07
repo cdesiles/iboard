@@ -35,7 +35,7 @@ The panel opens at its final size straight away and keeps its shape, so nothing 
 | 20s+ | "Still working", then in `ink-muted`: "Longer issues can take up to a minute. `esc` cancels and keeps your answer." |
 | Timeout (the tool's own, or 120s) | The failed state: `danger` text naming the tool, Retry, and the answer kept in the note |
 
-No percentage and no fake progress bar: iboard does not know how far the model is, so it only says what it is waiting for and for how long. The clock counts whole seconds.
+No percentage and no fake progress bar: iboard does not know how far the model is, so it only says what it is waiting for and for how long. The clock counts whole seconds ("42s"), then minutes from one on ("1:05"). Every agent at work reads it this way: the RefinePanel, the ReviewPanel, the NewIssueModal, Skeleton heads, the IssueCard's build timer and the agent log.
 
 ## Behaviour
 

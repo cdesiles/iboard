@@ -570,17 +570,21 @@ fn sheet_head(ui: &mut egui::Ui, composer: &Composer, view: &ComposeView) {
         if let Some(run) = &composer.drafting {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-                let secs = run.job.elapsed().as_secs();
-                let status = if secs >= STILL_WORKING_AFTER {
+                let elapsed = run.job.elapsed();
+                let slow = elapsed.as_secs() >= STILL_WORKING_AFTER;
+                let status = if slow {
                     "Still working"
                 } else {
                     "Review is drafting"
                 };
-                widgets::announce_thinking(ui, status, run.job.elapsed());
-                let text = match secs {
-                    s if s >= STILL_WORKING_AFTER => format!("Still working · {s}s · esc stops"),
-                    s if s >= 2 => format!("Review is drafting · {s}s"),
-                    _ => "Review is drafting".to_string(),
+                widgets::announce_thinking(ui, status, elapsed);
+                let clock = crate::format::clock(elapsed);
+                let text = if slow {
+                    format!("{status} · {clock} · esc stops")
+                } else if elapsed >= theme::CLOCK_AFTER {
+                    format!("{status} · {clock}")
+                } else {
+                    status.to_string()
                 };
                 ui.label(meta(text, p.review));
                 widgets::thinking(ui, 14.0);

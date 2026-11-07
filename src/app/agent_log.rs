@@ -3,8 +3,8 @@
 
 use super::side_panel::side_panel;
 use super::{
-    CommonMarkCache, CommonMarkViewer, IboardApp, Instant, Path, PathBuf, RichText, file_name,
-    stopwatch, theme,
+    CommonMarkCache, CommonMarkViewer, IboardApp, Instant, Path, PathBuf, RichText, clock,
+    file_name, theme,
 };
 use crate::build_log::{self, Entry};
 
@@ -80,7 +80,7 @@ impl IboardApp {
         };
         log.reload();
         let detail = match running {
-            Some(since) => format!("running · {}", stopwatch(since.elapsed())),
+            Some(since) => format!("running · {}", clock(since.elapsed())),
             None => "not running".to_string(),
         };
         let title = format!("Agent log of {}", file_name(&log.path));

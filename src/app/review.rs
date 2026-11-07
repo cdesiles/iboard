@@ -850,11 +850,10 @@ fn review_footer(ui: &mut egui::Ui, review: &ReviewState) -> Option<PanelAction>
 }
 
 /// The Thinking mark, the time the agent has taken, and the step it is on:
-/// "0:42 · Reading app/review.rs…".
+/// "42s · Reading app/review.rs…".
 pub(super) fn running_line(ui: &mut egui::Ui, elapsed: Duration, step: Option<String>) {
     let p = theme::palette(ui);
-    let seconds = elapsed.as_secs();
-    let clock = format!("{}:{:02}", seconds / 60, seconds % 60);
+    let clock = crate::format::clock(elapsed);
     let step = step.unwrap_or_else(|| "The agent is reading the issue…".to_string());
     widgets::announce_thinking(ui, "The agent is working", elapsed);
     ui.horizontal(|ui| {

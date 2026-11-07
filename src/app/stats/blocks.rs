@@ -15,8 +15,6 @@ use super::{
 /// How long one block's read may take. A timed-out commit read stays cached,
 /// so Retry resumes it.
 const TIMEOUT: Duration = Duration::from_secs(60);
-/// From this long on, a block's head shows the Thinking mark and a clock.
-const CLOCK_AFTER: Duration = Duration::from_secs(2);
 /// The opacity of old numbers while a refresh reads the new ones.
 const STALE_OPACITY: f32 = 0.6;
 /// Between a panel's title and its caption.
@@ -191,7 +189,7 @@ impl Blocks {
     /// How long `part` has been reading, once its head shows it.
     pub(super) fn clock(&self, part: Part) -> Option<Duration> {
         let elapsed = self.slots.get(&part)?.run.as_ref()?.elapsed();
-        (elapsed >= CLOCK_AFTER).then_some(elapsed)
+        (elapsed >= theme::CLOCK_AFTER).then_some(elapsed)
     }
 
     /// After drawing `part`: starts it the first time it is on screen, and
@@ -256,7 +254,7 @@ pub(super) fn panel_head(
 }
 
 /// The Thinking mark and how long it has been, in a right-to-left layout;
-/// nothing before [`CLOCK_AFTER`].
+/// nothing before [`theme::CLOCK_AFTER`].
 pub(in crate::app) fn clock_note(ui: &mut egui::Ui, clock: Option<Duration>) {
     let Some(elapsed) = clock else {
         return;
@@ -264,7 +262,7 @@ pub(in crate::app) fn clock_note(ui: &mut egui::Ui, clock: Option<Duration>) {
     let p = theme::palette(ui);
     ui.spacing_mut().item_spacing.x = theme::SPACE_1;
     ui.label(
-        RichText::new(format!("{}s", elapsed.as_secs()))
+        RichText::new(crate::format::clock(elapsed))
             .font(theme::meta())
             .color(p.ink_muted),
     );

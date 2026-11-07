@@ -493,7 +493,7 @@ impl IboardApp {
             Some(Ok(text)) => {
                 composer.drafting = None;
                 drafted.draft = new_issue::parse(&text, true);
-                drafted.receipt = Some(format!("{agent} · {}s", elapsed.as_secs()));
+                drafted.receipt = Some(format!("{agent} · {}", crate::format::clock(elapsed)));
                 adopt_draft_title(composer);
             }
             Some(Err(err)) => {

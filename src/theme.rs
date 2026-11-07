@@ -568,6 +568,8 @@ pub const SCROLL_FADE: f32 = 0.15;
 
 /// Nothing of a Skeleton shows before this, so a fast answer never flashes.
 pub const SKELETON_AFTER: Duration = Duration::from_millis(300);
+/// From this long on, a wait shows the Thinking mark's elapsed clock.
+pub const CLOCK_AFTER: Duration = Duration::from_secs(2);
 
 /// A Skeleton placeholder's colour: `surface-sunken`, every one on screen
 /// pulsing together with the Thinking mark (opacity 1 → 0.5 → 1 over 1.6s).

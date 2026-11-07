@@ -32,8 +32,17 @@ pub fn relative_time(time: SystemTime) -> String {
     }
 }
 
-/// How long something has run, as `mm:ss`; minutes keep counting past the
-/// hour.
+/// How long an agent has worked, the Thinking clock: whole seconds, "42s",
+/// then "1:05" from a minute on; minutes keep counting past the hour.
+pub fn clock(duration: Duration) -> String {
+    match duration.as_secs() {
+        secs @ 0..60 => format!("{secs}s"),
+        secs => format!("{}:{:02}", secs / 60, secs % 60),
+    }
+}
+
+/// How long something has run, as `mm:ss`, the way the build log keeps it;
+/// minutes keep counting past the hour.
 pub fn stopwatch(duration: Duration) -> String {
     let secs = duration.as_secs();
     format!("{:02}:{:02}", secs / 60, secs % 60)
@@ -72,6 +81,14 @@ mod tests {
         assert_eq!(stopwatch(Duration::from_millis(4_900)), "00:04");
         assert_eq!(stopwatch(Duration::from_secs(125)), "02:05");
         assert_eq!(stopwatch(Duration::from_secs(3_725)), "62:05");
+    }
+
+    #[test]
+    fn the_clock_reads_seconds_then_minutes() {
+        assert_eq!(clock(Duration::from_millis(4_900)), "4s");
+        assert_eq!(clock(Duration::from_secs(59)), "59s");
+        assert_eq!(clock(Duration::from_secs(60)), "1:00");
+        assert_eq!(clock(Duration::from_secs(3_725)), "62:05");
     }
 
     #[test]

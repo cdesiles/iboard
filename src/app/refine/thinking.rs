@@ -2,9 +2,7 @@
 //! `design/components/Thinking`): the pick pane's status line and placeholder
 //! choices, and bars where the reasoning will land.
 
-use super::{
-    CornerRadius, Frame, MEASURE, Margin, RichText, Sense, Stroke, Turn, Vec2, theme, widgets,
-};
+use super::{CornerRadius, Frame, MEASURE, Margin, RichText, Stroke, Turn, theme, widgets};
 
 /// Past this many seconds the waiting line says it is slow.
 const SLOW_SECS: u64 = 20;
@@ -13,8 +11,7 @@ const SLOW_SECS: u64 = 20;
 /// and the whole seconds spent; past 20s, that it is slow and how to leave.
 fn thinking_line(ui: &mut egui::Ui, elapsed: std::time::Duration, first: bool) {
     let p = theme::palette(ui);
-    let seconds = elapsed.as_secs();
-    let slow = seconds >= SLOW_SECS;
+    let slow = elapsed.as_secs() >= SLOW_SECS;
     let line = match (slow, first) {
         (true, _) => "Still working",
         (false, true) => "Challenger is reading the issue",
@@ -26,7 +23,7 @@ fn thinking_line(ui: &mut egui::Ui, elapsed: std::time::Duration, first: bool) {
         widgets::thinking(ui, 28.0);
         ui.label(RichText::new(line).font(theme::ui_button()).color(p.ink));
         ui.label(
-            RichText::new(format!("{seconds}s"))
+            RichText::new(crate::format::clock(elapsed))
                 .font(theme::meta())
                 .color(p.ink_muted),
         );
@@ -63,8 +60,8 @@ pub(super) fn thinking_pick(ui: &mut egui::Ui, elapsed: std::time::Duration, tur
                     );
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 7.0;
-                        skeleton(ui, 0.55, 10.0);
-                        skeleton(ui, 0.85, 8.0);
+                        widgets::skeleton_bar(ui, 0.55, 10.0);
+                        widgets::skeleton_bar(ui, 0.85, 8.0);
                     });
                 });
             });
@@ -93,25 +90,14 @@ pub(super) fn thinking_why(ui: &mut egui::Ui) {
     ui.scope(|ui| {
         ui.set_max_width(MEASURE);
         ui.spacing_mut().item_spacing.y = 9.0;
-        skeleton(ui, 0.96, 12.0);
-        skeleton(ui, 0.70, 12.0);
+        widgets::skeleton_bar(ui, 0.96, 12.0);
+        widgets::skeleton_bar(ui, 0.70, 12.0);
         ui.add_space(10.0);
         for widths in [&[0.98, 0.94, 0.97, 0.60][..], &[0.95, 0.99, 0.42]] {
             for &width in widths {
-                skeleton(ui, width, 8.0);
+                widgets::skeleton_bar(ui, width, 8.0);
             }
             ui.add_space(10.0);
         }
     });
-}
-
-/// A placeholder bar, `share` of the width: `surface-sunken`, no shimmer.
-fn skeleton(ui: &mut egui::Ui, share: f32, height: f32) {
-    let width = ui.available_width() * share;
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
-    ui.painter().rect_filled(
-        rect,
-        CornerRadius::same((height / 2.0) as u8),
-        theme::palette(ui).surface_sunken,
-    );
 }

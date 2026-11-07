@@ -20,7 +20,7 @@ use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
 use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_name};
 use crate::filter::{self, Filter};
-use crate::format::{display_path, relative_time, stopwatch};
+use crate::format::{clock, display_path, relative_time};
 use crate::instance::{self, Request};
 use crate::issue::Issue;
 use crate::job::{self, Job};
