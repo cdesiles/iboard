@@ -69,13 +69,14 @@ impl IboardApp {
     pub(super) fn header_controls(&mut self, ui: &mut egui::Ui) {
         if self.session.stats.is_some() {
             self.stats_controls(ui);
-            return;
+        } else {
+            match self.session.screen.clone() {
+                Screen::Board => self.board_controls(ui),
+                Screen::Detail(path, _) => self.detail_controls(ui, &path),
+                Screen::Diff => self.refresh_button(ui),
+            }
         }
-        match self.session.screen.clone() {
-            Screen::Board => self.board_controls(ui),
-            Screen::Detail(path, _) => self.detail_controls(ui, &path),
-            Screen::Diff => self.refresh_button(ui),
-        }
+        self.notifications_button(ui);
     }
 
     /// The board's toolbar: New issue, Refresh, Design and the filter.
@@ -93,24 +94,6 @@ impl IboardApp {
         });
         if new_issue.inner.clicked() {
             self.open_composer();
-        }
-        let questions = self.pending_questions();
-        if !questions.is_empty() {
-            let count = questions.len();
-            let noun = if count == 1 { "question" } else { "questions" };
-            let label = format!("{count} {noun}");
-            let hover = "A build is waiting for an answer: open the first one";
-            let color = theme::palette(ui).status_doing;
-            let badge = widgets::pill(ui, &label, color).interact(Sense::click());
-            badge.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-            let badge = badge
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .on_hover_text(hover);
-            if badge.clicked()
-                && let Some((path, _)) = questions.first()
-            {
-                self.open_answer(path.clone());
-            }
         }
         self.refresh_button(ui);
         if self.design_reachable()

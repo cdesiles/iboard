@@ -414,6 +414,15 @@ impl IboardApp {
         Some(run.started)
     }
 
+    /// The project and service session of the run on `path`, when it runs in
+    /// the service rather than as a child process.
+    pub(super) fn build_service_run(&self, path: &Path) -> Option<(PathBuf, String)> {
+        let build = self.session.build.as_ref()?;
+        let run = build.runs.iter().find(|run| run.issue == path)?;
+        let session = agent::service::session_of(&run.session)?;
+        Some((run.project.clone(), session))
+    }
+
     /// The `−` and `+` on Doing's header: from none, which stops the build,
     /// to [`MAX_AGENTS`]. More agents take more of the queue at once; fewer
     /// let the ones at work finish. The count is the user's: it is saved in
@@ -543,7 +552,7 @@ impl IboardApp {
         let mut finished = Vec::new();
         build.runs.retain(|run| match run.answer.answer() {
             Some(result) => {
-                finished.push((file_name(&run.issue), result));
+                finished.push((run.issue.clone(), result));
                 false
             }
             None => true,
@@ -551,16 +560,33 @@ impl IboardApp {
         if finished.is_empty() && !build.runs.is_empty() {
             return Some(job::POLL_EVERY);
         }
-        for (name, result) in finished {
-            if let Err(err) = result {
-                build.queue.clear();
-                build.failed = true;
-                self.session.watch = None;
-                self.error = Some(format!("Couldn't build {name}: {err}"));
+        let mut notices = Vec::new();
+        for (path, result) in finished {
+            let name = file_name(&path);
+            match result {
+                Ok(_) => notices.push((
+                    iboard::notifications::Kind::BuildDone,
+                    path,
+                    "Build finished".to_string(),
+                )),
+                Err(err) => {
+                    notices.push((
+                        iboard::notifications::Kind::BuildFailed,
+                        path,
+                        err.lines().next().unwrap_or("Build failed").to_string(),
+                    ));
+                    build.queue.clear();
+                    build.failed = true;
+                    self.session.watch = None;
+                    self.error = Some(format!("Couldn't build {name}: {err}"));
+                }
             }
         }
         self.refresh();
         self.fill_agents();
+        for (kind, path, detail) in notices {
+            self.notify(kind, &path, detail);
+        }
         self.session.build.is_some().then_some(job::POLL_EVERY)
     }
 

@@ -33,6 +33,15 @@ impl AskDraft {
         }
     }
 
+    /// An instruction typed in the agent panel: the same leash the Ask dialog
+    /// opens on, without the dialog.
+    pub(super) fn instruction(path: PathBuf, request: String) -> Self {
+        Self {
+            request,
+            ..Self::new(path)
+        }
+    }
+
     pub(super) fn leash(&self) -> Leash {
         Leash {
             edits: !self.read_only,
@@ -130,6 +139,11 @@ impl IboardApp {
                         .unwrap_or("done");
                     let notice = format!("{}: {}", file_name(&path), line.trim());
                     self.session.notice = Some((notice, Instant::now()));
+                    self.notify(
+                        iboard::notifications::Kind::AskDone,
+                        &path,
+                        "Ask finished".to_string(),
+                    );
                 }
                 Err(err) => self.error = Some(job::failure("Ask on", &path, &err)),
             }

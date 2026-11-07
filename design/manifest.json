@@ -110,7 +110,7 @@
     {
       "name": "GeneralSettings",
       "group": "Board",
-      "summary": "The General tab of the Settings dialog (⌘,), first of five: General, AI review, AI build, Titles, Labels."
+      "summary": "The General tab of the Settings dialog (⌘,), first of five: General, AI review, AI build, Titles, Labels. It holds the theme, Auto, notifications, then whether deleting asks first."
     },
     {
       "name": "GroupsDialog",
@@ -120,7 +120,7 @@
     {
       "name": "HeaderBar",
       "group": "Navigation",
-      "summary": "The one top bar: bar-h 40pt, bg ground, a line rule below."
+      "summary": "The one top bar: bar-h 40pt, bg ground, a line rule below, with the notification bell on every screen."
     },
     {
       "name": "Icons",

@@ -107,6 +107,39 @@ fn the_build_agent_count_is_picked_and_saved_with_the_build_section() {
     );
 }
 
+/// Settings › General: a notification switch is saved with `[notifications]`.
+#[test]
+fn a_notification_switch_is_saved_with_the_notifications_section() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, _file, mut app) = open_issue_with_review("notifications-save");
+    let config = dir.join("iboard.toml");
+    app.config_file = Some(config.clone());
+    app.open_settings(settings_ui::Tab::General);
+    let mut harness = kittest(app);
+
+    harness.get_by_label("A build finishes").click();
+    harness.run_steps(2);
+    assert!(
+        !harness
+            .state()
+            .1
+            .settings
+            .as_ref()
+            .unwrap()
+            .notifications
+            .build_done
+    );
+    harness.run_steps(12);
+    harness.get_by_label("Save").click();
+    harness.run_steps(2);
+    assert!(!harness.state().1.prefs.notifications.build_done);
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert!(
+        text.contains("[notifications]") && text.contains("build_done = false"),
+        "{text}"
+    );
+}
+
 /// The same flow through egui_kittest: widgets found by their label, as a
 /// screen reader sees them.
 #[test]

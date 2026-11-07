@@ -9,6 +9,7 @@ use crate::agent::{self, AgentConfig, BuildTimeout};
 use crate::filter;
 use crate::general::{self, Appearance};
 use crate::labels::{self, Labels};
+use crate::notifications;
 use crate::settings::{Section, UserConfig};
 use crate::stats::ReleasePrefs;
 use crate::titles::{self, Engine};
@@ -61,6 +62,9 @@ pub struct Preferences {
     /// `[stats]`: the release lines on the Trends. Their checkbox writes it as
     /// it is ticked; Settings does not list it.
     pub releases: ReleasePrefs,
+    /// `[notifications]`: what reaches the bell, and whether a Doing issue
+    /// opens its agent log.
+    pub notifications: notifications::Prefs,
 }
 
 impl Default for Preferences {
@@ -94,6 +98,7 @@ impl Preferences {
             keep_notes: general::load_keep_notes(config),
             agenda_range: agenda::load_range(config),
             releases: ReleasePrefs::load(config),
+            notifications: notifications::load_prefs(config),
         }
     }
 
@@ -130,6 +135,9 @@ impl Preferences {
         }
         if self.labels.stand_outs() != before.labels.stand_outs() {
             sections.push(labels::style_section(self.labels.stand_outs())?);
+        }
+        if self.notifications != before.notifications {
+            sections.push(notifications::prefs_section(&self.notifications)?);
         }
         Ok(sections)
     }
@@ -179,6 +187,7 @@ mod tests {
             keep_notes: true,
             agenda_range: Range::W12,
             releases: ReleasePrefs::default(),
+            notifications: notifications::Prefs::default(),
         };
         assert_eq!(Preferences::default(), defaults);
         let mut empty = UserConfig::default();
@@ -229,6 +238,7 @@ mod tests {
                     show: false,
                     tags: "rel-*".to_string(),
                 },
+                notifications: notifications::Prefs::default(),
             }
         );
     }

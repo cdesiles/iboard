@@ -198,6 +198,12 @@ pub(super) fn issue_card(
         at_work(ui, response.rect, since);
     }
     card_edge(ui, &response, look);
+    if extras.question.is_some() && !strip {
+        let p = theme::palette(ui);
+        let dot = egui::pos2(response.rect.right() - 10.0, response.rect.top() + 10.0);
+        ui.painter().circle_filled(dot, 4.0, p.surface);
+        ui.painter().circle_filled(dot, 2.8, p.status_doing);
+    }
     let modifiers = ui.input(|i| i.modifiers);
     let click = if response.double_clicked() && !modifiers.shift && !modifiers.command {
         Some(CardAction::Open)
@@ -610,7 +616,7 @@ fn question_note(ui: &mut egui::Ui, issue: &Issue, question: &Question) -> egui:
     });
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text("Answer the build's question")
+        .on_hover_text("Open the ticket to answer")
 }
 
 /// The review running or ready, or the last verdict: a click opens the

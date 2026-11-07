@@ -228,7 +228,7 @@ fn the_agent_log_shows_what_the_build_did_on_the_issue() {
     assert!(!app.has_agent_log(&ready(&app)[0]));
 
     app.open_issue(taken.clone());
-    app.toggle_agent_log(&taken);
+    assert!(app.agent_log_open(&taken), "a Doing issue opens its log");
     draw(&ctx, &mut app, vec![]);
     let text = &app.session.agent_log.as_ref().unwrap().text;
     assert!(text.starts_with("── ") && text.contains("custom"), "{text}");
@@ -239,6 +239,54 @@ fn the_agent_log_shows_what_the_build_did_on_the_issue() {
         app.session.agent_log.is_none(),
         "the button closes it again"
     );
+}
+
+#[test]
+fn a_finished_build_lands_in_the_bell_and_clears_when_read() {
+    let (_dir, mut app) = board("build-notify", "printf done # {prompt}");
+    app.apply(vec![Intent::Build(vec![ready(&app)[0].clone()])]);
+    assert!(until(|| {
+        app.poll_build();
+        app.session.build.is_none()
+    }));
+    assert_eq!(app.notification_count(), 1);
+    let mut harness = kittest(app);
+    assert!(
+        harness
+            .get_by_label("Notifications, 1 unread")
+            .rect()
+            .width()
+            > 0.0,
+        "the bell counts the finished build"
+    );
+    harness.get_by_label("Notifications, 1 unread").click();
+    harness.run_steps(2);
+    harness.get_by_label("A: Build finished").click();
+    harness.run_steps(2);
+    assert!(
+        matches!(harness.state().1.session.screen, Screen::Detail(_, _)),
+        "the notice opens its ticket"
+    );
+    assert_eq!(harness.state().1.notification_count(), 0);
+}
+
+#[test]
+fn an_instruction_after_the_build_starts_an_ask_and_stays_in_the_log() {
+    let (_dir, mut app) = board("build-instruction", "printf done # {prompt}");
+    let path = ready(&app)[0].clone();
+    app.apply(vec![Intent::Build(vec![path.clone()])]);
+    assert!(until(|| {
+        app.poll_build();
+        app.session.build.is_none()
+    }));
+    app.open_issue(path.clone());
+    app.send_instruction(path.clone(), "add a test".to_string());
+    let log = iboard::build_log::load(&iboard::build_log::path(&app.board.root, &path)).unwrap();
+    assert!(log.contains("▸ add a test"), "{log}");
+    assert!(until(|| {
+        app.poll_asks();
+        app.session.asks.is_empty()
+    }));
 }
 
 /// Bug: a renumber in Ready closed the agent log open beside one of its
@@ -632,7 +680,7 @@ fn permission_question() -> Question {
 }
 
 #[test]
-fn a_build_question_shows_on_its_card_and_the_board_badge() {
+fn a_build_question_shows_on_its_card_and_opens_in_the_ticket() {
     let (_dir, mut app) = board("build-question", "sleep 30 # {prompt}");
     let path = ready(&app)[0].clone();
     app.seed_question(path.clone(), form_question());
@@ -645,11 +693,23 @@ fn a_build_question_shows_on_its_card_and_the_board_badge() {
             > 0.0,
         "the question is on its card"
     );
-    harness.get_by_label("1 question").click();
+    assert!(
+        harness
+            .get_by_label("Notifications, 1 unread")
+            .rect()
+            .width()
+            > 0.0,
+        "the bell counts it"
+    );
+    harness.get_by_label("Answer: Which approach?").click();
     harness.run_steps(2);
     assert!(
+        harness.state().1.agent_log_open(&path),
+        "the ticket opens on its agent log"
+    );
+    assert!(
         harness.state().1.session.answer.is_some(),
-        "the badge opens its answer"
+        "the question waits in the ticket"
     );
     assert!(harness.get_by_label("Approach").rect().width() > 0.0);
 }
@@ -675,7 +735,7 @@ fn a_tool_approval_answers_from_the_same_feed() {
     let path = ready(&app)[0].clone();
     app.seed_question(path, permission_question());
     let mut harness = kittest(app);
-    harness.get_by_label("1 question").click();
+    harness.get_by_label("Answer: Allow bash?").click();
     harness.run_steps(2);
     assert!(harness.get_by_label("Allow once").rect().width() > 0.0);
     assert!(harness.get_by_label("Always allow").rect().width() > 0.0);

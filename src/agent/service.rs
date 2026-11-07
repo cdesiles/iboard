@@ -448,6 +448,12 @@ fn prompt(project: &Path, session: &str, text: &str) -> Result<(), String> {
     call(project, &["post", &path], Some(&body)).map(|_| ())
 }
 
+/// Queues `text` after the turn `session` runs now, for an instruction typed
+/// while the agent works.
+pub fn say(project: &Path, session: &str, text: &str) -> Result<(), String> {
+    prompt(project, session, text)
+}
+
 /// Stops `session`'s turn, for Stop on the card.
 pub fn interrupt(project: &Path, session: &str) {
     let path = format!("/api/session/{session}/interrupt");

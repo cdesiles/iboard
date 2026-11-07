@@ -244,6 +244,7 @@ impl IboardApp {
                     appearance: dialog.appearance,
                     auto: dialog.auto,
                     agents: dialog.agents,
+                    notifications: dialog.notifications,
                     ..self.prefs.clone()
                 };
                 if save_review {

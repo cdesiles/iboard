@@ -64,6 +64,8 @@ pub enum Icon {
     Narrow,
     /// A speech bubble: ask an agent.
     Bubble,
+    /// A bell: what needs the author's attention.
+    Bell,
     /// A flag on a pole: cut a release.
     Release,
 }
@@ -95,7 +97,8 @@ pub fn paint_icon_stroked(painter: &Painter, icon: Icon, rect: Rect, color: Colo
         | Icon::Check
         | Icon::Search
         | Icon::ChevronDown
-        | Icon::Expand => basic_icon(&grid, icon),
+        | Icon::Expand
+        | Icon::Bell => basic_icon(&grid, icon),
         Icon::Edit | Icon::Trash | Icon::Archive | Icon::TagPlus | Icon::Commit => {
             document_icon(&grid, icon);
         }
@@ -232,6 +235,24 @@ fn basic_icon(g: &Grid, icon: Icon) {
             g.line(&[(9.0, 21.0), (3.0, 21.0), (3.0, 15.0)]);
             g.segment((21.0, 3.0), (14.0, 10.0));
             g.segment((3.0, 21.0), (10.0, 14.0));
+        }
+        Icon::Bell => {
+            // A dome with a flared foot and the clapper under it.
+            g.line(&[
+                (6.0, 16.5),
+                (6.0, 9.5),
+                (6.8, 7.6),
+                (8.4, 6.2),
+                (10.5, 5.6),
+                (12.0, 5.5),
+                (13.5, 5.6),
+                (15.6, 6.2),
+                (17.2, 7.6),
+                (18.0, 9.5),
+                (18.0, 16.5),
+            ]);
+            g.segment((4.0, 16.5), (20.0, 16.5));
+            g.line(&[(10.0, 19.6), (10.6, 20.6), (13.4, 20.6), (14.0, 19.6)]);
         }
         _ => {}
     }

@@ -1,6 +1,8 @@
 //! Where the user is: the screens, leaving the editor, and moving the selection.
 
-use super::{DetailMode, IboardApp, Key, Leave, LeaveChoice, Path, PathBuf, Screen, process};
+use super::{
+    DetailMode, IboardApp, Key, Leave, LeaveChoice, Path, PathBuf, Screen, discovery, process,
+};
 
 impl IboardApp {
     /// Opens an issue in the reader. Editing is a separate step, entered from
@@ -11,6 +13,14 @@ impl IboardApp {
             self.close_composer();
         }
         self.close_review();
+        if self
+            .session
+            .answer
+            .as_ref()
+            .is_some_and(|draft| draft.path != path)
+        {
+            self.session.answer = None;
+        }
         self.session.picked.clear();
         self.session.selected = Some(path.clone());
         self.session.screen = Screen::Detail(path.clone(), DetailMode::Preview);
@@ -18,6 +28,17 @@ impl IboardApp {
         if self.session.review_runs.is_ready(&path) {
             self.reveal_review(&path);
         }
+        let doing = self
+            .board
+            .column_of(&path)
+            .is_some_and(|column| discovery::is_doing_column(&column.dir));
+        let has_question = self.question_for(&path).is_some();
+        let wants_log = (doing && self.prefs.notifications.auto_log || has_question)
+            && self.has_agent_log(&path);
+        if wants_log && !self.agent_log_open(&path) {
+            self.toggle_agent_log(&path);
+        }
+        self.mark_notifications_read(&path);
     }
 
     /// Leaves the current screen for `to`. From the editor, unsaved edits are

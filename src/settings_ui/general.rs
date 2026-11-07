@@ -1,4 +1,5 @@
-//! Settings › General: the theme, Auto, and whether deleting an issue asks first.
+//! Settings › General: the theme, Auto, notifications, and whether deleting
+//! an issue asks first.
 
 use super::Dialog;
 use crate::general::Appearance;
@@ -32,6 +33,27 @@ impl Dialog {
             "Refresh (⌘R) reloads the board, and the editor asks before leaving unsaved edits."
         };
         help(ui, auto_help, p.ink_muted);
+        ui.add_space(theme::SPACE_5);
+        field_label(ui, "Notifications");
+        widgets::checkbox(ui, &mut self.notifications.build_done, "A build finishes");
+        widgets::checkbox(ui, &mut self.notifications.build_failed, "A build fails");
+        widgets::checkbox(
+            ui,
+            &mut self.notifications.review_ready,
+            "A review is ready",
+        );
+        widgets::checkbox(ui, &mut self.notifications.ask_done, "An ask finishes");
+        widgets::checkbox(
+            ui,
+            &mut self.notifications.auto_log,
+            "Open the agent log on a Doing issue",
+        );
+        ui.add_space(theme::SPACE_2);
+        help(
+            ui,
+            "Questions from a build always reach the bell, and wait in the ticket until answered.",
+            p.ink_muted,
+        );
         ui.add_space(theme::SPACE_5);
         field_label(ui, "Deleting issues");
         widgets::checkbox(ui, &mut self.confirm_delete, "Ask before deleting an issue");

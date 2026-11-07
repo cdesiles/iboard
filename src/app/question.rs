@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use super::{
-    ButtonKind, Duration, Frame, IboardApp, Instant, Job, Key, PathBuf, RichText, Vec2, file_name,
-    job, theme, widgets,
+    ButtonKind, CornerRadius, Duration, Frame, IboardApp, Instant, Job, Key, Path, PathBuf,
+    RichText, Stroke, Vec2, job, theme, widgets,
 };
 use crate::agent::service::{
     Field, FieldKind, Permission, PermissionReply, Question, QuestionKind,
@@ -27,14 +27,6 @@ enum AnswerValue {
     Text(String),
     Boolean(bool),
     Multi(Vec<String>),
-}
-
-/// What the dialog's buttons asked for.
-#[derive(Clone, Copy)]
-enum Choice {
-    Close,
-    Send,
-    Permission(PermissionReply),
 }
 
 impl AnswerDraft {
@@ -157,10 +149,111 @@ fn number(text: &str, integer: bool) -> Result<Value, String> {
 }
 
 impl IboardApp {
-    /// Opens the question the build on `path` waits on.
+    /// Opens the ticket whose build waits on an answer. The question sits
+    /// above the agent log, in the ticket, not in a dialog over it.
     pub(super) fn open_answer(&mut self, path: PathBuf) {
+        self.open_issue(path.clone());
         if let Some(question) = self.question_for(&path) {
             self.session.answer = Some(AnswerDraft::new(path, question));
+        }
+    }
+
+    /// The question the build on `path` waits on, drawn above the log it
+    /// belongs to. Answering it resumes the run; it never leaves the ticket.
+    pub(super) fn question_panel(&mut self, ui: &mut egui::Ui, path: &Path, question: &Question) {
+        if self
+            .session
+            .answer
+            .as_ref()
+            .is_none_or(|draft| draft.question.id != question.id || draft.path != path)
+        {
+            self.session.answer = Some(AnswerDraft::new(path.to_path_buf(), question.clone()));
+        }
+        let Some(draft) = self.session.answer.as_mut() else {
+            return;
+        };
+        let p = theme::palette(ui);
+        let width = ui.available_width();
+        let mut send = false;
+        let mut permission = None;
+        Frame::new()
+            .fill(p.surface_sunken)
+            .stroke(Stroke::new(1.0, p.status_doing.gamma_multiply(0.6)))
+            .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+            .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_3))
+            .show(ui, |ui| {
+                ui.set_width(width - 2.0 * theme::SPACE_3);
+                ui.label(
+                    RichText::new("Question")
+                        .font(theme::meta())
+                        .color(p.status_doing)
+                        .strong(),
+                );
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(&question.title)
+                            .font(theme::ui_strong())
+                            .color(p.ink),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(theme::SPACE_3);
+                answer_body(ui, draft, 260.0);
+                ui.add_space(theme::SPACE_3);
+                match &question.kind {
+                    QuestionKind::Form(_) => {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if widgets::button(ui, ButtonKind::Primary, None, "Send", Some("⌘↩"))
+                                .clicked()
+                            {
+                                send = true;
+                            }
+                        });
+                    }
+                    QuestionKind::Permission(_) => {
+                        widgets::footer_bar(ui, 0.0, |ui| {
+                            if widgets::button(
+                                ui,
+                                ButtonKind::Primary,
+                                None,
+                                "Allow once",
+                                Some("⌘↩"),
+                            )
+                            .clicked()
+                            {
+                                permission = Some(PermissionReply::Once);
+                            }
+                            if widgets::button(
+                                ui,
+                                ButtonKind::Secondary,
+                                None,
+                                "Always allow",
+                                None,
+                            )
+                            .clicked()
+                            {
+                                permission = Some(PermissionReply::Always);
+                            }
+                            if widgets::button(ui, ButtonKind::Delete, None, "Reject", None)
+                                .clicked()
+                            {
+                                permission = Some(PermissionReply::Reject);
+                            }
+                        });
+                    }
+                }
+            });
+        if send {
+            self.send_answer(None);
+        } else if let Some(reply) = permission {
+            self.send_answer(Some(reply));
+        } else if ui
+            .ctx()
+            .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter))
+        {
+            let reply = matches!(&question.kind, QuestionKind::Permission(_))
+                .then_some(PermissionReply::Once);
+            self.send_answer(reply);
         }
     }
 
@@ -251,67 +344,9 @@ impl IboardApp {
             draft.reply = Some(Job::done(Ok(())));
         }
     }
-
-    /// The dialog's keys: `⌘↩` sends, `esc` closes.
-    pub(super) fn answer_keys(&mut self, ctx: &egui::Context) {
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter)) {
-            let permission = self.session.answer.as_ref().and_then(|draft| {
-                matches!(&draft.question.kind, QuestionKind::Permission(_))
-                    .then_some(PermissionReply::Once)
-            });
-            self.send_answer(permission);
-        } else if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
-            self.session.answer = None;
-        }
-    }
-
-    /// The question's modal: what the build asks, its fields or the tool it
-    /// wants to run, and how to answer it.
-    pub(super) fn answer_dialog(&mut self, ui: &egui::Ui) {
-        let Some(draft) = self.session.answer.as_ref() else {
-            return;
-        };
-        let title = draft.question.title.clone();
-        let issue = self
-            .board
-            .find(&draft.path)
-            .map_or_else(|| file_name(&draft.path), |issue| issue.title.clone());
-        let size = theme::ModalSize::M;
-        let width = theme::modal_size(size, ui.ctx().content_rect()).x;
-        let Some(draft) = self.session.answer.as_mut() else {
-            return;
-        };
-        let mut choice = None;
-        widgets::modal(ui, "answer-build", size, &title).show(ui.ctx(), |ui| {
-            ui.set_width(width);
-            ui.spacing_mut().item_spacing = Vec2::ZERO;
-            if widgets::modal_header(ui, &title, |ui| {
-                let p = theme::palette(ui);
-                ui.label(
-                    RichText::new(format!("on {issue}"))
-                        .font(theme::meta())
-                        .color(p.ink_muted),
-                );
-            }) {
-                choice = Some(Choice::Close);
-            }
-            widgets::rule(ui);
-            Frame::new()
-                .inner_margin(theme::SPACE_5)
-                .show(ui, |ui| answer_body(ui, draft, width));
-            widgets::rule(ui);
-            choice = answer_foot(ui, &draft.question, choice);
-        });
-        match choice {
-            Some(Choice::Close) => self.session.answer = None,
-            Some(Choice::Send) => self.send_answer(None),
-            Some(Choice::Permission(reply)) => self.send_answer(Some(reply)),
-            None => {}
-        }
-    }
 }
 
-fn answer_body(ui: &mut egui::Ui, draft: &mut AnswerDraft, width: f32) {
+fn answer_body(ui: &mut egui::Ui, draft: &mut AnswerDraft, max_height: f32) {
     let p = theme::palette(ui);
     let AnswerDraft {
         question,
@@ -325,17 +360,17 @@ fn answer_body(ui: &mut egui::Ui, draft: &mut AnswerDraft, width: f32) {
     }
     match &question.kind {
         QuestionKind::Form(fields) => {
-            let max = widgets::modal_body_max(ui.ctx().content_rect());
-            egui::ScrollArea::vertical().max_height(max).show(ui, |ui| {
-                ui.set_width(width - 2.0 * theme::SPACE_5);
-                ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                for field in fields.iter().filter(|field| !field.hidden) {
-                    let value = values
-                        .entry(field.key.clone())
-                        .or_insert_with(|| default_value(&field.kind));
-                    field_ui(ui, field, value);
-                }
-            });
+            egui::ScrollArea::vertical()
+                .max_height(max_height)
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+                    for field in fields.iter().filter(|field| !field.hidden) {
+                        let value = values
+                            .entry(field.key.clone())
+                            .or_insert_with(|| default_value(&field.kind));
+                        field_ui(ui, field, value);
+                    }
+                });
         }
         QuestionKind::Permission(permission) => permission_body(ui, permission),
     }
@@ -442,35 +477,4 @@ fn permission_body(ui: &mut egui::Ui, permission: &Permission) {
         ),
         p.ink_muted,
     );
-}
-
-fn answer_foot(
-    ui: &mut egui::Ui,
-    question: &Question,
-    mut choice: Option<Choice>,
-) -> Option<Choice> {
-    match &question.kind {
-        QuestionKind::Form(_) => match widgets::modal_footer(ui, "", "Send") {
-            widgets::FooterClick::Primary => choice = Some(Choice::Send),
-            widgets::FooterClick::Cancel => choice = Some(Choice::Close),
-            widgets::FooterClick::None => {}
-        },
-        QuestionKind::Permission(_) => {
-            widgets::footer_bar(ui, theme::SPACE_5, |ui| {
-                if widgets::button(ui, ButtonKind::Primary, None, "Allow once", Some("⌘↩"))
-                    .clicked()
-                {
-                    choice = Some(Choice::Permission(PermissionReply::Once));
-                }
-                if widgets::button(ui, ButtonKind::Secondary, None, "Always allow", None).clicked()
-                {
-                    choice = Some(Choice::Permission(PermissionReply::Always));
-                }
-                if widgets::button(ui, ButtonKind::Delete, None, "Reject", None).clicked() {
-                    choice = Some(Choice::Permission(PermissionReply::Reject));
-                }
-            });
-        }
-    }
-    choice
 }

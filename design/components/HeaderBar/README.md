@@ -13,6 +13,14 @@ The one top bar: `bar-h` 40pt, `bg` ground, a `line` rule below. It holds where 
 - Left: the project name in `ui-title` with a chevron; it opens the ProjectMenu. The issues path is no longer here: it is in the status bar.
 - Right: FilterField (220pt, 480pt while in use, growing to the left; its `line-strong` edge stays, since a text field is identified by it), Design (only when `idesign` is on, on a single project's board), Refresh (`⌘R`, only when Settings › General turns Auto off), then **New issue**, the board's one filled button (`primary`). Stats is not in the header: it opens from the ProjectMenu footer or `⌘I`.
 
+## Notifications
+
+- A bell sits at the left of the right-hand controls on every screen, board, reader, diff and stats: a 24pt header icon button, no edge at rest.
+- **Unread.** A 5pt `accent` dot with a `bg` ring sits at the bell's top right while anything needs the author; the tooltip and the screen reader read "Notifications, N unread". Nothing unread, no dot.
+- **The list.** A click opens a 420pt popover under the bell (`popup`, `shadow-popover`, `line` edge, `radius-md`). Its head is "Notifications" in `ui-strong` with the waiting count in `meta`, and, while any notice is unread, a ghost **Mark recent read** on the right. Questions stay counted: they need an answer, not a read. `Waiting on you` lists the questions and tool approvals the build service waits on; `Recent` lists the runs that finished, newest first. Each row is 56pt: a 14pt icon, the issue title in `ui-strong`, a detail line in `ui-small` (`Question`'s title, "Build finished", "Build failed", "Review ready", "Ask finished"), the time in `meta` at the right ("waiting" for a question), and a 5pt `accent` dot while unread.
+- **Icons and colour.** A question uses `bubble` in `status-doing`; a finished build or ask uses `log` in `status-done`; a failed build uses `warning` in `danger`; a review uses `review` in `review`. Clicking a row opens its ticket and marks the notice read; a question opens the ticket on its inline question. Clicking outside, `esc` or the bell closes the list.
+- **No header badge.** The board no longer counts questions beside New issue: the bell is the one count, and a card keeps its own note. See IssueCard.
+
 ## Reader and Editor
 
 - Left: **Board** (chevron and label, no edge), a 16pt `line` divider, then the breadcrumb `iboard / ○ Todo`: the column carries its status icon. The issue title joins the breadcrumb as its last segment (`ui-strong`, `ink`, ellipsis, without its `[label]` prefix) only once the page's `read-h1` has scrolled out of view, and always in the Editor, where the title line is raw text.

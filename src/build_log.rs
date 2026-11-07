@@ -62,6 +62,11 @@ pub fn outcome(result: &Result<String, String>, took: Duration) -> String {
     }
 }
 
+/// The line an author's instruction adds to the log, on one line.
+pub fn author(text: &str) -> String {
+    format!("▸ {}", text.trim().replace('\n', " "))
+}
+
 const FINISHED: &str = "✓ Finished in ";
 
 /// How long the agent took on the issue: its last run's, when it finished.
@@ -121,6 +126,8 @@ pub enum Entry<'a> {
     Step(&'a str),
     /// How a run ended, and whether it went well.
     Outcome { ok: bool, text: &'a str },
+    /// What the author told the agent, while it worked or after.
+    Author(&'a str),
     /// What the agent said, in markdown, over one or more lines.
     Message(String),
 }
@@ -147,6 +154,8 @@ pub fn parse(text: &str) -> Vec<Entry<'_>> {
                 ok: true,
                 text: rest.trim(),
             })
+        } else if let Some(rest) = line.strip_prefix("▸ ") {
+            Some(Entry::Author(rest.trim()))
         } else {
             line.strip_prefix("✗ ").map(|rest| Entry::Outcome {
                 ok: false,
@@ -198,7 +207,7 @@ mod tests {
 
     #[test]
     fn a_log_parses_into_runs_steps_messages_and_outcomes() {
-        let log = "── 2026-10-17 · opencode\nLet me **look**.\n\n- one\n- two\n→ Reading app.rs…\nDone.\n✓ Finished\n── later · claude\n✗ stopped\n";
+        let log = "── 2026-10-17 · opencode\nLet me **look**.\n\n- one\n- two\n→ Reading app.rs…\nDone.\n▸ go on\n✓ Finished\n── later · claude\n✗ stopped\n";
         assert_eq!(
             parse(log),
             [
@@ -206,6 +215,7 @@ mod tests {
                 Entry::Message("Let me **look**.\n\n- one\n- two".into()),
                 Entry::Step("Reading app.rs…"),
                 Entry::Message("Done.".into()),
+                Entry::Author("go on"),
                 Entry::Outcome {
                     ok: true,
                     text: "Finished"
@@ -218,6 +228,12 @@ mod tests {
             ]
         );
         assert!(parse("").is_empty());
+    }
+
+    #[test]
+    fn an_instruction_stays_on_one_line() {
+        assert_eq!(author("Please fix\nthat too"), "▸ Please fix that too");
+        assert_eq!(parse(&author("go on")), [Entry::Author("go on")]);
     }
 
     #[test]

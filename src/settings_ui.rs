@@ -61,6 +61,7 @@ struct Edits {
     confirm_delete: bool,
     appearance: Appearance,
     auto: bool,
+    notifications: iboard::notifications::Prefs,
     label_rows: Vec<(String, String)>,
     stand_out: BTreeSet<String>,
     colourless: BTreeSet<String>,
@@ -90,6 +91,9 @@ pub struct Dialog {
     pub appearance: Appearance,
     /// Settings › General: reload from disk and save edits as you type.
     pub auto: bool,
+    /// Settings › General: what reaches the bell, and whether a Doing issue
+    /// opens its agent log.
+    pub notifications: iboard::notifications::Prefs,
     /// Settings › Labels: every label and its `#rrggbb` colour. Empty: a
     /// preset's palette colour, or none.
     pub label_rows: Vec<(String, String)>,
@@ -145,6 +149,7 @@ impl Dialog {
             confirm_delete: prefs.confirm_delete,
             appearance: prefs.appearance,
             auto: prefs.auto,
+            notifications: prefs.notifications,
             label_rows: prefs.labels.entries(),
             stand_out: prefs.labels.stand_outs().clone(),
             colourless: BTreeSet::new(),
@@ -205,6 +210,7 @@ impl Dialog {
             confirm_delete: self.confirm_delete,
             appearance: self.appearance,
             auto: self.auto,
+            notifications: self.notifications,
             label_rows: self.label_rows.clone(),
             stand_out: self.stand_out.clone(),
             colourless: self.colourless.clone(),

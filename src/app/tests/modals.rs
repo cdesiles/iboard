@@ -82,12 +82,13 @@ fn settings_fits_its_tab_and_asks_before_dropping_edits() {
         harness.ctx.memory(|m| m.area_rect(id)).unwrap().height()
     };
     let general = height(&harness);
-    assert!(general < 420.0, "General fits its content: {general}");
+    assert!(general < 560.0, "General fits its content: {general}");
     press(&mut harness, "Labels");
     harness.run_steps(2);
     assert_ne!(height(&harness), general, "each tab has its own height");
     press(&mut harness, "AI review");
     press(&mut harness, "General");
+    harness.run_steps(12);
     press(&mut harness, "Cancel");
     assert!(harness.state().1.settings.is_none(), "nothing to lose");
 

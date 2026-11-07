@@ -6,6 +6,7 @@ The line icons iboard draws on the 24pt grid: 14pt in buttons and card actions, 
 - **Shape language:** rounded corners and round ends; nothing meets at a hard square corner unless the object is square (archive box).
 - **Trash is iboard's own.** A soft bin: a 15-wide lid, a flat-topped knob with rounded corners instead of a square tab, a body that tapers 0.65pt per side, and two long ribs. It replaces both earlier bins (Lucide's straight-sided `trash-2` in the header Delete button, and the rib-less tapered bin elsewhere), so every delete now uses the same glyph.
 - **Release is a flag.** A banner on a pole, notched once at its free end: Done's release control. It is not the label tag, which always carries its small plus.
+- **Bell is the top bar's one notification mark.** A dome with a flared foot and the clapper under it; `ink-muted` at rest, unchanged under the pointer. It opens the notification list, never the first row.
 - **Agents is a pair of people.** Lucide's `users`: one head and shoulders, another head and a shoulder behind them. It opens Doing's build-agent count, never the count itself.
 - **Colour follows the control:** `ink-muted` at rest, `danger` on the hovered Delete icon button (header) and ConfirmDialog, the Delete zone and a card's Delete on hover, `on-danger` on the filled ConfirmDialog button.
 

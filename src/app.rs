@@ -70,6 +70,7 @@ mod moves;
 mod naming;
 mod nav;
 mod new_issue_ui;
+mod notifications;
 mod plan;
 mod projects;
 mod prose;
@@ -363,6 +364,10 @@ struct Session {
     agents: usize,
     /// The agent log open beside the reader.
     agent_log: Option<agent_log::LogView>,
+    /// What the agents finished, kept until read.
+    notifications: Vec<iboard::notifications::Notification>,
+    /// The issue roots whose notifications are loaded.
+    notification_roots: Option<Vec<PathBuf>>,
     /// The project stats panel, from Tools › Project Stats….
     stats: Option<stats::StatsPanel>,
 }
@@ -411,6 +416,8 @@ impl Default for Session {
             watch: None,
             agents: 1,
             agent_log: None,
+            notifications: Vec::new(),
+            notification_roots: None,
             stats: None,
         }
     }
@@ -490,6 +497,7 @@ impl IboardApp {
         });
         let mut config = UserConfig::load(app.config_file.as_deref());
         app.load_preferences(&mut config);
+        app.sync_notifications();
         app.restore_splits(&cc.egui_ctx);
         agent::set_direnv(app.prefs.direnv);
         theme::apply(&cc.egui_ctx, app.prefs.appearance);
@@ -642,6 +650,7 @@ impl IboardApp {
             Err(err) => self.scan_error = Some(err),
         }
         self.reconcile_editor();
+        self.sync_notifications();
     }
 
     /// Whether `path` is still being written, in Todo: the only issues that
@@ -720,7 +729,7 @@ impl IboardApp {
         self.shortcuts_sheet(ui);
         self.label_picker_ui(ui);
         self.ask_dialog(ui);
-        self.answer_dialog(ui);
+
         match self.session.confirm.clone() {
             Some(Confirm::Delete(paths)) => self.confirm_dialog(ui, &paths),
             Some(Confirm::Stop(removal, paths)) => self.stop_dialog(ui, removal, &paths),
