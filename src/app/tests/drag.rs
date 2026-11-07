@@ -26,7 +26,7 @@ fn dragging_a_card_onto_another_column_moves_the_file() {
 
     draw(&ctx, &mut app, vec![]);
 
-    let card_id = egui::Id::new(("issue_card", &file));
+    let card_id = egui::Id::unique(("issue_card", &file));
     let start = ctx
         .read_response(card_id)
         .expect("the card is a drag source")
@@ -34,7 +34,7 @@ fn dragging_a_card_onto_another_column_moves_the_file() {
         .center();
     // Aim at the card already in the target column, to prove that a card
     // under the pointer does not swallow the column drop.
-    let target_card_id = egui::Id::new(("issue_card", &other));
+    let target_card_id = egui::Id::unique(("issue_card", &other));
     let target = ctx
         .read_response(target_card_id)
         .expect("the target column has a card")
@@ -66,7 +66,7 @@ fn drag_card_to_zone(app: &mut IboardApp, file: &Path, zone: Option<&str>) {
 
     draw(&ctx, app, vec![]);
     let start = ctx
-        .read_response(egui::Id::new(("issue_card", file)))
+        .read_response(egui::Id::unique(("issue_card", file)))
         .expect("the card is a drag source")
         .rect
         .center();
@@ -101,7 +101,7 @@ fn drag_card_to_zone(app: &mut IboardApp, file: &Path, zone: Option<&str>) {
         return;
     };
     let target = ctx
-        .read_response(egui::Id::new(zone))
+        .read_response(egui::Id::unique(zone))
         .expect("the dock shows while dragging")
         .rect
         .center();
@@ -145,7 +145,7 @@ fn a_card_outside_done_only_gets_delete() {
 
     draw(&ctx, &mut app, vec![]);
     let start = ctx
-        .read_response(egui::Id::new(("issue_card", &file)))
+        .read_response(egui::Id::unique(("issue_card", &file)))
         .expect("the card is a drag source")
         .rect
         .center();
@@ -156,12 +156,12 @@ fn a_card_outside_done_only_gets_delete() {
         draw(&ctx, &mut app, vec![moved(lifted)]);
     }
     assert!(
-        ctx.read_response(egui::Id::new("drop_zone_delete"))
+        ctx.read_response(egui::Id::unique("drop_zone_delete"))
             .is_some(),
         "Delete is always offered"
     );
     assert!(
-        ctx.read_response(egui::Id::new("drop_zone_archive"))
+        ctx.read_response(egui::Id::unique("drop_zone_archive"))
             .is_none(),
         "Archive is only shown for Done cards"
     );
@@ -198,7 +198,7 @@ fn the_dock_stays_under_the_dragged_cards_column() {
 
     draw(&ctx, &mut app, vec![]);
     let start = ctx
-        .read_response(egui::Id::new(("issue_card", &file)))
+        .read_response(egui::Id::unique(("issue_card", &file)))
         .expect("the card is a drag source")
         .rect
         .center();
@@ -209,12 +209,12 @@ fn the_dock_stays_under_the_dragged_cards_column() {
         draw(&ctx, &mut app, vec![moved(lifted)]);
     }
     let column = |index: usize| {
-        ctx.read_response(egui::Id::new(("column_drop", index)))
+        ctx.read_response(egui::Id::unique(("column_drop", index)))
             .expect("the column is a drop target")
             .rect
     };
     let band = ctx
-        .read_response(egui::Id::new("drop_dock_band"))
+        .read_response(egui::Id::unique("drop_dock_band"))
         .expect("the dock shows while dragging")
         .rect;
     assert_eq!(band.x_range(), column(0).x_range(), "the dock spans Todo");
@@ -280,13 +280,13 @@ fn dragging_a_card_within_a_column_reorders_it() {
 
     draw(&ctx, &mut app, vec![]);
     let start = ctx
-        .read_response(egui::Id::new(("issue_card", &second)))
+        .read_response(egui::Id::unique(("issue_card", &second)))
         .expect("the card is a drag source")
         .rect
         .center();
     // Just above the first card's middle: insert before it.
     let target = ctx
-        .read_response(egui::Id::new(("issue_card", &first)))
+        .read_response(egui::Id::unique(("issue_card", &first)))
         .expect("the target card is drawn")
         .rect
         .center()
@@ -319,7 +319,7 @@ fn the_dragged_card_is_tilted() {
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
     let start = ctx
-        .read_response(egui::Id::new(("issue_card", &file)))
+        .read_response(egui::Id::unique(("issue_card", &file)))
         .unwrap()
         .rect
         .center();
@@ -333,7 +333,10 @@ fn the_dragged_card_is_tilted() {
         events: vec![moved(start + egui::vec2(60.0, 60.0))],
         ..Default::default()
     };
-    let ghost = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(("issue_ghost", &file)));
+    let ghost = egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::unique(("issue_ghost", &file)),
+    );
     let mut vertices: Vec<egui::Pos2> = Vec::new();
     let mut flat: Vec<String> = Vec::new();
     let mut output = ctx.run_ui(input, |ui| {
@@ -388,7 +391,7 @@ fn lifted_card() -> (Scratch, IboardApp, egui::Context) {
 
 fn card_centre(ctx: &egui::Context, dir: &Path, column: &str) -> egui::Pos2 {
     let file = dir.join("issues").join(column).join(format!("{column}.md"));
-    ctx.read_response(egui::Id::new(("issue_card", &file)))
+    ctx.read_response(egui::Id::unique(("issue_card", &file)))
         .expect("the card is drawn")
         .rect
         .center()
@@ -416,11 +419,11 @@ fn the_drop_line_shows_only_where_position_counts() {
 fn the_dock_keeps_12pt_of_padding_in_the_dragged_cards_column() {
     let (_dir, _app, ctx) = lifted_card();
     let column = ctx
-        .read_response(egui::Id::new(("column_drop", 0)))
+        .read_response(egui::Id::unique(("column_drop", 0)))
         .unwrap()
         .rect;
     let zone = ctx
-        .read_response(egui::Id::new("drop_zone_delete"))
+        .read_response(egui::Id::unique("drop_zone_delete"))
         .expect("the dock shows while dragging")
         .rect;
     assert_eq!(zone.min.x - column.min.x, theme::SPACE_4);

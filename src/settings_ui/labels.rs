@@ -186,7 +186,7 @@ fn label_row(ui: &mut egui::Ui, row: Row, edits: &mut RowEdits) {
         if widgets::icon_button(
             ui,
             Icon::Trash,
-            egui::Id::new(("label-remove", index)),
+            egui::Id::unique(("label-remove", index)),
             "Remove this label",
             widgets::Tone::Danger,
         )

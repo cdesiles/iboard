@@ -530,7 +530,7 @@ pub fn system_reduces_motion() -> bool {
 }
 
 fn reduced_motion_id() -> egui::Id {
-    egui::Id::new("theme-reduced-motion")
+    egui::Id::unique("theme-reduced-motion")
 }
 
 /// With `reduce`, every animation ends at once: [`motion`] gives zero
@@ -1019,7 +1019,7 @@ mod tests {
             let ctx = egui::Context::default();
             install(&ctx);
             set_reduced_motion(&ctx, reduce);
-            let id = egui::Id::new("slide");
+            let id = egui::Id::unique("slide");
             let mut value = 0.0;
             for target in [0.0, 1.0] {
                 let raw = egui::RawInput::default();

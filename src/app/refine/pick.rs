@@ -89,9 +89,8 @@ fn choice_card(
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(width, text_h + 2.0 * pad.y), Sense::CLICK);
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, picked, &title)
-    });
+    response
+        .widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, picked, &title));
     if !ui.is_rect_visible(rect) {
         return response;
     }

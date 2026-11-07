@@ -57,7 +57,7 @@ impl IboardApp {
         let mut intents = Vec::new();
         let background = ui.interact(
             ui.available_rect_before_wrap(),
-            egui::Id::new("board_background"),
+            egui::Id::unique("board_background"),
             Sense::click(),
         );
         if background.clicked() {
@@ -204,7 +204,7 @@ fn column_ui(ui: &mut egui::Ui, view: &ColumnView) -> Vec<Intent> {
     let drop_rect = Rect::from_min_size(origin, Vec2::new(view.width, view.height));
     let drop_response = ui.interact(
         drop_rect,
-        egui::Id::new(("column_drop", view.index)),
+        egui::Id::unique(("column_drop", view.index)),
         Sense::hover(),
     );
 
@@ -295,7 +295,7 @@ fn column_head(
         .iter()
         .any(|issue| view.picked.contains(&issue.path))
     {
-        let id = egui::Id::new(("clear_picked", view.index));
+        let id = egui::Id::unique(("clear_picked", view.index));
         let hover = "Clear selection  esc";
         if widgets::icon_button(&mut head, Icon::Close, id, hover, widgets::Tone::Ghost).clicked() {
             intents.push(Intent::ClearPicked);
@@ -304,7 +304,7 @@ fn column_head(
     let hovered = head.rect_contains_pointer(head_rect);
     let fade = widgets::hover_fade(
         head.ctx(),
-        egui::Id::new(("column_head", view.index)),
+        egui::Id::unique(("column_head", view.index)),
         hovered,
     );
     let acts = has_actions(view, visible);
@@ -369,7 +369,7 @@ fn column_actions(
 
 /// Todo's `+`, with an `accent` dot while NewIssueModal holds parked notes.
 fn new_issue_button(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent>) {
-    let id = egui::Id::new(("new_issue", view.index));
+    let id = egui::Id::unique(("new_issue", view.index));
     let hover = if view.parked {
         "1 parked note  ⌘N"
     } else {
@@ -397,7 +397,7 @@ fn build_action(
     if !discovery::is_ready_column(&view.column.dir) {
         return;
     }
-    let id = egui::Id::new(("build", view.index));
+    let id = egui::Id::unique(("build", view.index));
     let tone = widgets::Tone::Ghost;
     if view.builds.active() {
         if widgets::icon_button(ui, Icon::Stop, id, "Stop the AI build", tone).clicked() {
@@ -421,7 +421,7 @@ fn agents_stepper(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent
     let agents = view.builds.agents;
     let tone = widgets::Tone::Ghost;
     ui.add_enabled_ui(agents < build::MAX_AGENTS, |ui| {
-        let id = egui::Id::new(("more_agents", view.index));
+        let id = egui::Id::unique(("more_agents", view.index));
         if widgets::icon_button(ui, Icon::Plus, id, "One more build agent", tone).clicked() {
             intents.push(Intent::Agents(agents + 1));
         }
@@ -434,7 +434,7 @@ fn agents_stepper(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent
     )
     .on_hover_text("Build agents working at once; none stops the AI build");
     ui.add_enabled_ui(agents > 0, |ui| {
-        let id = egui::Id::new(("fewer_agents", view.index));
+        let id = egui::Id::unique(("fewer_agents", view.index));
         if widgets::icon_button(ui, Icon::Minus, id, "One build agent fewer", tone).clicked() {
             intents.push(Intent::Agents(agents - 1));
         }
@@ -491,7 +491,7 @@ fn done_controls(
         "Archive all: move the {} {noun} to {ARCHIVE_DIR}/",
         visible.len()
     );
-    let id = egui::Id::new(("archive_all", view.index));
+    let id = egui::Id::unique(("archive_all", view.index));
     if widgets::icon_button(ui, Icon::Archive, id, &hover, widgets::Tone::Ghost).clicked() {
         intents.push(Intent::ArchiveAll(
             visible.iter().map(|issue| issue.path.clone()).collect(),

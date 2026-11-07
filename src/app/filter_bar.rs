@@ -304,5 +304,5 @@ pub(super) fn filter_try_font() -> egui::FontId {
 
 /// The board filter's text input.
 pub(super) fn filter_id() -> egui::Id {
-    egui::Id::new("filter")
+    egui::Id::unique("filter")
 }

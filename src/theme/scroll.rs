@@ -8,8 +8,8 @@ use egui::style::{ScrollAnimation, ScrollStyle};
 use std::sync::Arc;
 
 use egui::{
-    Color32, Context, CornerRadius, Id, Margin, Pos2, Rect, Sense, Style, Ui, Vec2, Vec2b,
-    WidgetInfo, WidgetType, lerp,
+    Color32, Context, CornerRadius, Id, Margin, Pos2, Rect, Role, Sense, Style, Ui, Vec2, Vec2b,
+    WidgetInfo, lerp,
 };
 
 use super::{
@@ -169,7 +169,7 @@ fn strip_around_thumb<R>(output: &ScrollAreaOutput<R>, axis: usize) -> (Rect, Re
     let (track_min, track_max) = (track.min[axis], track.max[axis]);
     let content = output.content_size[axis];
     let shown = inner.size()[axis];
-    let offset = output.state.offset[axis];
+    let offset = output.state.clamped_offset()[axis];
     let on_track = |at: f32| remap_clamp(at, 0.0..=content, track_min..=track_max);
     let length = (on_track(offset + shown) - on_track(offset)).max(SCROLL_THUMB_MIN);
     let start = remap_clamp(
@@ -204,7 +204,7 @@ fn page_strips<R>(ui: &Ui, output: &ScrollAreaOutput<R>, overflow: Vec2b) -> Vec
         for (rect, sign, label) in [(before, -1.0, labels[0]), (after, 1.0, labels[1])] {
             let id = output.id.with(("page", label));
             let strip = ui.interact(rect, id, Sense::CLICK | Sense::DRAG);
-            strip.widget_info(|| WidgetInfo::labeled(WidgetType::ScrollBar, true, label));
+            strip.widget_info(|| WidgetInfo::labeled(Role::ScrollBar, true, label));
             if strip.clicked() {
                 page[axis] += sign * PAGE * output.inner_rect.size()[axis];
             }
@@ -339,7 +339,7 @@ fn themed<R>(
         ctx.request_repaint();
     }
 
-    let offset = output.state.offset;
+    let offset = output.state.clamped_offset();
     let moved = seen.is_some_and(|seen| seen.area == output.id && seen.offset != offset);
     let stirred_at = if moved || thumb.held {
         now
@@ -410,11 +410,11 @@ mod tests {
     fn tall(ui: &mut Ui, field: &mut String) -> f32 {
         let area = ScrollArea::vertical().id_salt("tall").auto_shrink(false);
         scroll_area(ui, area, |ui| {
-            ui.add(egui::TextEdit::singleline(field).id(Id::new("field")));
+            ui.add(egui::TextEdit::singleline(field).id(Id::unique("field")));
             ui.allocate_space(Vec2::new(10.0, 1000.0));
         })
         .state
-        .offset
+        .clamped_offset()
         .y
     }
 
@@ -477,7 +477,7 @@ mod tests {
     fn clicking_the_strip_or_the_thumb_leaves_keyboard_focus_where_it_was() {
         let ctx = themed_ctx();
         let field = &mut String::new();
-        let id = Id::new("field");
+        let id = Id::unique("field");
         play(&ctx, field, vec![vec![]; 3]);
         ctx.memory_mut(|m| m.request_focus(id));
         play(&ctx, field, vec![vec![]; 2]);
@@ -665,7 +665,7 @@ mod tests {
         let edge = Pos2::new(PANE - 3.0, 100.0);
         let draw = |ui: &mut Ui| {
             pane(ui, "pane", 1000.0, None);
-            egui::Area::new(Id::new("over"))
+            egui::Area::new(Id::unique("over"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(Pos2::ZERO)
                 .show(ui.ctx(), |ui| ui.allocate_space(Vec2::splat(PANE)));
@@ -698,7 +698,7 @@ mod tests {
             for target in [Color32::BLACK, Color32::WHITE] {
                 frame(&ctx, vec![], |ui| {
                     let secs = motion(ui.ctx(), CHANGE_SECS);
-                    colour = animate_color(ui.ctx(), Id::new("thumb"), target, secs);
+                    colour = animate_color(ui.ctx(), Id::unique("thumb"), target, secs);
                 });
             }
             colour

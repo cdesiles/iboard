@@ -52,7 +52,7 @@ fn role_pill(ui: &mut egui::Ui, role: &str) {
         .layout_no_wrap(role.to_string(), font, p.review);
     let size = Vec2::new(text.size().x + 14.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, role));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, role));
     ui.painter().rect(
         rect,
         CornerRadius::same(theme::RADIUS_PILL),

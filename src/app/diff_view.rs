@@ -363,7 +363,7 @@ impl IboardApp {
 /// `⌘F`'s bar: the field, `3/12`, and `↩ ⇧↩` to step through the matches.
 fn find_bar(ui: &mut egui::Ui, view: &mut DiffView) {
     let p = theme::palette(ui);
-    let id = egui::Id::new("diff-find");
+    let id = egui::Id::unique("diff-find");
     let count = view.match_count().unwrap_or_default();
     let Some(find) = view.find.as_mut() else {
         return;
@@ -492,9 +492,9 @@ fn diff_rows(ui: &mut egui::Ui, view: &mut DiffView) {
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), sense);
             let typ = if expandable {
-                egui::WidgetType::Button
+                egui::Role::Button
             } else {
-                egui::WidgetType::Label
+                egui::Role::Label
             };
             response.widget_info(|| egui::WidgetInfo::labeled(typ, true, view.row_label(row)));
             match row {
@@ -529,7 +529,7 @@ fn diff_rows(ui: &mut egui::Ui, view: &mut DiffView) {
             }
         }
     });
-    view.offset = output.state.offset.y;
+    view.offset = output.state.clamped_offset().y;
     if let Some(key) = expand {
         view.expanded.insert(key);
         view.build_rows();

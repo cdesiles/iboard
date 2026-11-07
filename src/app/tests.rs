@@ -409,7 +409,7 @@ fn the_label_picker_adds_labels_from_the_keyboard() {
         repeat: false,
         modifiers: egui::Modifiers::NONE,
     };
-    let field = egui::Id::new("label_picker_field");
+    let field = egui::Id::unique("label_picker_field");
 
     frame(&ctx, &mut app, vec![]);
     frame(&ctx, &mut app, vec![key(Key::L)]);
@@ -466,7 +466,7 @@ fn a_doing_issue_offers_no_label_picker() {
 
     let ctx = themed_ctx();
     frame(&ctx, &mut app, vec![]);
-    let add = egui::Id::new(("card_add_label", &wip));
+    let add = egui::Id::unique(("card_add_label", &wip));
     assert!(ctx.read_response(add).is_none(), "no Add label on the card");
     frame(
         &ctx,
@@ -499,7 +499,7 @@ fn hovering_a_card_action_shows_the_pointer_cursor() {
 
     draw(&ctx, &mut app, vec![]);
     let center = ctx
-        .read_response(egui::Id::new(("issue_card", &file)))
+        .read_response(egui::Id::unique(("issue_card", &file)))
         .unwrap()
         .rect
         .center();
@@ -514,7 +514,7 @@ fn hovering_a_card_action_shows_the_pointer_cursor() {
 
     // Its Delete action is a click target, not a drag handle.
     let delete = ctx
-        .read_response(egui::Id::new(("card_delete", &file)))
+        .read_response(egui::Id::unique(("card_delete", &file)))
         .expect("actions show on hover")
         .rect
         .center();
@@ -581,7 +581,7 @@ fn columns_fit_the_narrowest_window_with_gutters() {
     let gutter = theme::SPACE_5;
     for card in &cards {
         let rect = ctx
-            .read_response(egui::Id::new(("issue_card", card)))
+            .read_response(egui::Id::unique(("issue_card", card)))
             .expect("every card is drawn")
             .rect;
         assert!(
@@ -640,6 +640,7 @@ fn a_two_finger_swipe_right_goes_back() {
         delta: egui::vec2(x, y),
         phase: egui::TouchPhase::Move,
         modifiers: egui::Modifiers::NONE,
+        source: egui::MouseWheelSource::Wheel,
     };
 
     app.open_issue(file.clone());

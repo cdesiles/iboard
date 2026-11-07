@@ -365,9 +365,9 @@ impl Panel {
         // 0 = categories, 1 = the component list; the pages stay a width apart.
         let target = if self.components_open { 1.0 } else { 0.0 };
         let secs = theme::motion(ui.ctx(), RAIL_SLIDE_SECS);
-        let progress = ui
-            .ctx()
-            .animate_value_with_time(ui.id().with("rail-slide"), target, secs);
+        let progress =
+            ui.ctx()
+                .animate_value_with_time(ui.scope_id().with("rail-slide"), target, secs);
         let slide = egui::emath::ease_in_ease_out(progress);
 
         let area = ui.available_rect_before_wrap();
@@ -765,9 +765,7 @@ fn back_row(ui: &mut egui::Ui, label: &str) -> egui::Response {
     let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 26.0), egui::Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
-    });
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         if response.hovered() {
@@ -801,7 +799,7 @@ fn nav_row(ui: &mut egui::Ui, label: &str, meta: Option<&str>, selected: bool) -
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 26.0), egui::Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), selected, label)
+        egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
     });
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();

@@ -99,11 +99,11 @@ pub enum Outcome {
 }
 
 fn open_id() -> egui::Id {
-    egui::Id::new("label_picker_open")
+    egui::Id::unique("label_picker_open")
 }
 
 fn anchor_id(path: &Path) -> egui::Id {
-    egui::Id::new(("label_picker_anchor", path))
+    egui::Id::unique(("label_picker_anchor", path))
 }
 
 /// Tells the cards which issue's picker is open, so its actions stay shown.
@@ -155,7 +155,7 @@ pub fn show(
     let typed = labels::normalize(&picker.text);
     let mut outcome = None;
 
-    let area = egui::Area::new(egui::Id::new("label_picker"))
+    let area = egui::Area::new(egui::Id::unique("label_picker"))
         .order(egui::Order::Foreground)
         .fixed_pos(pos)
         .constrain(false)
@@ -233,7 +233,7 @@ fn filter_field(
     let field = widgets::text_entry(
         ui,
         egui::TextEdit::singleline(&mut picker.text)
-            .id(egui::Id::new("label_picker_field"))
+            .id(egui::Id::unique("label_picker_field"))
             .hint_text("Add a label")
             .font(theme::ui_body())
             .desired_width(width)
@@ -462,7 +462,7 @@ fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) -> Response {
     let size = Vec2::new(6.0 + check + 5.0 + text.size().x + 7.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), true, name)
+        egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), true, name)
     });
     if !ui.is_rect_visible(rect) {
         return response;

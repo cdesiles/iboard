@@ -145,7 +145,7 @@ pub fn confirm(ui: &Ui, ask: &Ask) -> Answer {
 }
 
 fn confirm_cancel_id() -> egui::Id {
-    egui::Id::new("confirm-cancel")
+    egui::Id::unique("confirm-cancel")
 }
 
 /// The buttons of a Modal S: Cancel, then the danger button, which starts
@@ -200,7 +200,7 @@ pub fn modal_header(ui: &mut Ui, title: &str, extra: impl FnOnce(&mut Ui)) -> bo
                             button(ui, ButtonKind::Ghost, Some(Icon::Close), "", None)
                                 .on_hover_text("Close (esc)");
                         close_button.widget_info(|| {
-                            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Close (esc)")
+                            egui::WidgetInfo::labeled(egui::Role::Button, true, "Close (esc)")
                         });
                         close = close_button.clicked();
                     });
@@ -370,7 +370,7 @@ fn segment(ui: &mut Ui, name: &str, active: bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), active, name)
+        egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), active, name)
     });
     let radius = CornerRadius::same(theme::RADIUS_SM - 1);
     let painter = ui.painter();

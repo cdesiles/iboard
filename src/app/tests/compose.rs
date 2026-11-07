@@ -509,7 +509,7 @@ fn a_click_on_the_new_ticket_right_after_adding_it_lands() {
     assert!(app.session.composer.is_none(), "and closes the modal");
 
     let add = ctx
-        .read_response(egui::Id::new(("card_add_label", &fresh)))
+        .read_response(egui::Id::unique(("card_add_label", &fresh)))
         .expect("the selected new card shows its actions")
         .rect
         .center();
@@ -546,13 +546,13 @@ fn todo_offers_new_issue_on_hover() {
         .iter()
         .position(|c| c.accepts_new_issues())
         .unwrap();
-    let plus = egui::Id::new(("new_issue", index));
+    let plus = egui::Id::unique(("new_issue", index));
 
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
     assert!(ctx.read_response(plus).is_none(), "hidden at rest");
     let column = ctx
-        .read_response(egui::Id::new(("column_drop", index)))
+        .read_response(egui::Id::unique(("column_drop", index)))
         .unwrap()
         .rect;
     let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);

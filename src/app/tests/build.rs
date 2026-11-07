@@ -70,14 +70,14 @@ fn play_builds_ready_top_to_bottom_from_the_project() {
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
     let head = ctx
-        .read_response(egui::Id::new(("issue_card", &ready(&app)[0])))
+        .read_response(egui::Id::unique(("issue_card", &ready(&app)[0])))
         .unwrap()
         .rect
         .center_top()
         - egui::vec2(0.0, 20.0);
     draw(&ctx, &mut app, vec![moved(head)]);
     let play = ctx
-        .read_response(egui::Id::new(("build", 1)))
+        .read_response(egui::Id::unique(("build", 1)))
         .expect("the hovered Ready header offers Play")
         .rect
         .center();
@@ -159,20 +159,24 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
     app.apply(vec![Intent::Select(taken.clone())]);
     draw(&ctx, &mut app, vec![]);
     assert!(
-        ctx.read_response(egui::Id::new(("card_delete", &taken)))
+        ctx.read_response(egui::Id::unique(("card_delete", &taken)))
             .is_none()
     );
     assert!(
-        ctx.read_response(egui::Id::new(("card_retry_build", &taken)))
+        ctx.read_response(egui::Id::unique(("card_retry_build", &taken)))
             .is_none(),
         "no retry while its agent runs"
     );
     assert!(
-        ctx.read_response(egui::Id::new(("card_build_timer", &taken)))
+        ctx.read_response(egui::Id::unique(("card_build_timer", &taken)))
             .is_some(),
         "the card shows how long its agent has been at work"
     );
-    click(&ctx, &mut app, egui::Id::new(("card_stop_build", &taken)));
+    click(
+        &ctx,
+        &mut app,
+        egui::Id::unique(("card_stop_build", &taken)),
+    );
     assert!(
         app.session.build.is_none(),
         "Stop on the card ends the build"
@@ -180,7 +184,11 @@ fn the_card_at_work_stops_the_build_and_doing_retries_it() {
     assert_eq!(in_column(&dir, "doing"), ["a.md"]);
 
     draw(&ctx, &mut app, vec![]);
-    click(&ctx, &mut app, egui::Id::new(("card_retry_build", &taken)));
+    click(
+        &ctx,
+        &mut app,
+        egui::Id::unique(("card_retry_build", &taken)),
+    );
     assert_eq!(app.building_now()[0].0, taken);
     assert_eq!(app.build_place(), Some((1, 1)), "a retry builds one issue");
     assert_eq!(in_column(&dir, "doing"), ["a.md"], "it stays where it is");
@@ -314,10 +322,10 @@ fn doing_header_adds_and_removes_agents() {
     let (_dir, mut app) = board("build-stepper", "true # {prompt}");
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
-    let more = egui::Id::new(("more_agents", 2));
+    let more = egui::Id::unique(("more_agents", 2));
     assert!(ctx.read_response(more).is_none(), "hidden at rest");
     let column = ctx
-        .read_response(egui::Id::new(("column_drop", 2)))
+        .read_response(egui::Id::unique(("column_drop", 2)))
         .unwrap()
         .rect;
     let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
@@ -325,8 +333,8 @@ fn doing_header_adds_and_removes_agents() {
     ctx.read_response(more).expect("shown on hover");
     click(&ctx, &mut app, more);
     assert_eq!(app.session.agents, 2);
-    click(&ctx, &mut app, egui::Id::new(("fewer_agents", 2)));
-    click(&ctx, &mut app, egui::Id::new(("fewer_agents", 2)));
+    click(&ctx, &mut app, egui::Id::unique(("fewer_agents", 2)));
+    click(&ctx, &mut app, egui::Id::unique(("fewer_agents", 2)));
     assert_eq!(app.session.agents, 0);
 }
 
@@ -422,7 +430,7 @@ fn a_done_card_opens_its_agent_log() {
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
     let at = ctx
-        .read_response(egui::Id::new(("card_agent_log", &done)))
+        .read_response(egui::Id::unique(("card_agent_log", &done)))
         .expect("Done cards offer their agent log")
         .rect
         .center();
@@ -456,12 +464,12 @@ fn a_done_card_shows_how_long_its_agent_took_until_hovered() {
     draw(&ctx, &mut app, vec![]);
     draw(&ctx, &mut app, vec![]);
     let actions = |ctx: &egui::Context| {
-        ctx.read_response(egui::Id::new(("card_agent_log", &done)))
+        ctx.read_response(egui::Id::unique(("card_agent_log", &done)))
             .is_some()
     };
     assert!(!actions(&ctx), "the timer stands where the actions go");
     let card = ctx
-        .read_response(egui::Id::new(("issue_card", &done)))
+        .read_response(egui::Id::unique(("issue_card", &done)))
         .unwrap()
         .rect
         .center();
@@ -543,7 +551,11 @@ fn doing_keeps_retry_at_no_agents_and_a_retry_brings_one_back() {
     let taken = app.building_now()[0].0.clone();
     app.apply(vec![Intent::Agents(0), Intent::Select(taken.clone())]);
     draw(&ctx, &mut app, vec![]);
-    click(&ctx, &mut app, egui::Id::new(("card_retry_build", &taken)));
+    click(
+        &ctx,
+        &mut app,
+        egui::Id::unique(("card_retry_build", &taken)),
+    );
     assert_eq!(app.building_now()[0].0, taken);
     assert_eq!(app.session.agents, 1);
     stop_agents(&mut app, &dir, 2);

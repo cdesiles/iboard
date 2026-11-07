@@ -54,7 +54,7 @@ fn next(hold: Hold, input: &InputState) -> Hold {
 
 /// How far out the key hints are, from 0 (put away) to 1.
 pub fn key_hints(ctx: &Context) -> f32 {
-    let id = Id::new("key-hints");
+    let id = Id::unique("key-hints");
     let pass = ctx.cumulative_pass_nr();
     let hold = match ctx.data(|d| d.get_temp::<(u64, Hold)>(id)) {
         Some((seen, hold)) if seen == pass => hold,

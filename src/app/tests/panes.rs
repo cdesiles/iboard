@@ -29,6 +29,7 @@ fn wheel(ctx: &egui::Context, app: &mut IboardApp) {
         delta: egui::vec2(0.0, -300.0),
         phase: egui::TouchPhase::Move,
         modifiers: egui::Modifiers::NONE,
+        source: egui::MouseWheelSource::Wheel,
     };
     draw(ctx, app, vec![event]);
     for _ in 0..40 {
@@ -195,7 +196,7 @@ fn the_editor_keeps_a_scroll_offset_per_issue() {
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     let ctx = themed_ctx();
     let text_top = |ctx: &egui::Context| {
-        ctx.read_response(egui::Id::new(crate::app::editor::EDITOR_ID))
+        ctx.read_response(egui::Id::unique(crate::app::editor::EDITOR_ID))
             .expect("the editor is on screen")
             .rect
             .top()

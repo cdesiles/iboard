@@ -393,7 +393,7 @@ fn the_card_says_it_is_being_named() {
     let file = harness.state().1.board.columns[0].issues[0].path.clone();
     let card = harness
         .ctx
-        .read_response(egui::Id::new(("issue_card", &file)))
+        .read_response(egui::Id::unique(("issue_card", &file)))
         .unwrap()
         .rect;
     assert_eq!(naming.max.y + 11.0, card.max.y, "its last row");

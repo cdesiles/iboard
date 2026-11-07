@@ -46,12 +46,12 @@ pub enum Action {
 
 /// The name field of the `at`th group.
 pub fn name_id(at: usize) -> Id {
-    Id::new(("group-name", at))
+    Id::unique(("group-name", at))
 }
 
 /// The `index`th project row of the `at`th group.
 pub fn row_id(at: usize, index: usize) -> Id {
-    Id::new(("group-project", at, index))
+    Id::unique(("group-project", at, index))
 }
 
 /// A project the Add project menu lists, with what its filter matched.
@@ -435,7 +435,7 @@ impl Dialog {
                 let delete = widgets::icon_button(
                     ui,
                     Icon::Trash,
-                    Id::new(("delete-group", at)),
+                    Id::unique(("delete-group", at)),
                     "Delete group (asks first)",
                     Tone::Danger,
                 );
@@ -513,7 +513,7 @@ impl Dialog {
         let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
         let row = ui.interact(rect, row_id(at, index), egui::Sense::click());
         row.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{name}, {path}"))
+            egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{name}, {path}"))
         });
         if row.clicked() {
             row.request_focus();
@@ -522,7 +522,7 @@ impl Dialog {
             self.focus_row = None;
             row.request_focus();
         }
-        let remove_id = Id::new(("remove-project", at, index));
+        let remove_id = Id::unique(("remove-project", at, index));
         let focused = row.has_focus() || ui.memory(|m| m.has_focus(remove_id));
         let hovered = ui.rect_contains_pointer(rect);
         if hovered || focused {

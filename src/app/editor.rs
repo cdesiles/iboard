@@ -537,7 +537,7 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                     ))
                     .auto_shrink([false, false]),
                 |ui| {
-                    let id = egui::Id::new(EDITOR_ID);
+                    let id = egui::Id::unique(EDITOR_ID);
                     let mut output = egui::TextEdit::multiline(&mut editor.text)
                         .id(id)
                         .font(theme::edit_body())
@@ -547,6 +547,7 @@ fn editor_text(ui: &mut egui::Ui, editor: &mut EditorState, focus: bool) {
                         .desired_width(f32::INFINITY)
                         .desired_rows(rows)
                         .show(ui);
+                    let _ = egui::Response::clone(&output.response).accessible_name("Issue text");
                     if focus {
                         let line = editor.caret_line.take();
                         let caret = CCursor::new(caret_char(&editor.text, line));

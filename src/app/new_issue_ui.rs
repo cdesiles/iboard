@@ -124,7 +124,7 @@ impl IboardApp {
     /// `⌘⇧R` (draft), `⌘Z` (undo the draft), `End` (follow the draft), and
     /// `↩` / `⌘↩` from a button.
     pub(super) fn new_issue_keys(&mut self, ctx: &egui::Context) {
-        let in_notes = ctx.memory(|m| m.has_focus(egui::Id::new(DESCRIPTION_ID)));
+        let in_notes = ctx.memory(|m| m.has_focus(egui::Id::unique(DESCRIPTION_ID)));
         let typing = ctx.memory(|m| m.focused().is_some());
         let take = |modifiers, key| ctx.input_mut(|i| i.consume_key(modifiers, key));
         if take(egui::Modifiers::NONE, Key::Escape) {
@@ -234,8 +234,8 @@ fn head(
 /// `⇧↩` is the notes' new line (or a step down from the title). Taken
 /// before the fields see the key.
 fn composer_enter(ui: &mut egui::Ui, composer: &mut Composer, actions: &mut Vec<ComposeAction>) {
-    let in_title = ui.memory(|m| m.has_focus(egui::Id::new(TITLE_ID)));
-    let in_notes = ui.memory(|m| m.has_focus(egui::Id::new(DESCRIPTION_ID)));
+    let in_title = ui.memory(|m| m.has_focus(egui::Id::unique(TITLE_ID)));
+    let in_notes = ui.memory(|m| m.has_focus(egui::Id::unique(DESCRIPTION_ID)));
     if !in_title && !in_notes {
         return;
     }
@@ -289,7 +289,7 @@ fn notes_pane(ui: &mut egui::Ui, composer: &mut Composer, height: f32) {
     } else {
         (p.surface, p.ink)
     };
-    let focused = !drafting && ui.memory(|m| m.has_focus(egui::Id::new(DESCRIPTION_ID)));
+    let focused = !drafting && ui.memory(|m| m.has_focus(egui::Id::unique(DESCRIPTION_ID)));
     Frame::new()
         .fill(p.surface)
         .inner_margin(theme::SPACE_5)
@@ -350,7 +350,7 @@ fn notes_field(ui: &mut egui::Ui, composer: &mut Composer, ink: Color32, room: f
             ui.add_enabled(
                 !drafting,
                 egui::TextEdit::multiline(&mut composer.description)
-                    .id(egui::Id::new(DESCRIPTION_ID))
+                    .id(egui::Id::unique(DESCRIPTION_ID))
                     .font(theme::read_body())
                     .text_color(ink)
                     .hint_text(
@@ -888,7 +888,7 @@ fn set_title_cursor(ctx: &egui::Context, title_id: egui::Id, range: CCursorRange
 /// selected so typing replaces it. `[bug]` typed at its start becomes a tag.
 fn title_field(row: &mut egui::Ui, composer: &mut Composer) {
     let p = theme::palette(row);
-    let title_id = egui::Id::new(TITLE_ID);
+    let title_id = egui::Id::unique(TITLE_ID);
     untag_on_backspace(row, composer, title_id);
     let hint = match composer.engine {
         None => "Add a title",

@@ -161,8 +161,13 @@ impl Dialog {
         field_label(ui, "Tool");
         let tool = self.form.tool;
         let open = self.menu.is_open(Menu::Tool);
-        let response =
-            widgets::select(ui, Id::new("review-tool"), tool.name(), tool.binary(), open);
+        let response = widgets::select(
+            ui,
+            Id::unique("review-tool"),
+            tool.name(),
+            tool.binary(),
+            open,
+        );
         self.menu.toggle_on(&response, Menu::Tool);
 
         if self.menu.is_open(Menu::Tool) {
@@ -257,7 +262,7 @@ impl Dialog {
         let open = self.menu.is_open(Menu::Timeout);
         let response = widgets::select(
             ui,
-            Id::new("build-timeout"),
+            Id::unique("build-timeout"),
             &current.name(),
             current.hint(),
             open,
@@ -353,7 +358,13 @@ impl Dialog {
             (current.clone(), None)
         };
         let open = self.menu.is_open(Menu::Model);
-        let response = widgets::select(ui, Id::new("review-model"), &value, hint.as_deref(), open);
+        let response = widgets::select(
+            ui,
+            Id::unique("review-model"),
+            &value,
+            hint.as_deref(),
+            open,
+        );
         self.menu.toggle_on(&response, Menu::Model);
 
         if self.menu.is_open(Menu::Model) {
@@ -362,7 +373,7 @@ impl Dialog {
             let mut picked = picked.map(|index| rows[index].value.clone());
             let mut retry = false;
             self.menu.popup(ui, &response, Menu::Model, |menu, ui| {
-                menu.filter_field(ui, Id::new("review-model-filter"), "Filter models");
+                menu.filter_field(ui, Id::unique("review-model-filter"), "Filter models");
                 ui.add_space(theme::SPACE_2);
                 theme::scroll_area(
                     ui,

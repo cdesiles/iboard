@@ -33,7 +33,7 @@ pub fn menu_option(ui: &mut Ui, option: MenuOption<'_>) -> Response {
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
         egui::WidgetInfo::selected(
-            egui::WidgetType::Button,
+            egui::Role::Button,
             ui.is_enabled(),
             option.checked,
             option.name,
@@ -124,7 +124,7 @@ pub fn menu_action(ui: &mut Ui, action: MenuAction<'_>) -> Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), action.name)
+        egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), action.name)
     });
     if !ui.is_rect_visible(rect) {
         return response;
@@ -255,7 +255,7 @@ pub fn menu_row(ui: &mut Ui, width: f32, title: &str, detail: &str, look: RowLoo
     };
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, MENU_ROW_H), sense);
     let response = response.on_hover_cursor(cursor);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, title));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, title));
     if ui.is_rect_visible(rect) {
         let hovered = response.hovered();
         let fill = if look.active {
@@ -281,7 +281,7 @@ pub fn menu_row_lifted(ui: &Ui, (title, detail): (&str, &str), pointer: Pos2) {
         Pos2::new(ui.max_rect().left(), pointer.y - MENU_ROW_H / 2.0),
         Vec2::new(width, MENU_ROW_H),
     );
-    let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("menu_row_lifted"));
+    let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("menu_row_lifted"));
     let painter = ui.ctx().layer_painter(layer);
     let shadow = ui.visuals().popup_shadow;
     painter.add(shadow.as_shape(rect, CornerRadius::same(theme::RADIUS_SM)));

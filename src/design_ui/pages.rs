@@ -348,9 +348,7 @@ pub(super) fn files(ui: &mut egui::Ui, files: &[DesignFile]) {
 /// handle.
 fn swatch(ui: &mut egui::Ui, color: Color32, hover: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), hover)
-    });
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), hover));
     if ui.is_rect_visible(rect) {
         let p = theme::palette(ui);
         ui.painter().rect(

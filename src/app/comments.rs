@@ -216,11 +216,14 @@ fn margin_button(ui: &mut egui::Ui, block: Rect, index: usize, count: usize) -> 
         Vec2::splat(size),
     );
     let response = ui
-        .interact(button, ui.id().with(("comment", index)), Sense::click())
+        .interact(
+            button,
+            ui.scope_id().with(("comment", index)),
+            Sense::click(),
+        )
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text("Comment on this for the review");
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Add a comment"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Add a comment"));
     let color = if count > 0 {
         p.review
     } else if response.hovered() {

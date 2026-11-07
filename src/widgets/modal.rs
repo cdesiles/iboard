@@ -47,7 +47,7 @@ struct Modals {
 }
 
 fn with_modals<R>(ctx: &Context, f: impl FnOnce(&mut Modals) -> R) -> R {
-    ctx.data_mut(|d| f(d.get_temp_mut_or_default(Id::new("modals"))))
+    ctx.data_mut(|d| f(d.get_temp_mut_or_default(Id::unique("modals"))))
 }
 
 /// How far along an animation of `secs` is at `age`, always done under
@@ -96,7 +96,7 @@ pub struct Modal {
 /// in [`modal_frame`] with no margin of its own.
 pub fn modal(ui: &Ui, id: &str, size: ModalSize, title: &str) -> Modal {
     let ctx = ui.ctx();
-    let id = Id::new(id);
+    let id = Id::unique(id);
     let window = ctx.content_rect();
     let age = age_of(ctx, LayerId::new(Order::Foreground, id));
     let scrim = progress(ctx, age, SCRIM_IN);
@@ -221,10 +221,13 @@ fn paint_closing(ctx: &Context, closing: &Closing, now: f64) -> bool {
     if fade >= 1.0 {
         return false;
     }
-    let layer = LayerId::new(Order::Foreground, Id::new("modal-closing"));
+    let layer = LayerId::new(Order::Foreground, Id::unique("modal-closing"));
     let mut painter = ctx.layer_painter(layer);
     painter.multiply_opacity(1.0 - fade);
-    for ClippedShape { clip_rect, shape } in closing.painted.iter() {
+    for ClippedShape {
+        clip_rect, shape, ..
+    } in closing.painted.iter()
+    {
         painter.with_clip_rect(*clip_rect).add(shape.clone());
     }
     ctx.request_repaint();
@@ -253,11 +256,11 @@ mod tests {
                     ui.set_min_size(egui::vec2(200.0, 100.0));
                     ui.label("Body");
                 });
-                let layer = LayerId::new(Order::Foreground, Id::new("m"));
+                let layer = LayerId::new(Order::Foreground, Id::unique("m"));
                 seen.0 = ctx.memory(|m| m.area_rect(layer.id)).map(|rect| rect.top());
             }
             settle_modals(ui.ctx());
-            let closing = LayerId::new(Order::Foreground, Id::new("modal-closing"));
+            let closing = LayerId::new(Order::Foreground, Id::unique("modal-closing"));
             seen.1 = ui
                 .ctx()
                 .graphics(|layers| layers.get(closing).map_or(0, |l| l.all_entries().len()));

@@ -623,7 +623,7 @@ fn padded(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 }
 
 fn follow_up_id() -> egui::Id {
-    egui::Id::new("review-follow-up")
+    egui::Id::unique("review-follow-up")
 }
 
 /// What scrolls in the panel: the plan note, the body, and the follow-up

@@ -78,7 +78,7 @@ fn settings_fits_its_tab_and_asks_before_dropping_edits() {
     let mut harness = kittest(app);
     harness.run_steps(2);
     let height = |harness: &Kit| {
-        let id = egui::Id::new("review-settings");
+        let id = egui::Id::unique("review-settings");
         harness.ctx.memory(|m| m.area_rect(id)).unwrap().height()
     };
     let general = height(&harness);
@@ -125,7 +125,7 @@ fn a_scrim_click_closes_only_a_small_modal() {
     frame(&ctx, &mut app, vec![]);
     frame(&ctx, &mut app, vec![]);
     let width = ctx
-        .memory(|m| m.area_rect(egui::Id::new("commits")))
+        .memory(|m| m.area_rect(egui::Id::unique("commits")))
         .unwrap()
         .width();
     assert_eq!(width, theme::MODAL_M + 2.0, "a token's width and its edge");
@@ -148,7 +148,7 @@ fn enter_on_a_focused_cancel_cancels_and_focus_goes_back() {
     app.session.review = None;
     let ctx = themed_ctx();
     frame(&ctx, &mut app, vec![]);
-    let opener = egui::Id::new("the-opener");
+    let opener = egui::Id::unique("the-opener");
     ctx.memory_mut(|m| m.request_focus(opener));
     app.session.confirm = Some(Confirm::Delete(vec![file.clone()]));
     for _ in 0..3 {

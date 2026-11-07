@@ -218,7 +218,7 @@ fn a_double_click_on_the_label_picker_does_not_edit_behind_it() {
     let (_dir, file, mut harness) = opened_in("double-picker", "todo");
     harness.state_mut().1.toggle_label_picker(file);
     harness.run_steps(3);
-    let area = egui::Id::new("label_picker");
+    let area = egui::Id::unique("label_picker");
     let picker = harness.ctx.memory(|m| m.area_rect(area)).unwrap();
     let sheet = harness.state().1.reader.sheet_rect;
     let over = picker.intersect(sheet);

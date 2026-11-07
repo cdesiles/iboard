@@ -19,7 +19,7 @@ pub fn pill(ui: &mut Ui, word: &str, color: Color32) -> Response {
     );
     let size = Vec2::new(7.0 + 6.0 + 4.0 + text.size().x + 7.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, word));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, word));
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         painter.rect(
@@ -76,9 +76,7 @@ fn sensing_label_pill(
     let lead = if dot.is_some() { 6.0 + 6.0 + 5.0 } else { 7.0 };
     let width = galley(ui, &name, font.clone(), p.ink).size().x;
     let (rect, response) = ui.allocate_exact_size(Vec2::new(lead + width + 7.0, 18.0), sense);
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
-    });
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &name));
     if ui.is_rect_visible(rect) {
         let fade = hover_fade(ui.ctx(), response.id, response.hovered());
         let (fill, ink) = label_look(p, tint, active, fade);
@@ -138,14 +136,12 @@ pub fn filter_token(ui: &mut Ui, text: &str) -> Response {
     let response = ui
         .interact(
             remove_rect,
-            ui.id().with(("filter-token", text)),
+            ui.scope_id().with(("filter-token", text)),
             Sense::click(),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(name.as_str());
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
-    });
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &name));
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.accent_soft);
@@ -168,8 +164,7 @@ pub fn chip(ui: &mut Ui, text: &str, current: bool) -> Response {
     let size = Vec2::new(7.0 + label.size().x + 7.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), text));
     if ui.is_rect_visible(rect) {
         let lit = current || response.hovered();
         let (fill, edge, ink) = if lit {
@@ -219,8 +214,7 @@ fn tag_with(ui: &mut Ui, text: &str, fills: [Color32; 2], edge: Color32, ink: Co
     let label = galley(ui, text, theme::meta(), ink);
     let size = Vec2::new(6.0 + label.size().x + 6.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), text));
     if ui.is_rect_visible(rect) {
         ui.painter().rect(
             rect,

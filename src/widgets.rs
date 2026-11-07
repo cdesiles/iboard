@@ -57,7 +57,7 @@ fn galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<Galley> {
 pub fn thinking(ui: &mut Ui, size: f32) -> Response {
     let p = theme::palette(ui);
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Working"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Working"));
     let time = (!theme::reduced_motion(ui.ctx())).then(|| ui.input(|i| i.time));
     if time.is_some() {
         ui.ctx().request_repaint();
@@ -69,9 +69,9 @@ pub fn thinking(ui: &mut Ui, size: f32) -> Response {
 /// A live region nobody sees: VoiceOver says `text` when it appears and when
 /// it changes, and only then.
 pub fn announce(ui: &Ui, salt: &str, text: &str) {
-    let id = ui.id().with(salt);
+    let id = ui.scope_id().with(salt);
     let response = ui.interact(Rect::ZERO, id, Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, text));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
     ui.ctx().accesskit_node_builder(id, |node| {
         node.set_live(egui::accesskit::Live::Polite);
     });
@@ -156,7 +156,7 @@ fn checkbox_named(
     }
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *checked, name)
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *checked, name)
     });
 
     if ui.is_rect_visible(rect) {
@@ -230,7 +230,7 @@ pub const CRUMB_PAD: f32 = 6.0;
 
 /// The id of [`project_trigger`], for the keys that open its menu.
 pub fn project_trigger_id() -> egui::Id {
-    egui::Id::new("project-trigger")
+    egui::Id::unique("project-trigger")
 }
 
 /// The project menu's trigger: the project's name and a chevron. Transparent
@@ -249,7 +249,7 @@ pub fn project_trigger(ui: &mut Ui, project: &str, open: bool) -> Response {
         .interact(rect, project_trigger_id(), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Switch project")
+        egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "Switch project")
     });
     let fade = hover_fade(ui.ctx(), response.id, response.hovered());
     ui.painter().rect_filled(
@@ -326,8 +326,7 @@ pub fn crumb_marked(
     let size = Vec2::new(mark_w + normal.size().x + 2.0 * CRUMB_PAD, theme::CONTROL_H);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, ui.is_enabled(), text));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, ui.is_enabled(), text));
     if ui.is_rect_visible(rect) {
         let text_rect = Rect::from_min_size(
             Pos2::new(
@@ -417,9 +416,8 @@ pub fn ghost_section(ui: &mut Ui, heading: &str, hint: Option<&str>) -> Response
         .max(ui.available_height().min(GHOST_MAX_H));
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), heading)
-    });
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), heading));
     if ui.is_rect_visible(rect) {
         let lit = response.hovered() || response.has_focus();
         let ink = if lit { p.accent } else { p.ink_muted };
@@ -665,7 +663,7 @@ mod tests {
         harness.run_steps(3);
         let modal = harness
             .ctx
-            .memory(|m| m.area_rect(egui::Id::new("ask")))
+            .memory(|m| m.area_rect(egui::Id::unique("ask")))
             .expect("the modal is up");
         let delete = harness.get_by_role_and_label(Role::Button, "Delete").rect();
         let cancel = harness.get_by_role_and_label(Role::Button, "Cancel").rect();
@@ -696,7 +694,7 @@ mod tests {
                 tag(ui, "on-device");
                 select(
                     ui,
-                    egui::Id::new("tool"),
+                    egui::Id::unique("tool"),
                     "Claude Code",
                     Some("claude"),
                     false,

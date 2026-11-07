@@ -128,11 +128,10 @@ fn file_head(ui: &mut egui::Ui, sort: &mut FileSort) {
         x += width;
         let mut hovered = false;
         if let Some(by) = by {
-            let id = ui.id().with(("files-sort", name));
+            let id = ui.scope_id().with(("files-sort", name));
             let response = ui.interact(cell, id, Sense::click());
             let label = format!("Sort by {name}");
-            response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
             hovered = response.hovered();
             if response
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -168,7 +167,7 @@ fn file_row(ui: &mut egui::Ui, file: &FileStat, share: f32) -> egui::Response {
     let p = theme::palette(ui);
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &file.path));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &file.path));
     let painter = ui.painter_at(rect);
     if response.hovered() {
         painter.rect_filled(rect, CornerRadius::ZERO, p.surface_hover);
@@ -292,7 +291,7 @@ impl FileHistory {
 pub(super) fn history_window(ui: &egui::Ui, history: &FileHistory) -> bool {
     let p = theme::palette(ui);
     let mut close = false;
-    let modal = egui::Modal::new(egui::Id::new("file-history"))
+    let modal = egui::Modal::new(egui::Id::unique("file-history"))
         .frame(widgets::modal_frame(ui).inner_margin(theme::SPACE_6))
         .backdrop_color(p.scrim)
         .show(ui.ctx(), |ui| {

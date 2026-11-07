@@ -219,7 +219,7 @@ fn resume_pill(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction> {
         "Back to the refinement"
     };
     let mut resume = false;
-    egui::Area::new(egui::Id::new("refine-resume"))
+    egui::Area::new(egui::Id::unique("refine-resume"))
         .anchor(egui::Align2::CENTER_BOTTOM, Vec2::new(0.0, -theme::SPACE_7))
         .order(egui::Order::Foreground)
         .show(ui.ctx(), |ui| {
@@ -234,7 +234,7 @@ fn resume_pill(ui: &mut egui::Ui, refine: &Refinement) -> Option<RefineAction> {
 }
 
 fn note_id() -> egui::Id {
-    egui::Id::new("refine-note")
+    egui::Id::unique("refine-note")
 }
 
 /// Head, the two panes (stacked under [`NARROW_BELOW`]) and the foot.

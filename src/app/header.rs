@@ -22,7 +22,7 @@ impl IboardApp {
             // runs under the traffic lights too, as a native title bar does.
             let bar = ui.interact(
                 ui.max_rect().with_min_x(ui.ctx().content_rect().left()),
-                egui::Id::new("header_drag"),
+                egui::Id::unique("header_drag"),
                 Sense::click_and_drag(),
             );
             if bar.drag_started() {
@@ -302,9 +302,7 @@ impl IboardApp {
         let name = "More actions";
         let button = widgets::button(ui, ButtonKind::Ghost, Some(Icon::More), "", None)
             .on_hover_text("Move to…");
-        button.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), name)
-        });
+        button.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
         let picked = egui::Popup::menu(&button)
             .width(MORE_MENU_WIDTH)
             .align(egui::RectAlign::BOTTOM_END)

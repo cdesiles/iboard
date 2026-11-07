@@ -29,7 +29,7 @@ fn project(tag: &str, files: &[(&str, &str)]) -> (Scratch, IboardApp) {
 fn card_rect(harness: &Kit, path: &Path) -> egui::Rect {
     harness
         .ctx
-        .read_response(egui::Id::new(("issue_card", path)))
+        .read_response(egui::Id::unique(("issue_card", path)))
         .expect("the card is drawn")
         .rect
 }
@@ -187,7 +187,7 @@ fn keyboard_focus_shows_the_strip() {
     let mut harness = kittest(app);
     assert!(harness.query_by_label("Add label").is_none());
     harness.ctx.memory_mut(|memory| {
-        memory.request_focus(egui::Id::new(("issue_card", &path)));
+        memory.request_focus(egui::Id::unique(("issue_card", &path)));
     });
     harness.run_steps(2);
     harness.get_by_label("Add label");
@@ -234,12 +234,15 @@ fn the_empty_well_is_bare_until_a_card_is_over_it() {
     assert_eq!(filled(&shapes, p.accent_soft), 0);
 
     let start = ctx
-        .read_response(egui::Id::new(("issue_card", dir.join("issues/todo/a.md"))))
+        .read_response(egui::Id::unique((
+            "issue_card",
+            dir.join("issues/todo/a.md"),
+        )))
         .unwrap()
         .rect
         .center();
     let doing = ctx
-        .read_response(egui::Id::new(("column_drop", 2)))
+        .read_response(egui::Id::unique(("column_drop", 2)))
         .unwrap()
         .rect;
     let over = doing.min + egui::vec2(40.0, theme::CONTROL_H + theme::SPACE_3 + 12.0);
@@ -267,7 +270,10 @@ fn delete_stays_neutral_until_the_pointer_is_over_it() {
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
     let start = ctx
-        .read_response(egui::Id::new(("issue_card", dir.join("issues/todo/a.md"))))
+        .read_response(egui::Id::unique((
+            "issue_card",
+            dir.join("issues/todo/a.md"),
+        )))
         .unwrap()
         .rect
         .center();
@@ -292,7 +298,7 @@ fn delete_stays_neutral_until_the_pointer_is_over_it() {
     assert_eq!(filled(&shapes, p.surface_sunken), 0);
 
     let zone = ctx
-        .read_response(egui::Id::new("drop_zone_delete"))
+        .read_response(egui::Id::unique("drop_zone_delete"))
         .unwrap()
         .rect
         .center();

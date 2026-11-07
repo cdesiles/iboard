@@ -300,7 +300,7 @@ impl IboardApp {
         }
         let outline = outcome.body.expand(theme::SPACE_3);
         let hovered = sheet.editable && ui.rect_contains_pointer(outline);
-        let fade = widgets::hover_fade(ui.ctx(), egui::Id::new("reader_edit_outline"), hovered);
+        let fade = widgets::hover_fade(ui.ctx(), egui::Id::unique("reader_edit_outline"), hovered);
         if fade > 0.0 {
             let mut faded = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
             faded.multiply_opacity(fade);
@@ -417,7 +417,7 @@ impl IboardApp {
                     if sheet.editable {
                         let response = response.on_hover_cursor(egui::CursorIcon::Text);
                         response.widget_info(|| {
-                            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, REST_HINT)
+                            egui::WidgetInfo::labeled(egui::Role::Button, true, REST_HINT)
                         });
                         if response.double_clicked() && !stray {
                             intents.push(Intent::EditAtEnd(path.to_path_buf()));

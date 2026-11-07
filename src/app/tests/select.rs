@@ -20,7 +20,7 @@ fn board(tag: &str) -> (Scratch, IboardApp, [PathBuf; 3]) {
 }
 
 fn card_center(ctx: &egui::Context, path: &Path) -> egui::Pos2 {
-    ctx.read_response(egui::Id::new(("issue_card", path)))
+    ctx.read_response(egui::Id::unique(("issue_card", path)))
         .expect("the card is drawn")
         .rect
         .center()
@@ -95,7 +95,7 @@ fn only_the_card_with_focus_offers_expand_and_enter_opens_the_first_picked() {
     app.pick(b.clone());
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
-    let expand = |path: &Path| ctx.read_response(egui::Id::new(("card_expand", path)));
+    let expand = |path: &Path| ctx.read_response(egui::Id::unique(("card_expand", path)));
 
     draw(&ctx, &mut app, vec![moved(card_center(&ctx, &a))]);
     draw(&ctx, &mut app, vec![moved(card_center(&ctx, &a))]);
@@ -133,7 +133,7 @@ fn a_click_in_an_empty_region_voids_the_selection() {
         .position(|column| column.dir == dir.join("issues/doing"))
         .unwrap();
     let well = ctx
-        .read_response(egui::Id::new(("column_drop", doing)))
+        .read_response(egui::Id::unique(("column_drop", doing)))
         .unwrap()
         .rect
         .center();
@@ -160,7 +160,7 @@ fn the_column_holding_the_selection_offers_to_clear_it() {
     );
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
-    let clear = |index: usize| egui::Id::new(("clear_picked", index));
+    let clear = |index: usize| egui::Id::unique(("clear_picked", index));
     assert!(ctx.read_response(clear(doing)).is_none());
     let at = ctx.read_response(clear(todo)).expect("shown").rect.center();
 
@@ -192,7 +192,7 @@ fn drag_card_to_column(app: &mut IboardApp, path: &Path, dir: &Path) {
     draw(&ctx, app, vec![]);
     let index = app.board.columns.iter().position(|c| c.dir == dir).unwrap();
     let target = ctx
-        .read_response(egui::Id::new(("column_drop", index)))
+        .read_response(egui::Id::unique(("column_drop", index)))
         .unwrap()
         .rect
         .center();
@@ -284,7 +284,7 @@ fn a_click_selects_a_card_and_expand_opens_it() {
 
     draw(&ctx, &mut app, vec![]);
     let card = ctx
-        .read_response(egui::Id::new(("issue_card", &file)))
+        .read_response(egui::Id::unique(("issue_card", &file)))
         .unwrap()
         .rect;
     click(&mut app, card.center());
@@ -292,7 +292,7 @@ fn a_click_selects_a_card_and_expand_opens_it() {
     assert_eq!(app.session.selected.as_deref(), Some(file.as_path()));
 
     let expand = ctx
-        .read_response(egui::Id::new(("card_expand", &file)))
+        .read_response(egui::Id::unique(("card_expand", &file)))
         .expect("the hovered card offers Expand")
         .rect;
     assert!(

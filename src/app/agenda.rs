@@ -381,11 +381,10 @@ fn grid_days(
             if shape.is_none() {
                 continue;
             }
-            let id = ui.id().with(("agenda-day", day));
+            let id = ui.scope_id().with(("agenda-day", day));
             let response = ui.interact(square, id, Sense::click());
             let label = day_label(day, count);
-            response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
             if response.hovered() {
                 painter.rect_stroke(
                     square.expand(1.0),

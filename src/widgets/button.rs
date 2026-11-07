@@ -320,9 +320,7 @@ fn button_at_least(
     let width = content.width.max(min_width);
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(width, theme::CONTROL_H), Sense::click());
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
-    });
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     paint_button(
         ui,
@@ -375,7 +373,7 @@ pub fn split_button(
     } else {
         ui.interact(main_rect, id.with("main"), Sense::hover())
     };
-    main.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, main_enabled, label));
+    main.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, main_enabled, label));
     let caret = ui
         .interact(caret_rect, id.with("caret"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -455,8 +453,7 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
         .on_hover_text(hover);
     // The tooltip ends with its key ("Delete  Del"); the name is what comes first.
     let name = hover.split("  ").next().unwrap_or(hover);
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), name));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
     if ui.is_rect_visible(rect) {
         let p = theme::palette(ui);
         let fade = if tone == Tone::Open {
@@ -655,7 +652,7 @@ mod tests {
         let fade = |hovered| {
             let mut fade = 0.0;
             pass(&ctx, 0.0, Pos2::ZERO, |ui| {
-                fade = hover_fade(ui.ctx(), egui::Id::new("row"), hovered);
+                fade = hover_fade(ui.ctx(), egui::Id::unique("row"), hovered);
             });
             fade
         };
@@ -666,7 +663,7 @@ mod tests {
     #[test]
     fn a_card_action_never_draws_an_edge() {
         let ctx = context();
-        let id = egui::Id::new("action");
+        let id = egui::Id::unique("action");
         let mut over = Pos2::ZERO;
         ctx.run_ui(egui::RawInput::default(), |ui| {
             over = icon_button(ui, Icon::Trash, id, "Delete", Tone::Danger)

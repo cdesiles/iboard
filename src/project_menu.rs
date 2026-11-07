@@ -86,7 +86,7 @@ pub struct Menu {
 }
 
 fn field_id() -> Id {
-    Id::new("project_menu_filter")
+    Id::unique("project_menu_filter")
 }
 
 impl Menu {
@@ -222,7 +222,7 @@ impl Menu {
         let list_max = (room - overhead).clamp(2.0 * (MENU_ROW_H + ROW_GAP), LIST_MAX_H);
         let mut action = None;
         let mut list_h = 0.0;
-        let area = egui::Area::new(Id::new("project_menu"))
+        let area = egui::Area::new(Id::unique("project_menu"))
             .order(egui::Order::Foreground)
             .fixed_pos(Pos2::new(anchor.left(), top))
             .show(ctx, |ui| {

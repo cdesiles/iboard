@@ -124,7 +124,7 @@ impl SelectMenu {
         }
         let mut open = true;
         egui::Popup::from_response(anchor)
-            .id(Id::new(("review-menu", menu as u8)))
+            .id(Id::unique(("review-menu", menu as u8)))
             .open_bool(&mut open)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .gap(theme::SPACE_2)

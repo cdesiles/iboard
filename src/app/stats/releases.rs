@@ -143,17 +143,16 @@ impl Lane {
         let hot = self.hovered(ui, &marks, bottom);
         self.paint(ui, &painter, &marks, hot, bottom);
         for mark in &marks {
-            let id = ui.id().with(("release", &mark.release.tag));
+            let id = ui.scope_id().with(("release", &mark.release.tag));
             let response = ui.interact(mark.rect(self.rect), id, Sense::hover());
             let text = mark.release.describe();
-            response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &text));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &text));
         }
         let hot = hot.and_then(|at| marks.get(at))?;
         let tip = egui::Tooltip::always_open(
             ui.ctx().clone(),
             ui.layer_id(),
-            ui.id().with("release-tip"),
+            ui.scope_id().with("release-tip"),
             egui::PopupAnchor::Pointer,
         );
         tip.show(|ui| ui.label(hot.release.describe()));

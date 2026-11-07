@@ -5,7 +5,7 @@ use std::ops::RangeInclusive;
 
 use egui::{
     Align, Align2, Context, CornerRadius, CursorIcon, EventFilter, Id, Key, Layout, Modifiers,
-    Pos2, Rect, Response, ScrollArea, Sense, Stroke, StrokeKind, Ui, Vec2, WidgetInfo, WidgetType,
+    Pos2, Rect, Response, Role, ScrollArea, Sense, Stroke, StrokeKind, Ui, Vec2, WidgetInfo,
 };
 
 use super::{RADIUS_PILL, RADIUS_SM, SPACE_3, meta, motion, palette};
@@ -85,7 +85,7 @@ pub fn pane_scroll(id: &str) -> ScrollArea {
 
 /// The id the split of the pair of panes `name` is remembered under.
 pub fn pane_split_id(name: &str) -> Id {
-    Id::new(("pane-split", name))
+    Id::unique(("pane-split", name))
 }
 
 /// The right pane's width for the pair of panes `id`, as last set by its
@@ -147,7 +147,7 @@ pub fn pane_divider(
     let clamp = |width: f32| width.clamp(*range.start(), range.end().max(*range.start()));
     let mut width = clamp(pane_split(&ctx, id, default));
     let response = ui.interact(gutter, id, Sense::click_and_drag());
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::Other, true, "Resize the panes"));
+    response.widget_info(|| WidgetInfo::labeled(Role::Unknown, true, "Resize the panes"));
 
     let raw_id = id.with("raw");
     if response.drag_started() {
@@ -296,7 +296,7 @@ mod tests {
     /// `↩` puts the split back to its default.
     #[test]
     fn keys_move_the_divider_within_its_range() {
-        let id = Id::new("split");
+        let id = Id::unique("split");
         let mut harness = Harness::new_ui_state(
             |ui, themed: &mut bool| {
                 if !std::mem::replace(themed, true) {

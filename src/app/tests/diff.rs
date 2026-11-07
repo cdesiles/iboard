@@ -134,7 +134,7 @@ fn a_done_card_opens_its_diff() {
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
     let at = ctx
-        .read_response(egui::Id::new(("card_diff", &issue)))
+        .read_response(egui::Id::unique(("card_diff", &issue)))
         .expect("Done cards offer their diff")
         .rect
         .center();

@@ -278,7 +278,8 @@ pub(super) fn drafts_ui(ui: &mut egui::Ui, drafts: &mut [SplitDraft]) {
                     egui::TextEdit::singleline(&mut draft.title)
                         .font(theme::ui_strong())
                         .desired_width(f32::INFINITY),
-                );
+                )
+                .accessible_name(format!("Part {} title", index + 1));
             });
             let preview: Vec<&str> = draft
                 .body

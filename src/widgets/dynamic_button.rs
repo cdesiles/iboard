@@ -76,7 +76,7 @@ impl<'a> DynamicButton<'a> {
 
 /// Where the button showing its pill, and the pass it last did, are kept.
 fn shown_id() -> Id {
-    Id::new("dynamic-button-shown")
+    Id::unique("dynamic-button-shown")
 }
 
 /// Whether another button shows its pill now: this one steps aside.
@@ -125,7 +125,7 @@ impl Widget for DynamicButton<'_> {
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), self.label)
+            egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), self.label)
         });
         if !ui.is_rect_visible(rect) {
             return response;

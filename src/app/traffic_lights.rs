@@ -62,7 +62,7 @@ pub(super) fn keep_placed(ctx: &egui::Context) {
             }
         }
     }
-    let id = egui::Id::new("traffic-lights-window");
+    let id = egui::Id::unique("traffic-lights-window");
     let now = ctx.input(|i| (i.content_rect().size(), i.viewport().fullscreen));
     if ctx.data(|d| d.get_temp(id)) != Some(now) {
         ctx.data_mut(|d| d.insert_temp(id, now));

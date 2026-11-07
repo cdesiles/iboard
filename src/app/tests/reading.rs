@@ -98,7 +98,7 @@ fn the_editor_starts_its_text_where_the_reader_does() {
     harness.run_steps(2);
     let field = harness
         .ctx
-        .read_response(egui::Id::new(crate::app::editor::EDITOR_ID))
+        .read_response(egui::Id::unique(crate::app::editor::EDITOR_ID))
         .unwrap();
     assert_eq!(field.rect.left(), reader_left);
     assert_eq!(field.rect.width(), theme::READ_MEASURE);
@@ -117,7 +117,7 @@ pub(super) fn double_click(harness: &mut Kit, pos: egui::Pos2) {
 
 /// The line of the file the Editor's caret is on.
 fn caret_line(harness: &Kit) -> usize {
-    let id = egui::Id::new(crate::app::editor::EDITOR_ID);
+    let id = egui::Id::unique(crate::app::editor::EDITOR_ID);
     let caret = egui::TextEdit::load_state(&harness.ctx, id)
         .and_then(|state| state.cursor.char_range())
         .expect("the field has a caret")
@@ -165,7 +165,7 @@ fn the_editor_brings_the_clicked_line_into_view() {
     assert_eq!(caret_line(&harness), 300);
     let field = harness
         .ctx
-        .read_response(egui::Id::new(crate::app::editor::EDITOR_ID))
+        .read_response(egui::Id::unique(crate::app::editor::EDITOR_ID))
         .unwrap();
     assert!(field.rect.top() < 0.0, "{:?}", field.rect);
 }

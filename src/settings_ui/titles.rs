@@ -52,7 +52,7 @@ fn choice_row(ui: &mut egui::Ui, row: &ChoiceRow) -> (egui::Response, bool) {
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
         egui::WidgetInfo::selected(
-            egui::WidgetType::RadioButton,
+            egui::Role::RadioButton,
             ui.is_enabled(),
             row.selected,
             row.engine.name(),

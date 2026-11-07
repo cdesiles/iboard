@@ -40,7 +40,8 @@ impl IboardApp {
             self.dock_span = dragged_column;
         }
         let slide = theme::motion(&ctx, DOCK_SLIDE);
-        let shown = ctx.animate_bool_with_time(egui::Id::new("drop_dock"), drag.is_some(), slide);
+        let shown =
+            ctx.animate_bool_with_time(egui::Id::unique("drop_dock"), drag.is_some(), slide);
         if shown <= 0.0 {
             return;
         }
@@ -56,7 +57,7 @@ impl IboardApp {
         let dock = Rect::from_x_y_ranges(x, egui::Rangef::new(top, top + DOCK_H));
         let archivable = self.dock_archivable;
         let mut dropped = None;
-        egui::Area::new(egui::Id::new("drop_dock_area"))
+        egui::Area::new(egui::Id::unique("drop_dock_area"))
             .order(egui::Order::Foreground)
             .fixed_pos(dock.min)
             .movable(false)
@@ -68,7 +69,7 @@ impl IboardApp {
                 painter.hline(dock.x_range(), dock.min.y + 0.5, Stroke::new(1.0, p.line));
                 // Swallow the pointer over the whole band, so a drop beside
                 // the zone never lands on the column underneath.
-                ui.interact(dock, egui::Id::new("drop_dock_band"), Sense::hover());
+                ui.interact(dock, egui::Id::unique("drop_dock_band"), Sense::hover());
 
                 let inner = Rect::from_min_max(
                     dock.min + Vec2::new(theme::SPACE_4, 1.0 + theme::SPACE_4),
@@ -119,7 +120,7 @@ fn drop_zone(ui: &mut egui::Ui, rect: Rect, zone: DropZone, asks: bool) -> Optio
         DropZone::Archive => "drop_zone_archive",
         DropZone::Delete => "drop_zone_delete",
     };
-    let response = ui.interact(rect, egui::Id::new(id), Sense::hover());
+    let response = ui.interact(rect, egui::Id::unique(id), Sense::hover());
     let over = response.dnd_hover_payload::<IssueDrag>().is_some();
     let (icon, word, hint) = match zone {
         DropZone::Archive => (Icon::Archive, "Archive", "moves to .archive/"),

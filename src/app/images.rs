@@ -114,7 +114,7 @@ impl IboardApp {
     /// The editor or the composer, when one is open; a paste also needs it
     /// to have the keyboard.
     fn image_target(&self, ctx: &egui::Context, paste: bool) -> Option<Target> {
-        let focused = |id: &str| !paste || ctx.memory(|m| m.has_focus(egui::Id::new(id)));
+        let focused = |id: &str| !paste || ctx.memory(|m| m.has_focus(egui::Id::unique(id)));
         let editing = self.session.editing().is_some() && self.session.editor.is_some();
         if editing && focused(EDITOR_ID) {
             return Some(Target::Editor);
@@ -153,12 +153,13 @@ impl IboardApp {
                     .images
                     .get_or_insert_with(|| PendingImages::new(&root));
                 let link = assets::add(&root, &pending.slug, &png)?;
-                if !ctx.memory(|m| m.has_focus(egui::Id::new(DESCRIPTION_ID))) {
+                if !ctx.memory(|m| m.has_focus(egui::Id::unique(DESCRIPTION_ID))) {
                     let end = CCursor::new(composer.description.chars().count());
-                    let mut state = egui::TextEdit::load_state(ctx, egui::Id::new(DESCRIPTION_ID))
-                        .unwrap_or_default();
+                    let mut state =
+                        egui::TextEdit::load_state(ctx, egui::Id::unique(DESCRIPTION_ID))
+                            .unwrap_or_default();
                     state.cursor.set_char_range(Some(CCursorRange::one(end)));
-                    state.store(ctx, egui::Id::new(DESCRIPTION_ID));
+                    state.store(ctx, egui::Id::unique(DESCRIPTION_ID));
                 }
                 insert_at_caret(ctx, DESCRIPTION_ID, &mut composer.description, &link);
                 Ok(())
@@ -304,7 +305,7 @@ fn dropped_bytes(file: &egui::DroppedFileHandle) -> Result<Vec<u8>, String> {
 /// Puts `insert` in place of the selection of the text field `id`, or at
 /// its caret, or at the end when it never had one; the caret lands after it.
 fn insert_at_caret(ctx: &egui::Context, id: &str, text: &mut String, insert: &str) {
-    let id = egui::Id::new(id);
+    let id = egui::Id::unique(id);
     let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
     let chars = text.chars().count();
     let [start, end] = state

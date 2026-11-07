@@ -24,7 +24,7 @@ fn picking() -> (Scratch, IboardApp, egui::Context, PathBuf) {
 }
 
 fn field() -> egui::Id {
-    egui::Id::new("label_picker_field")
+    egui::Id::unique("label_picker_field")
 }
 
 fn focused(ctx: &egui::Context) -> Option<egui::Id> {

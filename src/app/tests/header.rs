@@ -234,6 +234,7 @@ fn the_title_joins_the_breadcrumb_once_the_page_has_scrolled() {
         delta: egui::Vec2::new(0.0, -600.0),
         phase: egui::TouchPhase::Move,
         modifiers: egui::Modifiers::NONE,
+        source: egui::MouseWheelSource::Wheel,
     });
     harness.run_steps(6);
     assert_eq!(harness.state().1.reader.title_away, Some(path.clone()));

@@ -539,7 +539,7 @@ fn the_checkbox_is_disabled_when_no_tag_matches() {
             .is_disabled()
     );
     harness.get_by_label("Releases").hover();
-    harness.run_steps(3);
+    harness.run_steps(4);
     harness.get_by_label("No release tags match v*");
 }
 

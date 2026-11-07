@@ -398,7 +398,7 @@ impl Chart<'_> {
         let (rect, response) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), TREND_H), Sense::hover());
         let name = format!("{} trend", self.measure.name());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &name));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &name));
         let painter = ui.painter_at(rect.expand(4.0));
         let plot = plot_of(rect);
         grid(&painter, plot, p.line);

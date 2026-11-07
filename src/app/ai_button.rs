@@ -126,7 +126,7 @@ impl IboardApp {
         };
         let (main, caret) = widgets::split_button(
             ui,
-            egui::Id::new("ai-button"),
+            egui::Id::unique("ai-button"),
             ButtonKind::Review,
             Some(face.icon),
             face.label,
@@ -148,9 +148,7 @@ impl IboardApp {
         } else {
             "Update, Ask"
         });
-        caret.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), name)
-        });
+        caret.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
         let other_scope = match self.prefs.agent.scope {
             ReviewMode::Quick => ReviewMode::Deep,
             ReviewMode::Deep => ReviewMode::Quick,

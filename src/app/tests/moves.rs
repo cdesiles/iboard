@@ -282,14 +282,14 @@ fn the_card_delete_icon_asks_to_delete_without_opening() {
 
     draw(&ctx, &mut app, vec![]);
     let card = ctx
-        .read_response(egui::Id::new(("issue_card", &file)))
+        .read_response(egui::Id::unique(("issue_card", &file)))
         .unwrap()
         .rect
         .center();
     draw(&ctx, &mut app, vec![egui::Event::PointerMoved(card)]);
     draw(&ctx, &mut app, vec![egui::Event::PointerMoved(card)]);
     let icon = ctx
-        .read_response(egui::Id::new(("card_delete", &file)))
+        .read_response(egui::Id::unique(("card_delete", &file)))
         .expect("the hovered card draws a delete icon")
         .rect
         .center();
@@ -340,11 +340,11 @@ fn done_cards_cannot_be_deleted() {
     let ctx = themed_ctx();
     frame(&ctx, &mut app, vec![]);
     assert!(
-        ctx.read_response(egui::Id::new(("card_archive", &file)))
+        ctx.read_response(egui::Id::unique(("card_archive", &file)))
             .is_some()
     );
     assert!(
-        ctx.read_response(egui::Id::new(("card_delete", &file)))
+        ctx.read_response(egui::Id::unique(("card_delete", &file)))
             .is_none()
     );
 
@@ -367,7 +367,7 @@ fn done_cards_cannot_be_labelled() {
     let ctx = themed_ctx();
     frame(&ctx, &mut app, vec![]);
     assert!(
-        ctx.read_response(egui::Id::new(("card_add_label", &file)))
+        ctx.read_response(egui::Id::unique(("card_add_label", &file)))
             .is_none()
     );
     frame(&ctx, &mut app, vec![key(Key::L, Default::default())]);
@@ -471,13 +471,13 @@ fn hovering_the_done_header_offers_archive_all() {
         .iter()
         .position(|c| c.name.eq_ignore_ascii_case("done"))
         .unwrap();
-    let archive_all = egui::Id::new(("archive_all", index));
+    let archive_all = egui::Id::unique(("archive_all", index));
 
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);
     assert!(ctx.read_response(archive_all).is_none(), "hidden at rest");
     let column = ctx
-        .read_response(egui::Id::new(("column_drop", index)))
+        .read_response(egui::Id::unique(("column_drop", index)))
         .unwrap()
         .rect;
     let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);

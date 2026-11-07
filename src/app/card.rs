@@ -108,7 +108,7 @@ pub(super) fn issue_card(
     labels: &Labels,
     extras: CardExtras,
 ) -> (Option<CardAction>, Rect) {
-    let card_id = egui::Id::new(("issue_card", &issue.path));
+    let card_id = egui::Id::unique(("issue_card", &issue.path));
 
     // The card is one click-and-drag surface. Labels must not steal the pointer
     // to select text (which also showed an I-beam cursor and hijacked the drag).
@@ -137,7 +137,7 @@ pub(super) fn issue_card(
 
     let scope = ui.scope_builder(
         egui::UiBuilder::new()
-            .id(card_id)
+            .scope_id(card_id)
             .sense(Sense::click_and_drag()),
         |ui| {
             // The card being dragged stays in place, faded.
@@ -218,10 +218,10 @@ fn focus_within(ctx: &egui::Context, issue: &Issue, card: egui::Id, extras: &Car
         return false;
     };
     focused == card
-        || focused == egui::Id::new(("card_expand", &issue.path))
+        || focused == egui::Id::unique(("card_expand", &issue.path))
         || card_buttons(issue.done_at.is_some(), extras)
             .iter()
-            .any(|button| focused == egui::Id::new((button.id, &issue.path)))
+            .any(|button| focused == egui::Id::unique((button.id, &issue.path)))
 }
 
 /// Where the strip lies: the card's bottom, inside its edge.
@@ -314,7 +314,7 @@ fn expand_action(
     let expand = widgets::icon_button(
         &mut child,
         Icon::Expand,
-        egui::Id::new(("card_expand", &issue.path)),
+        egui::Id::unique(("card_expand", &issue.path)),
         "Expand  ↩",
         widgets::Tone::Plain,
     );
@@ -402,7 +402,7 @@ fn card_edge(ui: &egui::Ui, response: &egui::Response, look: CardLook) {
 /// where it was grabbed.
 fn drag_ghost(ui: &egui::Ui, issue: &Issue, width: f32, labels: &Labels, at: Pos2) {
     let p = theme::palette(ui);
-    let ghost = egui::Area::new(egui::Id::new(("issue_ghost", &issue.path)))
+    let ghost = egui::Area::new(egui::Id::unique(("issue_ghost", &issue.path)))
         .order(egui::Order::Tooltip)
         .fixed_pos(at)
         .constrain(false)
@@ -558,7 +558,7 @@ fn card_labels(
 /// issue with it.
 fn review_pill(ui: &mut egui::Ui, word: &str, color: Color32, hint: &str) -> egui::Response {
     let response = widgets::pill(ui, word, color).interact(Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, word));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, word));
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(hint)
@@ -621,7 +621,7 @@ fn card_actions(
         } else {
             button.tone
         };
-        let id = egui::Id::new((button.id, &issue.path));
+        let id = egui::Id::unique((button.id, &issue.path));
         let response = widgets::icon_button(ui, button.icon, id, button.hover, tone);
         rects.push(response.rect);
         if add_label {
@@ -731,7 +731,7 @@ fn build_timer(ui: &mut egui::Ui, issue: &Issue, since: Instant) {
     let color = theme::palette(ui).status_doing;
     ui.scope_builder(
         egui::UiBuilder::new()
-            .id(egui::Id::new(("card_build_timer", &issue.path)))
+            .scope_id(egui::Id::unique(("card_build_timer", &issue.path)))
             .sense(Sense::hover()),
         |ui| ui.label(meta_text(clock(since.elapsed()), color)),
     );

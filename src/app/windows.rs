@@ -451,14 +451,14 @@ fn commit_row(ui: &mut egui::Ui, commit: &commits::Commit) -> egui::Response {
     let response = ui
         .interact(
             rect,
-            egui::Id::new(("commit", &commit.hash)),
+            egui::Id::unique(("commit", &commit.hash)),
             Sense::click(),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text("Show this commit's diff");
     response.widget_info(|| {
         let label = format!("Diff of {}", commit.hash);
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label)
+        egui::WidgetInfo::labeled(egui::Role::Button, true, label)
     });
     if response.hovered() {
         ui.painter().set(
