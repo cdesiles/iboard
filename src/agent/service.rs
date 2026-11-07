@@ -206,8 +206,8 @@ pub fn follow_questions(project: PathBuf) -> (Job<()>, Feed) {
 
 /// The forms and permission requests `project` waits on.
 pub fn pending(project: &Path) -> Result<Vec<Question>, String> {
-    let forms = list(project, "/api/form");
-    let permissions = list(project, "/api/permission/request");
+    let forms = list(project, "form.list");
+    let permissions = list(project, "permission.request.list");
     match (forms, permissions) {
         (Ok(forms), Ok(permissions)) => Ok(questions(forms, permissions)),
         (Ok(forms), Err(_)) => Ok(questions(forms, Vec::new())),
@@ -222,15 +222,24 @@ fn questions(forms: Vec<Value>, permissions: Vec<Value>) -> Vec<Question> {
     forms.chain(permissions).collect()
 }
 
-fn list(project: &Path, path: &str) -> Result<Vec<Value>, String> {
-    let directory = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
-    let location = format!("location[directory]={}", directory.display());
-    let reply = match call(project, &["get", path, "--param", &location], None) {
-        Ok(reply) => reply,
-        Err(_) => call(project, &["get", path], None)?,
-    };
+/// The pending items of one opencode list operation. The operation ID, not a
+/// raw method and path: only an operation binds `--param`, and without the
+/// location the service answers for its default folder.
+fn list(project: &Path, operation: &str) -> Result<Vec<Value>, String> {
+    let args = list_args(project, operation);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let reply = call(project, &args, None)?;
     let value = parse(&reply)?;
     Ok(value["data"].as_array().cloned().unwrap_or_default())
+}
+
+fn list_args(project: &Path, operation: &str) -> Vec<String> {
+    let directory = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
+    vec![
+        operation.to_string(),
+        "--param".to_string(),
+        format!("location[directory]={}", directory.display()),
+    ]
 }
 
 fn question_from_form(value: &Value) -> Option<Question> {
@@ -833,6 +842,19 @@ mod tests {
         assert_eq!(PermissionReply::Once.key(), "once");
         assert_eq!(PermissionReply::Always.key(), "always");
         assert_eq!(PermissionReply::Reject.key(), "reject");
+    }
+
+    #[test]
+    fn a_list_names_its_operation_and_the_projects_location() {
+        let scratch = tempfile::tempdir().unwrap();
+        let project = std::fs::canonicalize(scratch.path()).unwrap();
+        let args = list_args(&project, "form.list");
+        assert_eq!(args[0], "form.list", "an operation binds --param");
+        assert_eq!(args[1], "--param");
+        assert_eq!(
+            args[2],
+            format!("location[directory]={}", project.display())
+        );
     }
 
     #[test]
