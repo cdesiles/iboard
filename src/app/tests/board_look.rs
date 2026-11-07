@@ -90,6 +90,48 @@ fn the_strip_never_changes_a_cards_height() {
     }
 }
 
+/// A column action names itself under the pointer, over the count, and the
+/// row's other icons stay in sight.
+#[test]
+fn hovering_a_column_action_shows_its_title() {
+    let (_dir, mut app) = project("column-action-title", &[("done/a.md", "# A\n")]);
+    let index = app
+        .board
+        .columns
+        .iter()
+        .position(|column| column.name.eq_ignore_ascii_case("done"))
+        .unwrap();
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let column = ctx
+        .read_response(egui::Id::unique(("column_drop", index)))
+        .unwrap()
+        .rect;
+    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
+    draw(&ctx, &mut app, vec![moved(head)]);
+    let archive = egui::Id::unique(("archive_all", index));
+    let release = egui::Id::unique(("release", index));
+    let archive_before = ctx.read_response(archive).unwrap().rect;
+    let release_before = ctx.read_response(release).unwrap().rect;
+
+    let (_, shapes) = painted(&ctx, &mut app, vec![moved(archive_before.center())]);
+    let title = shapes
+        .iter()
+        .find_map(|shape| match shape {
+            egui::Shape::Text(text) if text.galley.text() == "Archive all" => {
+                Some(text.visual_bounding_rect())
+            }
+            _ => None,
+        })
+        .expect("the pointer names the action");
+    assert_eq!(ctx.read_response(archive).unwrap().rect, archive_before);
+    assert_eq!(ctx.read_response(release).unwrap().rect, release_before);
+    assert!(
+        title.max.x < release_before.min.x,
+        "{title:?} covers the neighbour at {release_before:?}"
+    );
+}
+
 /// At rest no file name and no actions; hovered, the strip brings both, and
 /// takes them away again.
 #[test]

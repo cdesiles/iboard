@@ -40,6 +40,8 @@ pub enum Icon {
     Stop,
     /// A prompt in a rounded square: the build agent's log.
     Log,
+    /// Two people: how many build agents may work at once.
+    Agents,
     /// The iboard "i" rocking its card: an agent is at work.
     Thinking,
     /// A triangle with an exclamation mark: a signal is on.
@@ -97,7 +99,7 @@ pub fn paint_icon_stroked(painter: &Painter, icon: Icon, rect: Rect, color: Colo
         Icon::Edit | Icon::Trash | Icon::Archive | Icon::TagPlus | Icon::Commit => {
             document_icon(&grid, icon);
         }
-        Icon::Play | Icon::Stop | Icon::Thinking | Icon::Log | Icon::Review => {
+        Icon::Play | Icon::Stop | Icon::Thinking | Icon::Log | Icon::Agents | Icon::Review => {
             agent_icon(&grid, icon);
         }
         Icon::Layers | Icon::Grip | Icon::Warning | Icon::Flame | Icon::Bars | Icon::Release => {
@@ -322,6 +324,23 @@ fn agent_icon(g: &Grid, icon: Icon) {
         Icon::Play => g.closed(&[(6.0, 3.0), (20.0, 12.0), (6.0, 21.0)]),
         Icon::Stop => g.square((5.0, 5.0), (19.0, 19.0)),
         Icon::Thinking => thinking::icon(g.painter, g.rect),
+        Icon::Agents => {
+            // Lucide's users: one head and shoulders, another head and a
+            // shoulder behind them.
+            g.circle((9.0, 7.0), 4.0);
+            g.line(&[
+                (16.0, 21.0),
+                (16.0, 19.0),
+                (15.2, 17.3),
+                (13.5, 16.5),
+                (6.5, 16.5),
+                (4.8, 17.3),
+                (4.0, 19.0),
+                (4.0, 21.0),
+            ]);
+            g.circle((17.0, 7.5), 3.2);
+            g.line(&[(20.0, 21.0), (20.0, 19.0), (19.3, 17.4), (18.0, 16.7)]);
+        }
         Icon::Log => {
             // Lucide's square-terminal.
             g.square((3.0, 3.0), (21.0, 21.0));

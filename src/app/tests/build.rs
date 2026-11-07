@@ -1,5 +1,7 @@
 //! The AI build's tests: Ready's Play, its queue, stopping and failing it.
 
+use egui_kittest::kittest::Queryable;
+
 use super::*;
 use crate::app::build::{self, Builds};
 use crate::app::card::CardBuild;
@@ -319,23 +321,24 @@ fn no_agents_stops_the_build_and_at_most_sixteen() {
 
 #[test]
 fn doing_header_adds_and_removes_agents() {
-    let (_dir, mut app) = board("build-stepper", "true # {prompt}");
-    let ctx = themed_ctx();
-    draw(&ctx, &mut app, vec![]);
-    let more = egui::Id::unique(("more_agents", 2));
-    assert!(ctx.read_response(more).is_none(), "hidden at rest");
-    let column = ctx
-        .read_response(egui::Id::unique(("column_drop", 2)))
-        .unwrap()
-        .rect;
-    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
-    draw(&ctx, &mut app, vec![moved(head)]);
-    ctx.read_response(more).expect("shown on hover");
-    click(&ctx, &mut app, more);
-    assert_eq!(app.session.agents, 2);
-    click(&ctx, &mut app, egui::Id::unique(("fewer_agents", 2)));
-    click(&ctx, &mut app, egui::Id::unique(("fewer_agents", 2)));
-    assert_eq!(app.session.agents, 0);
+    let (_dir, app) = board("build-stepper", "true # {prompt}");
+    let mut harness = kittest(app);
+    let selector = harness.get_by_label("Build agents working at once: 1 agent");
+    let anchor = selector.rect();
+    assert!(
+        harness.query_by_label("One more build agent").is_none(),
+        "closed at rest"
+    );
+    selector.click();
+    harness.run_steps(2);
+    let more = harness.get_by_label("One more build agent").rect();
+    assert!(more.min.y >= anchor.max.y, "{more:?} sits under {anchor:?}");
+    press(&mut harness, "One more build agent");
+    assert_eq!(harness.state().1.session.agents, 2);
+    press(&mut harness, "One build agent fewer");
+    press(&mut harness, "One build agent fewer");
+    assert_eq!(harness.state().1.session.agents, 0);
+    assert!(harness.state().1.session.build.is_none());
 }
 
 #[test]

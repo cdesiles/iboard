@@ -337,30 +337,51 @@ fn column_head(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent>) 
         hovered,
     );
     let actions = header_actions(view);
+    let has_actions = !actions.is_empty();
+    let mut title = None;
     head.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-        if hovered && !actions.is_empty() {
+        if hovered && has_actions {
             ui.multiply_opacity(fade);
             for action in actions {
-                intents.extend(header_action(ui, view, action));
+                intents.extend(header_action(ui, view, action, &mut title));
             }
-            return;
-        }
-        for action in actions.into_iter().filter(|action| action.at_rest(view)) {
-            intents.extend(header_action(ui, view, action));
-        }
-        let shown = view.visible.len();
-        // Filtered: "2/6", the total in `ink-faint`.
-        let mut count = LayoutJob::default();
-        let part = |color| egui::TextFormat::simple(theme::meta(), color);
-        if view.filter.is_empty() {
-            count.append(&column.issues.len().to_string(), 0.0, part(p.ink_muted));
         } else {
-            count.append(&shown.to_string(), 0.0, part(p.ink_muted));
-            count.append(&format!("/{}", column.issues.len()), 0.0, part(p.ink_faint));
+            for action in actions.into_iter().filter(|action| action.at_rest(view)) {
+                intents.extend(header_action(ui, view, action, &mut title));
+            }
         }
-        ui.label(count);
+        if let Some(title) = &title {
+            action_title(ui, title);
+        } else if !hovered || !has_actions {
+            let shown = view.visible.len();
+            // Filtered: "2/6", the total in `ink-faint`.
+            let mut count = LayoutJob::default();
+            let part = |color| egui::TextFormat::simple(theme::meta(), color);
+            if view.filter.is_empty() {
+                count.append(&column.issues.len().to_string(), 0.0, part(p.ink_muted));
+            } else {
+                count.append(&shown.to_string(), 0.0, part(p.ink_muted));
+                count.append(&format!("/{}", column.issues.len()), 0.0, part(p.ink_faint));
+            }
+            ui.label(count);
+        }
     });
+}
+
+/// The title of the action under the pointer: a `surface-hover` pill, left of
+/// the row's icons, as the Reader's dynamic buttons show theirs.
+fn action_title(ui: &mut egui::Ui, title: &str) {
+    let p = theme::palette(ui);
+    let mut font = theme::ui_strong();
+    font.size = 12.0;
+    Frame::new()
+        .fill(p.surface_hover)
+        .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+        .inner_margin(Vec2::new(theme::SPACE_2, 1.0))
+        .show(ui, |ui| {
+            ui.add(egui::Label::new(RichText::new(title).font(font).color(p.ink)).truncate());
+        });
 }
 
 /// What a column's header offers, right to left.
@@ -385,13 +406,13 @@ enum HeaderAction {
 }
 
 impl HeaderAction {
-    /// Parked notes keep Todo's `+` and its dot in view, and a running build
-    /// its Stop, while the header is not hovered.
+    /// Parked notes keep Todo's `+` and its dot in view, a running build its
+    /// Stop and Doing its agents, whose popup must outlive the header's hover.
     fn at_rest(self, view: &ColumnView) -> bool {
         match self {
             Self::NewIssue => view.parked,
-            Self::StopBuild => true,
-            Self::Build | Self::Agents | Self::ArchiveAll | Self::Release => false,
+            Self::StopBuild | Self::Agents => true,
+            Self::Build | Self::ArchiveAll | Self::Release => false,
         }
     }
 }
@@ -423,39 +444,73 @@ fn header_actions(view: &ColumnView) -> Vec<HeaderAction> {
     actions
 }
 
-fn header_action(ui: &mut egui::Ui, view: &ColumnView, action: HeaderAction) -> Option<Intent> {
-    let tone = widgets::Tone::Ghost;
-    let button = |ui: &mut egui::Ui, icon, salt, hover: &str| {
-        let id = egui::Id::unique((salt, view.index));
-        widgets::icon_button(ui, icon, id, hover, tone).clicked()
-    };
+fn header_action(
+    ui: &mut egui::Ui,
+    view: &ColumnView,
+    action: HeaderAction,
+    title: &mut Option<String>,
+) -> Option<Intent> {
     match action {
-        HeaderAction::NewIssue => new_issue_button(ui, view),
-        HeaderAction::Build => button(ui, Icon::Play, "build", "Build with AI, top to bottom")
-            .then(|| Intent::Build(view.visible_paths())),
-        HeaderAction::StopBuild => {
-            button(ui, Icon::Stop, "build", "Stop the AI build").then_some(Intent::StopBuild)
+        HeaderAction::NewIssue => new_issue_button(ui, view, title),
+        HeaderAction::Build => {
+            let hover = "Build with AI, top to bottom";
+            action_button(ui, view, Icon::Play, "build", "Build with AI", hover, title)
+                .then(|| Intent::Build(view.visible_paths()))
         }
-        HeaderAction::Agents => agents_stepper(ui, view),
+        HeaderAction::StopBuild => {
+            let hover = "Stop the AI build";
+            let button = action_button(ui, view, Icon::Stop, "build", "Stop", hover, title);
+            button.then_some(Intent::StopBuild)
+        }
+        HeaderAction::Agents => agents_button(ui, view, title),
         HeaderAction::ArchiveAll => {
             let count = view.visible.len();
             let noun = if count == 1 { "issue" } else { "issues" };
             let hover = format!("Archive all: move the {count} {noun} to {ARCHIVE_DIR}/");
-            button(ui, Icon::Archive, "archive_all", &hover)
-                .then(|| Intent::ArchiveAll(view.visible_paths()))
+            action_button(
+                ui,
+                view,
+                Icon::Archive,
+                "archive_all",
+                "Archive all",
+                &hover,
+                title,
+            )
+            .then(|| Intent::ArchiveAll(view.visible_paths()))
         }
         HeaderAction::Release => {
             let count = view.visible.len();
             let noun = if count == 1 { "issue" } else { "issues" };
             let hover =
                 format!("Release: write a note from the {count} {noun}, commit, tag and push");
-            button(ui, Icon::Release, "release", &hover)
+            action_button(ui, view, Icon::Release, "release", "Release", &hover, title)
                 .then(|| Intent::Release(view.visible_paths()))
         }
     }
 }
 
-fn new_issue_button(ui: &mut egui::Ui, view: &ColumnView) -> Option<Intent> {
+fn action_button(
+    ui: &mut egui::Ui,
+    view: &ColumnView,
+    icon: Icon,
+    salt: &str,
+    short: &str,
+    hover: &str,
+    title: &mut Option<String>,
+) -> bool {
+    let id = egui::Id::unique((salt, view.index));
+    let response = widgets::icon_button(ui, icon, id, hover, widgets::Tone::Ghost);
+    if response.hovered() {
+        *title = Some(short.to_string());
+    }
+    response.clicked()
+}
+
+fn new_issue_button(
+    ui: &mut egui::Ui,
+    view: &ColumnView,
+    title: &mut Option<String>,
+) -> Option<Intent> {
     let id = egui::Id::unique(("new_issue", view.index));
     let hover = if view.parked {
         "1 parked note  ⌘N"
@@ -463,6 +518,9 @@ fn new_issue_button(ui: &mut egui::Ui, view: &ColumnView) -> Option<Intent> {
         "New issue  ⌘N"
     };
     let plus = widgets::icon_button(ui, Icon::Plus, id, hover, widgets::Tone::Ghost);
+    if plus.hovered() {
+        *title = Some("New issue".to_string());
+    }
     if view.parked {
         let p = theme::palette(ui);
         ui.painter()
@@ -471,28 +529,81 @@ fn new_issue_button(ui: &mut egui::Ui, view: &ColumnView) -> Option<Intent> {
     plus.clicked().then_some(Intent::Compose)
 }
 
-fn agents_stepper(ui: &mut egui::Ui, view: &ColumnView) -> Option<Intent> {
+/// How wide the agents popover is.
+const AGENTS_POPUP_WIDTH: f32 = 236.0;
+
+/// Doing's agents: one icon whose title says how many work at once, and whose
+/// click opens the selector under it. It stays in the header at rest, so the
+/// popover outlives the header's hover.
+fn agents_button(
+    ui: &mut egui::Ui,
+    view: &ColumnView,
+    title: &mut Option<String>,
+) -> Option<Intent> {
     let agents = view.builds.agents;
-    let tone = widgets::Tone::Ghost;
-    let mut intent = None;
-    ui.add_enabled_ui(agents < build::MAX_AGENTS, |ui| {
-        let id = egui::Id::unique(("more_agents", view.index));
-        if widgets::icon_button(ui, Icon::Plus, id, "One more build agent", tone).clicked() {
-            intent = Some(Intent::Agents(agents + 1));
-        }
-    });
     let noun = if agents == 1 { "agent" } else { "agents" };
-    ui.label(
-        RichText::new(format!("{agents} {noun}"))
+    let short = format!("{agents} {noun}");
+    let id = egui::Id::unique(("agents", view.index));
+    let hover = format!("Build agents working at once: {short}  Click to choose");
+    let button = widgets::icon_button(ui, Icon::Agents, id, &hover, widgets::Tone::Ghost);
+    if button.hovered() {
+        *title = Some(short);
+    }
+    egui::Popup::from_toggle_button_response(&button)
+        .align(egui::RectAlign::BOTTOM_END)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .width(AGENTS_POPUP_WIDTH)
+        .frame(widgets::popover_frame(ui).inner_margin(theme::SPACE_3))
+        .show(|ui| {
+            ui.set_min_width(AGENTS_POPUP_WIDTH);
+            agents_selector(ui, view)
+        })
+        .and_then(|inner| inner.inner)
+}
+
+fn agents_selector(ui: &mut egui::Ui, view: &ColumnView) -> Option<Intent> {
+    let p = theme::palette(ui);
+    let agents = view.builds.agents;
+    let mut intent = None;
+    ui.vertical(|ui| {
+        ui.label(
+            RichText::new("Build agents")
+                .font(theme::ui_strong())
+                .color(p.ink),
+        );
+        ui.label(
+            RichText::new(
+                "How many work at once; each takes the next Ready issue. None stops the build.",
+            )
             .font(theme::meta())
-            .color(theme::palette(ui).ink_muted),
-    )
-    .on_hover_text("Build agents working at once; none stops the AI build");
-    ui.add_enabled_ui(agents > 0, |ui| {
-        let id = egui::Id::unique(("fewer_agents", view.index));
-        if widgets::icon_button(ui, Icon::Minus, id, "One build agent fewer", tone).clicked() {
-            intent = Some(Intent::Agents(agents - 1));
-        }
+            .color(p.ink_muted),
+        );
+        ui.add_space(theme::SPACE_3);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_2;
+            ui.add_enabled_ui(agents > 0, |ui| {
+                let id = egui::Id::unique(("fewer_agents", view.index));
+                let hover = "One build agent fewer";
+                let tone = widgets::Tone::Ghost;
+                if widgets::icon_button(ui, Icon::Minus, id, hover, tone).clicked() {
+                    intent = Some(Intent::Agents(agents - 1));
+                }
+            });
+            let noun = if agents == 1 { "agent" } else { "agents" };
+            ui.label(
+                RichText::new(format!("{agents} {noun}"))
+                    .font(theme::ui_strong())
+                    .color(p.ink),
+            );
+            ui.add_enabled_ui(agents < build::MAX_AGENTS, |ui| {
+                let id = egui::Id::unique(("more_agents", view.index));
+                let hover = "One more build agent";
+                let tone = widgets::Tone::Ghost;
+                if widgets::icon_button(ui, Icon::Plus, id, hover, tone).clicked() {
+                    intent = Some(Intent::Agents(agents + 1));
+                }
+            });
+        });
     });
     intent
 }
