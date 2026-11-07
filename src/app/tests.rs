@@ -2,9 +2,11 @@
 
 use super::*;
 
+mod ask;
 mod bars;
 mod board_look;
 mod build;
+mod comments;
 mod compose;
 mod design_panel;
 mod diff;
@@ -23,6 +25,7 @@ mod moves;
 mod naming;
 mod panes;
 mod project_menu;
+mod quitting;
 mod reading;
 mod refine;
 mod review;
@@ -31,10 +34,11 @@ mod settings;
 mod splitting;
 mod stats;
 mod unsaved;
+mod update;
 mod welcome;
 mod workspace;
-use kit::{Kit, fake_agent, kittest, kittest_with, press, press_nth};
-use review::open_issue_with_review;
+use kit::{Kit, PASSING, fake_agent, kittest, kittest_with, landed, press, press_nth, project};
+use review::{land, open_issue_with_review, reviewing};
 
 /// A context with the design system installed, past the first frame so
 /// the bundled font families are loaded.
@@ -162,6 +166,15 @@ fn key(key: Key, modifiers: egui::Modifiers) -> egui::Event {
         repeat: false,
         modifiers,
     }
+}
+
+/// `⌘` held down and `key` pressed with it.
+fn cmd(key: Key) -> Vec<egui::Event> {
+    let command = egui::Modifiers::COMMAND;
+    vec![
+        egui::Event::ModifiersChanged(command),
+        self::key(key, command),
+    ]
 }
 
 fn moved(pos: egui::Pos2) -> egui::Event {

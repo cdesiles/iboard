@@ -11,11 +11,8 @@ use crate::app::new_issue_ui::ComposeAction;
 /// "This issue no longer exists". Everything open on it follows the rename.
 #[test]
 fn a_ticket_clicked_while_it_is_renumbered_stays_open() {
-    let dir = scratch_dir("compose-race");
+    let (dir, mut app) = project("compose-race", &[("todo/001-old.md", "# Old\n")]);
     let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    std::fs::write(todo.join("001-old.md"), "# Old\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
     app.write_composed("Fresh", false);
     let written = todo.join("fresh.md");
@@ -49,10 +46,8 @@ fn a_ticket_clicked_while_it_is_renumbered_stays_open() {
 
 #[test]
 fn the_modal_creates_an_issue_and_closes() {
-    let dir = scratch_dir("compose");
+    let (dir, mut app) = project("compose", &[("todo/", "")]);
     let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
 
     app.open_composer();
     assert!(app.composer_open());
@@ -82,10 +77,8 @@ fn the_modal_creates_an_issue_and_closes() {
 
 /// The title's text field, focused and ready for typing.
 fn title_focused(tag: &str) -> (Scratch, PathBuf, IboardApp, egui::Context) {
-    let dir = scratch_dir(tag);
+    let (dir, mut app) = project(tag, &[("todo/", "")]);
     let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
     app.session.composer.as_mut().unwrap().focus = Some(ComposerField::Title);
     let ctx = themed_ctx();
@@ -203,9 +196,7 @@ fn parked_tags_come_back_as_tags() {
 #[test]
 fn the_sheet_head_follows_the_engine() {
     use egui_kittest::kittest::Queryable;
-    let dir = scratch_dir("compose-head");
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (_dir, mut app) = project("compose-head", &[("todo/", "")]);
     app.open_composer();
     let mut harness = kittest(app);
     let note = harness
@@ -236,10 +227,8 @@ fn the_sheet_head_follows_the_engine() {
 /// opens the Editor.
 #[test]
 fn modal_keys() {
-    let dir = scratch_dir("compose-keys");
+    let (dir, mut app) = project("compose-keys", &[("todo/", "")]);
     let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
 
     let ctx = themed_ctx();
@@ -298,10 +287,7 @@ fn modal_keys() {
 /// them, and `⌘Z` brings them back.
 #[test]
 fn closing_parks_the_notes_and_discard_can_be_undone() {
-    let dir = scratch_dir("compose-park");
-    let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (dir, mut app) = project("compose-park", &[("todo/", "")]);
 
     app.open_composer();
     app.session.composer.as_mut().unwrap().description = "Half a thought".into();
@@ -470,10 +456,8 @@ fn a_failed_draft_keeps_the_notes() {
 
 #[test]
 fn without_an_engine_the_first_line_names_the_issue() {
-    let dir = scratch_dir("compose-manual");
+    let (dir, mut app) = project("compose-manual", &[("todo/", "")]);
     let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
     assert!(
         app.session.composer.as_ref().unwrap().engine.is_none(),
@@ -493,11 +477,8 @@ fn without_an_engine_the_first_line_names_the_issue() {
 /// the held pointer, and the card started a drag: the board flickered.
 #[test]
 fn a_click_on_the_new_ticket_right_after_adding_it_lands() {
-    let dir = scratch_dir("compose-label");
+    let (dir, mut app) = project("compose-label", &[("todo/001-old.md", "# Old\n")]);
     let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    std::fs::write(todo.join("001-old.md"), "# Old\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_composer();
     let ctx = themed_ctx();
     frame(&ctx, &mut app, vec![]);
@@ -537,9 +518,7 @@ fn a_click_on_the_new_ticket_right_after_adding_it_lands() {
 /// Todo's `+` is a column action, shown on hover.
 #[test]
 fn todo_offers_new_issue_on_hover() {
-    let dir = scratch_dir("plus-head");
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (_dir, mut app) = project("plus-head", &[("todo/", "")]);
     let index = app
         .board
         .columns
@@ -589,9 +568,7 @@ fn only_the_todo_column_offers_new_issues() {
 
 #[test]
 fn a_new_cards_highlight_runs_out_over_two_seconds() {
-    let dir = scratch_dir("fresh-fade");
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (dir, mut app) = project("fresh-fade", &[("todo/", "")]);
     let file = dir.join("issues/todo/fresh.md");
     let at = |secs| Some((file.clone(), Instant::now() - Duration::from_secs(secs)));
     app.session.new_card = at(1);
@@ -605,9 +582,7 @@ fn a_new_cards_highlight_runs_out_over_two_seconds() {
 /// The notes are prose: their placeholder reads at `read-body`, as they do.
 #[test]
 fn the_notes_placeholder_is_in_read_body() {
-    let dir = scratch_dir("compose-notes-hint");
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (_dir, mut app) = project("compose-notes-hint", &[("todo/", "")]);
     app.open_composer();
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);

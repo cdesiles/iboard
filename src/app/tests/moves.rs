@@ -5,16 +5,9 @@ use super::*;
 
 #[test]
 fn moving_an_issue_reparents_the_file_and_refreshes_the_board() {
-    let dir = scratch_dir("move");
-    let todo = dir.join("issues/todo");
+    let (dir, mut app) = project("move", &[("todo/01-demo.md", "# Demo\n"), ("doing/", "")]);
     let doing = dir.join("issues/doing");
-    std::fs::create_dir_all(&todo).unwrap();
-    std::fs::create_dir_all(&doing).unwrap();
-    let file = todo.join("01-demo.md");
-    std::fs::write(&file, "# Demo\n").unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
+    let file = dir.join("issues/todo/01-demo.md");
     assert!(app.board.find(&file).is_some());
 
     app.move_issue(&file, &doing);
@@ -32,18 +25,17 @@ fn moving_an_issue_reparents_the_file_and_refreshes_the_board() {
 
 #[test]
 fn an_issue_is_numbered_in_ready_and_unnumbered_when_taken() {
-    let dir = scratch_dir("ready");
-    let todo = dir.join("issues/todo");
+    let (dir, mut app) = project(
+        "ready",
+        &[
+            ("todo/make-colour-green.md", "# Green\n"),
+            ("ready/", ""),
+            ("doing/", ""),
+        ],
+    );
     let ready = dir.join("issues/ready");
     let doing = dir.join("issues/doing");
-    for d in [&todo, &ready, &doing] {
-        std::fs::create_dir_all(d).unwrap();
-    }
-    let file = todo.join("make-colour-green.md");
-    std::fs::write(&file, "# Green\n").unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
+    let file = dir.join("issues/todo/make-colour-green.md");
     app.session.selected = Some(file.clone());
 
     app.move_issue(&file, &ready);
@@ -62,13 +54,11 @@ fn an_issue_is_numbered_in_ready_and_unnumbered_when_taken() {
 /// Move to… sends the open issue to another column; the Reader stays on it.
 #[test]
 fn move_to_sends_the_open_issue_and_keeps_it_open() {
-    let dir = scratch_dir("move-to");
-    for column in ["ready", "doing", "done"] {
-        std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
-    }
+    let (dir, mut app) = project(
+        "move-to",
+        &[("ready/", ""), ("doing/task.md", "# Task\n"), ("done/", "")],
+    );
     let file = dir.join("issues/doing/task.md");
-    std::fs::write(&file, "# Task\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_issue(file.clone());
     let done = dir.join("issues/done");
     app.send_to(&file, &done);
@@ -79,18 +69,16 @@ fn move_to_sends_the_open_issue_and_keeps_it_open() {
 
 #[test]
 fn moving_never_overwrites_an_existing_file() {
-    let dir = scratch_dir("clobber");
-    let todo = dir.join("issues/todo");
+    let (dir, mut app) = project(
+        "clobber",
+        &[
+            ("todo/01-demo.md", "# Demo\n"),
+            ("doing/01-demo.md", "# Other\n"),
+        ],
+    );
     let doing = dir.join("issues/doing");
-    std::fs::create_dir_all(&todo).unwrap();
-    std::fs::create_dir_all(&doing).unwrap();
-    let file = todo.join("01-demo.md");
-    std::fs::write(&file, "# Demo\n").unwrap();
+    let file = dir.join("issues/todo/01-demo.md");
     let existing = doing.join("01-demo.md");
-    std::fs::write(&existing, "# Other\n").unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
 
     app.move_issue(&file, &doing);
 
@@ -103,16 +91,16 @@ fn moving_never_overwrites_an_existing_file() {
 
 #[test]
 fn dropping_a_todo_card_at_a_position_renumbers_the_column() {
-    let dir = scratch_dir("reorder-todo");
+    let (dir, mut app) = project(
+        "reorder-todo",
+        &[
+            ("todo/001-hello.md", "# Hello\n"),
+            ("todo/002-byebye.md", "# Bye bye\n"),
+        ],
+    );
     let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
     let hello = todo.join("001-hello.md");
     let byebye = todo.join("002-byebye.md");
-    std::fs::write(&hello, "# Hello\n").unwrap();
-    std::fs::write(&byebye, "# Bye bye\n").unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
 
     // Drop Bye bye in front of Hello.
     app.place_issue(&byebye, &todo, Some(hello.clone()));
@@ -138,18 +126,16 @@ fn dropping_a_todo_card_at_a_position_renumbers_the_column() {
 
 #[test]
 fn moving_a_todo_card_into_ready_at_a_position_renumbers_it() {
-    let dir = scratch_dir("reorder-ready");
-    let todo = dir.join("issues/todo");
+    let (dir, mut app) = project(
+        "reorder-ready",
+        &[
+            ("todo/later.md", "# Later\n"),
+            ("ready/001-first.md", "# First\n"),
+        ],
+    );
     let ready = dir.join("issues/ready");
-    std::fs::create_dir_all(&todo).unwrap();
-    std::fs::create_dir_all(&ready).unwrap();
-    let moved = todo.join("later.md");
+    let moved = dir.join("issues/todo/later.md");
     let first = ready.join("001-first.md");
-    std::fs::write(&moved, "# Later\n").unwrap();
-    std::fs::write(&first, "# First\n").unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
 
     app.place_issue(&moved, &ready, Some(first.clone()));
 
@@ -160,14 +146,8 @@ fn moving_a_todo_card_into_ready_at_a_position_renumbers_it() {
 
 #[test]
 fn deleting_an_issue_asks_first_then_removes_the_file() {
-    let dir = scratch_dir("delete");
-    let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    let file = todo.join("01-demo.md");
-    std::fs::write(&file, "# Demo\n").unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
+    let (dir, mut app) = project("delete", &[("todo/01-demo.md", "# Demo\n")]);
+    let file = dir.join("issues/todo/01-demo.md");
     app.session.selected = Some(file.clone());
     app.open_issue(file.clone());
 
@@ -190,12 +170,11 @@ fn deleting_an_issue_asks_first_then_removes_the_file() {
 
 #[test]
 fn with_asking_off_delete_is_immediate_and_command_z_restores() {
-    let dir = scratch_dir("delete-no-ask");
-    let doing = dir.join("issues/doing");
-    std::fs::create_dir_all(&doing).unwrap();
-    let file = doing.join("sidebar.md");
-    std::fs::write(&file, "# Sidebar\n\nCollapse it.\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (dir, mut app) = project(
+        "delete-no-ask",
+        &[("doing/sidebar.md", "# Sidebar\n\nCollapse it.\n")],
+    );
+    let file = dir.join("issues/doing/sidebar.md");
     assert!(app.prefs.confirm_delete, "asking is on by default");
 
     app.request_delete(file.clone());
@@ -227,12 +206,11 @@ fn with_asking_off_delete_is_immediate_and_command_z_restores() {
 /// `⌘Z` waits for as long as nothing else happens; a key or a click ends it.
 #[test]
 fn undo_lasts_until_the_next_action() {
-    let dir = scratch_dir("undo-until-next-action");
-    let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    let file = todo.join("sidebar.md");
-    std::fs::write(&file, "# Sidebar\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (dir, mut app) = project(
+        "undo-until-next-action",
+        &[("todo/sidebar.md", "# Sidebar\n")],
+    );
+    let file = dir.join("issues/todo/sidebar.md");
     app.prefs.confirm_delete = false;
     let ctx = themed_ctx();
     let trash = |app: &mut IboardApp| {
@@ -259,9 +237,7 @@ fn undo_lasts_until_the_next_action() {
     assert!(app.session.undo.is_none(), "a click too");
 
     trash(&mut app);
-    let command = egui::Modifiers::COMMAND;
-    let undo = vec![egui::Event::ModifiersChanged(command), key(Key::Z, command)];
-    frame(&ctx, &mut app, undo);
+    frame(&ctx, &mut app, cmd(Key::Z));
     assert!(file.exists(), "⌘Z still reaches it");
 }
 
@@ -269,14 +245,8 @@ fn undo_lasts_until_the_next_action() {
 /// issue underneath it.
 #[test]
 fn the_card_delete_icon_asks_to_delete_without_opening() {
-    let dir = scratch_dir("card-delete");
-    let todo = dir.join("issues/todo");
-    std::fs::create_dir_all(&todo).unwrap();
-    let file = todo.join("01-demo.md");
-    std::fs::write(&file, "# Demo\n").unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
+    let (dir, mut app) = project("card-delete", &[("todo/01-demo.md", "# Demo\n")]);
+    let file = dir.join("issues/todo/01-demo.md");
 
     let ctx = themed_ctx();
 
@@ -329,12 +299,8 @@ fn the_card_delete_icon_asks_to_delete_without_opening() {
 /// selected card does nothing.
 #[test]
 fn done_cards_cannot_be_deleted() {
-    let dir = scratch_dir("done-no-delete");
-    let done = dir.join("issues/done");
-    std::fs::create_dir_all(&done).unwrap();
-    let file = done.join("01-demo.md");
-    std::fs::write(&file, "# Demo\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (dir, mut app) = project("done-no-delete", &[("done/01-demo.md", "# Demo\n")]);
+    let file = dir.join("issues/done/01-demo.md");
     app.session.selected = Some(file.clone());
 
     let ctx = themed_ctx();
@@ -356,12 +322,8 @@ fn done_cards_cannot_be_deleted() {
 /// Done issues keep the labels they have: no Add label, and `L` opens nothing.
 #[test]
 fn done_cards_cannot_be_labelled() {
-    let dir = scratch_dir("done-no-label");
-    let done = dir.join("issues/done");
-    std::fs::create_dir_all(&done).unwrap();
-    let file = done.join("01-demo.md");
-    std::fs::write(&file, "# Demo\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (dir, mut app) = project("done-no-label", &[("done/01-demo.md", "# Demo\n")]);
+    let file = dir.join("issues/done/01-demo.md");
     app.session.selected = Some(file.clone());
 
     let ctx = themed_ctx();
@@ -376,14 +338,8 @@ fn done_cards_cannot_be_labelled() {
 
 #[test]
 fn archiving_a_done_issue_hides_it_in_the_dot_archive() {
-    let dir = scratch_dir("archive");
-    let done = dir.join("issues/done");
-    std::fs::create_dir_all(&done).unwrap();
-    let file = done.join("01-demo.md");
-    std::fs::write(&file, "# Demo\n").unwrap();
-
-    let located = discovery::locate(&dir).unwrap();
-    let mut app = IboardApp::from_located(located);
+    let (dir, mut app) = project("archive", &[("done/01-demo.md", "# Demo\n")]);
+    let file = dir.join("issues/done/01-demo.md");
     assert!(app.board.find(&file).is_some());
 
     app.archive_issue(&file);
@@ -406,12 +362,8 @@ fn archiving_a_done_issue_hides_it_in_the_dot_archive() {
 
 #[test]
 fn a_archives_the_selected_done_card() {
-    let dir = scratch_dir("archive-key");
-    let done = dir.join("issues/done");
-    std::fs::create_dir_all(&done).unwrap();
-    let file = done.join("01-demo.md");
-    std::fs::write(&file, "# Demo\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (dir, mut app) = project("archive-key", &[("done/01-demo.md", "# Demo\n")]);
+    let file = dir.join("issues/done/01-demo.md");
     app.session.selected = Some(file.clone());
 
     let ctx = themed_ctx();
@@ -434,15 +386,16 @@ fn a_archives_the_selected_done_card() {
 
 #[test]
 fn archive_all_clears_done() {
-    let dir = scratch_dir("archive-all");
-    let done = dir.join("issues/done");
-    std::fs::create_dir_all(&done).unwrap();
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let a = done.join("a.md");
-    let b = done.join("b.md");
-    std::fs::write(&a, "# A\n").unwrap();
-    std::fs::write(&b, "# B\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (dir, mut app) = project(
+        "archive-all",
+        &[
+            ("done/a.md", "# A\n"),
+            ("done/b.md", "# B\n"),
+            ("todo/", ""),
+        ],
+    );
+    let a = dir.join("issues/done/a.md");
+    let b = dir.join("issues/done/b.md");
     let before = app.board_generation;
 
     app.archive_all(&[a.clone(), b.clone()]);
@@ -458,13 +411,8 @@ fn archive_all_clears_done() {
 /// Done's count gives way to "Archive all" while its header is hovered.
 #[test]
 fn hovering_the_done_header_offers_archive_all() {
-    let dir = scratch_dir("archive-all-head");
-    let done = dir.join("issues/done");
-    std::fs::create_dir_all(&done).unwrap();
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let a = done.join("a.md");
-    std::fs::write(&a, "# A\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let (dir, mut app) = project("archive-all-head", &[("done/a.md", "# A\n"), ("todo/", "")]);
+    let a = dir.join("issues/done/a.md");
     let index = app
         .board
         .columns

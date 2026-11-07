@@ -49,6 +49,41 @@ pub(super) fn press(harness: &mut Kit, label: &str) {
     press_nth(harness, label, 0);
 }
 
+/// A project of its own for the test `tag`, its `issues/` holding `files`
+/// as `(path, text)`, and the app opened on it. A path ending in `/` is an
+/// empty folder.
+pub(super) fn project(tag: &str, files: &[(&str, &str)]) -> (Scratch, IboardApp) {
+    let dir = scratch_dir(tag);
+    let issues = dir.join("issues");
+    for (path, text) in files {
+        let path = issues.join(path);
+        if path.to_string_lossy().ends_with('/') {
+            std::fs::create_dir_all(&path).unwrap();
+        } else {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+        }
+    }
+    std::fs::create_dir_all(&issues).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    (dir, app)
+}
+
+/// Polls `app` until the review of `file` has landed.
+pub(super) fn landed(app: &mut IboardApp, file: &Path) {
+    assert!(
+        until(|| {
+            app.poll_review();
+            app.past_reviews.contains_key(file)
+        }),
+        "the review of {} never landed",
+        file.display()
+    );
+}
+
+/// A review that passes on every count.
+pub(super) const PASSING: &str = "printf 'RELEVANCE: Pass\\nok\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL: NONE' # {prompt}";
+
 /// A configured agent that runs the custom `command`, as no test may start a
 /// real one.
 pub(super) fn fake_agent(command: &str) -> AgentConfig {
