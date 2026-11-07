@@ -109,6 +109,30 @@ impl DiffView {
         }
     }
 
+    /// What VoiceOver reads for `row`.
+    fn row_label(&self, row: Row) -> String {
+        match row {
+            Row::Commit(c) => format!("{}  {}", self.diffs[c].hash, self.diffs[c].subject),
+            Row::File(c, f) => {
+                let (path, counts) = file_heading(self.file(c, f));
+                format!("{path}  {}", counts.trim_end())
+            }
+            Row::Collapsed(c, f) => collapsed_text(self.file(c, f)),
+            Row::Hunk(c, f, h) => self.file(c, f).hunks[h].header.clone(),
+            Row::Line(..) => {
+                let Some(line) = self.line(row) else {
+                    return String::new();
+                };
+                let sign = match line.kind {
+                    LineKind::Added => "added: ",
+                    LineKind::Removed => "removed: ",
+                    LineKind::Context | LineKind::NoNewline => "",
+                };
+                format!("{sign}{}", line.text)
+            }
+        }
+    }
+
     fn build_rows(&mut self) {
         let mut rows = Vec::new();
         let several = self.diffs.len() > 1;
@@ -459,8 +483,20 @@ fn diff_rows(ui: &mut egui::Ui, view: &mut DiffView) {
         ui.spacing_mut().item_spacing.y = 0.0;
         for at in range {
             let row = view.rows[at];
+            let expandable = matches!(row, Row::Collapsed(c, f) if !view.file(c, f).binary);
+            let sense = if expandable {
+                Sense::click()
+            } else {
+                Sense::hover()
+            };
             let (rect, response) =
-                ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), sense);
+            let typ = if expandable {
+                egui::WidgetType::Button
+            } else {
+                egui::WidgetType::Label
+            };
+            response.widget_info(|| egui::WidgetInfo::labeled(typ, true, view.row_label(row)));
             match row {
                 Row::Commit(c) => commit_row(ui, rect, &view.diffs[c]),
                 Row::File(c, f) => file_row(ui, rect, view.file(c, f)),
@@ -538,11 +574,8 @@ fn commit_row(ui: &egui::Ui, rect: Rect, diff: &CommitDiff) {
     );
 }
 
-fn file_row(ui: &egui::Ui, rect: Rect, file: &FileDiff) {
-    let p = theme::palette(ui);
-    ui.painter().rect_filled(rect, 0.0, p.surface);
-    ui.painter()
-        .hline(rect.x_range(), rect.max.y - 0.5, Stroke::new(1.0, p.line));
+/// A file's path, `old → new` when renamed, and its `+n −m` and status.
+fn file_heading(file: &FileDiff) -> (String, String) {
     let status = match file.status() {
         FileStatus::Added => "added",
         FileStatus::Deleted => "deleted",
@@ -553,7 +586,23 @@ fn file_row(ui: &egui::Ui, rect: Rect, file: &FileDiff) {
         (FileStatus::Renamed, Some(old)) => format!("{old} → {}", file.path()),
         _ => file.path().to_string(),
     };
-    let counts = format!("+{} −{}  {status}", file.added, file.removed);
+    (path, format!("+{} −{}  {status}", file.added, file.removed))
+}
+
+fn collapsed_text(file: &FileDiff) -> String {
+    if file.binary {
+        "Binary file, not shown".to_string()
+    } else {
+        format!("{} diff lines, collapsed: click to show", file.line_count())
+    }
+}
+
+fn file_row(ui: &egui::Ui, rect: Rect, file: &FileDiff) {
+    let p = theme::palette(ui);
+    ui.painter().rect_filled(rect, 0.0, p.surface);
+    ui.painter()
+        .hline(rect.x_range(), rect.max.y - 0.5, Stroke::new(1.0, p.line));
+    let (path, counts) = file_heading(file);
     row_text(ui, rect, theme::SPACE_3, &path, theme::ui_strong(), p.ink);
     ui.painter().text(
         Pos2::new(rect.max.x - theme::SPACE_3, rect.center().y),
@@ -567,19 +616,14 @@ fn file_row(ui: &egui::Ui, rect: Rect, file: &FileDiff) {
 fn collapsed_row(ui: &egui::Ui, rect: Rect, file: &FileDiff, response: &egui::Response) {
     let p = theme::palette(ui);
     ui.painter().rect_filled(rect, 0.0, p.surface_sunken);
-    let text = if file.binary {
-        "Binary file, not shown".to_string()
-    } else {
-        if response.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        format!("{} diff lines, collapsed: click to show", file.line_count())
-    };
+    if !file.binary && response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
     row_text(
         ui,
         rect,
         NUMBER_W * 2.0,
-        &text,
+        &collapsed_text(file),
         theme::ui_small(),
         p.ink_muted,
     );

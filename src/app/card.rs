@@ -149,6 +149,10 @@ pub(super) fn issue_card(
     );
     let mut body = scope.inner;
     let response = scope.response;
+    ui.ctx().accesskit_node_builder(card_id, |node| {
+        node.set_role(egui::accesskit::Role::Group);
+        node.set_label(issue.title.as_str());
+    });
     ui.ctx().data_mut(|d| d.insert_temp(rect_id, response.rect));
     if strip {
         card_strip(ui, issue, response.rect, look, &extras, &mut body);

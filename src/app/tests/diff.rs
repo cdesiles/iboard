@@ -90,6 +90,41 @@ fn a_commit_opens_as_a_diff_and_finds_a_term() {
     assert!(matches!(&harness.state().1.session.screen, Screen::Detail(path, _) if *path == issue));
 }
 
+/// VoiceOver reads a card as a group named by its title, and the Diff
+/// screen's file headers; a large file's collapsed run is a button that
+/// shows it.
+#[test]
+fn voiceover_reads_the_card_and_the_diff() {
+    use egui::accesskit::Role;
+
+    let (dir, issue, _) = closed_issue("diff-voiceover");
+    let big: String = (0..1600).map(|n| format!("line {n}\n")).collect();
+    std::fs::write(dir.join("big.txt"), big).unwrap();
+    git(&dir, &["add", "big.txt"]);
+    git(&dir, &["commit", "-q", "-m", "Big\n\ncloses fixed.md"]);
+    let hash = git(&dir, &["rev-parse", "--short", "HEAD"]);
+    let mut harness = kittest(IboardApp::from_located(discovery::locate(&issue).unwrap()));
+    harness.run_steps(2);
+    harness.get_by_role_and_label(Role::Group, "Fixed");
+
+    harness.state_mut().1.open_issue(issue.clone());
+    harness.state_mut().1.open_diff(&issue, vec![hash]);
+    assert!(until(|| {
+        harness.run_steps(1);
+        harness.query_by_label("big.txt  +1600 −0  added").is_some()
+    }));
+    harness
+        .get_by_role_and_label(Role::Button, "1601 diff lines, collapsed: click to show")
+        .click();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_by_label("1601 diff lines, collapsed: click to show")
+            .is_none()
+    );
+    harness.get_by_role_and_label(Role::Label, "added: line 0");
+}
+
 /// A Done card's diff action opens every commit that closed it.
 #[test]
 fn a_done_card_opens_its_diff() {

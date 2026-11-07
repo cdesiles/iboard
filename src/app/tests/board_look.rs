@@ -118,7 +118,9 @@ fn a_title_alone_keeps_28pt_under_it() {
     let (dir, app) = project("strip-room", &[("todo/a.md", "# Just a title\n")]);
     let path = dir.join("issues/todo/a.md");
     let mut harness = kittest(app);
-    let title = harness.get_by_label("Just a title").rect();
+    let title = harness
+        .get_by_role_and_label(egui::accesskit::Role::Label, "Just a title")
+        .rect();
     let card = card_rect(&harness, &path);
     assert_eq!(card.max.y - 1.0 - title.max.y, 28.0);
 
@@ -140,7 +142,9 @@ fn the_title_and_summary_clamp_to_two_lines() {
     let text = format!("# {LONG_TITLE}\n\n{LONG_SUMMARY}\n");
     let (_dir, app) = project("clamp", &[("todo/a.md", &text)]);
     let harness = kittest(app);
-    let title = harness.get_by_label(LONG_TITLE).rect();
+    let title = harness
+        .get_by_role_and_label(egui::accesskit::Role::Label, LONG_TITLE)
+        .rect();
     assert_eq!(title.height(), 2.0 * 18.0);
     let summary = harness.state().1.board.columns[0].issues[0].summary.clone();
     let summary = harness.get_by_label(&summary).rect();
