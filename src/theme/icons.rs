@@ -284,36 +284,26 @@ fn document_icon(g: &Grid, icon: Icon) {
 /// they clog.
 const TRASH_RIB_WEIGHT: f32 = 0.625;
 
-/// iboard's soft bin: a round knob on the lid, a tapered body with rounded
-/// bottom corners, two short ribs.
+/// iboard's soft bin: a flat-topped knob on the lid, a lightly tapered body,
+/// two long ribs.
 fn trash_icon(g: &Grid) {
     g.segment((4.5, 7.0), (19.5, 7.0));
-    let knob: Vec<_> = (0..=8)
-        .map(|i| {
-            let t = std::f32::consts::PI * (1.0 + i as f32 / 8.0);
-            (12.0 + 2.5 * t.cos(), 7.0 + 2.5 * t.sin())
-        })
-        .collect();
+    let mut knob = vec![(9.4, 7.0)];
+    for (center, from) in [(10.3, 1.0), (13.7, 1.5)] {
+        for i in 0..=4 {
+            let turn = std::f32::consts::FRAC_PI_2 * (from + i as f32 / 4.0);
+            knob.push((center + 0.9 * turn.cos(), 4.9 + 0.9 * turn.sin()));
+        }
+    }
+    knob.push((14.6, 7.0));
     g.line(&knob);
-    let body = [
-        (6.5, 7.0),
-        (7.4, 18.1),
-        (7.83, 19.56),
-        (8.93, 20.62),
-        (10.4, 21.0),
-        (13.6, 21.0),
-        (15.07, 20.62),
-        (16.17, 19.56),
-        (16.6, 18.1),
-        (17.5, 7.0),
-    ];
-    g.line(&body);
+    g.line(&[(6.25, 7.0), (6.9, 21.0), (17.1, 21.0), (17.75, 7.0)]);
     let ribs = Grid {
         stroke: Stroke::new(g.stroke.width * TRASH_RIB_WEIGHT, g.stroke.color),
         ..*g
     };
-    ribs.segment((10.0, 11.0), (10.0, 16.5));
-    ribs.segment((14.0, 11.0), (14.0, 16.5));
+    ribs.segment((10.0, 9.6), (10.0, 17.9));
+    ribs.segment((14.0, 9.6), (14.0, 17.9));
 }
 
 /// An agent's work: start and stop the build, watch it think, read its log,
