@@ -58,6 +58,7 @@ mod dock;
 mod editor;
 mod enrich;
 mod filter_bar;
+mod frame;
 mod groups;
 mod handover;
 mod header;
