@@ -3,6 +3,7 @@
 //! `design/components/GroupsDialog`). It works on a [`Draft`]; the app
 //! writes the groups [`Action::Save`] hands back.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use egui::{Align, CornerRadius, Frame, Id, Key, Layout, Modifiers, Rect, RichText, Stroke, Vec2};
@@ -92,6 +93,10 @@ pub struct Dialog {
     blocks: Vec<Rect>,
     /// A save went out: an error it brings back is scrolled into view.
     reveal_error: bool,
+    /// The user's projects, as they were when the dialog opened.
+    projects: Vec<PathBuf>,
+    /// Whether each project shown has its `issues/` folder, looked up once.
+    has_issues: HashMap<PathBuf, bool>,
     home: Option<PathBuf>,
     pick_folders: fn() -> Vec<PathBuf>,
 }
@@ -116,6 +121,8 @@ impl Dialog {
             flash: None,
             blocks: Vec::new(),
             reveal_error: false,
+            projects: Vec::new(),
+            has_issues: HashMap::new(),
             home: crate::settings::home(),
             pick_folders: crate::dialog::pick_folders,
         };
@@ -129,6 +136,19 @@ impl Dialog {
     pub fn with_picker(mut self, pick: fn() -> Vec<PathBuf>) -> Self {
         self.pick_folders = pick;
         self
+    }
+
+    /// Lists `projects` in the Add project menus.
+    pub fn with_projects(mut self, projects: Vec<PathBuf>) -> Self {
+        self.projects = projects;
+        self
+    }
+
+    fn has_issues(&mut self, repo: &Path) -> bool {
+        *self
+            .has_issues
+            .entry(repo.to_path_buf())
+            .or_insert_with(|| has_issues_dir(repo))
     }
 
     fn new_group(&mut self) {
@@ -177,7 +197,7 @@ impl Dialog {
     /// The keys the dialog owns: the confirmation's first, then an open
     /// menu's, then its own. Taken before the fields draw, so `⌘⌫` in a name
     /// doesn't also clear it.
-    fn keys(&mut self, ctx: &egui::Context, projects: &[PathBuf]) -> Action {
+    fn keys(&mut self, ctx: &egui::Context) -> Action {
         let take = |modifiers, key| ctx.input_mut(|i| i.consume_key(modifiers, key));
         if let Some(at) = self.deleting {
             if widgets::enter_confirms(ctx) && take(Modifiers::NONE, Key::Enter) {
@@ -193,7 +213,7 @@ impl Dialog {
             return Action::Keep;
         }
         if let Some(at) = self.adding {
-            self.add_keys(ctx, at, projects);
+            self.add_keys(ctx, at);
         }
         if take(Modifiers::COMMAND, Key::Enter) {
             return self.save(self.conflict);
@@ -218,9 +238,9 @@ impl Dialog {
         Action::Keep
     }
 
-    pub fn show(&mut self, ui: &egui::Ui, projects: &[PathBuf], config_file: &str) -> Action {
+    pub fn show(&mut self, ui: &egui::Ui, config_file: &str) -> Action {
         let ctx = ui.ctx().clone();
-        let mut action = self.keys(&ctx, projects);
+        let mut action = self.keys(&ctx);
         widgets::modal(ui, "groups-dialog", theme::ModalSize::M, "Project groups").show(
             &ctx,
             |ui| {
@@ -239,7 +259,7 @@ impl Dialog {
                         .auto_shrink([false, true]),
                     |ui| {
                         widgets::focus_here(ui);
-                        self.body(ui, projects);
+                        self.body(ui);
                         if let Some(picked) = self.save_problem(ui, config_file) {
                             action = picked;
                         }
@@ -269,7 +289,7 @@ impl Dialog {
         action
     }
 
-    fn body(&mut self, ui: &mut egui::Ui, projects: &[PathBuf]) {
+    fn body(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette(ui);
         ui.spacing_mut().item_spacing.y = theme::SPACE_4;
         if self.draft.groups.is_empty() {
@@ -279,7 +299,7 @@ impl Dialog {
             self.blocks.clear();
             for at in 0..self.draft.groups.len() {
                 if at < self.draft.groups.len() {
-                    self.group_block(ui, at, projects);
+                    self.group_block(ui, at);
                 }
             }
             if widgets::button(
@@ -356,7 +376,7 @@ impl Dialog {
         widgets::dashed_rect(ui.painter(), response.rect, theme::RADIUS_MD, p.line);
     }
 
-    fn group_block(&mut self, ui: &mut egui::Ui, at: usize, projects: &[PathBuf]) {
+    fn group_block(&mut self, ui: &mut egui::Ui, at: usize) {
         let p = theme::palette(ui);
         let edge = match self.draft.groups[at].new {
             true => p.accent,
@@ -396,7 +416,7 @@ impl Dialog {
                     }
                 }
                 if self.adding == Some(at) {
-                    self.add_menu(ui, at, projects);
+                    self.add_menu(ui, at);
                 }
             });
         self.blocks.push(block.response.rect);
@@ -547,6 +567,7 @@ impl Dialog {
                 Tone::Plain,
             )
         });
+        let found = self.has_issues(repo);
         line.with_layout(Layout::top_down(Align::Min), |ui| {
             ui.spacing_mut().item_spacing.y = theme::SPACE_1;
             ui.add_space(theme::SPACE_1);
@@ -554,7 +575,7 @@ impl Dialog {
                 egui::Label::new(RichText::new(&name).font(theme::ui_strong()).color(p.ink))
                     .truncate(),
             );
-            let (path, color) = match has_issues_dir(repo) {
+            let (path, color) = match found {
                 true => (path.clone(), p.ink_muted),
                 false => (format!("{path} · no issues/ folder"), p.status_doing),
             };
@@ -609,9 +630,9 @@ impl Dialog {
     /// not in the group yet, in their order, with a filter once there are
     /// more than 8, the keyboard's row filled; then the OS picker. It stays
     /// open to add more.
-    fn add_menu(&mut self, ui: &mut egui::Ui, at: usize, projects: &[PathBuf]) {
+    fn add_menu(&mut self, ui: &mut egui::Ui, at: usize) {
         let width = ui.available_width() - 2.0 * theme::SPACE_1;
-        let fresh = self.fresh(at, projects);
+        let fresh = self.fresh(at);
         let filterable = fresh.len() > ADD_FILTER_FROM;
         let mut listed = self.listed(&fresh);
         self.add_active = self.add_active.and_then(|row| match listed.len() {
@@ -685,8 +706,8 @@ impl Dialog {
     }
 
     /// The user's projects not in the `at`th group yet, in their order.
-    fn fresh(&self, at: usize, projects: &[PathBuf]) -> Vec<PathBuf> {
-        projects
+    fn fresh(&self, at: usize) -> Vec<PathBuf> {
+        self.projects
             .iter()
             .filter(|project| !self.draft.groups[at].repos.contains(project))
             .cloned()
@@ -715,9 +736,9 @@ impl Dialog {
 
     /// The Add project menu's type-to-filter keys: the arrows move round its
     /// projects, `↩` adds the active one and the menu stays open.
-    fn add_keys(&mut self, ctx: &egui::Context, at: usize, projects: &[PathBuf]) {
+    fn add_keys(&mut self, ctx: &egui::Context, at: usize) {
         let take = |key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key));
-        let listed = self.listed(&self.fresh(at, projects));
+        let listed = self.listed(&self.fresh(at));
         for (key, down) in [(Key::ArrowDown, true), (Key::ArrowUp, false)] {
             if !listed.is_empty() && take(key) {
                 self.add_active = Some(step(self.add_active, listed.len(), down));
@@ -734,7 +755,9 @@ impl Dialog {
 
     /// Adds a folder picked at `now`: one already in the group flashes its row.
     pub fn add_picked(&mut self, at: usize, dir: &Path, now: f64) {
-        if self.draft.add_project(at, dir, has_issues_dir) == Added::AlreadyThere {
+        let found = has_issues_dir(dir);
+        self.has_issues.insert(dir.to_path_buf(), found);
+        if self.draft.add_project(at, dir, |_| found) == Added::AlreadyThere {
             self.draft.groups[at].notice = None;
             self.flash = Some((at, dir.to_path_buf(), now));
         }

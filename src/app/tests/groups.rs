@@ -117,6 +117,27 @@ fn projects_come_from_the_recent_ones_or_the_picker_with_an_issues_folder() {
 }
 
 #[test]
+fn each_project_is_looked_up_once_per_opening() {
+    let (parent, _config, mut app) = configured("groups-lookup");
+    app.open_groups(false);
+    let mut harness = kittest(app);
+    harness.run_steps(1);
+    std::fs::remove_dir_all(parent.join("site/issues")).unwrap();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_by_label_contains("no issues/ folder")
+            .is_none(),
+        "not looked up every frame"
+    );
+
+    harness.state_mut().1.groups_dialog = None;
+    harness.state_mut().1.open_groups(false);
+    harness.run_steps(2);
+    harness.get_by_label_contains("no issues/ folder");
+}
+
+#[test]
 fn the_add_project_menu_moves_with_the_arrows_and_adds_with_return() {
     let (parent, _config, mut app) = configured("groups-add-keys");
     app.recents = vec![parent.join("site")];

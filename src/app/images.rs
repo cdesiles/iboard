@@ -4,8 +4,8 @@
 use super::editor::{AUTOSAVE_AFTER, EDITOR_ID};
 use super::new_issue_ui::{DESCRIPTION_ID, TITLE_ID};
 use super::{
-    CCursor, CCursorRange, IboardApp, Key, Path, PathBuf, Screen, atomic_write, display_path,
-    file_name, reviews, trash,
+    CCursor, CCursorRange, HashMap, IboardApp, Key, Path, PathBuf, Screen, atomic_write,
+    display_path, file_name, reviews, trash,
 };
 use crate::assets::{self, Carry};
 
@@ -321,15 +321,37 @@ fn insert_at_caret(ctx: &egui::Context, id: &str, text: &mut String, insert: &st
     state.store(ctx, id);
 }
 
-/// The local images of one reader block that can't be shown, by link.
-pub(super) fn missing_images(issue: &Path, block: &str) -> Vec<assets::ImageLink> {
-    assets::image_links(block)
-        .into_iter()
-        .filter(|link| {
-            assets::local_file(issue, &link.url)
-                .is_some_and(|file| image::image_dimensions(file).is_err())
-        })
-        .collect()
+/// Which local image files the reader can't show, read once per board
+/// generation rather than on every frame.
+#[derive(Default)]
+pub(super) struct ImageChecks {
+    generation: u64,
+    unreadable: HashMap<PathBuf, bool>,
+}
+
+impl ImageChecks {
+    /// Forgets what it read when the board was read again.
+    pub(super) fn renew(&mut self, generation: u64) {
+        if self.generation != generation {
+            self.generation = generation;
+            self.unreadable.clear();
+        }
+    }
+
+    /// The local images of one reader block that can't be shown, by link.
+    pub(super) fn missing(&mut self, issue: &Path, block: &str) -> Vec<assets::ImageLink> {
+        assets::image_links(block)
+            .into_iter()
+            .filter(|link| {
+                assets::local_file(issue, &link.url).is_some_and(|file| {
+                    *self
+                        .unreadable
+                        .entry(file.clone())
+                        .or_insert_with(|| image::image_dimensions(&file).is_err())
+                })
+            })
+            .collect()
+    }
 }
 
 /// `block` with each of `missing` drawn as a placeholder naming its file.

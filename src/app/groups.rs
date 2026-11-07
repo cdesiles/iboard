@@ -18,12 +18,12 @@ impl IboardApp {
     pub(super) fn open_groups(&mut self, new_group: bool) {
         let fingerprint = self.config_file.as_deref().map_or(0, config::fingerprint);
         let dialog = groups_ui::Dialog::new(self.workspace.as_ref(), fingerprint, new_group)
-            .with_picker(self.folder_picker);
+            .with_picker(self.folder_picker)
+            .with_projects(self.ordered_projects());
         self.groups_dialog = Some(dialog);
     }
 
     pub(super) fn groups_window(&mut self, ui: &egui::Ui) {
-        let projects = self.ordered_projects();
         let Some(dialog) = self.groups_dialog.as_mut() else {
             return;
         };
@@ -31,7 +31,7 @@ impl IboardApp {
             .config_file
             .as_deref()
             .map_or_else(|| "No configuration file".to_string(), display_path);
-        match dialog.show(ui, &projects, &note) {
+        match dialog.show(ui, &note) {
             groups_ui::Action::Keep => {}
             groups_ui::Action::Close => self.groups_dialog = None,
             groups_ui::Action::Reload => {

@@ -3,7 +3,7 @@
 //! deletes and splits.
 
 use super::*;
-use crate::app::images::{Clipboard, with_placeholders};
+use crate::app::images::{Clipboard, ImageChecks, with_placeholders};
 use crate::assets;
 
 /// A 4×4 screenshot, as PNG bytes.
@@ -350,6 +350,27 @@ fn a_missing_image_shows_a_placeholder_and_says_so() {
             &assets::image_links("a ![s](../x/01.png) b")
         ),
         "a `image missing: 01.png` b"
+    );
+}
+
+#[test]
+fn an_image_is_read_once_per_board_generation() {
+    let dir = tempfile::tempdir().unwrap();
+    let issue = dir.path().join("todo/demo.md");
+    let png = dir.path().join(".assets/demo/01.png");
+    std::fs::create_dir_all(issue.parent().unwrap()).unwrap();
+    let block = "![s](../.assets/demo/01.png)";
+    let mut checks = ImageChecks::default();
+    assert_eq!(checks.missing(&issue, block).len(), 1);
+
+    std::fs::create_dir_all(png.parent().unwrap()).unwrap();
+    std::fs::write(&png, screenshot()).unwrap();
+    checks.renew(0);
+    assert_eq!(checks.missing(&issue, block).len(), 1, "not read again");
+    checks.renew(1);
+    assert!(
+        checks.missing(&issue, block).is_empty(),
+        "read on a new board"
     );
 }
 

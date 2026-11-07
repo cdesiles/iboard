@@ -50,6 +50,7 @@ pub(super) struct Reader {
     blocks: Vec<BlockLines>,
     /// The images already reported missing, by issue and link.
     pub(super) reported: HashSet<(PathBuf, String)>,
+    images: images::ImageChecks,
     /// The issue whose `read-h1` has scrolled out of view: its title joins
     /// the breadcrumb.
     pub(super) title_away: Option<PathBuf>,
@@ -66,6 +67,7 @@ impl Default for Reader {
             scroll: None,
             blocks: Vec::new(),
             reported: HashSet::new(),
+            images: images::ImageChecks::default(),
             title_away: None,
         }
     }
@@ -367,6 +369,8 @@ impl IboardApp {
             if down { by } else { -by }
         });
         let cache = &mut self.reader.cache;
+        let images = &mut self.reader.images;
+        images.renew(self.board_generation);
         let labels = &self.prefs.labels;
         outcome.view = theme::scroll_area(
             ui,
@@ -394,7 +398,8 @@ impl IboardApp {
                             egui::FontId::monospace(prose_ui::CODE_SIZE),
                         );
                         ui.spacing_mut().item_spacing.y = 0.0;
-                        let drawn = issue_blocks(ui, cache, path, sheet.text, notes.as_mut());
+                        let drawn =
+                            issue_blocks(ui, cache, images, path, sheet.text, notes.as_mut());
                         outcome.edits = drawn.edits;
                         outcome.missing = drawn.missing;
                         let view_top = ui.clip_rect().top();
@@ -640,6 +645,7 @@ fn paint_edit_outline(ui: &egui::Ui, outline: Rect) {
 fn issue_blocks(
     ui: &mut egui::Ui,
     cache: &mut CommonMarkCache,
+    images: &mut images::ImageChecks,
     path: &Path,
     text: &str,
     mut notes: Option<&mut Notes>,
@@ -672,7 +678,7 @@ fn issue_blocks(
                         edited: prose_ui::apply(block, ticked),
                     }
                 }
-                None => viewer_block(ui, cache, path, block, &mut missing),
+                None => viewer_block(ui, cache, images, path, block, &mut missing),
             })
             .inner;
         drawn.push(BlockLines {
@@ -715,13 +721,14 @@ struct BlockDrawn {
 fn viewer_block(
     ui: &mut egui::Ui,
     cache: &mut CommonMarkCache,
+    images: &mut images::ImageChecks,
     path: &Path,
     block: &str,
     missing: &mut Vec<String>,
 ) -> BlockDrawn {
     ui.spacing_mut().item_spacing.y = theme::SPACE_3;
     let mut edited = block.to_string();
-    let broken = images::missing_images(path, block);
+    let broken = images.missing(path, block);
     let table = markdown::is_table(block);
     if !table {
         quiet_code_blocks(ui);
