@@ -10,6 +10,7 @@ use super::{
     job, prompts, settings_ui,
 };
 use crate::build_log;
+use crate::reviews;
 
 /// The most agents an AI build runs at once.
 pub(super) const MAX_AGENTS: usize = 16;
@@ -55,7 +56,9 @@ impl Build {
         self.queue.retain(|issue| issue != path);
         self.total -= queued - self.queue.len();
         if let Some(index) = self.runs.iter().position(|run| run.issue == path) {
-            let at = self.runs.remove(index).at;
+            let run = self.runs.remove(index);
+            run.stop();
+            let at = run.at;
             self.taken = self.taken.saturating_sub(1);
             self.total = self.total.saturating_sub(1);
             for run in self.runs.iter_mut().filter(|run| run.at > at) {
@@ -88,10 +91,24 @@ impl Watch {
 struct Run {
     issue: PathBuf,
     answer: Job<Result<String, String>>,
+    /// The project the agent works in, and the service session it lives in
+    /// when it runs there rather than in a child process.
+    project: PathBuf,
+    session: agent::service::Handle,
     /// When the agent took `issue`.
     started: Instant,
     /// Where `issue` stands in the whole run, from 1.
     at: usize,
+}
+
+impl Run {
+    /// Stops the agent, wherever it runs: the service is told to interrupt,
+    /// a child process is stopped when its job drops.
+    fn stop(&self) {
+        if let Some(session) = agent::service::session_of(&self.session) {
+            agent::service::interrupt(&self.project, &session);
+        }
+    }
 }
 
 /// The AI build as the board shows it: the issues at work and since when,
@@ -162,6 +179,68 @@ impl IboardApp {
             .filter(|column| discovery::is_ready_column(&column.dir))
             .flat_map(|column| column.issues.iter().map(|issue| issue.path.clone()))
             .collect()
+    }
+
+    /// The builds that stop with the app: the ones still run as a child
+    /// process. A build in the opencode service outlives the window, so
+    /// quitting leaves it alone and asks nothing.
+    pub(super) fn builds_at_risk(&self) -> usize {
+        self.session
+            .build
+            .iter()
+            .flat_map(|build| &build.runs)
+            .filter(|run| agent::service::session_of(&run.session).is_none())
+            .count()
+    }
+
+    /// Adopts the builds the service is still running for this project, once
+    /// per board opened: they outlived the window closing, and the cards keep
+    /// their bar and their clock.
+    pub(super) fn adopt_builds(&mut self) {
+        if std::mem::replace(&mut self.session.adopted, true) {
+            return;
+        }
+        let project = self.located.project_dir.clone();
+        let Ok(found) = agent::service::running(&project) else {
+            return;
+        };
+        let mut runs: Vec<Run> = Vec::new();
+        for hit in found {
+            let Some(issue) = self.issue_with_slug(&hit.slug) else {
+                continue;
+            };
+            let log = build_log::path(self.board.root_of(&issue), &issue);
+            let session = agent::service::Handle::default();
+            agent::service::remember(&session, &hit.session);
+            let answer = agent::service::watch(project.clone(), hit.session, log);
+            runs.push(Run {
+                issue,
+                answer,
+                project: project.clone(),
+                session,
+                started: agent::service::started(hit.elapsed),
+                at: runs.len() + 1,
+            });
+        }
+        if runs.is_empty() {
+            return;
+        }
+        self.session.agents = self.session.agents.max(runs.len());
+        let mut build = Build::new(Vec::new());
+        build.taken = runs.len();
+        build.total = runs.len();
+        build.runs = runs;
+        self.session.build = Some(build);
+    }
+
+    /// The issue whose file has `slug`, wherever it stands on the board.
+    fn issue_with_slug(&self, slug: &str) -> Option<PathBuf> {
+        self.board
+            .columns
+            .iter()
+            .flat_map(|column| &column.issues)
+            .map(|issue| issue.path.clone())
+            .find(|path| reviews::slug(path) == slug)
     }
 
     /// While Play is pressed, queues the issues that arrived in Ready since
@@ -276,6 +355,9 @@ impl IboardApp {
     pub(super) fn stop_build(&mut self) {
         self.session.watch = None;
         if let Some(build) = self.session.build.take() {
+            for run in &build.runs {
+                run.stop();
+            }
             let what = match build.runs.as_slice() {
                 [run] => file_name(&run.issue),
                 runs => format!("{} issues", runs.len()),
@@ -290,6 +372,9 @@ impl IboardApp {
         let Some(build) = self.session.build.as_mut() else {
             return;
         };
+        if let Some(run) = build.runs.iter().find(|run| run.issue == path) {
+            run.stop();
+        }
         build.runs.retain(|run| run.issue != path);
         if build.runs.is_empty() {
             self.session.build = None;
@@ -332,7 +417,7 @@ impl IboardApp {
         let prompt = prompts::build_prompt(&self.relative(&issue), &content);
         let project = self.board.project_of(&issue).to_path_buf();
         let log = build_log::path(self.board.root_of(&issue), &issue);
-        let (answer, _) = agent::start_build(
+        let (answer, _, session) = agent::start_build(
             &self.prefs.build_agent,
             &prompt,
             &issue,
@@ -343,6 +428,8 @@ impl IboardApp {
         Some(Run {
             issue,
             answer,
+            project,
+            session,
             started: Instant::now(),
             at,
         })
@@ -366,6 +453,7 @@ impl IboardApp {
     /// frame.
     pub(super) fn poll_build(&mut self) -> Option<Duration> {
         self.watch_ready();
+        self.adopt_builds();
         let build = self.session.build.as_mut()?;
         let mut finished = Vec::new();
         build.runs.retain(|run| match run.answer.answer() {

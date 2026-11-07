@@ -843,7 +843,7 @@ pub fn start_build(
     project: &Path,
     log: &Path,
     timeout: BuildTimeout,
-) -> (Job<Result<String, String>>, Progress) {
+) -> (Job<Result<String, String>>, Progress, service::Handle) {
     let purpose = Purpose::Build(timeout);
     start_logged(config, prompt, issue, (project, log), purpose)
 }
@@ -858,7 +858,8 @@ pub fn start_ask(
     timeout: BuildTimeout,
 ) -> (Job<Result<String, String>>, Progress) {
     let purpose = Purpose::Ask(leash, timeout);
-    start_logged(config, prompt, issue, (project, log), purpose)
+    let (job, progress, _) = start_logged(config, prompt, issue, (project, log), purpose);
+    (job, progress)
 }
 
 fn start_logged(
@@ -867,7 +868,7 @@ fn start_logged(
     issue: &Path,
     (project, log): (&Path, &Path),
     purpose: Purpose,
-) -> (Job<Result<String, String>>, Progress) {
+) -> (Job<Result<String, String>>, Progress, service::Handle) {
     let (config, prompt) = (config.clone(), prompt.to_string());
     let (issue, project, log) = (
         issue.to_path_buf(),
@@ -876,6 +877,8 @@ fn start_logged(
     );
     let progress = Progress::default();
     let steps = Arc::clone(&progress);
+    let handle = service::Handle::default();
+    let mine = Arc::clone(&handle);
     let job = Job::spawn(move |cancel| {
         let at = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
         let started = std::time::Instant::now();
@@ -885,118 +888,52 @@ fn start_logged(
             log: Some(&log),
         };
         let steps = Some(&steps);
-        let result = run_with(
-            &config,
-            &prompt,
-            &issue,
-            cancel,
-            purpose,
-            steps,
-            Some(&workspace),
-        );
+        let result = match purpose {
+            // A build runs in the service, so it outlives the window.
+            Purpose::Build(_) if config.tool == Tool::OpenCode => {
+                let build = service::Build {
+                    model: &model_of(&config),
+                    prompt: &prompt,
+                    issue: &issue,
+                    project: &project,
+                    log: &log,
+                    timeout: purpose.timeout(),
+                };
+                service::start(&build, cancel, steps, &mine)
+            }
+            purpose => run_with(
+                &config,
+                &prompt,
+                &issue,
+                cancel,
+                purpose,
+                steps,
+                Some(&workspace),
+            ),
+        };
         let _ = build_log::append(&log, &build_log::outcome(&result, started.elapsed()));
         result
     });
-    (job, progress)
+    (job, progress, handle)
 }
 
-/// What one streamed event says the agent is doing: a tool call from
-/// OpenCode (`tool_use`) or Claude Code (`assistant` with a `tool_use` part).
-pub(crate) fn step_of(line: &str) -> Option<String> {
-    let event: serde_json::Value = serde_json::from_str(line).ok()?;
-    match event["type"].as_str()? {
-        "tool_use" => describe_tool(
-            event["part"]["tool"].as_str()?,
-            &event["part"]["state"]["input"],
-        ),
-        "assistant" => event["message"]["content"]
-            .as_array()?
-            .iter()
-            .rev()
-            .find(|part| part["type"] == "tool_use")
-            .and_then(|part| describe_tool(part["name"].as_str()?, &part["input"])),
-        _ => None,
+/// The model a run asks for: the configured one, or the tool's own default.
+fn model_of(config: &AgentConfig) -> String {
+    match config.model.trim() {
+        "" => default_model(config.tool).unwrap_or_default(),
+        model => model.to_string(),
     }
-}
-
-/// "Reading app/review.rs…": the tool as a verb, and the tail of its target.
-pub(crate) fn describe_tool(tool: &str, input: &serde_json::Value) -> Option<String> {
-    let verb = match tool.to_ascii_lowercase().as_str() {
-        "read" => "Reading".to_string(),
-        "grep" | "glob" | "list" | "ls" | "search" => "Searching".to_string(),
-        "bash" => "Running".to_string(),
-        "webfetch" | "fetch" | "websearch" => "Looking up".to_string(),
-        _ => format!("Using {tool}"),
-    };
-    let target = ["file_path", "path", "pattern", "command", "url", "query"]
-        .iter()
-        .find_map(|key| input[*key].as_str());
-    Some(match target {
-        Some(target) => {
-            let parts: Vec<&str> = target.trim_end_matches('/').rsplit('/').take(2).collect();
-            let tail: Vec<&str> = parts.into_iter().rev().collect();
-            format!("{verb} {}…", tail.join("/"))
-        }
-        None => format!("{verb}…"),
-    })
-}
-
-/// The answer in a stream of events: Claude Code's `result`, else the text
-/// of OpenCode's last step. Plain text that is no event stream stays as is.
-fn final_answer(stdout: &str) -> String {
-    let events: Vec<serde_json::Value> = stdout
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect();
-    if events.is_empty() {
-        return stdout.to_string();
-    }
-    let mut texts: Vec<&str> = Vec::new();
-    for event in &events {
-        match event["type"].as_str() {
-            Some("result") if event["result"].is_string() => {
-                return event["result"].as_str().unwrap_or_default().to_string();
-            }
-            Some("step_start") => texts.clear(),
-            Some("text") => texts.extend(event["part"]["text"].as_str()),
-            _ => {}
-        }
-    }
-    texts.concat()
-}
-
-/// The error an agent reported in its event stream, where its error output
-/// stays empty: OpenCode's `error` event, or Claude Code's failed `result`.
-fn stream_error(stdout: &str) -> Option<String> {
-    stdout
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter_map(|event| match event["type"].as_str()? {
-            "error" => event["error"]["message"]
-                .as_str()
-                .or(event["error"]["data"]["message"].as_str())
-                .or(event["error"].as_str())
-                .or(event["message"].as_str())
-                .map(str::to_string),
-            "result" if event["is_error"] == true => event["result"]
-                .as_str()
-                .or(event["subtype"].as_str())
-                .map(str::to_string),
-            _ => None,
-        })
-        .map(|message| match message.strip_prefix('[') {
-            Some(rest) => rest
-                .split_once("] ")
-                .map_or(message.clone(), |(_, text)| text.to_string()),
-            None => message,
-        })
-        .next_back()
 }
 
 mod answer;
 mod direnv;
 mod draft;
+pub mod service;
+mod stream;
 mod tools;
+
+pub(crate) use stream::{describe_tool, step_of};
+use stream::{final_answer, stream_error};
 
 pub use answer::{
     Axis, Challenge, Draft, Finding, Report, Verdict, choice_parts, parse, parse_refinement,

@@ -344,6 +344,8 @@ struct Session {
     diff: Option<diff_view::DiffView>,
     /// The AI build working through Ready, while it runs.
     build: Option<build::Build>,
+    /// The builds the service was still running were looked for, once.
+    adopted: bool,
     /// Ready, watched for new issues from Play until Stop.
     watch: Option<build::Watch>,
     /// How many build agents may work at once, set on Doing's header.
@@ -391,6 +393,7 @@ impl Default for Session {
             release: None,
             diff: None,
             build: None,
+            adopted: false,
             watch: None,
             agents: 1,
             agent_log: None,
