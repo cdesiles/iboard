@@ -23,8 +23,14 @@ const CALL: Duration = Duration::from_secs(20);
 /// notice, because this one runs on the UI thread.
 const LIST: Duration = Duration::from_secs(4);
 
+/// How many of a session's newest messages its step and answer are read from.
+const PAGE: usize = 20;
+
 /// How often a watched session is asked how it is doing.
 const POLL: Duration = Duration::from_millis(700);
+
+/// How many times a read is retried when its reply comes back cut short.
+const RETRIES: usize = 3;
 
 /// How long a session may go without writing anything before its run is
 /// given up as dead.
@@ -462,12 +468,15 @@ fn status(project: &Path, session: &str) -> Result<Status, String> {
     })
 }
 
-/// The last step `session` took, and the answer of its last message.
+/// The last step `session` took, and the answer of its last message. Only its
+/// newest messages: a transcript grows without bound, and the service's reply
+/// loses its tail once large enough (see [`call_with`]).
 fn read(project: &Path, session: &str) -> Result<(Option<String>, Option<String>), String> {
-    let path = format!("/api/session/{session}/message");
+    let path = format!("/api/session/{session}/message?order=desc&limit={PAGE}");
     let reply = call(project, &["get", &path], None)?;
     let value = parse(&reply)?;
-    let messages = value["data"].as_array().cloned().unwrap_or_default();
+    let mut messages = value["data"].as_array().cloned().unwrap_or_default();
+    messages.reverse();
     Ok(scan(&messages))
 }
 
@@ -620,6 +629,9 @@ fn call(project: &Path, args: &[&str], body: Option<&str>) -> Result<String, Str
     call_with(project, args, body, CALL)
 }
 
+/// Runs one request. A read whose reply is not valid JSON is tried again: the
+/// service's CLI drops the tail of a reply too large for a pipe, cutting it at
+/// a write boundary instead of reporting an error.
 fn call_with(
     project: &Path,
     args: &[&str],
@@ -627,13 +639,24 @@ fn call_with(
     timeout: Duration,
 ) -> Result<String, String> {
     let binary = binary().ok_or_else(|| "opencode is not installed".to_string())?;
-    let mut command = std::process::Command::new(binary);
-    command.arg("api").args(args).current_dir(project);
-    if let Some(body) = body {
-        command.args(["-d", body]);
+    let reads = args.first().is_some_and(|method| *method == "get");
+    let attempts = if reads { RETRIES } else { 1 };
+    let deadline = Instant::now() + timeout;
+    let mut text = String::new();
+    for attempt in 1..=attempts {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let mut command = std::process::Command::new(&binary);
+        command.arg("api").args(args).current_dir(project);
+        if let Some(body) = body {
+            command.args(["-d", body]);
+        }
+        text = process::run(command, "opencode api", &Cancel::default(), left)?
+            .into_result("opencode api")?;
+        if attempt == attempts || serde_json::from_str::<Value>(&text).is_ok() {
+            break;
+        }
     }
-    let output = process::run(command, "opencode api", &Cancel::default(), timeout)?;
-    output.into_result("opencode api")
+    Ok(text)
 }
 
 fn binary() -> Option<PathBuf> {
