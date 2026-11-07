@@ -68,6 +68,8 @@ pub(super) struct ReleaseFlow {
     titles: Vec<String>,
     /// The sectioned note the agent is writing, while it runs.
     writer: Option<Job<Result<String, String>>>,
+    /// Whether the agent grouped the note into sections.
+    pub(super) grouped: bool,
     /// Why the agent could not group the note; the raw list stays.
     note_error: Option<String>,
     /// The newest tag the note follows, if any: the release window.
@@ -98,6 +100,7 @@ impl ReleaseFlow {
             issues: titles.len(),
             titles,
             writer,
+            grouped: false,
             note_error: None,
             since,
             note: None,
@@ -203,6 +206,7 @@ impl ReleaseFlow {
                 let text = text.trim();
                 if !text.is_empty() && self.body == release::note_body(&self.titles) {
                     self.body = format!("{text}\n");
+                    self.grouped = true;
                 }
             }
             Err(error) => self.note_error = Some(error),
@@ -228,6 +232,7 @@ impl ReleaseFlow {
                 ui.set_width(width - 2.0 * pad);
                 ui.style_mut().interaction.selectable_labels = false;
                 ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+                widgets::mark_busy(ui, self.writing());
                 self.head(ui, p);
                 theme::scroll_area(
                     ui,
@@ -309,18 +314,22 @@ impl ReleaseFlow {
         );
         widgets::field_label(ui, "Release note");
         if self.writing() {
+            self.grouping_ui(ui, p);
+        } else if self.grouped {
+            widgets::announce(ui, "release-grouped", "The note was grouped into sections");
             ui.label(
-                RichText::new("Grouping the note into sections…")
+                RichText::new("Grouped into sections.")
                     .font(theme::ui_small())
-                    .color(p.ink_muted),
+                    .color(p.status_done),
             );
         }
+        let writing = self.writing();
         let note = egui::TextEdit::multiline(&mut self.body)
             .hint_text(RichText::new("What changed in this release").color(p.ink_faint))
             .desired_rows(6)
             .desired_width(f32::INFINITY)
             .margin(Vec2::new(theme::SPACE_3, theme::SPACE_2));
-        ui.add(note);
+        ui.add_enabled(!writing, note);
         if let Some(error) = &self.note_error {
             ui.label(
                 RichText::new(format!("The note stayed a list: {error}"))
@@ -336,6 +345,29 @@ impl ReleaseFlow {
             .font(theme::ui_small())
             .color(p.ink_muted),
         );
+    }
+
+    /// The Thinking mark and the time spent while the agent groups the note.
+    fn grouping_ui(&self, ui: &mut egui::Ui, p: &theme::Palette) {
+        let elapsed = self
+            .writer
+            .as_ref()
+            .map_or_default(|writer| writer.elapsed());
+        widgets::announce_thinking(ui, "Grouping the note into sections", elapsed);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_2;
+            widgets::thinking(ui, 14.0);
+            ui.label(
+                RichText::new("Grouping the note into sections…")
+                    .font(theme::ui_button())
+                    .color(p.ink),
+            );
+            ui.label(
+                RichText::new(crate::format::clock(elapsed))
+                    .font(theme::meta())
+                    .color(p.ink_muted),
+            );
+        });
     }
 
     fn commit_ui(&self, ui: &mut egui::Ui, p: &theme::Palette) {

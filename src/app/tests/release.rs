@@ -2,7 +2,7 @@
 //! and push the flow makes, each confirmed, skipped or cancelled.
 
 use egui::accesskit::Role;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 
 use super::super::release::{ReleaseChoice, ReleaseStep};
 use super::*;
@@ -211,7 +211,57 @@ fn the_agent_groups_the_note_into_sections() {
             .as_ref()
             .is_some_and(|flow| flow.body == "### Added\n- Alpha\n")
     }));
+    assert!(
+        app.session.release.as_ref().unwrap().grouped,
+        "the note says it was grouped"
+    );
     assert_eq!(app.poll_release(), None, "the note is no longer writing");
+}
+
+#[test]
+fn a_grouping_note_blocks_edits_and_shows_the_thinking_mark() {
+    use egui::accesskit::Live;
+    let (dir, mut app) = project("release-grouping-a11y", &[("done/a.md", "# Alpha\n")]);
+    app.prefs.agent = fake_agent("sleep 1; printf '### Added\\n- Alpha\\n' # {prompt}");
+    app.open_release(&[dir.join("issues/done/a.md")]);
+    let mut harness = kittest(app);
+    harness.run_steps(2);
+
+    let dialog = harness.get_by_role_and_label(Role::Dialog, "Release");
+    assert!(dialog.accesskit_node().is_busy(), "the dialog is busy");
+    assert!(
+        harness.query_by_label("Working").is_some(),
+        "the Thinking mark turns while the agent groups"
+    );
+    let live = harness
+        .get_all_by_label("Grouping the note into sections")
+        .filter(|node| node.accesskit_node().live() == Live::Polite)
+        .count();
+    assert_eq!(live, 1, "the screen reader hears the grouping");
+    let note = harness.get_by_role(Role::MultilineTextInput);
+    assert!(
+        note.accesskit_node().is_disabled(),
+        "the note can't be edited while the agent groups it"
+    );
+
+    let started = Instant::now();
+    while harness
+        .state()
+        .1
+        .session
+        .release
+        .as_ref()
+        .is_some_and(|flow| !flow.grouped)
+    {
+        assert!(started.elapsed().as_secs() < 30, "the note never landed");
+        harness.run_steps(1);
+    }
+    harness.run_steps(2);
+    let dialog = harness.get_by_role_and_label(Role::Dialog, "Release");
+    assert!(!dialog.accesskit_node().is_busy(), "the grouping ended");
+    let note = harness.get_by_role(Role::MultilineTextInput);
+    assert!(!note.accesskit_node().is_disabled(), "the note is editable");
+    harness.get_by_label("Grouped into sections.");
 }
 
 #[test]
