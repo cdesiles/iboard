@@ -997,7 +997,7 @@ pub use answer::{
     Axis, Challenge, Draft, Finding, Report, Verdict, choice_parts, parse, parse_refinement,
     parse_split,
 };
-pub use draft::{DraftText, start_draft};
+pub use draft::{DraftText, draft_so_far, start_draft};
 pub use tools::{Detected, Model, Models, detect, list_models};
 use tools::{default_model, find_binary, search_path};
 

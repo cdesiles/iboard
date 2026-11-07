@@ -3,8 +3,8 @@
 //! `new_issue_ui`.
 
 use super::{
-    Duration, Engine, HashMap, IboardApp, Instant, Job, Leave, Path, PathBuf, Screen, agent,
-    atomic_write, images, labels, prompts, titles,
+    Duration, Engine, IboardApp, Instant, Job, Leave, Path, PathBuf, Screen, agent, atomic_write,
+    images, labels, prompts, titles,
 };
 use iboard::new_issue::{self, Parked};
 
@@ -64,51 +64,41 @@ pub(super) struct DraftRun {
     agent: String,
 }
 
+impl Drafted {
+    fn new(draft: new_issue::Draft, notes: &str, title_before: (String, TitleStage)) -> Self {
+        Self {
+            draft,
+            notes_hash: new_issue::notes_hash(notes),
+            receipt: None,
+            stopped: false,
+            title_before,
+        }
+    }
+}
+
 impl Composer {
     /// Nothing typed: closing it loses nothing.
     pub(super) fn is_empty(&self) -> bool {
-        self.title.trim().is_empty()
-            && self.title_labels.is_empty()
-            && self.description.trim().is_empty()
+        new_issue::is_blank(&self.title_labels, &self.title, &self.description)
     }
 
-    /// The title as the file has it: the tags in brackets, then the field.
     pub(super) fn written_title(&self) -> String {
-        new_issue::labelled_title(&self.title_labels, &self.title)
-            .trim_end()
-            .to_string()
+        new_issue::written_title(&self.title_labels, &self.title)
     }
 
-    /// After typing: `[bug]` ending at `cursor`, at the start of the field,
-    /// becomes a tag, and a space right after a tag is swallowed. Returns the
-    /// cursor's new place when the field changed.
     pub(super) fn tag_typed_label(&mut self, cursor: usize) -> Option<usize> {
-        if cursor == 1 && !self.title_labels.is_empty() && self.title.starts_with(' ') {
-            self.title.remove(0);
-            return Some(0);
-        }
-        let head: String = self.title.chars().take(cursor).collect();
-        let inner = head.strip_prefix('[')?.strip_suffix(']')?;
-        if inner.contains(['[', ']']) {
-            return None;
-        }
-        labels::normalize(inner)?;
-        self.title_labels.push(inner.to_string());
-        self.title = self.title[head.len()..].trim_start().to_string();
-        Some(0)
+        new_issue::tag_typed_label(&mut self.title_labels, &mut self.title, cursor)
     }
 
-    /// `⌫` right after a tag: the last tag is text again. Returns the cursor's
-    /// new place, after the `]`.
     pub(super) fn untag_label(&mut self) -> Option<usize> {
-        let text = format!("[{}]", self.title_labels.pop()?);
-        let cursor = text.chars().count();
-        self.title = if self.title.is_empty() {
-            text
-        } else {
-            format!("{text} {}", self.title)
-        };
-        Some(cursor)
+        new_issue::untag_label(&mut self.title_labels, &mut self.title)
+    }
+
+    /// Drops the draft and brings back the title it replaced.
+    fn revert_title(&mut self) {
+        if let Some(drafted) = self.draft.take() {
+            (self.title, self.stage) = drafted.title_before;
+        }
     }
 }
 
@@ -182,21 +172,12 @@ impl IboardApp {
 
     fn parked_composer(&self) -> Option<Composer> {
         let parked = Parked::load(&self.park_file()?)?;
-        let draft = parked.draft.map(|draft| Drafted {
-            draft,
-            notes_hash: new_issue::notes_hash(&parked.notes),
-            receipt: None,
-            stopped: false,
-            title_before: (String::new(), TitleStage::Idle),
-        });
-        let (groups, title) = labels::bracket_groups(&parked.title);
-        let title_labels = groups
-            .into_iter()
-            .filter(|group| labels::normalize(group).is_some())
-            .map(str::to_string)
-            .collect();
+        let draft = parked
+            .draft
+            .map(|draft| Drafted::new(draft, &parked.notes, Default::default()));
+        let (title_labels, title) = new_issue::split_labels(&parked.title);
         Some(Composer {
-            title: title.to_string(),
+            title,
             title_labels,
             description: parked.notes,
             draft,
@@ -438,13 +419,11 @@ impl IboardApp {
             Some(drafted) => drafted.title_before,
             None => (composer.title.clone(), composer.stage),
         };
-        composer.draft = Some(Drafted {
-            draft: new_issue::Draft::default(),
-            notes_hash: new_issue::notes_hash(&notes),
-            receipt: None,
-            stopped: false,
+        composer.draft = Some(Drafted::new(
+            new_issue::Draft::default(),
+            &notes,
             title_before,
-        });
+        ));
         composer.drafting = Some(DraftRun {
             job,
             text,
@@ -456,19 +435,8 @@ impl IboardApp {
 
     /// The labels the board's issues already use, most used first.
     fn known_labels(&self) -> Vec<String> {
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for issue in self.board.columns.iter().flat_map(|c| &c.issues) {
-            for label in &issue.labels {
-                *counts.entry(label.to_lowercase()).or_default() += 1;
-            }
-        }
-        let mut labels: Vec<(String, usize)> = counts.into_iter().collect();
-        labels.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        labels
-            .into_iter()
-            .map(|(label, _)| label)
-            .take(12)
-            .collect()
+        let used = self.board.columns.iter().flat_map(|c| &c.issues);
+        labels::most_used(used.flat_map(|issue| &issue.labels), 12)
     }
 
     /// Fills the draft with what the agent wrote so far, and adopts its
@@ -478,11 +446,7 @@ impl IboardApp {
         let run = composer.drafting.as_ref()?;
         let answer = run.job.answer();
         let elapsed = run.job.elapsed();
-        let so_far = run
-            .text
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
+        let so_far = agent::draft_so_far(&run.text);
         let agent = run.agent.clone();
         let drafted = composer.draft.as_mut()?;
         match answer {
@@ -498,9 +462,7 @@ impl IboardApp {
             }
             Some(Err(err)) => {
                 composer.drafting = None;
-                if let Some(drafted) = composer.draft.take() {
-                    (composer.title, composer.stage) = drafted.title_before;
-                }
+                composer.revert_title();
                 composer.draft_error = Some(err);
             }
         }
@@ -515,16 +477,9 @@ impl IboardApp {
         let Some(run) = composer.drafting.take() else {
             return;
         };
-        let text = run
-            .text
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        let draft = new_issue::parse(&text, true);
+        let draft = new_issue::parse(&agent::draft_so_far(&run.text), true);
         if draft.is_empty() {
-            if let Some(drafted) = composer.draft.take() {
-                (composer.title, composer.stage) = drafted.title_before;
-            }
+            composer.revert_title();
             return;
         }
         if let Some(drafted) = composer.draft.as_mut() {
@@ -537,11 +492,8 @@ impl IboardApp {
     /// Undo draft (`⌘Z` outside the notes): back to the mirror.
     pub(super) fn undo_draft(&mut self) {
         self.stop_draft();
-        let Some(composer) = self.session.composer.as_mut() else {
-            return;
-        };
-        if let Some(drafted) = composer.draft.take() {
-            (composer.title, composer.stage) = drafted.title_before;
+        if let Some(composer) = self.session.composer.as_mut() {
+            composer.revert_title();
         }
     }
 }

@@ -5,6 +5,8 @@
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+use crate::labels;
+
 /// One `##` section of a draft.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Section {
@@ -172,18 +174,66 @@ fn finish(mut section: Section) -> Section {
     section
 }
 
-/// `[Bug] [ux] Fix login` → (`["Bug", "ux"]`, `Fix login`).
+/// `[Bug] [ux] Fix login` → (`["Bug", "ux"]`, `Fix login`), the labels as
+/// typed. A group that is no label (`[]`) ends the run and stays in the title.
 pub fn split_labels(title: &str) -> (Vec<String>, String) {
-    let mut labels = Vec::new();
-    let mut rest = title.trim();
-    while let Some(inner) = rest.strip_prefix('[') {
-        let Some((label, after)) = inner.split_once(']') else {
-            break;
-        };
-        labels.push(label.trim().to_string());
-        rest = after.trim_start();
+    let (groups, _) = labels::bracket_groups(title);
+    let mut found = Vec::new();
+    let mut rest = title.trim_start();
+    for group in groups
+        .into_iter()
+        .take_while(|g| labels::normalize(g).is_some())
+    {
+        found.push(group.trim().to_string());
+        rest = rest[group.len() + 2..].trim_start();
     }
-    (labels, rest.to_string())
+    (found, rest.trim().to_string())
+}
+
+/// Nothing typed in the title, its tags or the notes.
+pub fn is_blank(title_labels: &[String], title: &str, notes: &str) -> bool {
+    title.trim().is_empty() && title_labels.is_empty() && notes.trim().is_empty()
+}
+
+/// The title as the file has it: the tags in brackets, then the field.
+pub fn written_title(title_labels: &[String], title: &str) -> String {
+    labelled_title(title_labels, title).trim_end().to_string()
+}
+
+/// After typing: `[bug]` ending at `cursor`, at the start of the field,
+/// becomes a tag, and a space right after a tag is swallowed. Returns the
+/// cursor's new place when the field changed.
+pub fn tag_typed_label(
+    title_labels: &mut Vec<String>,
+    title: &mut String,
+    cursor: usize,
+) -> Option<usize> {
+    if cursor == 1 && !title_labels.is_empty() && title.starts_with(' ') {
+        title.remove(0);
+        return Some(0);
+    }
+    let head: String = title.chars().take(cursor).collect();
+    let inner = head.strip_prefix('[')?.strip_suffix(']')?;
+    if inner.contains(['[', ']']) {
+        return None;
+    }
+    labels::normalize(inner)?;
+    title_labels.push(inner.to_string());
+    *title = title[head.len()..].trim_start().to_string();
+    Some(0)
+}
+
+/// `⌫` right after a tag: the last tag is text again. Returns the cursor's
+/// new place, after the `]`.
+pub fn untag_label(title_labels: &mut Vec<String>, title: &mut String) -> Option<usize> {
+    let text = format!("[{}]", title_labels.pop()?);
+    let cursor = text.chars().count();
+    *title = if title.is_empty() {
+        text
+    } else {
+        format!("{text} {title}")
+    };
+    Some(cursor)
 }
 
 /// `text` up to its last whole word, so lines never jitter as characters
@@ -346,6 +396,31 @@ mod tests {
         assert_eq!(draft.sections[1].text, "- It");
         assert_eq!(draft.writing, Some(1));
         assert_eq!(parse(text, true).sections[1].text, "- It red");
+    }
+
+    #[test]
+    fn only_label_brackets_leave_the_title() {
+        let split = |title: &str| split_labels(title);
+        assert_eq!(
+            split("[Bug] [ux] Fix"),
+            (vec!["Bug".into(), "ux".into()], "Fix".into())
+        );
+        assert_eq!(split("[bug] [] Fix"), (vec!["bug".into()], "[] Fix".into()));
+        assert_eq!(split("[docs](url) Fix"), (vec![], "[docs](url) Fix".into()));
+    }
+
+    #[test]
+    fn a_typed_label_becomes_a_tag_and_back() {
+        let (mut tags, mut title) = (Vec::new(), "[bug]Fix".to_string());
+        assert_eq!(tag_typed_label(&mut tags, &mut title, 5), Some(0));
+        assert_eq!(
+            (tags.as_slice(), title.as_str()),
+            (["bug".to_string()].as_slice(), "Fix")
+        );
+        assert_eq!(written_title(&tags, &title), "[bug] Fix");
+        assert_eq!(untag_label(&mut tags, &mut title), Some(5));
+        assert_eq!(title, "[bug] Fix");
+        assert!(is_blank(&tags, " ", ""));
     }
 
     #[test]

@@ -277,6 +277,22 @@ pub fn normalize(name: &str) -> Option<String> {
     (!name.is_empty()).then_some(name)
 }
 
+/// The first `limit` of `labels`, lowercased, most used first, ties in
+/// alphabetical order.
+pub fn most_used<'a>(labels: impl IntoIterator<Item = &'a String>, limit: usize) -> Vec<String> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for label in labels {
+        *counts.entry(label.to_lowercase()).or_default() += 1;
+    }
+    let mut counted: Vec<(String, usize)> = counts.into_iter().collect();
+    counted.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    counted
+        .into_iter()
+        .map(|(label, _)| label)
+        .take(limit)
+        .collect()
+}
+
 /// Splits the leading `[label]` groups off a level-1 heading, returning the
 /// labels (normalized, repeats merged) and the display title. `[Bug] [UI] T`
 /// and `[Bug][UI] T` both give `bug` and `ui`. Brackets later in the title, an
@@ -613,6 +629,12 @@ pub fn display_title(heading: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_most_used_labels_come_first() {
+        let used = ["ux", "Bug", "feat", "bug"].map(String::from);
+        assert_eq!(most_used(&used, 2), ["bug", "feat"]);
+    }
 
     #[test]
     fn a_leading_bracket_is_the_label() {

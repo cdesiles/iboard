@@ -14,6 +14,11 @@ use crate::process;
 /// The agent's text so far, shared with the modal that shows it.
 pub type DraftText = Arc<Mutex<String>>;
 
+/// A copy of what the agent has written so far.
+pub fn draft_so_far(text: &DraftText) -> String {
+    text.lock().unwrap_or_else(PoisonError::into_inner).clone()
+}
+
 /// Runs the agent on `prompt` from `project` on a background thread; its text
 /// lands in the returned [`DraftText`] as it comes. The job answers with the
 /// whole text. Dropping the job stops the agent.
