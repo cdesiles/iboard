@@ -26,6 +26,7 @@ use crate::issue::Issue;
 use crate::job::{self, Job};
 use crate::label_picker::{self, LabelPicker};
 use crate::labels::{self, Labels};
+use crate::priority::ARCHIVE_DIR;
 use crate::process;
 use crate::reviews;
 use crate::settings::{self, UserConfig};
@@ -106,10 +107,6 @@ const RESCAN_EVERY: Duration = Duration::from_secs(2);
 /// On macOS the header bar doubles as the window's title bar (the native
 /// title is hidden and the content runs under the traffic lights).
 pub const UNIFIED_TITLEBAR: bool = cfg!(target_os = "macos");
-
-/// Directory done issues are archived into, under the issues root. It starts
-/// with a dot, so discovery never reads it back.
-const ARCHIVE_DIR: &str = ".archive";
 
 /// A destructive action waiting for confirmation.
 #[derive(Clone)]

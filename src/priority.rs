@@ -6,7 +6,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::discovery::is_ready_column;
-use crate::files;
+use crate::files::{self, unique_name};
+
+/// Directory done issues are archived into, under the issues root. It starts
+/// with a dot, so discovery never reads it back.
+pub const ARCHIVE_DIR: &str = ".archive";
 
 /// The width of the priority prefix in Ready: `001-make-colour-green.md`.
 const PRIORITY_DIGITS: usize = 3;
@@ -47,6 +51,53 @@ pub fn moved_name(name: &str, from_dir: &Path, to_dir: &Path) -> String {
     } else {
         name.to_string()
     }
+}
+
+/// Where the issue at `path` lands when moved into `to_dir`, named by
+/// [`moved_name`]: `path` itself when it is already there. An existing file
+/// is never a target.
+pub fn plan_move(path: &Path, to_dir: &Path) -> Result<PathBuf, String> {
+    let (Some(name), Some(from_dir)) = (path.file_name(), path.parent()) else {
+        return Ok(path.to_path_buf());
+    };
+    if from_dir == to_dir {
+        return Ok(path.to_path_buf());
+    }
+    let name = moved_name(&name.to_string_lossy(), from_dir, to_dir);
+    let target = to_dir.join(&name);
+    if target.exists() {
+        return Err(format!(
+            "{name} already exists in that column. Rename one of them first."
+        ));
+    }
+    Ok(target)
+}
+
+/// Where a done issue goes when archived from the issues `root`: its own
+/// name in `.archive/`, or the next free one.
+pub fn archive_path(root: &Path, path: &Path) -> PathBuf {
+    let archive = root.join(ARCHIVE_DIR);
+    let name = unique_name(&archive, &files::file_name(path));
+    archive.join(name)
+}
+
+/// `all`, a column in board order, with `moved` in front of `anchor`, or at
+/// the end without one. An anchor among the moved gives way to the next
+/// issue that is not.
+pub fn reorder(all: &[PathBuf], moved: &[PathBuf], anchor: Option<&Path>) -> Vec<PathBuf> {
+    let anchor = anchor
+        .and_then(|anchor| all.iter().position(|path| path == anchor))
+        .and_then(|at| all[at..].iter().find(|path| !moved.contains(path)));
+    let mut order: Vec<PathBuf> = all
+        .iter()
+        .filter(|path| !moved.contains(path))
+        .cloned()
+        .collect();
+    let at = anchor
+        .and_then(|anchor| order.iter().position(|path| path == anchor))
+        .unwrap_or(order.len());
+    order.splice(at..at, moved.iter().cloned());
+    order
 }
 
 /// The priority number of a Ready file name: `001-x.md` → 1.
@@ -179,6 +230,48 @@ mod tests {
         assert_eq!(moved_name("unnumbered.md", &ready, &doing), "unnumbered.md");
         assert_eq!(moved_name("001-x.md", &todo, &doing), "001-x.md");
         assert_eq!(strip_priority("2026-05-29-dated.md"), "2026-05-29-dated.md");
+    }
+
+    #[test]
+    fn a_move_plans_its_target_and_never_one_that_exists() {
+        let scratch = tempfile::tempdir().unwrap();
+        let (todo, ready) = (scratch.path().join("todo"), scratch.path().join("ready"));
+        for d in [&todo, &ready] {
+            fs::create_dir_all(d).unwrap();
+        }
+        let issue = todo.join("a.md");
+        assert_eq!(plan_move(&issue, &todo), Ok(issue.clone()));
+        assert_eq!(plan_move(&issue, &ready), Ok(ready.join("001-a.md")));
+
+        let doing = scratch.path().join("doing");
+        fs::create_dir_all(&doing).unwrap();
+        fs::write(doing.join("a.md"), "").unwrap();
+        let err = plan_move(&issue, &doing).unwrap_err();
+        assert!(err.starts_with("a.md already exists"), "{err}");
+    }
+
+    #[test]
+    fn an_archived_issue_never_overwrites_one_archived_before() {
+        let scratch = tempfile::tempdir().unwrap();
+        let root = scratch.path();
+        let issue = root.join("done/a.md");
+        assert_eq!(archive_path(root, &issue), root.join(".archive/a.md"));
+        fs::create_dir_all(root.join(ARCHIVE_DIR)).unwrap();
+        fs::write(root.join(".archive/a.md"), "").unwrap();
+        assert_eq!(archive_path(root, &issue), root.join(".archive/a-2.md"));
+    }
+
+    #[test]
+    fn reordering_puts_the_moved_in_front_of_the_anchor() {
+        let paths = |names: &str| names.split(' ').map(PathBuf::from).collect::<Vec<_>>();
+        let order = |moved: &str, anchor: Option<&str>| {
+            reorder(&paths("a b c d"), &paths(moved), anchor.map(Path::new))
+        };
+        assert_eq!(order("d", Some("b")), paths("a d b c"));
+        assert_eq!(order("a", None), paths("b c d a"));
+        assert_eq!(order("b d", Some("b")), paths("a b d c"));
+        assert_eq!(order("c d", Some("c")), paths("a b c d"));
+        assert_eq!(order("a", Some("z")), paths("b c d a"));
     }
 
     #[test]

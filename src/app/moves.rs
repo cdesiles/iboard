@@ -1,8 +1,8 @@
 //! Moving, reordering, deleting and archiving issue files, and undoing a delete.
 
 use super::{
-    ARCHIVE_DIR, Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Screen, Undo, atomic_write,
-    discovery, file_name, images, trash, unique_name,
+    Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Screen, Undo, atomic_write, discovery,
+    file_name, images, trash,
 };
 use crate::priority;
 
@@ -13,29 +13,18 @@ impl IboardApp {
     /// overwritten. On a workspace board the issue stays in its own project.
     /// Returns the issue's new path on success.
     pub(super) fn move_issue(&mut self, path: &Path, target_dir: &Path) -> Option<PathBuf> {
-        let (Some(name), Some(from_dir)) = (path.file_name(), path.parent()) else {
-            return None;
-        };
-        let target_dir = match self.board.dir_for(path, target_dir) {
-            Ok(dir) => dir,
+        let planned = self
+            .board
+            .dir_for(path, target_dir)
+            .and_then(|dir| priority::plan_move(path, &dir));
+        let target = match planned {
+            Ok(target) if target == path => return Some(target),
+            Ok(target) => target,
             Err(err) => {
                 self.error = Some(format!("Couldn't move {}: {err}", self.relative(path)));
                 return None;
             }
         };
-        let target_dir = target_dir.as_path();
-        if from_dir == target_dir {
-            return Some(path.to_path_buf());
-        }
-        let name = priority::moved_name(&name.to_string_lossy(), from_dir, target_dir);
-        let target = target_dir.join(&name);
-        if target.exists() {
-            self.error = Some(format!(
-                "Couldn't move {}: {name} already exists in that column. Rename one of them first.",
-                self.relative(path),
-            ));
-            return None;
-        }
         match std::fs::rename(path, &target) {
             Ok(()) => {
                 self.apply_renames(&[(path.to_path_buf(), target.clone())]);
@@ -123,18 +112,7 @@ impl IboardApp {
             return;
         };
         let all: Vec<PathBuf> = column.issues.iter().map(|t| t.path.clone()).collect();
-        let anchor = anchor
-            .and_then(|anchor| all.iter().position(|path| path == anchor))
-            .and_then(|at| all[at..].iter().find(|path| !moved.contains(path)));
-        let mut order: Vec<PathBuf> = all
-            .iter()
-            .filter(|path| !moved.contains(path))
-            .cloned()
-            .collect();
-        let at = anchor
-            .and_then(|anchor| order.iter().position(|path| path == anchor))
-            .unwrap_or(order.len());
-        order.splice(at..at, moved.iter().cloned());
+        let order = priority::reorder(&all, moved, anchor);
         let renamed = match self.showing_group() {
             true => self.reorder_across(dir, &all, &order),
             false => priority::renumber_each(&order),
@@ -384,15 +362,12 @@ impl IboardApp {
     /// without reading the board again. Returns where it went; `None`, with
     /// the reason in `self.error`, when it could not.
     pub(super) fn move_to_archive(&mut self, path: &Path) -> Option<PathBuf> {
-        let archive = self.board.root_of(path).join(ARCHIVE_DIR);
-        if let Err(err) = std::fs::create_dir_all(&archive) {
-            self.error = Some(format!(
-                "Couldn't create {}: {err}",
-                self.relative(&archive)
-            ));
+        let target = priority::archive_path(self.board.root_of(path), path);
+        let archive = target.parent().unwrap_or(&target);
+        if let Err(err) = std::fs::create_dir_all(archive) {
+            self.error = Some(format!("Couldn't create {}: {err}", self.relative(archive)));
             return None;
         }
-        let target = archive.join(unique_name(&archive, &file_name(path)));
         if let Err(err) = std::fs::rename(path, &target) {
             self.error = Some(format!("Couldn't archive {}: {err}", self.relative(path)));
             return None;
