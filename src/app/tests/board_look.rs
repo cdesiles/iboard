@@ -384,6 +384,40 @@ fn the_reader_status_says_the_path_age_and_progress() {
     assert_eq!(words, 1);
 }
 
+/// A click on the Reader's path copies the file's full path, and its tooltip
+/// says so.
+#[test]
+fn clicking_the_readers_path_copies_it() {
+    let (dir, app) = project("status-copy", &[("todo/a.md", "# Title\n")]);
+    let path = dir.join("issues/todo/a.md");
+    let mut harness = kittest(app);
+    harness.state_mut().1.open_issue(path.clone());
+    harness.run_steps(2);
+    let [file] = in_status_bar(&harness, "todo/a.md")[..] else {
+        panic!("the path shows once");
+    };
+    hover(&mut harness, file.center());
+    harness.event(egui::Event::PointerButton {
+        pos: file.center(),
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.event(egui::Event::PointerButton {
+        pos: file.center(),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.step();
+    let copied = harness.output().platform_output.commands.iter().any(
+        |command| matches!(command, egui::OutputCommand::CopyText(text) if *text == path.display().to_string()),
+    );
+    assert!(copied, "{:?}", harness.output().platform_output.commands);
+    harness.run_steps(2);
+    assert!(harness.query_by_label("Copied the full path").is_some());
+}
+
 /// The Editor's save state sits at the bar's far end, with the path on the
 /// left; ⌘ brings the keys in beside it without moving it.
 #[test]

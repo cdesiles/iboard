@@ -181,7 +181,7 @@ impl IboardApp {
     /// The open issue's status: its file, then in the Reader when it was
     /// modified and how far it is. Returns its key hints.
     fn detail_status(&mut self, ui: &mut egui::Ui, path: &Path) -> Vec<Hint> {
-        ui.label(status_meta(ui, self.relative(path)));
+        copyable_path(ui, self.relative(path), path);
         if self.session.editing().is_some() {
             return if self.session.leave_prompt.is_some() {
                 vec![("esc", "keep editing")]
@@ -269,6 +269,26 @@ fn reader_facts(ui: &mut egui::Ui, issue: &Issue) {
         let words = sheet::word_count(&text);
         let unit = if words == 1 { "word" } else { "words" };
         ui.label(status_meta(ui, format!("{words} {unit}")));
+    }
+}
+
+/// The open issue's file, `shown` as its relative path: a click copies its
+/// full path, and its tooltip says so until the pointer leaves.
+fn copyable_path(ui: &mut egui::Ui, shown: String, path: &Path) {
+    let id = egui::Id::unique(("copied-path", path));
+    let response = ui
+        .add(egui::Label::new(status_meta(ui, shown)).sense(egui::Sense::click()))
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if response.clicked() {
+        ui.ctx().copy_text(path.display().to_string());
+        ui.data_mut(|d| d.insert_temp(id, true));
+    } else if !response.hovered() {
+        ui.data_mut(|d| d.remove::<bool>(id));
+    }
+    if ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false) {
+        response.show_tooltip_text("Copied the full path");
+    } else {
+        response.on_hover_text("Click to copy the full path");
     }
 }
 
