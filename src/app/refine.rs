@@ -78,25 +78,29 @@ impl IboardApp {
         let Some(path) = self.session.refine.as_ref().map(|r| r.path.clone()) else {
             return;
         };
-        let Some(content) = self
-            .review_content(&path, true)
-            .or_else(|| self.review_content(&path, false))
-        else {
+        let draft = self.session.editor.as_ref().is_some_and(|e| e.path == path);
+        let said: Vec<(&str, String)> = self
+            .session
+            .refine
+            .iter()
+            .flat_map(|refine| {
+                refine
+                    .turns
+                    .iter()
+                    .map(|turn| (turn.speaker(), turn.said()))
+            })
+            .collect();
+        let conversation: Vec<prompts::Turn> =
+            said.iter().map(|(by, text)| (*by, text.as_str())).collect();
+        let Some((_, prompt)) = self.prompt_for(&path, draft, |content, notes| {
+            prompts::refine_prompt(content, &conversation, notes)
+        }) else {
             return;
         };
-        let notes = self.reviewer_notes(&path);
         self.mark_notes_sent(&path);
         let Some(refine) = self.session.refine.as_mut() else {
             return;
         };
-        let said: Vec<(&str, String)> = refine
-            .turns
-            .iter()
-            .map(|turn| (turn.speaker(), turn.said()))
-            .collect();
-        let conversation: Vec<prompts::Turn> =
-            said.iter().map(|(by, text)| (*by, text.as_str())).collect();
-        let prompt = prompts::refine_prompt(&content, &conversation, &notes);
         let project = Some(self.board.project_of(&path));
         let (answer, _) = agent::start_review(
             &self.prefs.agent,

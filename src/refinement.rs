@@ -192,22 +192,25 @@ impl Refinement {
     /// Adopts the challenger's turn once it is in. While it is on its way,
     /// says when to look again.
     pub fn adopt(&mut self) -> Option<Duration> {
-        let NextTurn::Waiting(answer) = &self.next else {
-            return None;
-        };
-        let Some(result) = answer.answer() else {
-            return Some(job::POLL_EVERY);
-        };
-        self.next = match result {
-            Ok(raw) => {
-                self.reasoning_open = false;
-                self.turns
-                    .push(Turn::Challenger(agent::parse_refinement(&raw)));
-                NextTurn::Idle
-            }
-            Err(error) => NextTurn::Failed(error),
-        };
-        None
+        job::land(
+            self,
+            |refine| match &refine.next {
+                NextTurn::Waiting(answer) => Some(answer),
+                _ => None,
+            },
+            |refine, result| {
+                refine.next = match result {
+                    Ok(raw) => {
+                        refine.reasoning_open = false;
+                        refine
+                            .turns
+                            .push(Turn::Challenger(agent::parse_refinement(&raw)));
+                        NextTurn::Idle
+                    }
+                    Err(error) => NextTurn::Failed(error),
+                };
+            },
+        )
     }
 
     /// Stops the challenger's turn (dropping the job stops the agent): the

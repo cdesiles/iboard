@@ -131,7 +131,7 @@ impl IboardApp {
                     let notice = format!("{}: {}", file_name(&path), line.trim());
                     self.session.notice = Some((notice, Instant::now()));
                 }
-                Err(err) => self.error = Some(format!("Ask on {} failed: {err}", file_name(&path))),
+                Err(err) => self.error = Some(job::failure("Ask on", &path, &err)),
             }
             let reading = matches!(&self.session.screen, Screen::Detail(open, _) if *open == path);
             if reading && !self.agent_log_open(&path) {

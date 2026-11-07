@@ -7,10 +7,13 @@
 
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
+
+use crate::files::file_name;
 
 /// How often the UI checks on a running job.
 pub const POLL_EVERY: Duration = Duration::from_millis(100);
@@ -129,6 +132,25 @@ pub fn take_landed<K: Clone + Eq + Hash, R, T>(
             Some((key, run, answer))
         })
         .collect()
+}
+
+/// Hands the answer of the job `state` waits on to `adopt` once it is in;
+/// while it is on its way, says when to look again.
+pub fn land<S, T>(
+    state: &mut S,
+    job: impl FnOnce(&S) -> Option<&Job<Result<T, String>>>,
+    adopt: impl FnOnce(&mut S, Result<T, String>),
+) -> Option<Duration> {
+    let Some(result) = job(state)?.answer() else {
+        return Some(POLL_EVERY);
+    };
+    adopt(state, result);
+    None
+}
+
+/// What the status strip says when `what` (`Review of`) `path` failed.
+pub fn failure(what: &str, path: &Path, error: &str) -> String {
+    format!("{what} {} failed: {error}", file_name(path))
 }
 
 /// Polls `done` until it holds, for as long as a loaded machine may need.

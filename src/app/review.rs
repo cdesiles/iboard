@@ -73,23 +73,48 @@ impl IboardApp {
         self.start_review_in(path, draft, self.prefs.agent.scope);
     }
 
-    /// Starts a one-shot review in `mode`.
-    pub(super) fn start_review_in(&mut self, path: &Path, draft: bool, mode: ReviewMode) {
-        if !self.is_todo_issue(path) || self.review_is_running(path) {
+    /// The text an agent reads of `path` (see [`Self::review_content`]), and
+    /// the prompt `build` makes of it and the reviewer's notes.
+    pub(super) fn prompt_for(
+        &mut self,
+        path: &Path,
+        draft: bool,
+        build: impl FnOnce(&str, &[(String, String)]) -> String,
+    ) -> Option<(String, String)> {
+        let content = self.review_content(path, draft)?;
+        let notes = self.reviewer_notes(path);
+        let prompt = build(&content, &notes);
+        Some((content, prompt))
+    }
+
+    /// Runs the prompt `build` makes for `target`, unless one runs on it.
+    pub(super) fn review_with(
+        &mut self,
+        target: ReviewTarget,
+        build: impl FnOnce(&str, &[(String, String)]) -> String,
+    ) {
+        if self.review_is_running(&target.path) {
             return;
         }
-        let Some(content) = self.review_content(path, draft) else {
+        if let Some((content, prompt)) = self.prompt_for(&target.path, target.draft, build) {
+            self.run_review(target, &content, prompt);
+        }
+    }
+
+    /// Starts a one-shot review in `mode`.
+    pub(super) fn start_review_in(&mut self, path: &Path, draft: bool, mode: ReviewMode) {
+        if !self.is_todo_issue(path) {
             return;
-        };
-        let notes = self.reviewer_notes(path);
-        let prompt = prompts::review_prompt(&content, mode, &notes);
+        }
         let target = ReviewTarget {
             path: path.to_path_buf(),
             draft,
             mode,
             kind: RunKind::Review,
         };
-        self.run_review(target, &content, prompt);
+        self.review_with(target, |content, notes| {
+            prompts::review_prompt(content, mode, notes)
+        });
     }
 
     /// Sends a follow-up ("make it smaller") with the previous answer attached.
@@ -97,25 +122,22 @@ impl IboardApp {
         let Some(review) = self.session.review.as_ref() else {
             return;
         };
+        let (draft, mode) = (review.review.draft, review.review.mode);
         let target = ReviewTarget {
             path: review.path.clone(),
-            draft: review.review.draft,
-            mode: review.review.mode,
+            draft,
+            mode,
             kind: RunKind::Review,
         };
         let follow_up = review.follow_up.as_deref().unwrap_or("").trim().to_string();
         if follow_up.is_empty() {
             return;
         }
-        let Some(content) = self.review_content(&target.path, target.draft) else {
-            return;
-        };
         let previous = review.review.raw.clone();
-        let notes = self.reviewer_notes(&target.path);
-        let mut prompt = prompts::review_prompt(&content, target.mode, &notes);
-        prompt.push_str(&format!("\n\nA previous review said:\n{previous}"));
-        prompt.push_str(&format!("\n\nFollow-up: {follow_up}"));
-        self.run_review(target, &content, prompt);
+        self.review_with(target, |content, notes| {
+            let review = prompts::review_prompt(content, mode, notes);
+            format!("{review}\n\nA previous review said:\n{previous}\n\nFollow-up: {follow_up}")
+        });
     }
 
     /// Closes the review panel; the review stays behind the card's pill. A
@@ -165,7 +187,7 @@ impl IboardApp {
             let reviewed = match result {
                 Ok(reviewed) => reviewed,
                 Err(error) => {
-                    self.error = Some(format!("Review of {} failed: {error}", file_name(&path)));
+                    self.error = Some(job::failure("Review of", &path, &error));
                     continue;
                 }
             };

@@ -16,21 +16,17 @@ impl IboardApp {
 
     /// Asks the agent where the issue at `path` stands, in its project.
     pub(super) fn start_update(&mut self, path: &Path) {
-        if !self.updatable(path) || self.review_is_running(path) {
+        if !self.updatable(path) {
             return;
         }
-        let Some(content) = self.review_content(path, false) else {
-            return;
-        };
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let prompt = prompts::update_prompt(&content, &today);
         let target = ReviewTarget {
             path: path.to_path_buf(),
             draft: false,
             mode: ReviewMode::Deep,
             kind: RunKind::Update,
         };
-        self.run_review(target, &content, prompt);
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        self.review_with(target, |content, _| prompts::update_prompt(content, &today));
     }
 
     /// The button and `⌘U`: starts an update, or cancels the one running; with

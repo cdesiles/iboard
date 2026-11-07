@@ -28,6 +28,29 @@ pub(super) enum Split {
     Failed(String),
 }
 
+impl Split {
+    /// The agent's answer, as the tickets it proposed.
+    fn landed(result: Result<String, String>) -> Self {
+        let drafts = result.and_then(|answer| {
+            agent::parse_split(&answer)
+                .ok_or_else(|| "The agent's answer had no tickets to create.".to_string())
+        });
+        match drafts {
+            Ok(drafts) => Split::Ready(
+                drafts
+                    .into_iter()
+                    .map(|draft| SplitDraft {
+                        title: draft.title,
+                        body: draft.body,
+                        include: true,
+                    })
+                    .collect(),
+            ),
+            Err(error) => Split::Failed(error),
+        }
+    }
+}
+
 /// A split `⌘Z` can still take back.
 pub(super) struct SplitDone {
     /// Where the original was, and what it said before "Split into".
@@ -55,11 +78,11 @@ impl IboardApp {
             .map(|finding| finding.body.clone())
             .unwrap_or_default();
         let (path, mode) = (review.path.clone(), review.review.mode);
-        let Some(content) = self.board.find(&path).map(|issue| issue.markdown.clone()) else {
+        let Some((_, prompt)) = self.prompt_for(&path, false, |content, notes| {
+            prompts::split_prompt(content, &reason, notes)
+        }) else {
             return;
         };
-        let notes = self.reviewer_notes(&path);
-        let prompt = prompts::split_prompt(&content, &reason, &notes);
         let project = Some(self.board.project_of(&path));
         let (answer, progress) =
             agent::start_review(&self.prefs.agent, &prompt, &path, project, mode);
@@ -71,30 +94,14 @@ impl IboardApp {
     /// Adopts the agent's tickets once they are in; called every frame.
     pub(super) fn poll_split(&mut self) -> Option<Duration> {
         let review = self.session.review.as_mut()?;
-        let Some(Split::Cutting { answer, .. }) = &review.split else {
-            return None;
-        };
-        let Some(result) = answer.answer() else {
-            return Some(job::POLL_EVERY);
-        };
-        let drafts = result.and_then(|answer| {
-            agent::parse_split(&answer)
-                .ok_or_else(|| "The agent's answer had no tickets to create.".to_string())
-        });
-        review.split = Some(match drafts {
-            Ok(drafts) => Split::Ready(
-                drafts
-                    .into_iter()
-                    .map(|draft| SplitDraft {
-                        title: draft.title,
-                        body: draft.body,
-                        include: true,
-                    })
-                    .collect(),
-            ),
-            Err(error) => Split::Failed(error),
-        });
-        None
+        job::land(
+            &mut review.split,
+            |split| match split {
+                Some(Split::Cutting { answer, .. }) => Some(answer),
+                _ => None,
+            },
+            |split, result| *split = Some(Split::landed(result)),
+        )
     }
 
     /// "Back to review": the findings the split started from, dropping the
