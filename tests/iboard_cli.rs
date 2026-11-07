@@ -4,18 +4,53 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
+
+/// How long iboard gets to leave, and a running one to hear what was asked.
+const LIMIT: Duration = Duration::from_secs(20);
+
+/// What `command` printed once it left, stopped after [`LIMIT`]: one that
+/// hangs or opens a window fails its test instead of holding up the run.
+fn finished(command: &mut Command) -> Output {
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("iboard runs");
+    let drain = |mut pipe: Box<dyn Read + Send>| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = pipe.read_to_end(&mut bytes);
+            bytes
+        })
+    };
+    let stdout = drain(Box::new(child.stdout.take().unwrap()));
+    let stderr = drain(Box::new(child.stderr.take().unwrap()));
+    let start = Instant::now();
+    while matches!(child.try_wait(), Ok(None)) && start.elapsed() < LIMIT {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = child.kill();
+    Output {
+        status: child.wait().unwrap(),
+        stdout: stdout.join().unwrap(),
+        stderr: stderr.join().unwrap(),
+    }
+}
 
 /// iboard on `args`, with no user configuration: the user's own workspace
 /// would change what a folder without issues opens.
 fn iboard(args: &[&str]) -> Output {
     let config = tempfile::tempdir().unwrap();
-    Command::new(env!("CARGO_BIN_EXE_iboard"))
-        .args(args)
-        .env("XDG_CONFIG_HOME", config.path())
-        .output()
-        .expect("iboard runs")
+    finished(
+        Command::new(env!("CARGO_BIN_EXE_iboard"))
+            .args(args)
+            .env("XDG_CONFIG_HOME", config.path()),
+    )
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -85,10 +120,6 @@ fn a_folder_without_issues_is_an_error() {
     }
 }
 
-/// How long a later iboard gets to leave, and what it asked to come through.
-#[cfg(unix)]
-const LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
-
 /// An iboard already running, as a later one finds it through `cache`: it
 /// answers `count` requests, and hands back what each asked once answered.
 #[cfg(unix)]
@@ -115,20 +146,12 @@ fn running_iboard(cache: &Path, count: usize) -> std::sync::mpsc::Receiver<serde
 /// iboard on `args`, stopped if it opens a window rather than leaving.
 #[cfg(unix)]
 fn later_iboard(args: &[&str], cache: &Path, config: &Path) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_iboard"))
-        .args(args)
-        .env("XDG_CACHE_HOME", cache)
-        .env("XDG_CONFIG_HOME", config)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    let start = std::time::Instant::now();
-    while matches!(child.try_wait(), Ok(None)) && start.elapsed() < LIMIT {
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    let _ = child.kill();
-    child.wait_with_output().unwrap()
+    finished(
+        Command::new(env!("CARGO_BIN_EXE_iboard"))
+            .args(args)
+            .env("XDG_CACHE_HOME", cache)
+            .env("XDG_CONFIG_HOME", config),
+    )
 }
 
 /// With an iboard running, a later one hands it the project (its root, from
@@ -212,11 +235,11 @@ fn all_lists_each_group_with_its_projects_merged() {
     )
     .unwrap();
     let run = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_iboard"))
-            .args(args)
-            .env("XDG_CONFIG_HOME", config.path())
-            .output()
-            .unwrap()
+        finished(
+            Command::new(env!("CARGO_BIN_EXE_iboard"))
+                .args(args)
+                .env("XDG_CONFIG_HOME", config.path()),
+        )
     };
     let output = run(&["--all", "--list"]);
     assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));

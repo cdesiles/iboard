@@ -21,7 +21,6 @@
 //! and hands the answer back over a channel; the GUI polls it. The agent only
 //! ever returns text: writing the file stays the user's decision.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -628,6 +627,17 @@ impl<'a> Workspace<'a> {
     }
 }
 
+/// The file a custom command reads `prompt` from: it may be too long for an
+/// argument, and `{prompt}` can then go anywhere in the command.
+fn prompt_file(config: &AgentConfig, prompt: &str) -> Result<Option<files::TempFile>, String> {
+    if config.tool != Tool::Custom {
+        return Ok(None);
+    }
+    files::TempFile::write("prompt", "md", prompt)
+        .map(Some)
+        .map_err(|err| format!("Couldn't write the prompt to the temp folder: {err}"))
+}
+
 /// [`run`] for `purpose`, in `workspace` when set; the agent's steps land in
 /// `progress` as they come.
 fn run_with(
@@ -643,19 +653,16 @@ fn run_with(
         "" if config.tool != Tool::Custom => default_model(config.tool).unwrap_or_default(),
         model => model.to_string(),
     };
-    // A custom command reads the prompt from a file: it may be too long for
-    // an argument, and `{prompt}` can then go anywhere in the command.
     let custom = config.tool == Tool::Custom;
-    let prompt_file = files::temp_path("prompt", "md");
-    if custom {
-        std::fs::write(&prompt_file, prompt)
-            .map_err(|err| format!("Couldn't write {}: {err}", prompt_file.display()))?;
-    }
+    let prompt_file = prompt_file(config, prompt)?;
     let what = match config.tool {
         Tool::Custom => "the custom command",
         tool => tool.key(),
     };
-    let mut command = command(config, &model, prompt, &prompt_file, issue, purpose);
+    let prompt_path = prompt_file
+        .as_ref()
+        .map_or(Path::new(""), files::TempFile::path);
+    let mut command = command(config, &model, prompt, prompt_path, issue, purpose);
     if let Some(workspace) = workspace {
         command.current_dir(workspace.dir);
         if direnv::applies(DIRENV.load(Ordering::Relaxed), workspace.dir)
@@ -676,13 +683,11 @@ fn run_with(
         }
         if let Some(log) = log.as_mut() {
             for entry in build_log::entries(line) {
-                let _ = writeln!(log, "{entry}");
+                let _ = build_log::write_line(log, &entry);
             }
         }
     });
-    if custom {
-        let _ = std::fs::remove_file(&prompt_file);
-    }
+    drop(prompt_file);
     let output = output?;
     let failure = stream_error(&output.stdout);
     let answer = output

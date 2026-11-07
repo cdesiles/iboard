@@ -44,8 +44,8 @@ fn in_column(dir: &Path, column: &str) -> Vec<String> {
 }
 
 /// Stops the build, then waits until its agents logged how all `runs` ended:
-/// one still at work once the test is over would write its log into the
-/// scratch folder, gone by then, and so make it again.
+/// one still at work while the scratch folder is removed could write its log
+/// in it and keep it from going.
 fn stop_agents(app: &mut IboardApp, dir: &Path, runs: usize) {
     app.stop_build();
     let ended = |log: std::fs::DirEntry| {

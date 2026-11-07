@@ -5,16 +5,69 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 /// A fresh path in the temp folder, `iboard-<tag>-<pid>-<n>.<extension>`: the
 /// counter keeps two files made at the same instant apart.
-pub fn temp_path(tag: &str, extension: &str) -> PathBuf {
+fn temp_path(tag: &str, extension: &str) -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!(
         "iboard-{tag}-{}-{n}.{extension}",
         std::process::id()
     ))
+}
+
+/// The temp files still there; `None` once the process is exiting.
+static TEMP_FILES: Mutex<Option<Vec<PathBuf>>> = Mutex::new(Some(Vec::new()));
+
+/// A file in the temp folder, removed when dropped, or when the process
+/// exits while the thread holding it is still at work.
+#[derive(Debug)]
+pub struct TempFile(PathBuf);
+
+impl TempFile {
+    /// Writes `contents` to a fresh [`temp_path`].
+    pub fn write(tag: &str, extension: &str, contents: &str) -> std::io::Result<Self> {
+        #[cfg(unix)]
+        {
+            static AT_EXIT: std::sync::Once = std::sync::Once::new();
+            // SAFETY: `remove_temp_files` is a plain function that never unwinds.
+            AT_EXIT.call_once(|| unsafe {
+                libc::atexit(remove_temp_files);
+            });
+        }
+        let path = temp_path(tag, extension);
+        let mut files = TEMP_FILES.lock().unwrap_or_else(PoisonError::into_inner);
+        let files = files
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("the process is exiting"))?;
+        std::fs::write(&path, contents)?;
+        files.push(path.clone());
+        Ok(Self(path))
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let mut files = TEMP_FILES.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(files) = files.as_mut() {
+            files.retain(|path| *path != self.0);
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+}
+
+#[cfg(unix)]
+extern "C" fn remove_temp_files() {
+    let mut files = TEMP_FILES.lock().unwrap_or_else(PoisonError::into_inner);
+    for path in files.take().unwrap_or_default() {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 /// Longest file name the editor accepts, in bytes, including its extension.
@@ -177,6 +230,24 @@ pub fn write_creating(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), Wri
     atomic_write(path, contents).map_err(WriteError::File)
 }
 
+/// Creates `dir` in its parent, never the parent itself, so work still
+/// running in a folder deleted meanwhile does not bring it back.
+pub fn create_last_dir(dir: &Path) -> std::io::Result<()> {
+    match std::fs::create_dir(dir) {
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        result => result,
+    }
+}
+
+/// [`write_creating`], creating only the folder `path` goes in: see
+/// [`create_last_dir`].
+pub fn write_creating_last(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), WriteError> {
+    if let Some(dir) = path.parent() {
+        create_last_dir(dir).map_err(|err| WriteError::Folder(dir.to_path_buf(), err))?;
+    }
+    atomic_write(path, contents).map_err(WriteError::File)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +345,28 @@ mod tests {
             write_creating(&dir.join("file/sub/issue.md"), "text"),
             Err(WriteError::Folder(folder, _)) if folder == dir.join("file/sub")
         ));
+    }
+
+    #[test]
+    fn write_creating_last_never_brings_a_deleted_folder_back() {
+        let scratch = tempfile::tempdir().unwrap();
+        let issues = scratch.path().join("issues");
+        let log = issues.join(".builds/a.log");
+        assert!(write_creating_last(&log, "text").is_err());
+        assert!(!issues.exists());
+
+        std::fs::create_dir(&issues).unwrap();
+        write_creating_last(&log, "text").unwrap();
+        write_creating_last(&log, "again").unwrap();
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "again");
+    }
+
+    #[test]
+    fn a_temp_file_goes_when_dropped() {
+        let file = TempFile::write("test", "md", "prompt").unwrap();
+        let path = file.path().to_path_buf();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "prompt");
+        drop(file);
+        assert!(!path.exists());
     }
 }

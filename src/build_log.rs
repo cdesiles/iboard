@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::{agent, format, reviews};
+use crate::{agent, files, format, reviews};
 
 /// The folder under the issues root; discovery skips dot-folders.
 pub const DIR: &str = ".builds";
@@ -23,10 +23,11 @@ pub fn load(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-/// The log at `path`, open for appending, created with its folder.
+/// The log at `path`, open for appending, created with its folder; a deleted
+/// issues folder stays deleted.
 pub fn open(path: &Path) -> Result<File, String> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)
+        files::create_last_dir(dir)
             .map_err(|err| format!("Couldn't create {}: {err}", dir.display()))?;
     }
     OpenOptions::new()
@@ -38,8 +39,14 @@ pub fn open(path: &Path) -> Result<File, String> {
 
 /// Adds `text` as its own lines to the log at `path`.
 pub fn append(path: &Path, text: &str) -> Result<(), String> {
-    writeln!(open(path)?, "{text}")
+    write_line(&mut open(path)?, text)
         .map_err(|err| format!("Couldn't write {}: {err}", path.display()))
+}
+
+/// Adds `text` and its line break to `log` in one write, so a run started
+/// over while the last one ends never cuts into its lines.
+pub fn write_line(log: &mut File, text: &str) -> std::io::Result<()> {
+    log.write_all(format!("{text}\n").as_bytes())
 }
 
 /// The heading a new run starts under: when, and which agent.
@@ -229,6 +236,39 @@ mod tests {
         append(&log, &outcome(&Err("stopped".into()), took)).unwrap();
         append(&log, &outcome(&Ok(String::new()), took)).unwrap();
         assert_eq!(load(&log).unwrap(), "one\n✗ stopped\n✓ Finished in 02:05\n");
+    }
+
+    #[test]
+    fn two_runs_at_once_keep_their_lines_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = path(dir.path(), Path::new("doing/a.md"));
+        let runs: Vec<_> = ["── run", "✗ stopped"]
+            .map(|line| {
+                let log = log.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..200 {
+                        append(&log, line).unwrap();
+                    }
+                })
+            })
+            .into_iter()
+            .collect();
+        runs.into_iter().for_each(|run| run.join().unwrap());
+        let text = load(&log).unwrap();
+        assert!(
+            text.lines()
+                .all(|line| line == "── run" || line == "✗ stopped"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_log_never_brings_back_a_deleted_issues_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let issues = dir.path().join("issues");
+        let log = path(&issues, Path::new("doing/a.md"));
+        assert!(append(&log, "late").is_err());
+        assert!(!issues.exists());
     }
 
     #[test]

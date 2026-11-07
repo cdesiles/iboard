@@ -160,13 +160,12 @@ pub fn start(
             let agent = agent.clone();
             Job::spawn(move |cancel| {
                 // A custom command may read the description from `{issue}`.
-                let file = files::temp_path("title", "md");
-                std::fs::write(&file, &description)
-                    .map_err(|err| format!("Couldn't write {}: {err}", file.display()))?;
+                let file = files::TempFile::write("title", "md", &description).map_err(|err| {
+                    format!("Couldn't write the description to the temp folder: {err}")
+                })?;
                 let prompt = agent_prompt(&description);
-                let result = agent::run(&agent, &prompt, &file, None, cancel, TIMEOUT);
-                let _ = std::fs::remove_file(&file);
-                result.and_then(|raw| clean(&raw))
+                agent::run(&agent, &prompt, file.path(), None, cancel, TIMEOUT)
+                    .and_then(|raw| clean(&raw))
             })
         }
         Engine::Off => Job::done(Err("automatic titles are off".to_string())),

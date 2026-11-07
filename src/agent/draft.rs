@@ -5,7 +5,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use super::{
-    AgentConfig, Purpose, Tool, Workspace, command, default_model, final_answer, stream_error,
+    AgentConfig, Purpose, Tool, Workspace, command, default_model, final_answer, prompt_file,
+    stream_error,
 };
 use crate::files;
 use crate::job::{Cancel, Job};
@@ -48,17 +49,16 @@ fn run_draft(
         model => model.to_string(),
     };
     let custom = config.tool == Tool::Custom;
-    let prompt_file = files::temp_path("prompt", "md");
-    if custom {
-        std::fs::write(&prompt_file, prompt)
-            .map_err(|err| format!("Couldn't write {}: {err}", prompt_file.display()))?;
-    }
+    let prompt_file = prompt_file(config, prompt)?;
     let what = match config.tool {
         Tool::Custom => "the custom command",
         tool => tool.key(),
     };
     let issue = project.unwrap_or(Path::new("."));
-    let mut command = command(config, &model, prompt, &prompt_file, issue, Purpose::Draft);
+    let prompt_path = prompt_file
+        .as_ref()
+        .map_or(Path::new(""), files::TempFile::path);
+    let mut command = command(config, &model, prompt, prompt_path, issue, Purpose::Draft);
     if let Some(dir) = project.map(Workspace::of) {
         command.current_dir(dir.dir);
     }
@@ -75,9 +75,7 @@ fn run_draft(
                 .push_str(&piece);
         }
     });
-    if custom {
-        let _ = std::fs::remove_file(&prompt_file);
-    }
+    drop(prompt_file);
     let output = output?;
     let failure = stream_error(&output.stdout);
     let answer = output

@@ -361,7 +361,7 @@ impl Cache {
     fn write(&mut self, file: &Path) {
         self.version = CACHE_VERSION;
         if let Ok(json) = serde_json::to_vec(self) {
-            let _ = files::write_creating(file, json);
+            let _ = files::write_creating_last(file, json);
         }
     }
 }
