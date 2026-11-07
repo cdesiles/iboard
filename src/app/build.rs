@@ -76,8 +76,6 @@ struct Run {
     started: Instant,
     /// Where `issue` stands in the whole run, from 1.
     at: usize,
-    /// The step the agent reports, for the status bar.
-    progress: agent::Progress,
 }
 
 /// The AI build as the board shows it: the issues at work and since when,
@@ -238,19 +236,6 @@ impl IboardApp {
             .collect()
     }
 
-    /// What the status bar says while agents work, of the first one:
-    /// "Building 001-x.md (1/3) · Reading src/app.rs…".
-    pub(super) fn build_status(&self) -> Option<String> {
-        let build = self.session.build.as_ref()?;
-        let run = build.runs.first()?;
-        let name = file_name(&run.issue);
-        let place = format!("Building {name} ({}/{})", run.at, build.total);
-        Some(match agent::step(&run.progress) {
-            Some(step) => format!("{place} · {step}"),
-            None => place,
-        })
-    }
-
     /// Since when an agent works on `path`, if one does.
     pub(super) fn building_since(&self, path: &Path) -> Option<Instant> {
         let build = self.session.build.as_ref()?;
@@ -330,7 +315,7 @@ impl IboardApp {
         let prompt = prompts::build_prompt(&self.relative(&issue), &content);
         let project = self.board.project_of(&issue).to_path_buf();
         let log = build_log::path(self.board.root_of(&issue), &issue);
-        let (answer, progress) = agent::start_build(
+        let (answer, _) = agent::start_build(
             &self.prefs.build_agent,
             &prompt,
             &issue,
@@ -343,7 +328,6 @@ impl IboardApp {
             answer,
             started: Instant::now(),
             at,
-            progress,
         })
     }
 
@@ -388,13 +372,6 @@ impl IboardApp {
         self.refresh();
         self.fill_agents();
         self.session.build.is_some().then_some(job::POLL_EVERY)
-    }
-
-    /// The first agent at work reports `step`.
-    #[cfg(test)]
-    pub(super) fn report_step(&self, step: &str) {
-        let run = self.session.build.as_ref().and_then(|b| b.runs.first());
-        *run.unwrap().progress.lock().unwrap() = Some(step.to_string());
     }
 
     /// Where the first issue at work stands in its run: its place, from 1,

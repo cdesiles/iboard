@@ -49,9 +49,8 @@ impl IboardApp {
     }
 
     /// The board's status: where it reads from or what just happened, its
-    /// warnings and the AI build. Returns its key hints.
+    /// warnings. Returns its key hints.
     fn board_status(&mut self, ui: &mut egui::Ui) -> Vec<Hint> {
-        let p = theme::palette(ui);
         let hints = self.board_message(ui);
         if !self.board.warnings.is_empty() {
             let n = self.board.warnings.len();
@@ -59,11 +58,6 @@ impl IboardApp {
             status_sep(ui);
             ui.label(status_meta(ui, format!("{n} {noun}")))
                 .on_hover_text(self.board.warnings.join("\n"));
-        }
-        if let Some(status) = self.build_status() {
-            status_sep(ui);
-            let text = RichText::new(status).font(theme::meta()).color(p.accent);
-            ui.add(egui::Label::new(text).truncate());
         }
         hints
     }
