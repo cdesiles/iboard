@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent::{self, Report, ReviewMode, Reviewed, Verdict};
 use crate::files::{self, WriteError};
 use crate::priority;
 
@@ -44,9 +45,68 @@ pub struct StoredReview {
 }
 
 impl StoredReview {
+    /// The answer that just came in on the text hashed as `hash`.
+    pub fn landed(
+        hash: String,
+        agent: String,
+        mode: ReviewMode,
+        draft: bool,
+        reviewed: Reviewed,
+    ) -> Self {
+        Self {
+            hash,
+            agent,
+            mode: mode.key().to_string(),
+            draft,
+            plan: reviewed.plan,
+            at: chrono::Local::now().to_rfc3339(),
+            raw: reviewed.answer,
+        }
+    }
+
     /// Whether the issue changed since the agent read it.
     pub fn is_stale(&self, markdown: &str) -> bool {
         self.hash != content_hash(markdown)
+    }
+}
+
+/// An issue's last review, read from its sidecar, so its card pill can
+/// reopen it.
+#[derive(Debug, Clone)]
+pub struct PastReview {
+    /// True when the agent read the editor draft rather than the saved file.
+    pub draft: bool,
+    pub mode: ReviewMode,
+    /// True when the agent ran in plan mode, unable to change the repository.
+    pub plan: bool,
+    /// The configured tool (and model), shown in the panel header.
+    pub agent: String,
+    pub raw: String,
+    pub report: Option<Report>,
+    /// The issue changed since the agent read it.
+    pub stale: bool,
+}
+
+impl PastReview {
+    pub fn new(stored: &StoredReview, markdown: &str) -> Self {
+        Self {
+            draft: stored.draft,
+            mode: ReviewMode::from_key(&stored.mode),
+            plan: stored.plan,
+            agent: stored.agent.clone(),
+            raw: stored.raw.clone(),
+            report: agent::parse(&stored.raw),
+            stale: stored.is_stale(markdown),
+        }
+    }
+
+    /// The review's verdict: the worst of its three, `None` when the answer
+    /// did not parse.
+    pub fn verdict(&self) -> Option<Verdict> {
+        self.report
+            .iter()
+            .flat_map(|r| r.findings.iter().map(|f| f.verdict))
+            .max()
     }
 }
 
@@ -185,6 +245,28 @@ mod tests {
         assert!(!stored.is_stale("# X\n\nBody.\n"));
         assert!(stored.is_stale("# X\n\nBody, edited.\n"));
         assert_eq!(content_hash(""), "cbf29ce484222325");
+    }
+
+    #[test]
+    fn a_past_review_keeps_the_worst_verdict_and_its_staleness() {
+        let reviewed = Reviewed {
+            answer: "RELEVANCE: Pass\nok\nSIZE: Block\nsplit\nCLARITY: Challenge\nwhich?".into(),
+            plan: true,
+        };
+        let hash = content_hash("# X\n");
+        let stored =
+            StoredReview::landed(hash, "opencode".into(), ReviewMode::Deep, true, reviewed);
+        assert_eq!((stored.mode.as_str(), stored.plan), ("deep", true));
+
+        let past = PastReview::new(&stored, "# X\n");
+        assert_eq!(past.verdict(), Some(Verdict::Block));
+        assert!(past.draft && past.plan && !past.stale);
+        assert!(PastReview::new(&stored, "# Y\n").stale);
+        let unparsed = StoredReview {
+            raw: "no findings".into(),
+            ..stored
+        };
+        assert_eq!(PastReview::new(&unparsed, "# X\n").verdict(), None);
     }
 
     #[test]

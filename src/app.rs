@@ -15,7 +15,7 @@ use egui::{
 };
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
-use crate::agent::{self, AgentConfig, Report, ReviewMode};
+use crate::agent::{self, AgentConfig, ReviewMode};
 use crate::commits;
 use crate::discovery::{self, Board, Column, Located};
 use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_name};
