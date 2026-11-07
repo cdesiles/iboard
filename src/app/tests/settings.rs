@@ -42,7 +42,7 @@ fn the_settings_dialog_saves_with_command_enter() {
     assert!(app.session.review.is_some(), "and leaves the review alone");
 }
 
-/// Settings › AI build: the Timeout select opens on 10 minutes, and picking
+/// Settings › AI build: the Timeout select opens on 30 minutes, and picking
 /// from it is saved with `[build]`.
 #[test]
 fn the_build_timeout_is_picked_and_saved_with_the_build_section() {
@@ -53,7 +53,7 @@ fn the_build_timeout_is_picked_and_saved_with_the_build_section() {
     app.open_settings(settings_ui::Tab::Build);
     let mut harness = kittest(app);
 
-    harness.get_by_label("10 minutes").click();
+    harness.get_by_label("30 minutes").click();
     harness.run_steps(2);
     harness.get_by_label("No limit").click();
     harness.run_steps(2);

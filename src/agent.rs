@@ -290,7 +290,7 @@ pub struct BuildTimeout(Option<u64>);
 
 impl Default for BuildTimeout {
     fn default() -> Self {
-        BuildTimeout(Some(10))
+        BuildTimeout(Some(30))
     }
 }
 

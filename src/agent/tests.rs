@@ -504,8 +504,8 @@ fn each_purpose_has_its_limit() {
         deploys: false,
     };
     let build = BuildTimeout::default();
-    assert_eq!(Purpose::Build(build).timeout(), minutes(10));
-    assert_eq!(Purpose::Ask(leash, build).timeout(), minutes(10));
+    assert_eq!(Purpose::Build(build).timeout(), minutes(30));
+    assert_eq!(Purpose::Ask(leash, build).timeout(), minutes(30));
     let build = BuildTimeout::NONE;
     assert_eq!(Purpose::Build(build).timeout(), None);
     assert_eq!(Purpose::Ask(leash, build).timeout(), None);

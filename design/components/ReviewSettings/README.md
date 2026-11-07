@@ -40,7 +40,7 @@ A select with three options, always in this order:
 
 ## Timeout
 
-- AI build only, under Model: a select with **5**, **10**, **20**, **30**, **60** and **180 minutes**, then **No limit** with `∞` in `meta`. The default is 10 minutes.
+- AI build only, under Model: a select with **5**, **10**, **20**, **30**, **60** and **180 minutes**, then **No limit** with `∞` in `meta`. The default is 30 minutes.
 - It stops a build and an Ask, read-only or not. No limit leaves stopping to the user.
 - The other runs have a fixed limit: a review, the Challenger's rounds and a split stop at 120s (see Thinking), a title at 15s (see QuickAdd), and a new-issue draft, a design mockup and a component's preview at 10 minutes.
 
@@ -67,7 +67,7 @@ scope = "ticket"         # "ticket" | "project"; absent means "ticket"
 [build]
 tool = "opencode"        # the same keys, without scope
 model = "default"
-timeout = "10m"          # "5m" | "10m" | "20m" | "30m" | "60m" | "180m" | "none"; absent means "10m"
+timeout = "30m"          # "5m" | "10m" | "20m" | "30m" | "60m" | "180m" | "none"; absent means "30m"
 ```
 
 The key names are a suggestion; keep whatever the app already writes.
