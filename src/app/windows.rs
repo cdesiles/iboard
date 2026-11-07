@@ -243,6 +243,7 @@ impl IboardApp {
                     confirm_delete: dialog.confirm_delete,
                     appearance: dialog.appearance,
                     auto: dialog.auto,
+                    agents: dialog.agents,
                     ..self.prefs.clone()
                 };
                 if save_review {
@@ -263,6 +264,7 @@ impl IboardApp {
                     prefs.labels = dialog.labels();
                 }
                 let renames = dialog.renames.clone();
+                let agents_changed = dialog.agents != self.prefs.agents;
                 // Only what changed is written, so a setting another window
                 // saved in the meantime survives.
                 let result = prefs.sections_since(&self.prefs).and_then(|sections| {
@@ -281,6 +283,9 @@ impl IboardApp {
                         }
                         self.config_problem = None;
                         self.settings = None;
+                        if agents_changed {
+                            self.apply_agents(self.prefs.agents);
+                        }
                         // The composer follows the new engine at once.
                         if self.composer_open() {
                             self.show_composer();

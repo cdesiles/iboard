@@ -1,6 +1,8 @@
 //! The Settings dialog (`⌘,`), with five tabs: General (the theme, and
 //! whether deleting asks first), AI review (which agent runs the review, and with which model),
-//! AI build (the same, for the agent that implements Ready issues), Titles (which engine names new issues) and Labels (label colours). See
+//! AI build (the same, for the agent that implements Ready issues, how long it
+//! works and how many work at once), Titles (which engine names new issues) and
+//! Labels (label colours). See
 //! `design/components/{GeneralSettings,ReviewSettings,TitleSettings,SettingsLabels}`.
 //!
 //! One module per tab. What the dialog shows about the tools (where each is
@@ -54,6 +56,7 @@ struct Edits {
     form: AgentConfig,
     build_form: AgentConfig,
     build_timeout: BuildTimeout,
+    agents: usize,
     engine: Engine,
     confirm_delete: bool,
     appearance: Appearance,
@@ -77,6 +80,8 @@ pub struct Dialog {
     pub build_form: AgentConfig,
     /// Settings › AI build: how long a build or an ask may work.
     pub build_timeout: BuildTimeout,
+    /// Settings › AI build: how many build agents may work at once.
+    pub agents: usize,
     /// The title engine being chosen.
     pub engine: Engine,
     /// Settings › General: deleting an issue asks first.
@@ -135,6 +140,7 @@ impl Dialog {
             build_seen: false,
             build_form: prefs.build_agent.clone(),
             build_timeout: prefs.build_timeout,
+            agents: prefs.agents,
             engine: prefs.title_engine,
             confirm_delete: prefs.confirm_delete,
             appearance: prefs.appearance,
@@ -194,6 +200,7 @@ impl Dialog {
             form: self.form.clone(),
             build_form: self.build_form.clone(),
             build_timeout: self.build_timeout,
+            agents: self.agents,
             engine: self.engine,
             confirm_delete: self.confirm_delete,
             appearance: self.appearance,
@@ -460,6 +467,7 @@ mod tests {
                 (Some(Menu::Tool), Tab::Review),
                 (Some(Menu::Model), Tab::Review),
                 (Some(Menu::Timeout), Tab::Build),
+                (Some(Menu::Agents), Tab::Build),
             ] {
                 let mut dialog = Dialog::new(
                     &with_agent(AgentConfig {

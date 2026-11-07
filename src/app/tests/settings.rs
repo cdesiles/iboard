@@ -75,6 +75,38 @@ fn the_build_timeout_is_picked_and_saved_with_the_build_section() {
     );
 }
 
+/// Settings › AI build: the number of build agents, the same count Doing's
+/// header sets, is shown and saved with `[build]`.
+#[test]
+fn the_build_agent_count_is_picked_and_saved_with_the_build_section() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, _file, mut app) = open_issue_with_review("build-agents");
+    let config = dir.join("iboard.toml");
+    app.config_file = Some(config.clone());
+    app.open_settings(settings_ui::Tab::Build);
+    let mut harness = kittest(app);
+
+    harness.get_by_label("1 agent").click();
+    harness.run_steps(2);
+    harness.get_by_label("4 agents").click();
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().1.settings.as_ref().unwrap().agents,
+        4,
+        "the tab shows the chosen count"
+    );
+
+    harness.get_by_label("Save").click();
+    harness.run_steps(2);
+    assert_eq!(harness.state().1.prefs.agents, 4);
+    assert_eq!(harness.state().1.session.agents, 4, "and the board uses it");
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert!(
+        text.contains("[build]") && text.contains("agents = 4"),
+        "{text}"
+    );
+}
+
 /// The same flow through egui_kittest: widgets found by their label, as a
 /// screen reader sees them.
 #[test]

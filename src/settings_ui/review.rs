@@ -5,7 +5,7 @@ use egui::{Frame, Id, Vec2};
 
 use super::select_menu::Menu;
 use super::{Catalog, Dialog};
-use crate::agent::{BuildTimeout, Detected, Models, ReviewMode, Tool};
+use crate::agent::{BuildTimeout, Detected, MAX_AGENTS, Models, ReviewMode, Tool};
 use crate::format::display_path;
 use crate::theme::{self, Icon};
 use crate::widgets::{
@@ -125,6 +125,15 @@ fn model_help(tool: Tool, models: Option<&Models>) -> &'static str {
     }
 }
 
+/// What Settings › AI build shows for a count of build agents.
+fn agents_name(agents: usize) -> String {
+    match agents {
+        0 => "None".to_string(),
+        1 => "1 agent".to_string(),
+        count => format!("{count} agents"),
+    }
+}
+
 impl Dialog {
     pub(super) fn choose_tool(&mut self, tool: Tool, catalog: &mut Catalog) {
         if tool != self.form.tool {
@@ -149,6 +158,8 @@ impl Dialog {
             self.scope_field(ui);
         } else {
             self.timeout_field(ui);
+            ui.add_space(theme::SPACE_5);
+            self.agents_field(ui);
         }
         if let Some(error) = &self.save_error {
             ui.add_space(theme::SPACE_5);
@@ -303,6 +314,53 @@ impl Dialog {
         help(
             ui,
             "A build or an Ask is stopped after this long.",
+            p.ink_muted,
+        );
+    }
+
+    fn agents_field(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette(ui);
+        field_label(ui, "Build agents");
+        let current = self.agents;
+        let name = agents_name(current);
+        let open = self.menu.is_open(Menu::Agents);
+        let response = widgets::select(ui, Id::unique("build-agents"), &name, None, open);
+        self.menu.toggle_on(&response, Menu::Agents);
+
+        if self.menu.is_open(Menu::Agents) {
+            let options: Vec<usize> = (0..=MAX_AGENTS).collect();
+            let picked = self.menu.keyboard(ui, options.len());
+            let mut picked = picked.map(|index| options[index]);
+            self.menu.popup(ui, &response, Menu::Agents, |menu, ui| {
+                for (index, option) in options.into_iter().enumerate() {
+                    if widgets::menu_option(
+                        ui,
+                        MenuOption {
+                            meta_is_key: false,
+                            name: &agents_name(option),
+                            mono: false,
+                            muted: false,
+                            meta: "",
+                            checked: option == current,
+                            active: index == menu.highlight,
+                        },
+                    )
+                    .clicked()
+                    {
+                        picked = Some(option);
+                    }
+                }
+            });
+            if let Some(option) = picked {
+                self.agents = option;
+                self.menu.close();
+            }
+        }
+
+        ui.add_space(theme::SPACE_2);
+        help(
+            ui,
+            "Each takes the next Ready issue of the run. None stops the build.",
             p.ink_muted,
         );
     }

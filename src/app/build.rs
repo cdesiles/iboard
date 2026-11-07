@@ -13,7 +13,7 @@ use crate::build_log;
 use crate::reviews;
 
 /// The most agents an AI build runs at once.
-pub(super) const MAX_AGENTS: usize = 16;
+pub(super) const MAX_AGENTS: usize = crate::agent::MAX_AGENTS;
 
 /// The issues an AI build goes through, and the ones its agents are on.
 pub(super) struct Build {
@@ -416,8 +416,16 @@ impl IboardApp {
 
     /// The `−` and `+` on Doing's header: from none, which stops the build,
     /// to [`MAX_AGENTS`]. More agents take more of the queue at once; fewer
-    /// let the ones at work finish.
+    /// let the ones at work finish. The count is the user's: it is saved in
+    /// `[build] agents` and Settings › AI build shows it.
     pub(super) fn set_agents(&mut self, agents: usize) {
+        self.apply_agents(agents);
+        self.prefs.agents = self.session.agents;
+        self.remember_section(agent::agents_section(self.prefs.agents));
+    }
+
+    /// Applies a count from the header or from Settings, without saving it.
+    pub(super) fn apply_agents(&mut self, agents: usize) {
         self.session.agents = agents.min(MAX_AGENTS);
         if self.session.agents == 0 {
             self.stop_build();

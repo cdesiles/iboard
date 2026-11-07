@@ -489,7 +489,7 @@ impl IboardApp {
                 .ok()
         });
         let mut config = UserConfig::load(app.config_file.as_deref());
-        app.prefs = Preferences::load(&mut config);
+        app.load_preferences(&mut config);
         app.restore_splits(&cc.egui_ctx);
         agent::set_direnv(app.prefs.direnv);
         theme::apply(&cc.egui_ctx, app.prefs.appearance);
@@ -506,6 +506,13 @@ impl IboardApp {
         }
         app.report_config_problems(&config.problems, groups::DEFAULTS_UNTIL_FIXED);
         app
+    }
+
+    /// Reads the user configuration into the app, and applies what shapes the
+    /// session before a project opens.
+    fn load_preferences(&mut self, config: &mut UserConfig) {
+        self.prefs = Preferences::load(config);
+        self.apply_agents(self.prefs.agents);
     }
 
     fn from_located(located: Located) -> Self {
@@ -609,6 +616,7 @@ impl IboardApp {
     fn leave_project(&mut self) {
         self.close_review();
         self.session = Session::default();
+        self.apply_agents(self.prefs.agents);
         self.past_reviews.clear();
         self.filter_bar.filter.clear();
         self.error = None;

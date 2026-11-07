@@ -611,6 +611,45 @@ fn only_the_review_section_stores_the_scope() {
 }
 
 #[test]
+fn the_build_agent_count_is_one_until_the_build_section_says_otherwise() {
+    let read = |text: &str| {
+        let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
+        (load_agents(&mut config), config.problems)
+    };
+    assert_eq!(read(""), (DEFAULT_AGENTS, Vec::new()));
+    assert_eq!(read("[build]\nagents = 0\n"), (0, Vec::new()));
+    assert_eq!(read("[build]\nagents = 4\n"), (4, Vec::new()));
+    let (agents, problems) = read("[build]\nagents = 40\n");
+    assert_eq!(agents, MAX_AGENTS);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    let (agents, problems) = read("[build]\nagents = \"four\"\n");
+    assert_eq!(agents, DEFAULT_AGENTS);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+}
+
+#[test]
+fn saving_the_agent_count_keeps_the_rest_of_the_build_section() {
+    let scratch = tempfile::tempdir().unwrap();
+    let file = scratch.path().join("iboard.toml");
+    std::fs::write(
+        &file,
+        "[build]\n# mine\ntool = \"claude\"\nmodel = \"opus\"\ntimeout = \"10m\"\nextra = 1\n",
+    )
+    .unwrap();
+
+    settings::save(&file, &[agents_section(4).unwrap()]).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "[build]\n# mine\ntool = \"claude\"\nmodel = \"opus\"\ntimeout = \"10m\"\n\
+         extra = 1\nagents = 4\n"
+    );
+    let mut config = UserConfig::load(Some(&file));
+    assert_eq!(load_agents(&mut config), 4);
+    assert!(config.problems.is_empty());
+}
+
+#[test]
 fn each_purpose_has_its_limit() {
     let minutes = |minutes: u64| Some(Duration::from_secs(minutes * 60));
     let review = |mode| Purpose::Review { mode, plan: true };

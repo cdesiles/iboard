@@ -309,6 +309,25 @@ fn one_agent_takes_the_first_issue_and_more_take_the_next() {
 }
 
 #[test]
+fn doing_header_agents_are_saved_and_restored() {
+    let (dir, mut app) = board("build-agents-save", "true # {prompt}");
+    let config = dir.join("iboard.toml");
+    app.config_file = Some(config.clone());
+    app.apply(vec![Intent::Agents(4)]);
+    assert_eq!(app.prefs.agents, 4);
+    assert_eq!(
+        std::fs::read_to_string(&config).unwrap(),
+        "[build]\nagents = 4\n"
+    );
+
+    let mut restarted = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    restarted.config_file = Some(config.clone());
+    restarted.load_preferences(&mut UserConfig::load(Some(&config)));
+    assert_eq!(restarted.prefs.agents, 4);
+    assert_eq!(restarted.session.agents, 4);
+}
+
+#[test]
 fn no_agents_stops_the_build_and_at_most_sixteen() {
     let (dir, mut app) = board("build-none", "sleep 30 # {prompt}");
     app.apply(vec![Intent::Build(ready(&app))]);

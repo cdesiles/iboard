@@ -29,6 +29,8 @@ pub struct Preferences {
     pub build_agent: AgentConfig,
     /// `[build]`: how long a build or an ask may work.
     pub build_timeout: BuildTimeout,
+    /// `[build]`: how many build agents may work at once.
+    pub agents: usize,
     /// `[filter]`: the labels the filter suggests; `None` suggests the
     /// board's most used.
     pub suggestions: Option<Vec<String>>,
@@ -79,6 +81,7 @@ impl Preferences {
             agent,
             build_agent,
             build_timeout: agent::load_build_timeout(config),
+            agents: agent::load_agents(config),
             suggestions: filter::load_suggestions(config),
             title_engine: titles::load_engine(config),
             confirm_delete: general::load_confirm_delete(config),
@@ -104,6 +107,11 @@ impl Preferences {
         }
         if self.build_agent != before.build_agent || self.build_timeout != before.build_timeout {
             sections.push(agent::build_section(&self.build_agent, self.build_timeout)?);
+            if self.agents != agent::DEFAULT_AGENTS {
+                sections.push(agent::agents_section(self.agents)?);
+            }
+        } else if self.agents != before.agents {
+            sections.push(agent::agents_section(self.agents)?);
         }
         if self.title_engine != before.title_engine {
             sections.push(titles::section(self.title_engine)?);
@@ -158,6 +166,7 @@ mod tests {
             agent: AgentConfig::default(),
             build_agent: AgentConfig::default(),
             build_timeout: BuildTimeout::default(),
+            agents: agent::DEFAULT_AGENTS,
             suggestions: None,
             title_engine: Engine::Apple,
             confirm_delete: true,
@@ -181,7 +190,7 @@ mod tests {
     fn each_preference_comes_from_its_section() {
         let mut config = parse(
             "[ai]\ntool = \"claude\"\nmodel = \"opus\"\n\
-             [build]\ntool = \"opencode\"\ntimeout = \"none\"\n\
+             [build]\ntool = \"opencode\"\ntimeout = \"none\"\nagents = 4\n\
              [filter]\nsuggestions = [\"Bug\"]\n\
              [titles]\nengine = \"manual\"\n\
              [delete]\nconfirm = false\n\
@@ -204,6 +213,7 @@ mod tests {
                 agent: configured(Tool::Claude, "opus"),
                 build_agent: configured(Tool::OpenCode, ""),
                 build_timeout: BuildTimeout::NONE,
+                agents: 4,
                 suggestions: Some(vec!["bug".to_string()]),
                 title_engine: Engine::Off,
                 confirm_delete: false,

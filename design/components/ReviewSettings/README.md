@@ -2,7 +2,7 @@
 
 The *AI review* tab of the Settings dialog: which agent runs the AI review, and with which model. It opens from `⌘,` or from the menu on the Review button, and saves to `~/.config/iboard/iboard.toml`. The other tabs are *General* (GeneralSettings), *AI build*, *Titles* (TitleSettings) and *Labels*.
 
-The *AI build* tab has the same Tool, Command and Model fields and a Timeout, for the agent that implements Ready issues (Ready's play, see Column). It is saved as `[build]`; until it is, the build uses the AI review's agent. A custom command runs from the project folder and may edit it; Claude Code runs with `--permission-mode acceptEdits`.
+The *AI build* tab has the same Tool, Command and Model fields, a Timeout and the number of build agents, for the agent that implements Ready issues (Ready's play, see Column). It is saved as `[build]`; until it is, the build uses the AI review's agent. A custom command runs from the project folder and may edit it; Claude Code runs with `--permission-mode acceptEdits`.
 
 ## Layout
 
@@ -44,6 +44,12 @@ A select with three options, always in this order:
 - It stops a build and an Ask, read-only or not. No limit leaves stopping to the user.
 - The other runs have a fixed limit: a review, the Challenger's rounds and a split stop at 120s (see Thinking), a title at 15s (see QuickAdd), and a new-issue draft, a design mockup and a component's preview at 10 minutes.
 
+## Build agents
+
+- AI build only, under Timeout: a select from **None** and **1 agent** to **16 agents**, 1 by default.
+- It is the same count as Doing's header (see Column): the header and Settings show and set each other, and the count is saved in `[build] agents`, so the next launch opens with it.
+- Each agent takes the next Ready issue of the run. None stops the build; Play starts it again with one agent.
+
 ## Behaviour
 
 - `⌘,` opens it from any screen; `esc` or Cancel closes without saving; `⌘↩` or Save writes the file and closes.
@@ -68,6 +74,7 @@ scope = "ticket"         # "ticket" | "project"; absent means "ticket"
 tool = "opencode"        # the same keys, without scope
 model = "default"
 timeout = "30m"          # "5m" | "10m" | "20m" | "30m" | "60m" | "180m" | "none"; absent means "30m"
+agents = 4               # 0 to 16; absent means 1
 ```
 
 The key names are a suggestion; keep whatever the app already writes.

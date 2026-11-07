@@ -14,7 +14,8 @@
 //!
 //! A `[build]` section, of the same shape, names the agent that implements
 //! Ready issues; without one, the review's agent does. Its `timeout` limits
-//! builds and asks: see [`BuildTimeout`].
+//! builds and asks: see [`BuildTimeout`]. Its `agents` is how many build
+//! agents may work at once, which Settings › AI build and Doing's header set.
 //!
 //! `default` is the tool's first favorite model, so it follows the tool's own
 //! settings. [`start`] runs the tool non-interactively against the issue text
@@ -37,6 +38,12 @@ use crate::settings::{Section, UserConfig};
 
 /// What a [`AgentConfig::model`] of "the tool's first favorite" is written as.
 const DEFAULT_MODEL: &str = "default";
+
+/// How many build agents work at once unless the user says otherwise.
+pub const DEFAULT_AGENTS: usize = 1;
+
+/// The most build agents that may work at once.
+pub const MAX_AGENTS: usize = 16;
 
 /// The agents the settings offer, in the order they list them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -280,6 +287,39 @@ pub fn build_section(config: &AgentConfig, timeout: BuildTimeout) -> Result<Sect
         ..config.to_raw()
     };
     Section::new("build", &raw)
+}
+
+/// The `[build]` section's `agents`, alone.
+#[derive(Default, Deserialize, Serialize)]
+struct RawBuildAgents {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agents: Option<usize>,
+}
+
+/// How many build agents may work at once; one unless `[build]` says
+/// otherwise. More than [`MAX_AGENTS`] is reported and reads as the most.
+pub fn load_agents(config: &mut UserConfig) -> usize {
+    let Some(agents) = config.section::<RawBuildAgents>("build").agents else {
+        return DEFAULT_AGENTS;
+    };
+    if agents > MAX_AGENTS {
+        config.problem(format!(
+            "[build]: agents {agents} is more than {MAX_AGENTS}"
+        ));
+        MAX_AGENTS
+    } else {
+        agents
+    }
+}
+
+/// The `[build]` key that stores `agents`, leaving its agent and timeout be.
+pub fn agents_section(agents: usize) -> Result<Section, String> {
+    Section::partial(
+        "build",
+        &RawBuildAgents {
+            agents: Some(agents.min(MAX_AGENTS)),
+        },
+    )
 }
 
 /// How long a review may take, Quick or Deep, the Challenger's rounds and a

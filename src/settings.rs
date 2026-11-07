@@ -122,24 +122,47 @@ impl UserConfig {
 pub struct Section {
     name: &'static str,
     body: Option<Table>,
+    /// `true`: only the keys in `body` change, the rest of the section stays.
+    partial: bool,
 }
 
 impl Section {
     /// `[name]` holding `value`, its keys in `value`'s own order.
     pub fn new(name: &'static str, value: &impl Serialize) -> Result<Self, String> {
-        let failed = |err: &dyn std::fmt::Display| format!("Couldn't write [{name}]: {err}");
-        let text = toml::to_string(value).map_err(|err| failed(&err))?;
-        let document: DocumentMut = text.parse().map_err(|err| failed(&err))?;
+        let (name, body) = to_body(name, value)?;
         Ok(Self {
             name,
-            body: Some(document.as_table().clone()),
+            body: Some(body),
+            partial: false,
+        })
+    }
+
+    /// `[name]` whose keys in `value` change; the section's other keys stay.
+    pub fn partial(name: &'static str, value: &impl Serialize) -> Result<Self, String> {
+        let (name, body) = to_body(name, value)?;
+        Ok(Self {
+            name,
+            body: Some(body),
+            partial: true,
         })
     }
 
     /// Removes `[name]` from the file.
     pub fn removed(name: &'static str) -> Self {
-        Self { name, body: None }
+        Self {
+            name,
+            body: None,
+            partial: false,
+        }
     }
+}
+
+fn to_body(name: &'static str, value: &impl Serialize) -> Result<(&'static str, Table), String> {
+    let text = toml::to_string(value).map_err(|err| format!("Couldn't write [{name}]: {err}"))?;
+    let document: DocumentMut = text
+        .parse()
+        .map_err(|err| format!("Couldn't write [{name}]: {err}"))?;
+    Ok((name, document.as_table().clone()))
 }
 
 /// Writes `sections` into `file`, keeping everything else as written.
@@ -147,6 +170,7 @@ pub fn save(file: &Path, sections: &[Section]) -> Result<(), String> {
     edit(file, |document| {
         for section in sections {
             match &section.body {
+                Some(body) if section.partial => merge_keys(document, section.name, body),
                 Some(body) => merge(document, section.name, body),
                 None => {
                     document.remove(section.name);
@@ -182,10 +206,7 @@ pub fn edit(file: &Path, change: impl FnOnce(&mut DocumentMut)) -> Result<(), St
 /// Gives `[name]` exactly `body`'s keys. A key that stays keeps its place and
 /// its comments.
 fn merge(document: &mut DocumentMut, name: &str, body: &Table) {
-    if !document.get(name).is_some_and(Item::is_table) {
-        document.insert(name, Item::Table(Table::new()));
-    }
-    let Some(section) = document.get_mut(name).and_then(Item::as_table_mut) else {
+    let Some(section) = section_table(document, name) else {
         return;
     };
     let gone: Vec<String> = section
@@ -196,6 +217,24 @@ fn merge(document: &mut DocumentMut, name: &str, body: &Table) {
     for key in gone {
         section.remove(&key);
     }
+    set_keys(section, body);
+}
+
+/// Changes only `body`'s keys in `[name]`, keeping everything else.
+fn merge_keys(document: &mut DocumentMut, name: &str, body: &Table) {
+    if let Some(section) = section_table(document, name) {
+        set_keys(section, body);
+    }
+}
+
+fn section_table<'a>(document: &'a mut DocumentMut, name: &str) -> Option<&'a mut Table> {
+    if !document.get(name).is_some_and(Item::is_table) {
+        document.insert(name, Item::Table(Table::new()));
+    }
+    document.get_mut(name).and_then(Item::as_table_mut)
+}
+
+fn set_keys(section: &mut Table, body: &Table) {
     for (key, item) in body.iter() {
         let mut item = item.clone();
         match section.get_mut(key) {
@@ -340,6 +379,33 @@ mod tests {
         let labels: toml::Table = config.section("labels");
         assert!(labels.is_empty());
         assert!(config.problems.is_empty());
+    }
+
+    #[test]
+    fn a_partial_section_changes_only_its_keys() {
+        let dir = scratch();
+        let file = dir.path().join(FILE);
+        std::fs::write(
+            &file,
+            "[build]\n# mine\ntool = \"claude\"\nextra = 1\nmodel = \"opus\"\n",
+        )
+        .unwrap();
+
+        save(
+            &file,
+            &[Section::partial("build", &RawPartial { model: "haiku" }).unwrap()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "[build]\n# mine\ntool = \"claude\"\nextra = 1\nmodel = \"haiku\"\n"
+        );
+    }
+
+    #[derive(Serialize)]
+    struct RawPartial {
+        model: &'static str,
     }
 
     #[test]

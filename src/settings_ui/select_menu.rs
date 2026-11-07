@@ -12,6 +12,7 @@ pub(super) enum Menu {
     Tool,
     Model,
     Timeout,
+    Agents,
 }
 
 /// The dialog's selects share one menu, so opening one closes the other.
