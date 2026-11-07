@@ -167,6 +167,84 @@ fn hovering_done_offers_release_left_of_archive_all() {
 }
 
 #[test]
+fn an_empty_done_column_still_releases_commits_since_the_last_tag() {
+    let (dir, mut app) = project("release-empty", &[("done/", "")]);
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["commit", "-q", "--allow-empty", "-m", "first"]);
+    git(&dir, &["tag", "v0.1.0"]);
+    git(&dir, &["commit", "-q", "--allow-empty", "-m", "after"]);
+    let index = app
+        .board
+        .columns
+        .iter()
+        .position(|c| c.name.eq_ignore_ascii_case("done"))
+        .unwrap();
+    assert!(app.board.columns[index].issues.is_empty());
+    let release = egui::Id::unique(("release", index));
+
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let column = ctx
+        .read_response(egui::Id::unique(("column_drop", index)))
+        .unwrap()
+        .rect;
+    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
+    draw(&ctx, &mut app, vec![moved(head)]);
+
+    let response = ctx
+        .read_response(release)
+        .expect("the release action stays in Done");
+    assert!(response.enabled(), "a commit waits for release");
+
+    let at = response.rect.center();
+    draw(&ctx, &mut app, vec![moved(at)]);
+    draw(&ctx, &mut app, vec![button(at, true)]);
+    draw(&ctx, &mut app, vec![button(at, false)]);
+    assert!(
+        app.session.release.is_some(),
+        "the empty column can release the commit"
+    );
+}
+
+#[test]
+fn an_empty_done_column_without_commits_keeps_release_disabled() {
+    let (dir, mut app) = project("release-empty-tagged", &[("done/", "")]);
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["commit", "-q", "--allow-empty", "-m", "first"]);
+    git(&dir, &["tag", "v0.1.0"]);
+    let index = app
+        .board
+        .columns
+        .iter()
+        .position(|c| c.name.eq_ignore_ascii_case("done"))
+        .unwrap();
+    let release = egui::Id::unique(("release", index));
+
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let column = ctx
+        .read_response(egui::Id::unique(("column_drop", index)))
+        .unwrap()
+        .rect;
+    let head = egui::pos2(column.center().x, column.min.y + theme::CONTROL_H / 2.0);
+    draw(&ctx, &mut app, vec![moved(head)]);
+
+    let response = ctx
+        .read_response(release)
+        .expect("the release action is present in Done");
+    assert!(!response.enabled(), "nothing landed since the last release");
+
+    let at = response.rect.center();
+    draw(&ctx, &mut app, vec![moved(at)]);
+    draw(&ctx, &mut app, vec![button(at, true)]);
+    draw(&ctx, &mut app, vec![button(at, false)]);
+    assert!(
+        app.session.release.is_none(),
+        "a disabled flag does nothing"
+    );
+}
+
+#[test]
 fn escape_cancels_the_release_flow() {
     let (dir, mut app) = project("release-esc", &[("done/a.md", "# Alpha\n")]);
     let file = dir.join("issues/done/a.md");

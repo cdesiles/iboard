@@ -484,25 +484,25 @@ fn the_editor_status_puts_the_save_state_on_the_right() {
 }
 
 /// A head with nothing to offer keeps its count under the pointer; Todo's `+`
-/// takes its place.
+/// and Done's release take its place.
 #[test]
 fn a_head_with_no_actions_keeps_its_count_under_the_pointer() {
     let (_dir, app) = project("head-count", &[]);
     let mut harness = kittest(app);
     let counts = |harness: &Kit| harness.query_all_by_label("0").count();
     assert_eq!(counts(&harness), 4);
-    for head in ["Done", "Ready"] {
+    let at = harness.get_by_label("Ready").rect();
+    hover(
+        &mut harness,
+        egui::Pos2::new(at.center().x as f32, at.center().y as f32),
+    );
+    assert_eq!(counts(&harness), 4, "Ready");
+    for head in ["Done", "Todo"] {
         let at = harness.get_by_label(head).rect();
         hover(
             &mut harness,
             egui::Pos2::new(at.center().x as f32, at.center().y as f32),
         );
-        assert_eq!(counts(&harness), 4, "{head}");
+        assert_eq!(counts(&harness), 3, "{head} offers an action");
     }
-    let at = harness.get_by_label("Todo").rect();
-    hover(
-        &mut harness,
-        egui::Pos2::new(at.center().x as f32, at.center().y as f32),
-    );
-    assert_eq!(counts(&harness), 3, "Todo offers its +");
 }

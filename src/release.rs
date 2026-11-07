@@ -1,7 +1,10 @@
 //! What Done's Release flag writes: the next tag, the release note that goes
 //! into `CHANGELOG.md`, and the git commands that commit, tag and push it.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Local};
 
@@ -49,6 +52,52 @@ pub fn last_release(dir: &Path, pattern: &str) -> Option<(String, DateTime<Local
         .ok()?
         .with_timezone(&Local);
     Some((tag, date))
+}
+
+/// Per `(folder, pattern)`: the `HEAD` it was read at, whether a commit waits
+/// for release, and when it was read.
+type Cached = HashMap<(PathBuf, String), (String, bool, Instant)>;
+static CACHE: Mutex<Option<Cached>> = Mutex::new(None);
+
+/// How long a lookup is trusted. The Done header asks every frame, so without
+/// this each frame would spawn `git`.
+const TTL: Duration = Duration::from_secs(2);
+
+/// Whether `dir` has at least one commit since the newest tag matching
+/// `pattern`. An untagged repository counts from its first commit.
+pub fn has_commits_since_last_release(dir: &Path, pattern: &str) -> bool {
+    let head = git::output(dir, &["rev-parse", "HEAD"])
+        .map(|out| out.trim().to_string())
+        .unwrap_or_default();
+    let key = (dir.to_path_buf(), pattern.to_string());
+    {
+        let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((cached_head, unreleased, at)) =
+            cache.as_ref().and_then(|cache| cache.get(&key))
+            && *cached_head == head
+            && at.elapsed() < TTL
+        {
+            return *unreleased;
+        }
+    }
+    let unreleased = !head.is_empty() && commits_since(dir, newest_tag(dir, pattern).as_deref());
+    CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(key, (head, unreleased, Instant::now()));
+    unreleased
+}
+
+fn commits_since(dir: &Path, tag: Option<&str>) -> bool {
+    let range = match tag {
+        Some(tag) => format!("{tag}..HEAD"),
+        None => "HEAD".to_string(),
+    };
+    git::output(dir, &["rev-list", "--count", &range])
+        .ok()
+        .and_then(|out| out.trim().parse::<u64>().ok())
+        .is_some_and(|count| count > 0)
 }
 
 /// `v1.2.3` as `v1.2.4`, keeping the prefix before its first digit.
@@ -219,6 +268,22 @@ mod tests {
                 .with_timezone(&Local)
         );
         assert!(last_release(dir, "rel-*").is_none());
+    }
+
+    #[test]
+    fn an_untagged_repository_has_every_commit_to_release() {
+        let dir = repo();
+        assert!(has_commits_since_last_release(dir.path(), "v*"));
+    }
+
+    #[test]
+    fn a_tag_at_head_leaves_nothing_to_release() {
+        let dir = repo();
+        let dir = dir.path();
+        git(dir, &["tag", "v0.1.0"]);
+        assert!(!has_commits_since_last_release(dir, "v*"));
+        git(dir, &["commit", "-q", "--allow-empty", "-m", "after"]);
+        assert!(has_commits_since_last_release(dir, "v*"));
     }
 
     #[test]

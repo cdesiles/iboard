@@ -10,6 +10,7 @@ use super::{
     Icon, Issue, Labels, Layout, LayoutJob, MarginF32, Palette, Path, PathBuf, Pos2, Rect,
     RichText, Sense, Stroke, StrokeKind, Vec2, discovery, review, theme, widgets,
 };
+use iboard::release;
 
 mod drop;
 
@@ -176,6 +177,8 @@ struct ColumnView<'a> {
     parked: bool,
     /// The label colours, for the chip on each card.
     labels: &'a Labels,
+    /// The tags that mark a release, for Done's Release action.
+    release_tags: &'a str,
     /// The cards' review pills.
     reviews: review::CardReviews<'a>,
     /// An agent is set up, so the selected Todo card offers Review.
@@ -210,6 +213,7 @@ impl<'a> ColumnView<'a> {
             board: &app.board,
             parked: pass.parked && column.accepts_new_issues(),
             labels: &app.prefs.labels,
+            release_tags: &app.prefs.releases.tags,
             reviews: review::CardReviews {
                 past: &app.past_reviews,
                 runs: &app.session.review_runs,
@@ -440,8 +444,10 @@ fn header_actions(view: &ColumnView) -> Vec<HeaderAction> {
     if discovery::is_doing_column(&column.dir) {
         actions.push(HeaderAction::Agents);
     }
-    if column.name.eq_ignore_ascii_case("done") && !view.visible.is_empty() {
-        actions.push(HeaderAction::ArchiveAll);
+    if column.name.eq_ignore_ascii_case("done") {
+        if !view.visible.is_empty() {
+            actions.push(HeaderAction::ArchiveAll);
+        }
         // A workspace board merges several repositories: one release would
         // have to pick one of them, so only a single project offers it.
         if view.board.repos.is_empty() {
@@ -487,11 +493,24 @@ fn header_action(
         }
         HeaderAction::Release => {
             let count = view.visible.len();
-            let noun = if count == 1 { "issue" } else { "issues" };
-            let hover =
-                format!("Release: write a note from the {count} {noun}, commit, tag and push");
-            action_button(ui, view, Icon::Release, "release", "Release", &hover, title)
-                .then(|| Intent::Release(view.visible_paths()))
+            let enabled = count > 0
+                || release::has_commits_since_last_release(
+                    &view.board.project_dir,
+                    view.release_tags,
+                );
+            let hover = match (enabled, count) {
+                (false, _) => "Release: no commits since the last release".to_string(),
+                (true, 0) => "Release: write a note, commit, tag and push".to_string(),
+                (true, count) => {
+                    let noun = if count == 1 { "issue" } else { "issues" };
+                    format!("Release: write a note from the {count} {noun}, commit, tag and push")
+                }
+            };
+            ui.add_enabled_ui(enabled, |ui| {
+                action_button(ui, view, Icon::Release, "release", "Release", &hover, title)
+                    .then(|| Intent::Release(view.visible_paths()))
+            })
+            .inner
         }
     }
 }
