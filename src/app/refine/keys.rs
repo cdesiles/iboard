@@ -43,15 +43,14 @@ pub(super) fn refine_keys(ui: &mut egui::Ui, refine: &mut Refinement) -> Option<
         if count == 0 {
             return false;
         }
-        let last = count - 1;
         if i.consume_key(none, Key::ArrowDown) {
-            refine.cursor = Some(refine.cursor.map_or(0, |at| (at + 1).min(last)));
+            refine.cursor_down();
         }
         if i.consume_key(none, Key::ArrowUp) {
-            refine.cursor = Some(refine.cursor.map_or(0, |at| at.saturating_sub(1)));
+            refine.cursor_up();
         }
-        if let Some(at) = refine.cursor.filter(|_| i.consume_key(none, Key::Space)) {
-            refine.toggle_choice(at.min(last));
+        if refine.cursor.is_some() && i.consume_key(none, Key::Space) {
+            refine.toggle_at_cursor();
         }
         if let Some(at) = NUMBERS[..count.min(NUMBERS.len())]
             .iter()

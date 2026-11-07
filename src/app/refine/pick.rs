@@ -21,7 +21,7 @@ pub(super) fn pick_pane(
             ui.set_width(ui.available_width());
             ui.set_min_height((min_height - 40.0).max(0.0));
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            if let Some(NextTurn::Waiting(answer)) = &refine.next {
+            if let NextTurn::Waiting(answer) = &refine.next {
                 thinking_pick(ui, answer.elapsed(), &refine.turns);
                 return;
             }

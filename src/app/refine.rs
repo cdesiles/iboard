@@ -3,10 +3,11 @@
 
 use super::{
     Align, ButtonKind, CommonMarkCache, CommonMarkViewer, CornerRadius, Duration, Frame, IboardApp,
-    Job, Key, Layout, Margin, Path, PathBuf, Pos2, Rect, ReviewMode, RichText, Screen, Sense,
-    Stroke, Vec2, agent, job, prompts, side_panel, theme, widgets,
+    Key, Layout, Margin, Path, Pos2, Rect, ReviewMode, RichText, Screen, Sense, Stroke, Vec2,
+    agent, prompts, side_panel, theme, widgets,
 };
 use iboard::markdown;
+pub(super) use iboard::refinement::{NextTurn, Refinement, Turn};
 
 mod keys;
 mod pick;
@@ -43,133 +44,6 @@ const STACKED_MIN_H: f32 = 320.0;
 /// The head and the foot around the panes.
 const CHROME_H: f32 = 36.0 + 41.0;
 
-/// One turn of a refinement: the challenger's, or the author's answer.
-pub(super) enum Turn {
-    Challenger(agent::Challenge),
-    /// The full text of the choice picked, if any, and the author's own words.
-    Author {
-        choice: Option<String>,
-        note: String,
-    },
-}
-
-impl Turn {
-    fn speaker(&self) -> &'static str {
-        match self {
-            Turn::Challenger(_) => "Challenger",
-            Turn::Author { .. } => "Author",
-        }
-    }
-
-    /// The turn as the agent reads it again.
-    pub(super) fn said(&self) -> String {
-        match self {
-            Turn::Challenger(challenge) => match &challenge.tldr {
-                Some(tldr) => format!("TLDR: {tldr}\n\n{}", challenge.text),
-                None => challenge.text.clone(),
-            },
-            Turn::Author { choice, note } => match (choice, note.as_str()) {
-                (Some(choice), "") => choice.clone(),
-                (Some(choice), note) => format!("{choice}\n\n{note}"),
-                (None, note) => note.to_string(),
-            },
-        }
-    }
-
-    pub(super) fn challenge(&self) -> Option<&agent::Challenge> {
-        match self {
-            Turn::Challenger(challenge) => Some(challenge),
-            Turn::Author { .. } => None,
-        }
-    }
-}
-
-/// The challenger's next turn, until it is in.
-enum NextTurn {
-    Waiting(Job<Result<String, String>>),
-    Failed(String),
-}
-
-/// The refinement of one issue: what was said, and the turn on its way.
-pub(super) struct Refinement {
-    pub(super) path: PathBuf,
-    /// The configured tool (and model), shown in the panel header.
-    agent: String,
-    pub(super) turns: Vec<Turn>,
-    /// The author's own words: a note to the choice, or the whole answer.
-    pub(super) note: String,
-    /// The choice picked among the challenger's last options.
-    pub(super) choice: Option<usize>,
-    /// The choice the arrow keys are on.
-    cursor: Option<usize>,
-    /// On a narrow panel, the reasoning unfolded under the TL;DR.
-    reasoning_open: bool,
-    next: Option<NextTurn>,
-    /// Tucked away to read the page; the conversation goes on behind.
-    pub(super) hidden: bool,
-}
-
-impl Refinement {
-    pub(super) fn is_running(&self) -> bool {
-        matches!(self.next, Some(NextTurn::Waiting(_)))
-    }
-
-    /// The round on screen: one more than the answers sent, counting the
-    /// one the challenger is reading.
-    fn round(&self) -> usize {
-        let sent = self
-            .turns
-            .iter()
-            .filter(|turn| matches!(turn, Turn::Author { .. }))
-            .count();
-        if self.is_running() {
-            sent.max(1)
-        } else {
-            sent + 1
-        }
-    }
-
-    /// The resolutions the challenger's last turn offers, while it waits.
-    pub(super) fn options(&self) -> &[String] {
-        match self.turns.last().and_then(Turn::challenge) {
-            Some(challenge) if !self.is_running() => &challenge.options,
-            _ => &[],
-        }
-    }
-
-    /// The latest refined issue the challenger proposed.
-    pub(super) fn proposal(&self) -> Option<&str> {
-        self.turns
-            .iter()
-            .rev()
-            .find_map(|turn| turn.challenge()?.proposal.as_deref())
-    }
-
-    /// What Send hands the challenger: the choice's full text, then the note.
-    fn answer(&self) -> Option<Turn> {
-        let choice = self.choice.and_then(|at| self.options().get(at)).cloned();
-        let note = self.note.trim().to_string();
-        (choice.is_some() || !note.is_empty()).then_some(Turn::Author { choice, note })
-    }
-
-    /// Send's label, naming what goes out.
-    fn send_label(&self) -> String {
-        let choice = self.choice.filter(|at| *at < self.options().len());
-        match (choice, self.note.trim().is_empty()) {
-            (Some(at), true) => format!("Send choice {}", at + 1),
-            (Some(at), false) => format!("Send choice {} with note", at + 1),
-            (None, _) => "Send answer".to_string(),
-        }
-    }
-
-    /// Picks a choice, or unpicks it when it is the one picked.
-    pub(super) fn toggle_choice(&mut self, index: usize) {
-        if index < self.options().len() {
-            self.choice = (self.choice != Some(index)).then_some(index);
-        }
-    }
-}
-
 /// What a click or a key in the refinement popin asks for.
 enum RefineAction {
     Send,
@@ -197,17 +71,10 @@ impl IboardApp {
             return;
         }
         self.session.review = None;
-        self.session.refine = Some(Refinement {
-            path: path.to_path_buf(),
-            agent: self.prefs.agent.label(),
-            turns: Vec::new(),
-            note: String::new(),
-            choice: None,
-            cursor: None,
-            reasoning_open: false,
-            next: None,
-            hidden: false,
-        });
+        self.session.refine = Some(Refinement::new(
+            path.to_path_buf(),
+            self.prefs.agent.label(),
+        ));
         self.ask_challenger();
     }
 
@@ -244,64 +111,31 @@ impl IboardApp {
             project,
             ReviewMode::Quick,
         );
-        refine.next = Some(NextTurn::Waiting(answer));
+        refine.next = NextTurn::Waiting(answer);
     }
 
     /// Sends the picked choice and the note, once the challenger is done
     /// speaking.
     pub(super) fn send_reply(&mut self) {
-        let Some(refine) = self.session.refine.as_mut() else {
-            return;
-        };
-        let Some(answer) = refine.answer().filter(|_| !refine.is_running()) else {
-            return;
-        };
-        refine.note.clear();
-        refine.choice = None;
-        refine.cursor = None;
-        refine.turns.push(answer);
-        self.ask_challenger();
+        if self
+            .session
+            .refine
+            .as_mut()
+            .is_some_and(Refinement::take_answer)
+        {
+            self.ask_challenger();
+        }
     }
 
     /// Adopts the challenger's turn once it is in; called every frame.
     pub(super) fn poll_refinement(&mut self) -> Option<Duration> {
-        let refine = self.session.refine.as_mut()?;
-        let Some(NextTurn::Waiting(answer)) = &refine.next else {
-            return None;
-        };
-        let Some(result) = answer.answer() else {
-            return Some(job::POLL_EVERY);
-        };
-        refine.next = None;
-        match result {
-            Ok(raw) => {
-                refine.reasoning_open = false;
-                refine
-                    .turns
-                    .push(Turn::Challenger(agent::parse_refinement(&raw)));
-            }
-            Err(error) => refine.next = Some(NextTurn::Failed(error)),
-        }
-        None
+        self.session.refine.as_mut()?.adopt()
     }
 
-    /// Stops the challenger's turn (dropping the job stops the agent): the
-    /// author's last answer comes back, its choice picked again. Stopped
-    /// before its first word, the refinement closes.
+    /// Stops the challenger's turn; stopped before its first word, the
+    /// refinement closes.
     pub(super) fn stop_refinement(&mut self) {
-        let Some(refine) = self.session.refine.as_mut() else {
-            return;
-        };
-        refine.next = None;
-        if let Some(Turn::Author { choice, note }) = refine
-            .turns
-            .pop_if(|turn| matches!(turn, Turn::Author { .. }))
-        {
-            refine.choice = choice
-                .and_then(|choice| refine.options().iter().position(|option| *option == choice));
-            refine.note = note;
-        }
-        if refine.turns.is_empty() {
+        if self.session.refine.as_mut().is_some_and(Refinement::stop) {
             self.session.refine = None;
         }
     }
@@ -522,7 +356,7 @@ fn footer_actions(refine: &Refinement) -> Vec<FooterButton> {
             (ButtonKind::Ghost, "Cancel".into(), None, RefineAction::Stop),
         ];
     }
-    let failed = matches!(refine.next, Some(NextTurn::Failed(_)));
+    let failed = matches!(refine.next, NextTurn::Failed(_));
     [
         Some(send(
             ButtonKind::Send.when(refine.answer().is_some()),
