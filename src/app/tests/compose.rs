@@ -283,6 +283,79 @@ fn modal_keys() {
     );
 }
 
+/// `⌘S` saves the issue as it is, like Add to Todo, from the notes or the
+/// title.
+#[test]
+fn command_s_saves_the_new_issue_like_add_to_todo() {
+    let (dir, mut app) = project("compose-command-s", &[("todo/", "")]);
+    let todo = dir.join("issues/todo");
+    let ctx = themed_ctx();
+    let text = |text: &str| vec![egui::Event::Text(text.into())];
+
+    app.open_composer();
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, text("Save me now"));
+    frame(&ctx, &mut app, cmd(Key::S));
+    assert_eq!(
+        std::fs::read_to_string(todo.join("save-me-now.md")).unwrap(),
+        "# Save me now\n\nSave me now\n"
+    );
+    assert!(app.session.composer.is_none(), "⌘S closes it");
+
+    std::fs::remove_file(todo.join("save-me-now.md")).unwrap();
+    app.open_composer();
+    let composer = app.session.composer.as_mut().unwrap();
+    composer.title = "Typed title".into();
+    composer.description = "Notes.".into();
+    composer.focus = Some(ComposerField::Title);
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, vec![]);
+    frame(&ctx, &mut app, cmd(Key::S));
+    assert_eq!(
+        std::fs::read_to_string(todo.join("typed-title.md")).unwrap(),
+        "# Typed title\n\nNotes.\n"
+    );
+    assert!(app.session.composer.is_none(), "⌘S works from the title");
+}
+
+/// Holding `⌘` in NewIssueModal slides each shortcut out beside its control
+/// in the foot, `⌘S` on Add to Todo included.
+#[test]
+fn command_shows_the_new_issues_shortcuts_beside_its_controls() {
+    use egui_kittest::kittest::Queryable;
+    let (_dir, mut app) = project("compose-foot-keys", &[("todo/", "")]);
+    app.open_composer();
+    let mut harness = kittest_with(
+        app,
+        egui_kittest::Harness::builder()
+            .with_size(window().size())
+            .with_step_dt(0.1),
+    );
+    theme::set_reduced_motion(&harness.ctx, true);
+    let key_shown = |harness: &Kit, key: &str| {
+        harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Text(text) if text.galley.text() == key)
+        })
+    };
+    let rest = harness.get_by_label("Add to Todo").rect().width();
+    assert!(!key_shown(&harness, "⌘S"), "hidden at rest");
+
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    harness.run_steps(7);
+    assert!(key_shown(&harness, "⌘S"), "Add to Todo shows ⌘S");
+    assert!(
+        key_shown(&harness, "⌘⇧R"),
+        "Draft with Review shows its key"
+    );
+    assert!(harness.get_by_label("Add to Todo").rect().width() > rest);
+
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run_steps(1);
+    assert_eq!(harness.get_by_label("Add to Todo").rect().width(), rest);
+    assert!(!key_shown(&harness, "⌘S"));
+}
+
 /// Closing with notes parks them, even across a restart; Discard drops
 /// them, and `⌘Z` brings them back.
 #[test]

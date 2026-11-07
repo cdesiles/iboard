@@ -121,8 +121,8 @@ impl IboardApp {
     }
 
     /// The modal's keys outside its fields: `esc` (stop, or close and park),
-    /// `⌘⇧R` (draft), `⌘Z` (undo the draft), `End` (follow the draft), and
-    /// `↩` / `⌘↩` from a button.
+    /// `⌘⇧R` (draft), `⌘S` (add as it is), `⌘Z` (undo the draft), `End`
+    /// (follow the draft), and `↩` / `⌘↩` from a button.
     pub(super) fn new_issue_keys(&mut self, ctx: &egui::Context) {
         let in_notes = ctx.memory(|m| m.has_focus(egui::Id::unique(DESCRIPTION_ID)));
         let typing = ctx.memory(|m| m.focused().is_some());
@@ -131,6 +131,8 @@ impl IboardApp {
             self.composer_escape();
         } else if take(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::R) {
             self.start_draft();
+        } else if take(egui::Modifiers::COMMAND, Key::S) {
+            self.submit_composer(false);
         } else if !in_notes && take(egui::Modifiers::COMMAND, Key::Z) {
             self.undo_draft();
         } else if !in_notes && take(egui::Modifiers::NONE, Key::End) {
@@ -929,7 +931,7 @@ fn title_field(row: &mut egui::Ui, composer: &mut Composer) {
 
 /// Key hints on the left while ⌘ is held; Discard, Close, Draft with Review
 /// and Add to Todo on the right, with Keep my notes before them once there is
-/// a draft.
+/// a draft. Add to Todo shows `⌘S`; `↩` stays among the hints on the left.
 fn foot(
     ui: &mut egui::Ui,
     composer: &Composer,
@@ -945,7 +947,7 @@ fn foot(
                 Layout::right_to_left(Align::Center),
                 |ui| {
                     ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-                    if widgets::button(ui, ButtonKind::Primary, None, "Add to Todo", Some("↩"))
+                    if widgets::button(ui, ButtonKind::Primary, None, "Add to Todo", Some("⌘S"))
                         .clicked()
                     {
                         actions.push(ComposeAction::Submit { edit: false });

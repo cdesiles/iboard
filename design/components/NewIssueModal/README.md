@@ -14,7 +14,7 @@ Where a new issue gets written: a large modal over the board, with your notes on
 - **Head**: "New issue", then `in todo/` in `meta`, then the title-engine tag (`on-device`, `review agent`, `auto title off`). Clicking the tag opens Settings › Titles. Then the close button.
 - **Notes pane** (left, default 40%, at least 320pt): the label "Your notes" in `ui-label` with a word count in `meta`, then one text area that fills the pane's height, in `read-body` (15/24), because this is prose you write and read back. Placeholder: "Describe the issue. Write or dictate as much as you like." It scrolls inside itself. It is read-only (`surface-sunken`, `ink-muted`) only while Review drafts.
 - **Issue pane** (right): the `bg` well with a Reader sheet (`surface`, `reader-max` 624pt, `read-body` in `read-measure`). The sheet head reads `TODO · todo/<slug>.md`, or `todo/` + "named in the background" before a title exists. Under it come the receipt line (once a draft exists), the labels, the title in `read-h1`, then the body.
-- **Foot**: key hints on the left. On the right: Discard (ghost, only when there is something to discard), Close `esc`, **Draft with Review** `⌘⇧R` (`review` label on a `line-soft` hairline; it reads "Redraft" once a draft exists), and **Add to Todo** `↩` (primary). After a draft, a "Keep my notes under ## Notes" checkbox appears before the buttons. Its value is remembered.
+- **Foot**: key hints on the left. On the right: Discard (ghost, only when there is something to discard), Close `esc`, **Draft with Review** `⌘⇧R` (`review` label on a `line-soft` hairline; it reads "Redraft" once a draft exists), and **Add to Todo** (primary, `⌘S`; `↩` is among the hints on the left). After a draft, a "Keep my notes under ## Notes" checkbox appears before the buttons. Its value is remembered.
 - **Narrow** (modal under 900pt): the panes stack, with the notes on top at 40% of the height.
 
 ## States
@@ -63,6 +63,7 @@ This is the core of the change: you watch the ticket being written, at full size
 | --- | --- |
 | `⌘N` | Open (anywhere; from the Reader or Editor the board shows behind it) |
 | `↩` | Add it to Todo and close; without a title, it is named in the background |
+| `⌘S` | Save it to Todo and close, as `↩` does |
 | `⇧↩` | New line in the notes |
 | `⌘↩` | Add and open the Editor |
 | `⌘⇧R` | Draft with Review, or Redraft |
@@ -86,7 +87,7 @@ The modal works on a **NewIssueDraft** read model: `{ notes, title, title_source
 | NewIssueModal, drafting | `esc` | DraftStopped | Partial draft kept; unwritten sections become ghost tiles |
 | NewIssueModal | Undo draft (`⌘Z`) | DraftUndone | Mirror |
 | NewIssueModal | Toggle Keep my notes | KeepNotesToggled | `## Notes` shown or hidden at the end of the sheet |
-| NewIssueModal | Add to Todo (`↩`) with a title | IssueCreated | Board; the new card flashes at the top of Todo |
+| NewIssueModal | Add to Todo (`↩` or `⌘S`) with a title | IssueCreated | Board; the new card flashes at the top of Todo |
 | NewIssueModal | `↩` with no title | IssueCreated, TitleInferenceRequested → TitleInferred / TitleInferenceFailed | Board; the card reads "Naming…", then takes its title / stays `unnamed-ticket-xxxx` |
 | NewIssueModal | `⌘↩` | IssueCreated → EditStarted | Editor on the new file; a missing title lands once the Editor closes |
 | NewIssueModal | Close, `esc`, × | NewIssueParked (notes not empty) / NewIssueClosed | Board; Todo `+` shows the parked dot |
