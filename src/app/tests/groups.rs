@@ -258,6 +258,28 @@ fn a_file_saved_mid_edit_keeps_the_board_until_it_reads_again() {
 }
 
 #[test]
+fn a_reload_keeps_reporting_a_section_still_broken() {
+    let (_scratch, config, mut app) = configured("groups-still-broken");
+    let good = std::fs::read_to_string(&config).unwrap();
+    app.report_config_problems(&["[ai]: invalid type".into()], "Defaults.");
+    let mut harness = kittest(app);
+    let solo = good.replace("name = \"Clients\"", "name = \"Duo\"");
+    edit_outside(&mut harness, &config, &format!("{solo}\n[ai]\ntool = 5\n"));
+    let app = &harness.state().1;
+    assert_eq!(app.workspace.as_ref().unwrap().groups[0].name, "Duo");
+    let problem = app.config_problem.as_deref().unwrap();
+    assert!(problem.starts_with("[ai]: "), "{problem}");
+    assert!(
+        problem.ends_with("keeps the settings it runs with."),
+        "{problem}"
+    );
+    harness.get_by_label_contains("Settings: [ai]: ");
+
+    edit_outside(&mut harness, &config, &solo);
+    assert!(harness.state().1.config_problem.is_none());
+}
+
+#[test]
 fn reloading_a_file_saved_mid_edit_keeps_the_groups() {
     let (_scratch, config, mut app) = configured("groups-reload-broken");
     app.open_groups(false);

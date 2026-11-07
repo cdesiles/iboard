@@ -3,14 +3,21 @@
 //! groups change, from the dialog or from an edit outside iboard.
 
 use super::{
-    Duration, Group, IboardApp, Instant, Path, UserConfig, Workspace, display_path, labels,
-    settings, workspace,
+    Duration, Group, IboardApp, Instant, Path, Preferences, UserConfig, Workspace, display_path,
+    labels, settings, workspace,
 };
 use crate::groups_ui;
 use crate::workspace::config::{self, SaveError};
 
 /// How often the user configuration is looked at for an outside edit.
 const CONFIG_CHECK_EVERY: Duration = Duration::from_secs(1);
+
+/// What iboard does with a configuration problem found at launch.
+pub(super) const DEFAULTS_UNTIL_FIXED: &str =
+    "Until it is fixed, iboard uses the defaults for what it can't read.";
+
+/// What iboard does with one found when the file changes as it runs.
+const KEPT_UNTIL_FIXED: &str = "Until it is fixed, iboard keeps the settings it runs with.";
 
 impl IboardApp {
     /// Opens the groups dialog on the configuration as it is now; with
@@ -76,22 +83,23 @@ impl IboardApp {
 
     /// Reads the groups from the configuration again, keeping the group on
     /// screen when it is still there. A configuration with problems, saved
-    /// halfway through an edit, leaves the workspace as it is.
+    /// halfway through an edit, leaves the workspace as it is. Every section
+    /// is read, so a problem that is still there stays reported.
     fn reload_groups(&mut self) {
         let mut user = UserConfig::load(self.config_file.as_deref());
         let groups = workspace::load(&mut user)
             .map(|w| w.groups)
             .unwrap_or_default();
-        self.report_config_problems(&user.problems);
-        if !user.problems.is_empty() {
-            return;
+        if user.problems.is_empty() {
+            self.reload_project_order(&mut user);
+            let same: Vec<(String, String)> = groups
+                .iter()
+                .map(|group| (group.name.clone(), group.name.clone()))
+                .collect();
+            self.apply_groups(groups, &same);
         }
-        self.reload_project_order(&mut user);
-        let same: Vec<(String, String)> = groups
-            .iter()
-            .map(|group| (group.name.clone(), group.name.clone()))
-            .collect();
-        self.apply_groups(groups, &same);
+        Preferences::load(&mut user);
+        self.report_config_problems(&user.problems, KEPT_UNTIL_FIXED);
     }
 
     /// Puts `groups` in place of the workspace's. The group on screen stays,
@@ -169,8 +177,9 @@ impl IboardApp {
     }
 
     /// Shows `problems`, what the user configuration holds that iboard could
-    /// not use, in the error strip and in Settings, instead of the last ones.
-    pub(super) fn report_config_problems(&mut self, problems: &[String]) {
+    /// not use, in the error strip and in Settings, instead of the last ones,
+    /// followed by what iboard does `meanwhile`.
+    pub(super) fn report_config_problems(&mut self, problems: &[String], meanwhile: &str) {
         let shown = self
             .config_problem
             .take()
@@ -179,7 +188,7 @@ impl IboardApp {
             self.error = None;
         }
         if !problems.is_empty() {
-            let problem = problems.join(" ");
+            let problem = format!("{} {meanwhile}", problems.join(" "));
             self.error = Some(format!("Settings: {problem}"));
             self.config_problem = Some(problem);
         }

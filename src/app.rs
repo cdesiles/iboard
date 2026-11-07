@@ -464,7 +464,6 @@ impl IboardApp {
         app.workspace = workspace::load(&mut config);
         app.reload_project_order(&mut config);
         app.order_dir = workspace::order::dir();
-        app.report_config_problems(&config.problems);
         app.catalog = Catalog::probing();
         let first = app.workspace.as_ref().and_then(|w| w.groups.first());
         if let (true, Some(first)) = (all, first.map(|group| group.name.clone())) {
@@ -473,6 +472,7 @@ impl IboardApp {
             let project = app.located.project_dir.clone();
             app.remember(&project);
         }
+        app.report_config_problems(&config.problems, groups::DEFAULTS_UNTIL_FIXED);
         app
     }
 

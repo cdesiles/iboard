@@ -79,7 +79,7 @@ impl UserConfig {
                 problems: Vec::new(),
             },
             Err(err) => Self::broken(format!(
-                "{}, {}. Settings use their defaults until it is fixed.",
+                "{}, {}.",
                 file.display(),
                 describe(text, err.span(), err.message())
             )),
@@ -109,9 +109,12 @@ impl UserConfig {
         }
     }
 
-    /// Records a value a section's reader could not use.
+    /// Records a value a section's reader could not use, once however many
+    /// readers read it.
     pub fn problem(&mut self, problem: String) {
-        self.problems.push(problem);
+        if !self.problems.contains(&problem) {
+            self.problems.push(problem);
+        }
     }
 }
 
@@ -278,6 +281,14 @@ mod tests {
         assert!(config.problems[0].starts_with("[ai]: "), "{config:?}");
         let table: toml::Table = config.section("titles");
         assert_eq!(table["engine"].as_str(), Some("manual"));
+    }
+
+    #[test]
+    fn a_section_read_twice_is_reported_once() {
+        let mut config = UserConfig::parse("[ai]\ntool = 5\n", Path::new("c.toml"));
+        config.section::<Raw>("ai");
+        config.section::<Raw>("ai");
+        assert_eq!(config.problems.len(), 1, "{config:?}");
     }
 
     #[test]
