@@ -60,3 +60,9 @@ egui = { version = "0.37.0", features = ["monochrome_emoji_fonts"] }
 egui_kittest = "0.37.0"
 insta = "1"
 tempfile = "3.27"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
