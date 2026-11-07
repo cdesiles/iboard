@@ -28,12 +28,6 @@ const PICK_WIDTH: std::ops::RangeInclusive<f32> = 320.0..=420.0;
 /// The narrowest the reasoning gets beside the choices (`column-min`).
 const WHY_MIN: f32 = 280.0;
 
-/// The divider's hit area, centred on its 1pt line.
-const INLINE_HIT: f32 = 9.0;
-
-/// The reasoning's scrollbar keeps this far from the divider.
-const SCROLL_STEP_IN: f32 = 4.0;
-
 /// About 68 characters of `read-body`: the longest line worth reading.
 const MEASURE: f32 = 560.0;
 
@@ -274,50 +268,26 @@ fn refine_ui(
             },
         );
     } else {
-        ui.horizontal_top(|ui| {
-            let panes = Rect::from_min_size(ui.cursor().min, Vec2::new(size.x, pane_h));
-            let default = (size.x * 0.38).clamp(*PICK_WIDTH.start(), *PICK_WIDTH.end());
-            let range = *PICK_WIDTH.start()..=(size.x - WHY_MIN).min(*PICK_WIDTH.end());
-            let split = theme::pane_split_id("refine");
-            let pick_w =
-                theme::pane_split(ui.ctx(), split, default).clamp(*range.start(), *range.end());
-            let why = ui.allocate_ui_with_layout(
-                Vec2::new(size.x - pick_w - SCROLL_STEP_IN, pane_h),
-                Layout::top_down(Align::Min),
-                |ui| {
-                    theme::scroll_area(
-                        ui,
-                        egui::ScrollArea::vertical()
-                            .id_salt("refine-why")
-                            .max_height(pane_h)
-                            .auto_shrink([false, false]),
-                        |ui| why_pane(ui, refine, cache, false),
-                    )
-                    .inner
-                },
-            );
-            unfold = why.inner;
-            ui.add_space(SCROLL_STEP_IN);
-            let x = ui.cursor().min.x;
-            let hit = egui::Rangef::new(x - INLINE_HIT / 2.0, x + INLINE_HIT / 2.0);
-            let gutter = Rect::from_x_y_ranges(hit, why.response.rect.y_range());
-            let divider = theme::pane_divider(ui, split, panes, gutter, range, default, true);
-            ui.allocate_ui_with_layout(
-                Vec2::new(pick_w, pane_h),
-                Layout::top_down(Align::Min),
-                |ui| {
-                    theme::scroll_area(
-                        ui,
-                        egui::ScrollArea::vertical()
-                            .id_salt("refine-pick")
-                            .max_height(pane_h)
-                            .auto_shrink([false, false]),
-                        |ui| pick_pane(ui, refine, why.response.rect.height()),
-                    );
-                },
-            );
-            divider.paint(ui);
-        });
+        let split = theme::Split {
+            id: theme::pane_split_id("refine"),
+            size: Vec2::new(size.x, pane_h),
+            default: (size.x * 0.38).clamp(*PICK_WIDTH.start(), *PICK_WIDTH.end()),
+            range: *PICK_WIDTH.start()..=(size.x - WHY_MIN).min(*PICK_WIDTH.end()),
+            inline: true,
+        };
+        (unfold, _) = theme::split_panes(
+            ui,
+            split,
+            (&mut *refine, cache),
+            |ui, (refine, cache)| {
+                let why = theme::pane_scroll("refine-why");
+                theme::scroll_area(ui, why, |ui| why_pane(ui, refine, cache, false)).inner
+            },
+            |ui, (refine, _)| {
+                let pick = theme::pane_scroll("refine-pick");
+                theme::scroll_area(ui, pick, |ui| pick_pane(ui, refine, pane_h));
+            },
+        );
     }
     if unfold {
         refine.reasoning_open = !refine.reasoning_open;

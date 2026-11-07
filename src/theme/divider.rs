@@ -4,11 +4,11 @@
 use std::ops::RangeInclusive;
 
 use egui::{
-    Align2, Context, CornerRadius, CursorIcon, EventFilter, Id, Key, Modifiers, Pos2, Rect,
-    Response, Sense, Stroke, StrokeKind, Ui, Vec2, WidgetInfo, WidgetType,
+    Align, Align2, Context, CornerRadius, CursorIcon, EventFilter, Id, Key, Layout, Modifiers,
+    Pos2, Rect, Response, ScrollArea, Sense, Stroke, StrokeKind, Ui, Vec2, WidgetInfo, WidgetType,
 };
 
-use super::{RADIUS_PILL, RADIUS_SM, meta, motion, palette};
+use super::{RADIUS_PILL, RADIUS_SM, SPACE_3, meta, motion, palette};
 
 /// A drag within this distance of the default split lands on it.
 const SNAP: f32 = 8.0;
@@ -16,6 +16,72 @@ const SNAP: f32 = 8.0;
 const HOVER_DELAY: f64 = 0.15;
 const STEP: f32 = 16.0;
 const BIG_STEP: f32 = 80.0;
+/// The inline divider's hit strip, wider than its 1pt line.
+const INLINE_HIT: f32 = 9.0;
+/// The left pane's scrollbar keeps this far from an inline divider.
+const INLINE_GAP: f32 = 4.0;
+
+/// The pair of panes `id`, laid out in `size` by [`split_panes`]: the right
+/// pane's `default` width, kept in `range`. `inline` is the divider inside one
+/// card.
+pub struct Split {
+    pub id: Id,
+    pub size: Vec2,
+    pub default: f32,
+    pub range: RangeInclusive<f32>,
+    pub inline: bool,
+}
+
+/// `left` and `right` side by side, with a [`pane_divider`] between them. Both
+/// get the `state` they share.
+pub fn split_panes<S, L, R>(
+    ui: &mut Ui,
+    split: Split,
+    mut state: S,
+    left: impl FnOnce(&mut Ui, &mut S) -> L,
+    right: impl FnOnce(&mut Ui, &mut S) -> R,
+) -> (L, R) {
+    let Split {
+        id,
+        size,
+        default,
+        range,
+        inline,
+    } = split;
+    let (hit, gap) = if inline {
+        (INLINE_HIT, INLINE_GAP)
+    } else {
+        (2.0 * SPACE_3, 0.0)
+    };
+    let range = *range.start()..=range.end().max(*range.start());
+    ui.horizontal_top(|ui| {
+        let panes = Rect::from_min_size(ui.cursor().min, size);
+        let right_w = pane_split(ui.ctx(), id, default).clamp(*range.start(), *range.end());
+        let top_down = Layout::top_down(Align::Min);
+        let left_size = Vec2::new(size.x - right_w - gap, size.y);
+        let left = ui
+            .allocate_ui_with_layout(left_size, top_down, |ui| left(ui, &mut state))
+            .inner;
+        ui.add_space(gap);
+        let x = ui.cursor().min.x;
+        let gutter = Rect::from_x_y_ranges(x - hit / 2.0..=x + hit / 2.0, panes.y_range());
+        let divider = pane_divider(ui, id, panes, gutter, range, default, inline);
+        let right_size = Vec2::new(right_w, size.y);
+        let right = ui
+            .allocate_ui_with_layout(right_size, top_down, |ui| right(ui, &mut state))
+            .inner;
+        divider.paint(ui);
+        (left, right)
+    })
+    .inner
+}
+
+/// A pane's own vertical scroll, filling it.
+pub fn pane_scroll(id: &str) -> ScrollArea {
+    ScrollArea::vertical()
+        .id_salt(id)
+        .auto_shrink([false, false])
+}
 
 /// The id the split of the pair of panes `name` is remembered under.
 pub fn pane_split_id(name: &str) -> Id {

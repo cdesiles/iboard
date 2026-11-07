@@ -175,39 +175,23 @@ fn modal_ui(
             &mut actions,
         );
     } else {
-        ui.horizontal_top(|ui| {
-            let panes = Rect::from_min_size(ui.cursor().min, body);
-            let default = (body.x * 0.6).round();
-            let range = 360.0..=(body.x - NOTES_MIN);
-            let split = theme::pane_split_id("new-issue");
-            let issue_w = theme::pane_split(ui.ctx(), split, default)
-                .clamp(*range.start(), range.end().max(*range.start()));
-            let notes_w = body.x - issue_w;
-            ui.allocate_ui_with_layout(
-                Vec2::new(notes_w, body.y),
-                Layout::top_down(Align::Min),
-                |ui| notes_pane(ui, composer, body.y),
-            );
-            let x = ui.cursor().min.x;
-            let gutter =
-                Rect::from_x_y_ranges(x - theme::SPACE_3..=x + theme::SPACE_3, panes.y_range());
-            let divider = theme::pane_divider(ui, split, panes, gutter, range, default, false);
-            ui.allocate_ui_with_layout(
-                Vec2::new(issue_w, body.y),
-                Layout::top_down(Align::Min),
-                |ui| {
-                    issue_pane(
-                        ui,
-                        Vec2::new(issue_w, body.y),
-                        composer,
-                        view,
-                        cache,
-                        &mut actions,
-                    )
-                },
-            );
-            divider.paint(ui);
-        });
+        let split = theme::Split {
+            id: theme::pane_split_id("new-issue"),
+            size: body,
+            default: (body.x * 0.6).round(),
+            range: 360.0..=(body.x - NOTES_MIN),
+            inline: false,
+        };
+        theme::split_panes(
+            ui,
+            split,
+            (&mut *composer, &mut *view, &mut *cache, &mut actions),
+            |ui, (composer, ..)| notes_pane(ui, composer, body.y),
+            |ui, (composer, view, cache, actions)| {
+                let size = Vec2::new(ui.available_width(), body.y);
+                issue_pane(ui, size, composer, view, cache, actions);
+            },
+        );
     }
     widgets::rule(ui);
     foot(ui, composer, view, &mut actions);
@@ -360,10 +344,7 @@ fn notes_field(ui: &mut egui::Ui, composer: &mut Composer, ink: Color32, room: f
     let drafting = composer.drafting.is_some();
     let scroll = theme::scroll_area(
         ui,
-        egui::ScrollArea::vertical()
-            .id_salt("new-issue-notes")
-            .max_height(room)
-            .auto_shrink([false, false]),
+        theme::pane_scroll("new-issue-notes").max_height(room),
         |ui| {
             let rows = (room / 24.0).floor().max(3.0) as usize;
             ui.add_enabled(
@@ -419,10 +400,7 @@ fn issue_pane(
     let mut writing_at: Option<Rect> = None;
     let scroll = theme::scroll_area(
         &mut pane,
-        egui::ScrollArea::vertical()
-            .id_salt("new-issue-sheet")
-            .content_margin(theme::scroll_margin(gutter, gutter))
-            .auto_shrink([false, false]),
+        theme::pane_scroll("new-issue-sheet").content_margin(theme::scroll_margin(gutter, gutter)),
         |ui| {
             ui.vertical_centered(|ui| {
                 ui.set_max_width(page_w);
