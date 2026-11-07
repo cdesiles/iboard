@@ -113,8 +113,17 @@ pub const UNIFIED_TITLEBAR: bool = cfg!(target_os = "macos");
 #[derive(Clone)]
 enum Confirm {
     Delete(Vec<PathBuf>),
+    /// Removing issues an agent works on: it stops the agent first.
+    Stop(Removal, Vec<PathBuf>),
     /// Quitting while this many AI runs are at work.
     Quit(usize),
+}
+
+/// How issues leave the board.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Removal {
+    Delete,
+    Archive,
 }
 
 /// Which half of the detail view is showing.
@@ -680,6 +689,7 @@ impl IboardApp {
         self.ask_dialog(ui);
         match self.session.confirm.clone() {
             Some(Confirm::Delete(paths)) => self.confirm_dialog(ui, &paths),
+            Some(Confirm::Stop(removal, paths)) => self.stop_dialog(ui, removal, &paths),
             Some(Confirm::Quit(runs)) => self.quit_dialog(ui, runs),
             None => {}
         }

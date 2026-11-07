@@ -47,6 +47,22 @@ impl Build {
             }
         }
     }
+
+    /// Lets go of an issue that left the board: it is no longer queued, its
+    /// agent stops, and the run no longer counts it.
+    pub(super) fn forget(&mut self, path: &Path) {
+        let queued = self.queue.len();
+        self.queue.retain(|issue| issue != path);
+        self.total -= queued - self.queue.len();
+        if let Some(index) = self.runs.iter().position(|run| run.issue == path) {
+            let at = self.runs.remove(index).at;
+            self.taken = self.taken.saturating_sub(1);
+            self.total = self.total.saturating_sub(1);
+            for run in self.runs.iter_mut().filter(|run| run.at > at) {
+                run.at -= 1;
+            }
+        }
+    }
 }
 
 /// Play stays pressed until Stop: an issue that arrives in Ready, dropped
@@ -293,10 +309,11 @@ impl IboardApp {
             let Some(path) = build.queue.pop_front() else {
                 break;
             };
-            build.taken += 1;
             let Some(moved) = self.take_for_build(&path) else {
+                build.total -= 1;
                 continue;
             };
+            build.taken += 1;
             build.runs.extend(self.start_agent(moved, build.taken));
         }
         if !build.runs.is_empty() {
@@ -358,7 +375,7 @@ impl IboardApp {
             }
             None => true,
         });
-        if finished.is_empty() {
+        if finished.is_empty() && !build.runs.is_empty() {
             return Some(job::POLL_EVERY);
         }
         for (name, result) in finished {

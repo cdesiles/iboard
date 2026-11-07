@@ -2,8 +2,8 @@
 
 use super::{
     AgentConfig, Align, ButtonKind, CornerRadius, IboardApp, Instant, Job, Layout, MarginF32, Path,
-    PathBuf, Preferences, RichText, Sense, Vec2, commits, display_path, file_name, job, labels,
-    settings, settings_ui, theme, trash, widgets,
+    PathBuf, Preferences, Removal, RichText, Sense, Vec2, commits, display_path, file_name, job,
+    labels, settings, settings_ui, theme, trash, widgets,
 };
 
 /// The newest commit naming one issue's file, for the board it was looked up
@@ -27,28 +27,11 @@ impl IboardApp {
     /// ConfirmDialog for a delete, centred over a scrim: `↩` (or the focused
     /// Delete button) confirms; `esc`, Cancel or a click on the scrim cancels.
     pub(super) fn confirm_dialog(&mut self, ui: &egui::Ui, paths: &[PathBuf]) {
-        let (question, title, relative) = match paths {
-            [path] => (
-                "Delete this issue?".to_string(),
-                self.board
-                    .find(path)
-                    .map(|issue| issue.title.clone())
-                    .unwrap_or_else(|| file_name(path)),
-                self.relative(path),
-            ),
-            many => (
-                format!("Delete {} issues?", many.len()),
-                many.iter()
-                    .filter_map(|path| self.board.find(path))
-                    .map(|issue| issue.title.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                many.iter()
-                    .map(|path| self.relative(path))
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ),
+        let question = match paths {
+            [_] => "Delete this issue?".to_string(),
+            many => format!("Delete {} issues?", many.len()),
         };
+        let (title, relative) = self.listed(paths);
         let ask = widgets::Ask {
             id: "confirm-delete",
             question: &question,
@@ -60,6 +43,47 @@ impl IboardApp {
         let answer = widgets::confirm(ui, &ask);
         match answer {
             widgets::Answer::Confirmed => self.delete_issues(paths),
+            widgets::Answer::Cancelled => self.session.confirm = None,
+            widgets::Answer::Pending => {}
+        }
+    }
+
+    /// The titles and files of the issues a confirmation lists.
+    fn listed(&self, paths: &[PathBuf]) -> (String, String) {
+        let title = |path: &PathBuf| {
+            self.board
+                .find(path)
+                .map_or_else(|| file_name(path), |issue| issue.title.clone())
+        };
+        let titles: Vec<String> = paths.iter().map(title).collect();
+        let files: Vec<String> = paths.iter().map(|path| self.relative(path)).collect();
+        (titles.join(", "), files.join(", "))
+    }
+
+    /// Deleting or archiving issues an agent works on asks first, as
+    /// quitting does: confirmed, the agent stops and its answer is lost.
+    pub(super) fn stop_dialog(&mut self, ui: &egui::Ui, removal: Removal, paths: &[PathBuf]) {
+        let (verb, confirm, after) = match removal {
+            Removal::Delete => ("delete", "Stop and delete", trash::CONSEQUENCE),
+            Removal::Archive => ("archive", "Stop and archive", ""),
+        };
+        let question = match paths {
+            [_] => format!("Stop the agent and {verb} this issue?"),
+            many => format!("Stop the agents and {verb} {} issues?", many.len()),
+        };
+        let consequence =
+            format!("An agent is at work on it: it stops, and its answer is lost. {after}");
+        let (title, relative) = self.listed(paths);
+        let ask = widgets::Ask {
+            id: "confirm-stop",
+            question: &question,
+            title: &title,
+            detail: &relative,
+            consequence: consequence.trim_end(),
+            confirm,
+        };
+        match widgets::confirm(ui, &ask) {
+            widgets::Answer::Confirmed => self.remove_anyway(removal, paths),
             widgets::Answer::Cancelled => self.session.confirm = None,
             widgets::Answer::Pending => {}
         }

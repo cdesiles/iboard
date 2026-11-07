@@ -1,8 +1,8 @@
 //! Moving, reordering, deleting and archiving issue files, and undoing a delete.
 
 use super::{
-    Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Screen, Session, Undo, atomic_write,
-    discovery, file_name, images, trash,
+    Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Removal, Screen, Session, Undo,
+    atomic_write, discovery, file_name, images, trash,
 };
 use crate::priority;
 
@@ -143,7 +143,7 @@ impl IboardApp {
             .into_iter()
             .filter(|path| !self.is_done_issue(path))
             .collect();
-        if paths.is_empty() {
+        if paths.is_empty() || self.asks_to_stop(Removal::Delete, &paths) {
             return;
         }
         if self.prefs.confirm_delete {
@@ -181,6 +181,28 @@ impl IboardApp {
     pub(super) fn delete_issues(&mut self, paths: &[PathBuf]) {
         for path in paths {
             self.delete_issue(path);
+        }
+    }
+
+    /// Before removing issues an agent works on, an ask or a build, asks
+    /// to stop it. True when it asked.
+    fn asks_to_stop(&mut self, removal: Removal, paths: &[PathBuf]) -> bool {
+        let working = paths
+            .iter()
+            .any(|path| self.asking(path) || self.building_since(path).is_some());
+        if working {
+            self.session.confirm = Some(Confirm::Stop(removal, paths.to_vec()));
+        }
+        working
+    }
+
+    /// Removal agreed with agents at work: letting go of the issues stops
+    /// them.
+    pub(super) fn remove_anyway(&mut self, removal: Removal, paths: &[PathBuf]) {
+        self.session.confirm = None;
+        match removal {
+            Removal::Delete => self.delete_issues(paths),
+            Removal::Archive => self.archive_now(paths),
         }
     }
 
@@ -287,7 +309,9 @@ impl IboardApp {
                 .filter(|path| self.is_done_issue(path))
                 .collect();
             self.archive_all(&done);
-        } else if self.move_to_archive(path).is_some() {
+        } else if !self.asks_to_stop(Removal::Archive, &paths)
+            && self.move_to_archive(path).is_some()
+        {
             self.session.notice = Some((format!("Archived {}", file_name(path)), Instant::now()));
             self.refresh();
         }
@@ -296,6 +320,12 @@ impl IboardApp {
     /// "Archive all" in Done's header: moves every listed issue to
     /// `.archive/`, then reads the board once, and says how many went.
     pub(super) fn archive_all(&mut self, paths: &[PathBuf]) {
+        if !self.asks_to_stop(Removal::Archive, paths) {
+            self.archive_now(paths);
+        }
+    }
+
+    fn archive_now(&mut self, paths: &[PathBuf]) {
         let archived = paths
             .iter()
             .filter(|path| self.move_to_archive(path).is_some())
@@ -406,10 +436,14 @@ impl Session {
     }
 
     /// Lets go of an issue that left the board: closes everything open on
-    /// it and stops its review run. An ask, a build or an enrichment at work
-    /// on it runs on.
+    /// it and stops its review run, its ask and its build agent, so none
+    /// writes it back. An enrichment at work on it runs on.
     pub(super) fn forget(&mut self, path: &Path) {
         self.review_runs.forget(path);
+        self.asks.remove(path);
+        if let Some(build) = self.build.as_mut() {
+            build.forget(path);
+        }
         if self
             .review
             .as_ref()

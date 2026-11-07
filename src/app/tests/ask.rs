@@ -78,3 +78,37 @@ fn an_ask_follows_its_issue_through_a_renumber() {
         "its answer opens the agent log beside it"
     );
 }
+
+/// Bug: deleting or archiving an issue an ask works on let the agent run
+/// on, free to write the file back. It asks first; agreed, the ask stops.
+#[test]
+fn removing_an_asked_issue_asks_to_stop_the_agent() {
+    let (dir, mut app) = project("ask-remove", &[("doing/a.md", "# A\n"), ("done/", "")]);
+    let file = dir.join("issues/doing/a.md");
+    app.prefs.build_agent = fake_agent("sleep 30 # {prompt}");
+    app.prefs.confirm_delete = false;
+    app.toggle_ask(&file);
+    app.session.ask_draft.as_mut().unwrap().request = "Take care of it".to_string();
+    app.send_ask();
+
+    app.request_delete(file.clone());
+    assert!(matches!(
+        app.session.confirm,
+        Some(Confirm::Stop(Removal::Delete, _))
+    ));
+    frame(
+        &themed_ctx(),
+        &mut app,
+        vec![key(Key::Escape, egui::Modifiers::NONE)],
+    );
+    assert!(file.exists() && app.asking(&file), "esc keeps both");
+
+    let done = app.move_issue(&file, &dir.join("issues/done")).unwrap();
+    app.archive_issue(&done);
+    let Some(Confirm::Stop(Removal::Archive, paths)) = app.session.confirm.clone() else {
+        panic!("archiving asks too");
+    };
+    app.remove_anyway(Removal::Archive, &paths);
+    assert!(!done.exists() && !app.asking(&done));
+    assert_eq!(app.runs_at_work(), 0);
+}

@@ -230,6 +230,7 @@ impl IboardApp {
         } else if widgets::enter_confirms(ctx) && ctx.input(|i| i.key_pressed(Key::Enter)) {
             match confirm {
                 Confirm::Delete(paths) => self.delete_issues(&paths),
+                Confirm::Stop(removal, paths) => self.remove_anyway(removal, &paths),
                 Confirm::Quit(_) => self.quit_anyway(),
             }
         }

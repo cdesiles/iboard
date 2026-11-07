@@ -541,3 +541,40 @@ fn doing_keeps_retry_at_no_agents_and_a_retry_brings_one_back() {
     assert_eq!(app.session.agents, 1);
     stop_agents(&mut app, &dir, 2);
 }
+
+/// Bug: a deleted issue a build agent works on kept it running and counted.
+/// It asks first; agreed, the agent stops and the next issue is taken.
+#[test]
+fn deleting_an_issue_at_work_asks_to_stop_its_agent() {
+    let (dir, mut app) = board("build-delete", "sleep 30 # {prompt}");
+    app.prefs.confirm_delete = false;
+    app.apply(vec![Intent::Build(ready(&app))]);
+    let taken = app.building_now()[0].0.clone();
+
+    app.request_delete(taken.clone());
+    let Some(Confirm::Stop(removal, paths)) = app.session.confirm.clone() else {
+        panic!("it asks to stop the agent");
+    };
+    app.remove_anyway(removal, &paths);
+    assert!(!taken.exists() && app.building_now().is_empty());
+    app.poll_build();
+    assert_eq!(app.build_place(), Some((1, 1)), "the next issue is taken");
+    assert_eq!(in_column(&dir, "doing"), ["b.md"]);
+    stop_agents(&mut app, &dir, 2);
+}
+
+/// Bug: a queued issue deleted was skipped but still counted as built.
+#[test]
+fn a_deleted_queued_issue_is_not_counted_as_built() {
+    let (dir, mut app) = board("build-delete-queued", "sleep 0.2 # {prompt}");
+    app.prefs.confirm_delete = false;
+    app.apply(vec![Intent::Build(ready(&app))]);
+    app.request_delete(dir.join("issues/ready/002-b.md"));
+    assert!(app.session.confirm.is_none());
+    assert!(until(|| {
+        app.poll_build();
+        app.session.build.is_none()
+    }));
+    let (notice, _) = app.session.notice.clone().unwrap();
+    assert_eq!(notice, "Built 1 issue");
+}
