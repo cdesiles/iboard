@@ -295,17 +295,14 @@ pub(super) struct Listed {
     pub(super) hash: String,
     pub(super) short: String,
     pub(super) date: String,
-    pub(super) subject: String,
 }
 
 impl Listed {
     /// The commit, unmeasured.
     fn bare(&self) -> Snapshot {
         Snapshot {
-            hash: self.hash.clone(),
             short: self.short.clone(),
             date: self.date.clone(),
-            subject: self.subject.clone(),
             ..Snapshot::default()
         }
     }
@@ -322,19 +319,18 @@ fn list(dir: &Path, page: usize) -> Result<Vec<Listed>, String> {
             "--first-parent",
             &format!("--skip={}", page * PAGE),
             &format!("--max-count={}", PAGE + 1),
-            "--format=%H%x1f%h%x1f%cI%x1f%s",
+            "--format=%H%x1f%h%x1f%cI",
             head.trim(),
         ],
     )?;
     Ok(out
         .lines()
         .filter_map(|line| {
-            let mut fields = line.splitn(4, '\x1f');
+            let mut fields = line.split('\x1f');
             Some(Listed {
                 hash: fields.next()?.to_string(),
                 short: fields.next()?.to_string(),
                 date: fields.next()?.to_string(),
-                subject: fields.next().unwrap_or_default().to_string(),
             })
         })
         .collect())

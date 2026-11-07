@@ -1,5 +1,5 @@
-//! A project's health across its history: code size, complexity, tests and
-//! TODOs at each of the last commits, its files and those that change most,
+//! A project's health across its history: code size, complexity and tests
+//! at each of the last commits, its files and those that change most,
 //! when work happened, how long the issues closed took, and whether a
 //! refactor is due.
 //!
@@ -36,9 +36,6 @@ pub use watch::{Limits, Signal, culprits, cycle_drift, refactor_draft, refactor_
 /// How many commits one page of history holds.
 pub const PAGE: usize = 100;
 
-/// A file this long, in code lines, counts as large.
-pub const LARGE_FILE: usize = 500;
-
 /// A file at least this complex, and changed at least [`HOTSPOT_CHANGES`]
 /// times on the page, is a hot spot.
 pub const HOTSPOT_COMPLEXITY: usize = 60;
@@ -70,24 +67,15 @@ impl Progress {
 /// The measures of the whole tree at one commit.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
-    pub hash: String,
     pub short: String,
     /// The committer date, RFC 3339.
     pub date: String,
-    pub subject: String,
     pub files: usize,
     pub code: usize,
-    pub comments: usize,
-    pub blank: usize,
     pub test_code: usize,
     pub tests: usize,
     /// McCabe's number summed over every function.
     pub complexity: usize,
-    /// The functions (or files, where none is declared) it is spread over.
-    pub units: usize,
-    pub todos: usize,
-    /// Files over [`LARGE_FILE`] code lines.
-    pub large_files: usize,
     /// Code lines per language, most first.
     pub languages: Vec<(String, usize)>,
 }
@@ -197,10 +185,8 @@ fn measure_commit(
         &["ls-tree", "-r", "-z", "-l", "--full-tree", &commit.hash],
     )?;
     let mut snapshot = Snapshot {
-        hash: commit.hash.clone(),
         short: commit.short.clone(),
         date: commit.date.clone(),
-        subject: commit.subject.clone(),
         ..Snapshot::default()
     };
     let mut languages: HashMap<&str, usize> = HashMap::new();
@@ -234,16 +220,9 @@ fn measure_commit(
 fn add(snapshot: &mut Snapshot, m: &FileMetrics) {
     snapshot.files += 1;
     snapshot.code += m.code;
-    snapshot.comments += m.comments;
-    snapshot.blank += m.blank;
     snapshot.test_code += m.test_code;
     snapshot.tests += m.tests;
     snapshot.complexity += m.complexity();
-    snapshot.units += m.units();
-    snapshot.todos += m.todos;
-    if m.code > LARGE_FILE {
-        snapshot.large_files += 1;
-    }
 }
 
 /// Highest first, ties by name.
@@ -367,8 +346,7 @@ mod tests {
         let code: Vec<usize> = stats.snapshots.iter().map(|s| s.code).collect();
         assert_eq!(code, [1, 3, 5, 5]);
         let last = stats.snapshots.last().unwrap();
-        assert_eq!((last.subject.as_str(), last.files), ("four", 2));
-        assert_eq!((last.tests, last.test_code, last.todos), (1, 2, 1));
+        assert_eq!((last.files, last.tests, last.test_code), (2, 1, 2));
         assert_eq!(last.complexity, 3);
         assert!(!stats.older);
         assert_eq!(stats.agenda.values().map(Vec::len).sum::<usize>(), 4);
@@ -466,8 +444,8 @@ mod tests {
         import(dir.path(), &commits);
         let issues = dir.path().join("issues");
         let stats = collect(dir.path(), &issues, 1).unwrap();
-        let subjects: Vec<&str> = stats.snapshots.iter().map(|s| s.subject.as_str()).collect();
-        assert_eq!(subjects, ["plan", "Do it"]);
+        let code: Vec<usize> = stats.snapshots.iter().map(|s| s.code).collect();
+        assert_eq!(code, [0, 1], "the two oldest commits");
         let lib = stats.files.iter().find(|f| f.path == "src/lib.rs").unwrap();
         assert_eq!(lib.changes, 1);
         let cycles: Vec<(&str, i64)> = stats
@@ -544,17 +522,18 @@ mod tests {
         commit(dir.path(), "a.rs", "fn a() {}\n", "one");
         let page = source(dir.path(), dir.path(), 0);
         let stats = page.read(&[Need::Commits], &Cancel::default()).unwrap();
-        assert_eq!(stats.snapshots[0].subject, "one");
+        assert_eq!(stats.snapshots.len(), 1);
         assert_eq!(stats.snapshots[0].code, 0);
         assert_eq!(page.progress.get(), (0, 0));
 
         commit(dir.path(), "b.rs", "fn b() {}\n", "two");
         let page = source(dir.path(), dir.path(), 0);
         let stats = page.read(&[Need::Commits], &Cancel::default()).unwrap();
-        let subjects: Vec<&str> = stats.snapshots.iter().map(|s| s.subject.as_str()).collect();
+        let shorts: Vec<&str> = stats.snapshots.iter().map(|s| s.short.as_str()).collect();
+        let log = git(dir.path(), &["log", "--reverse", "--format=%h"]);
         assert_eq!(
-            subjects,
-            ["one", "two"],
+            shorts,
+            log.lines().collect::<Vec<_>>(),
             "oldest first, as measured ones are"
         );
     }

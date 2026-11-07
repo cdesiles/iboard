@@ -1,5 +1,5 @@
 //! One source file's measures: its lines, its estimated cyclomatic complexity,
-//! its tests and its TODOs, read from the text alone, without a parser.
+//! and its tests, read from the text alone, without a parser.
 
 /// How a language writes comments, and which words branch.
 pub struct Language {
@@ -136,8 +136,6 @@ pub fn is_test_file(path: &str) -> bool {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FileMetrics {
     pub code: usize,
-    pub comments: usize,
-    pub blank: usize,
     /// Code lines that test the rest: a test file, or Rust's `#[cfg(test)]`.
     pub test_code: usize,
     /// Test functions (`#[test]`, `def test_`, `it(`…).
@@ -146,20 +144,13 @@ pub struct FileMetrics {
     pub decisions: usize,
     /// Functions declared with a keyword (`fn`, `def`, `func`…).
     pub functions: usize,
-    /// `TODO`, `FIXME` and `HACK` marks.
-    pub todos: usize,
 }
 
 impl FileMetrics {
-    /// Units the decisions are spread over: the functions, or the file
-    /// itself when its language declares none with a keyword.
-    pub fn units(&self) -> usize {
-        self.functions.max(1)
-    }
-
-    /// McCabe's number summed over the file: one per unit, plus its branches.
+    /// McCabe's number summed over the file: one per function (or one for
+    /// the file, when its language declares none), plus its branches.
     pub fn complexity(&self) -> usize {
-        self.decisions + self.units()
+        self.decisions + self.functions.max(1)
     }
 }
 
@@ -168,7 +159,6 @@ const DECISIONS: [&str; 13] = [
     "when", "rescue",
 ];
 const FUNCTIONS: [&str; 5] = ["fn", "func", "def", "function", "fun"];
-const TODOS: [&str; 3] = ["TODO", "FIXME", "HACK"];
 
 /// Measures `text`, a file at `path` in `language`.
 pub fn measure(path: &str, language: &Language, text: &str) -> FileMetrics {
@@ -178,26 +168,19 @@ pub fn measure(path: &str, language: &Language, text: &str) -> FileMetrics {
     let mut matches = 0;
     for line in text.lines() {
         let trimmed = line.trim();
-        if TODOS.iter().any(|mark| line.contains(mark)) {
-            m.todos += 1;
-        }
         if trimmed.is_empty() {
-            m.blank += 1;
             continue;
         }
         if in_block {
-            m.comments += 1;
             in_block = !language.block.is_some_and(|(_, end)| trimmed.contains(end));
             continue;
         }
         if language.line.iter().any(|start| trimmed.starts_with(start)) {
-            m.comments += 1;
             continue;
         }
         if let Some((start, end)) = language.block
             && let Some(rest) = trimmed.strip_prefix(start)
         {
-            m.comments += 1;
             in_block = !rest.contains(end);
             continue;
         }
@@ -272,9 +255,9 @@ mod tests {
     }
 
     #[test]
-    fn lines_split_into_code_comments_and_blanks() {
+    fn only_code_lines_count_not_comments_or_blanks() {
         let m = rust("// head\nfn a() {\n\n    /* one\n two */\n    let x = 1; // TODO\n}\n");
-        assert_eq!((m.code, m.comments, m.blank, m.todos), (3, 3, 1, 1));
+        assert_eq!(m.code, 3);
     }
 
     #[test]

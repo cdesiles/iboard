@@ -618,11 +618,6 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-prow.is-lifted{background:var(--surface);border:1px solid var(--line-strong);box-shadow:var(--shadow-popover);transform:rotate(-.6deg);cursor:grabbing;z-index:2}
 .ib-prow.is-placeholder{opacity:.35}
 .ib-prow.is-drop-before::before{content:"";position:absolute;left:4px;right:4px;top:-2px;height:2px;border-radius:1px;background:var(--accent)}
-/* Kept for older call sites: a one-line quiet menu row */
-.ib-prow--quiet{flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;height:24px;padding:0 8px}
-.ib-prow--quiet .ib-prow__name{font:12px/16px var(--font-sans);color:var(--ink-muted)}
-.ib-prow--quiet .ib-prow__hint{margin-left:auto;font:var(--text-meta,400 12px/16px var(--font-sans));color:var(--ink-muted)}
-.ib-prow--quiet:hover .ib-prow__name,.ib-prow--quiet.is-hover .ib-prow__name{color:var(--ink)}
 
 /* Groups dialog: edit [[workspace.group]] tables from the UI */
 .ib-dialog--groups{width:480px}
