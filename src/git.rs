@@ -8,13 +8,18 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::process;
 
-/// `git -C dir`, printing non-ASCII paths as they are, not as octal escapes.
+/// `git -C dir`, printing non-ASCII paths as they are, not as octal escapes,
+/// and deaf to the `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` that a git
+/// hook would pass down.
 pub fn command(dir: &Path) -> Command {
     let mut command = Command::new("git");
     command
         .arg("-C")
         .arg(dir)
-        .args(["-c", "core.quotePath=false"]);
+        .args(["-c", "core.quotePath=false"])
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE");
     command
 }
 
@@ -111,6 +116,40 @@ impl Drop for Batch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch_git::git;
+
+    fn repo(subject: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q"]);
+        git(
+            dir.path(),
+            &["commit", "-q", "--allow-empty", "-m", subject],
+        );
+        dir
+    }
+
+    #[test]
+    fn an_inherited_git_dir_is_ignored() {
+        const NAME: &str = "git::tests::an_inherited_git_dir_is_ignored";
+        if std::env::var_os("IBOARD_DECOY_GIT_DIR").is_some() {
+            let dir = repo("real");
+            let subject = output(dir.path(), &["log", "-1", "--format=%s"]).unwrap();
+            assert_eq!(subject.trim(), "real");
+            return;
+        }
+        let decoy = repo("decoy");
+        let child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", NAME, "--nocapture"])
+            .env("IBOARD_DECOY_GIT_DIR", "1")
+            .env("GIT_DIR", decoy.path().join(".git"))
+            .env("GIT_WORK_TREE", decoy.path())
+            .env("GIT_INDEX_FILE", decoy.path().join(".git/index"))
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&child.stdout);
+        assert!(child.status.success(), "{stdout}");
+        assert!(stdout.contains("1 passed"), "{stdout}");
+    }
 
     #[test]
     fn a_failure_names_its_subcommand() {
