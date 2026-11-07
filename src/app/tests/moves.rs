@@ -440,3 +440,55 @@ fn hovering_the_done_header_offers_archive_all() {
     draw(&ctx, &mut app, vec![button(at, false)]);
     assert!(!a.exists() && dir.join("issues/.archive/a.md").exists());
 }
+
+/// Opens everything that can hold `file`, each slot once.
+fn hold_everywhere(app: &mut IboardApp, file: &Path) {
+    app.prefs.idesign = true;
+    app.prefs.agent = fake_agent("printf '<html></html>' # {prompt}");
+    app.start_enrichment(file);
+    app.toggle_ask(file);
+    app.toggle_agent_log(file);
+    app.open_commits(file);
+    let session = &mut app.session;
+    session.picked = vec![file.to_path_buf()];
+    session.confirm = Some(Confirm::Delete(vec![file.to_path_buf()]));
+    session.new_card = Some((file.to_path_buf(), Instant::now()));
+    session.pending_front = Some((PathBuf::new(), file.to_path_buf()));
+    session.editor = Some(EditorState::new(file.to_path_buf(), String::new()));
+    session.label_picker = Some(LabelPicker::new(file.to_path_buf()));
+    session.refine = Some(super::super::refine::Refinement::new(
+        file.to_path_buf(),
+        String::new(),
+    ));
+    session.notes = Some(super::super::comments::Notes {
+        path: file.to_path_buf(),
+        comments: Vec::new(),
+        draft: None,
+    });
+}
+
+#[test]
+fn a_rename_follows_the_issue_everywhere_it_is_held() {
+    let (_dir, file, mut app) = super::review::open_issue_with_review("rename-all");
+    hold_everywhere(&mut app, &file);
+    assert_eq!(app.session.issue_paths_mut().count(), 15);
+    let new = file.with_file_name("02-demo.md");
+
+    app.apply_renames(&[(file, new.clone())]);
+
+    assert!(app.session.issue_paths_mut().all(|path| *path == new));
+}
+
+/// A deleted issue closes everything open on it but the enrichment, an
+/// agent at work.
+#[test]
+fn a_delete_lets_go_of_the_issue_everywhere_it_is_held() {
+    let (_dir, file, mut app) = super::review::open_issue_with_review("delete-all");
+    hold_everywhere(&mut app, &file);
+
+    app.delete_issue(&file);
+
+    assert_eq!(app.session.issue_paths_mut().count(), 1);
+    assert!(app.session.enrichment.is_some());
+    assert!(matches!(app.session.screen, Screen::Board));
+}
