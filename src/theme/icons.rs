@@ -62,6 +62,8 @@ pub enum Icon {
     Narrow,
     /// A speech bubble: ask an agent.
     Bubble,
+    /// A flag on a pole: cut a release.
+    Release,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -98,7 +100,7 @@ pub fn paint_icon_stroked(painter: &Painter, icon: Icon, rect: Rect, color: Colo
         Icon::Play | Icon::Stop | Icon::Thinking | Icon::Log | Icon::Review => {
             agent_icon(&grid, icon);
         }
-        Icon::Layers | Icon::Grip | Icon::Warning | Icon::Flame | Icon::Bars => {
+        Icon::Layers | Icon::Grip | Icon::Warning | Icon::Flame | Icon::Bars | Icon::Release => {
             project_icon(&grid, icon);
         }
         Icon::More | Icon::ArrowRight | Icon::ChevronRight | Icon::Narrow | Icon::Bubble => {
@@ -387,9 +389,20 @@ fn menu_icon(g: &Grid, icon: Icon) {
 }
 
 /// The project's marks: the ProjectMenu footer's Stats, groups and Reorder
-/// grip, the Stats screen's signals and hot spots.
+/// grip, the Stats screen's signals and hot spots, and Done's release flag.
 fn project_icon(g: &Grid, icon: Icon) {
     match icon {
+        Icon::Release => {
+            g.line(&[(5.0, 22.0), (5.0, 3.0)]);
+            g.line(&[
+                (5.0, 3.0),
+                (19.0, 3.0),
+                (15.0, 8.0),
+                (19.0, 13.0),
+                (5.0, 13.0),
+                (5.0, 3.0),
+            ]);
+        }
         Icon::Bars => {
             g.line(&[(5.0, 20.0), (5.0, 12.0)]);
             g.line(&[(12.0, 20.0), (12.0, 4.0)]);

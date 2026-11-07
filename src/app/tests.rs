@@ -28,6 +28,7 @@ mod project_menu;
 mod quitting;
 mod reading;
 mod refine;
+mod release;
 mod review;
 mod select;
 mod settings;

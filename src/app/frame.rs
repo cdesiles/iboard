@@ -2,6 +2,7 @@
 //! requests, the dialogs' keys, the autosave and the rescan.
 
 use super::editor::EditorState;
+use super::release::ReleaseChoice;
 use super::{
     Confirm, IboardApp, Instant, Job, Key, RESCAN_EVERY, Vec2, job, quitting, scan, settings_ui,
     widgets,
@@ -71,6 +72,12 @@ impl IboardApp {
                     .is_some_and(|dialog| dialog.close() == settings_ui::Action::Close)
             {
                 self.settings = None;
+            }
+            return true;
+        }
+        if self.session.release.is_some() {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter)) {
+                self.release_choice(ReleaseChoice::Confirm);
             }
             return true;
         }
@@ -214,6 +221,7 @@ impl IboardApp {
             || self.settings.is_some()
             || self.groups_dialog.is_some()
             || self.session.commits.is_some()
+            || self.session.release.is_some()
             || self.session.ask_draft.is_some()
             || self.composer_open()
             || self.refinement_shown()

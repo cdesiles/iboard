@@ -75,6 +75,7 @@ mod prose;
 mod quitting;
 mod reader;
 mod refine;
+mod release;
 mod review;
 mod side_panel;
 mod split;
@@ -324,6 +325,8 @@ struct Session {
     review_runs: review::ReviewRuns,
     /// The refinement of the open issue: a conversation with a challenger.
     refine: Option<refine::Refinement>,
+    /// Done's release flow, while it asks before each step.
+    release: Option<release::ReleaseFlow>,
     /// The reader's comments on the open issue.
     notes: Option<comments::Notes>,
     /// The Design panel, while it is open.
@@ -384,6 +387,7 @@ impl Default for Session {
             review: None,
             review_runs: review::ReviewRuns::default(),
             refine: None,
+            release: None,
             diff: None,
             build: None,
             watch: None,
@@ -698,6 +702,7 @@ impl IboardApp {
         self.design_window(ui);
         self.enrichment_window(ui);
         self.commits_window(ui);
+        self.release_window(ui);
         self.new_issue_modal(ui);
         widgets::settle_modals(ui.ctx());
         self.flush_pending_front(ui.ctx());

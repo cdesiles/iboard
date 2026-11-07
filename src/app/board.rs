@@ -379,6 +379,9 @@ enum HeaderAction {
     /// Done's "Archive all", which moves the issues it lists (after the
     /// filter) to `.archive/`.
     ArchiveAll,
+    /// Done's flag: write a release note from the issues it lists, commit and
+    /// tag it, then push.
+    Release,
 }
 
 impl HeaderAction {
@@ -388,7 +391,7 @@ impl HeaderAction {
         match self {
             Self::NewIssue => view.parked,
             Self::StopBuild => true,
-            Self::Build | Self::Agents | Self::ArchiveAll => false,
+            Self::Build | Self::Agents | Self::ArchiveAll | Self::Release => false,
         }
     }
 }
@@ -411,6 +414,11 @@ fn header_actions(view: &ColumnView) -> Vec<HeaderAction> {
     }
     if column.name.eq_ignore_ascii_case("done") && !view.visible.is_empty() {
         actions.push(HeaderAction::ArchiveAll);
+        // A workspace board merges several repositories: one release would
+        // have to pick one of them, so only a single project offers it.
+        if view.board.repos.is_empty() {
+            actions.push(HeaderAction::Release);
+        }
     }
     actions
 }
@@ -435,6 +443,14 @@ fn header_action(ui: &mut egui::Ui, view: &ColumnView, action: HeaderAction) -> 
             let hover = format!("Archive all: move the {count} {noun} to {ARCHIVE_DIR}/");
             button(ui, Icon::Archive, "archive_all", &hover)
                 .then(|| Intent::ArchiveAll(view.visible_paths()))
+        }
+        HeaderAction::Release => {
+            let count = view.visible.len();
+            let noun = if count == 1 { "issue" } else { "issues" };
+            let hover =
+                format!("Release: write a note from the {count} {noun}, commit, tag and push");
+            button(ui, Icon::Release, "release", &hover)
+                .then(|| Intent::Release(view.visible_paths()))
         }
     }
 }
