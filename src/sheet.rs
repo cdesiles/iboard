@@ -12,15 +12,13 @@ pub const DEFAULT_SECTIONS: [&str; 4] = [
     "Open questions",
 ];
 
-/// `(ticked, total)` task-list items (`- [x]`, `* [ ]`, `1. [ ]`), outside
+/// `(ticked, total)` task-list items (`- [x]`, `* [ ]`, `1. [ ]`, `1) [ ]`), outside
 /// fenced code blocks.
 pub fn checklist(markdown: &str) -> (usize, usize) {
     let mut done = 0;
     let mut total = 0;
     for line in prose_lines(markdown) {
-        let Some((_, rest)) =
-            markdown::list_marker(line).filter(|(marker, _)| !marker.ends_with(')'))
-        else {
+        let Some((_, rest)) = markdown::list_marker(line) else {
             continue;
         };
         if rest.starts_with("[ ]") {
@@ -103,8 +101,7 @@ pub fn hide_title_labels(markdown: &str) -> (String, Option<(usize, String)>) {
         return (markdown.to_string(), None);
     };
     let original = lines[index];
-    let heading = markdown::heading_text(original).trim_start_matches("# ");
-    let (found, title) = labels::split_leading_labels(heading);
+    let (found, title) = labels::split_leading_labels(markdown::heading_text(original));
     if found.is_empty() || title.is_empty() {
         return (markdown.to_string(), None);
     }
@@ -141,14 +138,19 @@ mod tests {
         assert_eq!(hide_title_labels("# Plain\n").1, None);
     }
 
+    #[test]
+    fn a_repeated_marker_is_part_of_the_title_as_on_the_card() {
+        assert_eq!(hide_title_labels("# # [bug] Fix\n").1, None);
+    }
+
     fn defaults() -> Vec<String> {
         DEFAULT_SECTIONS.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
     fn counts_ticked_and_open_items_outside_code() {
-        let md = "# T\n\n- [x] one\n- [ ] two\n* [X] three\n1. [ ] four\n- plain\n\n```\n- [ ] code\n```\n";
-        assert_eq!(checklist(md), (2, 4));
+        let md = "# T\n\n- [x] one\n- [ ] two\n* [X] three\n1. [ ] four\n2) [x] five\n- plain\n\n```\n- [ ] code\n```\n";
+        assert_eq!(checklist(md), (3, 5));
         assert_eq!(checklist("# Just a title"), (0, 0));
     }
 

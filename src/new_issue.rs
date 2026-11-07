@@ -6,6 +6,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use crate::labels;
+use crate::markdown;
 
 /// One `##` section of a draft.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -141,8 +142,15 @@ fn parse_markdown(text: &str, done: bool) -> Draft {
     };
     let mut current: Option<Section> = None;
     let mut summary = Vec::new();
-    for line in text.lines() {
-        if let Some(heading) = line.strip_prefix("## ") {
+    let lines: Vec<&str> = text.lines().collect();
+    let title = markdown::title_line(&lines);
+    let prose = markdown::prose(&lines);
+    for (index, line) in lines.into_iter().enumerate() {
+        if Some(index) == title {
+            let (labels, title) = split_labels(markdown::heading_text(line));
+            draft.labels = labels;
+            draft.title = Some(title);
+        } else if let Some(heading) = line.strip_prefix("## ").filter(|_| prose[index]) {
             if let Some(section) = current.take() {
                 draft.sections.push(finish(section));
             }
@@ -150,10 +158,6 @@ fn parse_markdown(text: &str, done: bool) -> Draft {
                 heading: heading.trim().to_string(),
                 text: String::new(),
             });
-        } else if let Some(title) = line.strip_prefix("# ").filter(|_| draft.title.is_none()) {
-            let (labels, title) = split_labels(title);
-            draft.labels = labels;
-            draft.title = Some(title);
         } else if let Some(section) = current.as_mut() {
             section.text.push_str(line);
             section.text.push('\n');
@@ -177,16 +181,11 @@ fn finish(mut section: Section) -> Section {
 /// `[Bug] [ux] Fix login` → (`["Bug", "ux"]`, `Fix login`), the labels as
 /// typed. A group that is no label (`[]`) ends the run and stays in the title.
 pub fn split_labels(title: &str) -> (Vec<String>, String) {
-    let (groups, _) = labels::bracket_groups(title);
-    let mut found = Vec::new();
-    let mut rest = title.trim_start();
-    for group in groups
-        .into_iter()
-        .take_while(|g| labels::normalize(g).is_some())
-    {
-        found.push(group.trim().to_string());
-        rest = rest[group.len() + 2..].trim_start();
-    }
+    let (groups, rest) = labels::bracket_groups(title);
+    let found = groups
+        .iter()
+        .map(|group| group.trim().to_string())
+        .collect();
     (found, rest.trim().to_string())
 }
 
@@ -324,7 +323,11 @@ impl Parked {
 
     pub fn from_text(text: &str) -> Option<Self> {
         let (head, rest) = text.split_once(NOTES_MARK)?;
-        let title = head.trim().trim_start_matches('#').trim().to_string();
+        let title = head
+            .lines()
+            .next()
+            .map_or("", markdown::heading_text)
+            .to_string();
         let (notes, draft) = match rest.split_once(DRAFT_MARK) {
             Some((notes, draft)) => (notes, Some(parse(draft, true))),
             None => (rest, None),
@@ -476,5 +479,18 @@ mod tests {
         assert_eq!(Parked::load(&path), Some(parked));
         Parked::default().save(&path).unwrap();
         assert!(!path.exists(), "empty notes park nothing");
+    }
+
+    #[test]
+    fn the_draft_title_is_the_heading_the_board_reads() {
+        let draft = parse(
+            "```sh\n# not this\n## Nor this\n```\n  # [Bug] Fix\n\n# Later\n",
+            true,
+        );
+        assert_eq!(draft.title.as_deref(), Some("Fix"));
+        assert_eq!(draft.labels, ["Bug"]);
+        assert!(draft.sections.is_empty());
+        let parked = Parked::from_text("# # Fix\n\n<!-- iboard: notes -->\nn\n").unwrap();
+        assert_eq!(parked.title, "# Fix");
     }
 }

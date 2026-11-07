@@ -628,6 +628,11 @@ fn a_split_answer_parses_into_tickets() {
     assert!(parse_split("=== TICKET ===\n# Only one\n").is_none());
     assert!(parse_split("=== TICKET ===\n# A\n=== TICKET ===\nno title\n").is_none());
     assert!(parse_split("prose").is_none());
+    let indented = parse_split("=== TICKET ===\n  # A\n=== TICKET ===\n# # B\n").unwrap();
+    assert_eq!(
+        (indented[0].title.as_str(), indented[1].title.as_str()),
+        ("A", "# B")
+    );
 }
 
 #[test]
@@ -649,14 +654,17 @@ fn a_refinement_turn_parts_the_challenge_from_the_proposal() {
 fn a_refinement_turn_opens_on_its_tldr_and_ends_on_options() {
     let turn = parse_refinement(
         "**TL;DR:** Ship the smaller fix.\nDrop the redesign.\n\n## Why\n\nIt costs a week.\n\
-         OPTIONS:\n1. Keep the fix only\n- **Both**, later\nNONE\nPROPOSAL: NONE",
+         OPTIONS:\n1. Keep the fix only\n- **Both**, later\n2) Wait\n1.Yes\nNONE\nPROPOSAL: NONE",
     );
     assert_eq!(
         turn.tldr.as_deref(),
         Some("Ship the smaller fix. Drop the redesign.")
     );
     assert_eq!(turn.text, "## Why\n\nIt costs a week.");
-    assert_eq!(turn.options, ["Keep the fix only", "**Both**, later"]);
+    assert_eq!(
+        turn.options,
+        ["Keep the fix only", "**Both**, later", "Wait", "1.Yes"]
+    );
     assert_eq!(turn.proposal, None);
 }
 

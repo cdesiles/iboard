@@ -311,7 +311,8 @@ pub fn most_used<'a>(labels: impl IntoIterator<Item = &'a String>, limit: usize)
 /// Splits the leading `[label]` groups off a level-1 heading, returning the
 /// labels (normalized, repeats merged) and the display title. `[Bug] [UI] T`
 /// and `[Bug][UI] T` both give `bug` and `ui`. Brackets later in the title, an
-/// empty `[]` (dropped) and a markdown link (`[text](url)`) end the run.
+/// empty `[]` and a markdown link (`[text](url)`) end the run, as in
+/// [`bracket_groups`].
 pub fn split_leading_labels(heading: &str) -> (Vec<String>, String) {
     let (groups, tail) = bracket_groups(heading);
     let mut labels: Vec<String> = Vec::new();
@@ -325,14 +326,16 @@ pub fn split_leading_labels(heading: &str) -> (Vec<String>, String) {
     (labels, tail.trim().to_string())
 }
 
-/// The leading `[…]` groups of a heading, as written, and the text after
-/// them. A markdown link (`[text](url)`) ends the run.
+/// The leading `[…]` label groups of a heading, as written, and the text
+/// after them. A markdown link (`[text](url)`) or a group that is no label
+/// (`[]`) ends the run and stays in the text.
 pub fn bracket_groups(heading: &str) -> (Vec<&str>, &str) {
     let mut groups = Vec::new();
     let mut tail = heading.trim_start();
     while let Some(inner) = tail.strip_prefix('[')
         && let Some(close) = inner.find(']')
         && !inner[close + 1..].starts_with('(')
+        && normalize(&inner[..close]).is_some()
     {
         groups.push(&inner[..close]);
         tail = inner[close + 1..].trim_start();
@@ -697,7 +700,11 @@ mod tests {
     fn empty_brackets_and_links_are_not_labels() {
         assert_eq!(
             split_leading_labels("[] nothing"),
-            (vec![], "nothing".to_string())
+            (vec![], "[] nothing".to_string())
+        );
+        assert_eq!(
+            split_leading_labels("[bug] [] Fix"),
+            (vec!["bug".to_string()], "[] Fix".to_string())
         );
         assert!(split_leading_labels("[home](https://x)").0.is_empty());
         assert_eq!(
@@ -871,6 +878,7 @@ mod tests {
         );
         assert_eq!(add("# Fix login\n", "bug"), "# [bug] Fix login\n");
         assert_eq!(add("# [A][B] T", "c"), "# [A][B] [c] T");
+        assert_eq!(add("# [A] [] T", "c"), "# [A] [c] [] T");
         assert_eq!(
             add("intro\n# [home](https://x) page\r\nrest", "ux"),
             "intro\n# [ux] [home](https://x) page\r\nrest"
@@ -915,6 +923,7 @@ mod tests {
         );
         assert_eq!(remove("# [bug] Fix login\n", "bug"), "# Fix login\n");
         assert_eq!(remove("# [A][B] T", "b"), "# [A] T");
+        assert_eq!(remove("# [A] [] T", "a"), "# [] T");
         assert!(remove_label("# Fix login\n", "bug").is_none());
         assert!(remove_label("# [home](https://x) page\n", "home").is_none());
     }

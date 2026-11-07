@@ -84,18 +84,17 @@ impl Issue {
 fn extract_title(content: &str, path: &Path) -> (String, Vec<String>, Option<usize>) {
     let lines: Vec<&str> = content.lines().collect();
     let prose = markdown::prose(&lines);
-    let prose_lines = || lines.iter().enumerate().filter(|(idx, _)| prose[*idx]);
-    // Prefer the first level-1 heading. Its leading `[label]` groups are split
-    // off before the inline markup is stripped.
-    for (idx, line) in prose_lines() {
-        let (labels, display) = labels::split_leading_labels(markdown::heading_text(line));
+    if let Some(idx) = markdown::title_line(&lines) {
+        let (labels, display) = labels::split_leading_labels(markdown::heading_text(lines[idx]));
         let heading = markdown::strip_inline(&display);
-        if !heading.is_empty() {
-            return (heading, labels, Some(idx));
-        }
+        let title = if heading.is_empty() {
+            pretty_stem(path)
+        } else {
+            heading
+        };
+        return (title, labels, Some(idx));
     }
-    // Otherwise the first non-empty line.
-    for (idx, line) in prose_lines() {
+    for (idx, line) in lines.iter().enumerate().filter(|(idx, _)| prose[*idx]) {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -274,6 +273,18 @@ mod tests {
         assert_eq!(line, Some(0));
         let summary = extract_summary("# [Discovery] Hey look!\n\nThe body.\n", line);
         assert_eq!(summary, "The body.");
+    }
+
+    #[test]
+    fn the_card_reads_the_heading_the_label_picker_edits() {
+        let (title, label, line) = extract_title(
+            "# [bug]\n\n# Real\n",
+            &PathBuf::from("2026-01-02-fix-it.md"),
+        );
+        assert_eq!(
+            (title.as_str(), label, line),
+            ("Fix it", vec!["bug".to_string()], Some(0))
+        );
     }
 
     #[test]

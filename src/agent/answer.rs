@@ -18,7 +18,7 @@ pub fn parse_split(text: &str) -> Option<Vec<Draft>> {
             let lines: Vec<&str> = chunk.lines().collect();
             let at = crate::markdown::title_line(&lines)?;
             Some(Draft {
-                title: lines[at].trim_start_matches('#').trim().to_string(),
+                title: crate::markdown::heading_text(lines[at]).to_string(),
                 body: lines[at + 1..].join("\n").trim().to_string(),
             })
         })
@@ -251,17 +251,7 @@ pub fn choice_parts(option: &str) -> (String, Option<&str>) {
 /// A list line without its bullet or number: `- Yes` and `2. Yes` give `Yes`.
 fn list_item(line: &str) -> &str {
     let line = line.trim();
-    if let Some(rest) = ["- ", "* ", "+ "]
-        .iter()
-        .find_map(|bullet| line.strip_prefix(bullet))
-    {
-        return rest.trim_start();
-    }
-    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-    match line[digits..].strip_prefix(['.', ')']) {
-        Some(rest) if digits > 0 => rest.trim_start(),
-        _ => line,
-    }
+    crate::markdown::list_marker(line).map_or(line, |(_, rest)| rest.trim_start())
 }
 
 /// The first line of `lines` keyed by one of `keys`, and what follows its key.
