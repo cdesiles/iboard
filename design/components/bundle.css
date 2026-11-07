@@ -798,21 +798,18 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 /* Dynamic icon button (Reader/Editor header: Edit, Add label, Delete). At rest: a 24×24 icon in ink-muted, no edge.
-   Hover or keyboard focus: a pill grows to the LEFT of the icon with the label, over the neighbours, so the icon never
-   moves under the pointer and nothing reflows. The pill is paint only: the hit target stays the 24pt icon. Holding ⌘: the key sits after the icon, in layout, for all of them. */
-.ib-dyn{position:relative;gap:4px;padding:0 5px;min-width:24px;justify-content:center;color:var(--ink-muted);border-color:transparent}
+   Hover or keyboard focus: a pill grows LEFT of the whole group with the label, covering none of the icons, so the icon
+   never moves under the pointer and nothing reflows. The pill is paint only: the hit target stays the 24pt icon. Holding ⌘: the key sits after the icon, in layout, for all of them. */
+.ib-dyn{gap:4px;padding:0 5px;min-width:24px;justify-content:center;color:var(--ink-muted);border-color:transparent}
 .ib-bar .ib-dyn{border-color:transparent}
-.ib-dyn__label{position:absolute;right:100%;top:0;bottom:0;display:flex;align-items:center;padding:0 2px 0 8px;border-radius:var(--radius-sm) 0 0 var(--radius-sm);background:inherit;color:inherit;font:inherit;white-space:nowrap;visibility:hidden;max-width:0;overflow:hidden;opacity:0;pointer-events:none}
-/* While one shows its label, its neighbours in the group step aside (still hoverable: the hit target is always the icon). */
-.ib-dyngroup:has(.ib-dyn:hover,.ib-dyn.is-hover,.ib-dyn.is-focus) .ib-dyn:not(:hover):not(.is-hover):not(.is-focus)>*{visibility:hidden}
+.ib-dyn__label{position:absolute;right:calc(100% + 2px);top:0;bottom:0;display:flex;align-items:center;padding:0 8px;border-radius:var(--radius-sm);background:inherit;color:inherit;font:inherit;white-space:nowrap;visibility:hidden;max-width:0;overflow:hidden;opacity:0;pointer-events:none}
 .ib-dyn:hover,.ib-dyn.is-hover,.ib-dyn:focus-visible,.ib-dyn.is-focus{color:var(--ink);background:var(--surface-hover);z-index:2}
 .ib-dyn:hover .ib-dyn__label,.ib-dyn.is-hover .ib-dyn__label,.ib-dyn:focus-visible .ib-dyn__label,.ib-dyn.is-focus .ib-dyn__label{visibility:visible;max-width:140px;opacity:1}
-.ib-dyn:hover,.ib-dyn.is-hover,.ib-dyn:focus-visible,.ib-dyn.is-focus{border-top-left-radius:0;border-bottom-left-radius:0}
 .ib-dyn.is-focus,.ib-dyn:focus-visible{outline:0;box-shadow:0 0 0 2px var(--focus)}
-.ib-dyn.is-focus .ib-dyn__label,.ib-dyn:focus-visible .ib-dyn__label{box-shadow:-2px 0 0 0 var(--focus),0 -2px 0 0 var(--focus),0 2px 0 0 var(--focus)}
+.ib-dyn.is-focus .ib-dyn__label,.ib-dyn:focus-visible .ib-dyn__label{box-shadow:0 0 0 2px var(--focus)}
 .ib-dyn--danger:hover,.ib-dyn--danger.is-hover,.ib-dyn--danger.is-focus,.ib-dyn--danger:focus-visible{color:var(--danger);background:var(--danger-soft)}
 .ib-dyn .ib-btn__key{color:inherit}
-.ib-dyngroup{display:inline-flex;gap:2px;align-items:center}
+.ib-dyngroup{position:relative;display:inline-flex;gap:2px;align-items:center}
 @media (prefers-reduced-motion:no-preference){
   .ib-dyn:hover .ib-dyn__label,.ib-dyn.is-hover .ib-dyn__label{transition:max-width var(--motion-hint,120ms) ease-out,opacity var(--motion-hint,120ms) ease-out}
 }

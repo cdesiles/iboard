@@ -1,6 +1,7 @@
 //! Dynamic icon buttons, the header's Edit, Add label and Delete: a 24pt icon
-//! at rest, with a pill holding the label under the pointer or the focus and
-//! the key sliding out while ⌘ is held. See `design/components/HeaderBar`.
+//! at rest, with a pill holding the label left of the row under the pointer or
+//! the focus and the key sliding out while ⌘ is held. See
+//! `design/components/HeaderBar`.
 
 use egui::{
     Color32, CornerRadius, Id, LayerId, Order, Painter, Pos2, Rect, Response, Sense, Stroke,
@@ -13,9 +14,9 @@ use crate::theme::{self, Icon};
 /// The icon's side padding in its 24pt box.
 const ICON_PAD: f32 = 5.0;
 const KEY_GAP: f32 = 4.0;
-/// The pill's room left of its label, and between the label and the icon's box.
-const PILL_LEFT: f32 = theme::SPACE_3;
-const PILL_RIGHT: f32 = theme::SPACE_1;
+/// The pill's room on each side of its label, and its gap to the row.
+const PILL_PAD: f32 = theme::SPACE_3;
+const PILL_GAP: f32 = theme::SPACE_1;
 /// The pill's label: `ui-strong` at 12pt.
 const PILL_TEXT: f32 = 12.0;
 
@@ -79,13 +80,27 @@ fn shown_id() -> Id {
     Id::new("dynamic-button-shown")
 }
 
-/// Whether another button shows its pill now: this one steps aside.
-fn other_on(ui: &Ui, me: Id) -> bool {
-    let ctx = ui.ctx();
-    ctx.data(|d| d.get_temp::<(Id, u64)>(shown_id()))
-        .filter(|(id, _)| *id != me)
-        .and_then(|(id, _)| ctx.read_response(id))
-        .is_some_and(|other| other.hovered() || other.has_focus())
+/// Where the row's left edge is kept: this pass's so far, and the last one's.
+fn row_id(ui: &Ui) -> Id {
+    ui.id().with("dynamic-row")
+}
+
+/// The left edge of the row this button sits in, as the last pass left it:
+/// the pill grows from there, so it covers none of the icons.
+fn row_left(ui: &Ui, rect: Rect) -> f32 {
+    let pass = ui.ctx().cumulative_pass_nr();
+    let id = row_id(ui);
+    let (seen, now, last) = ui
+        .ctx()
+        .data(|d| d.get_temp::<(u64, f32, f32)>(id))
+        .unwrap_or((pass, rect.min.x, rect.min.x));
+    let (now, last) = if seen == pass {
+        (now.min(rect.min.x), last)
+    } else {
+        (rect.min.x, now)
+    };
+    ui.ctx().data_mut(|d| d.insert_temp(id, (pass, now, last)));
+    last.min(rect.min.x)
 }
 
 /// Whether another button showed its pill in the last pass: the pointer is
@@ -138,7 +153,8 @@ impl Widget for DynamicButton<'_> {
                 .data_mut(|d| d.insert_temp(shown_id(), (response.id, pass)));
         }
         let pill = pill_reveal(ui, response.id, on, switching);
-        // Over the neighbours and the crumbs, under menus and modals.
+        let left = row_left(ui, rect);
+        // Over the crumbs, under menus and modals.
         let layer = LayerId::new(Order::Middle, response.id.with("dynamic-layer"));
         let painter = ui.ctx().layer_painter(layer);
         let ink = if !ui.is_enabled() {
@@ -148,43 +164,41 @@ impl Widget for DynamicButton<'_> {
         } else {
             p.ink_muted
         };
-        let shape = if on {
+        if on || self.open {
+            painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), lit_fill);
+        }
+        let label = on.then(|| {
             let mut font = theme::ui_strong();
             font.size = PILL_TEXT;
             let text = galley(ui, self.label, font, lit_ink);
-            let width = pill * (PILL_LEFT + text.size().x + PILL_RIGHT);
-            let shape = rect.with_min_x(rect.min.x - width);
+            let right = left - PILL_GAP;
+            let width = pill * (2.0 * PILL_PAD + text.size().x);
+            let shape = Rect::from_x_y_ranges(right - width..=right, rect.y_range());
             painter.rect_filled(shape, CornerRadius::same(theme::RADIUS_SM), lit_fill);
             let at = Pos2::new(
-                rect.min.x - PILL_RIGHT - text.size().x,
+                right - PILL_PAD - text.size().x,
                 rect.center().y - text.size().y / 2.0,
             );
             painter
                 .with_clip_rect(shape)
                 .galley_with_override_text_color(at, text, lit_ink.gamma_multiply(pill));
             shape
-        } else {
-            if self.open {
-                painter.rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), lit_fill);
-            }
-            rect
-        };
-        // While one shows its label, its neighbours step aside.
-        if on || !other_on(ui, response.id) {
-            paint_face(&painter, self.icon, rect, ink);
-            if let Some(key) = key {
-                let left = rect.min.x + ICON_PAD + theme::ICON_SIZE + KEY_GAP;
-                let at = Pos2::new(left, rect.center().y - key.size().y / 2.0);
-                painter.galley_with_override_text_color(at, key, ink.gamma_multiply(reveal));
-            }
+        });
+        paint_face(&painter, self.icon, rect, ink);
+        if let Some(key) = key {
+            let left = rect.min.x + ICON_PAD + theme::ICON_SIZE + KEY_GAP;
+            let at = Pos2::new(left, rect.center().y - key.size().y / 2.0);
+            painter.galley_with_override_text_color(at, key, ink.gamma_multiply(reveal));
         }
         if response.has_focus() {
-            painter.rect_stroke(
-                shape.expand(2.0),
-                CornerRadius::same(theme::RADIUS_SM + 2),
-                Stroke::new(2.0, p.accent),
-                StrokeKind::Outside,
-            );
+            for shape in std::iter::once(rect).chain(label) {
+                painter.rect_stroke(
+                    shape.expand(2.0),
+                    CornerRadius::same(theme::RADIUS_SM + 2),
+                    Stroke::new(2.0, p.accent),
+                    StrokeKind::Outside,
+                );
+            }
         }
         response
     }
@@ -268,6 +282,27 @@ mod tests {
         harness.get_by_label("Edit").click();
         harness.run_steps(2);
         assert_eq!(harness.state().clicked, ["Edit"]);
+    }
+
+    /// The pill grows left of the whole row, so every icon stays in sight.
+    #[test]
+    fn the_pill_sits_left_of_the_row_and_covers_no_icon() {
+        let mut harness = row();
+        harness.get_by_label("Delete").hover();
+        harness.run_steps(3);
+        let edit = harness.get_by_label("Edit").rect();
+        let label = harness
+            .output()
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.text() == "Delete" => {
+                    Some(text.visual_bounding_rect())
+                }
+                _ => None,
+            })
+            .expect("the pill's label");
+        assert!(label.max.x < edit.min.x, "{label:?} covers {edit:?}");
     }
 
     /// ⌘ brings each key out in layout; a button with no key stays 24pt.
