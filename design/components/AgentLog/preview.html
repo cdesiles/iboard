@@ -1,0 +1,340 @@
+<!-- @dsCard group="AI review" height=2760 subtitle="The build's transcript: one live step, runs as headings, every burst of tool calls folded into one row, and the changed files opening the Diff screen" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>AgentLog</title>
+<style>
+.al-page{display:flex;flex-direction:column;gap:var(--space-5)}
+.al-lede{max-width:68ch;margin:0;font:var(--text-ui-body);color:var(--ink-muted)}
+.al-lede b{font-weight:500;color:var(--ink)}
+.al-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,396px));gap:var(--space-6);align-items:start}
+.al-demo{display:flex;flex-direction:column;gap:var(--space-3);min-width:0}
+.al-demo .ib-alog{width:100%}
+.al-tall{height:660px}
+.al-mid{height:800px}
+.al-raw{height:620px}
+.al-small{height:440px}
+.al-fail{height:530px}
+.al-dark{background:var(--bg);padding:var(--space-4);border-radius:var(--radius-md)}
+.al-dark .ib-alog{height:420px}
+</style>
+</head>
+<body>
+<div class="ib-pad al-page">
+
+<p class="al-lede"><b>The same run as the old panel, re-cut.</b> The steps between two messages become one activity row, the live step lives once above the scroll, and the edits become a file list. <b>Timeline</b> is for understanding the run; <b>Raw</b> is for inspecting it.</p>
+
+<div class="al-grid">
+
+<section class="al-demo">
+  <span class="ib-cap">Running, no messages yet: the screenshot's case, now one fold instead of a wall of “Reading…”</span>
+  <section class="ib-alog al-tall" aria-label="Agent log of release-mechanism-based-on-git-tag.md">
+    <header class="ib-alog__head">
+      <span class="ib-alog__title">Agent log of release-mechanism-based-on-git-tag.md</span>
+      <span class="ib-alog__detail">running</span>
+    </header>
+    <div class="ib-alog__bar">
+      <div class="ib-seg" role="group" aria-label="Log view">
+        <button aria-pressed="true">Timeline</button>
+        <button aria-pressed="false">Raw</button>
+      </div>
+    </div>
+    <div class="ib-alog__now" role="status">
+      <span class="ib-think ib-think--sm" role="img" aria-label="Working"><svg viewBox="0 0 44 44" aria-hidden="true"><g class="ib-think__turn"><rect class="ib-think__stem" x="0" y="17" width="12" height="27" rx="3"/><rect class="ib-think__card" x="0" y="0" width="12" height="12" rx="3"/></g></svg></span>
+      <span class="ib-alog__step">Editing <b>src/app/release.rs</b></span>
+      <span class="ib-alog__clock">1:54</span>
+    </div>
+    <div class="ib-alog__body" tabindex="0">
+      <section class="ib-run" aria-label="Run 2, today 14:02, opencode">
+        <div class="ib-run__head"><span class="ib-run__n">Run 2</span><span class="ib-run__meta">today 14:02 · <b>opencode</b></span></div>
+        <details class="ib-fold" open>
+          <summary class="ib-fold__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span>Read 5 files, searched 2, ran 1 command</span>
+          </summary>
+          <div class="ib-fold__rows">
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">doing/release-mechanism-based-on-git-tag.md</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">src/release.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">src/app/release.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">src/git.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">tests/release.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Searched</span><span class="ib-fold__target">release_tag</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Searched</span><span class="ib-fold__target">v0.3</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Ran</span><span class="ib-fold__target"><code>cargo test --release</code></span></div>
+          </div>
+        </details>
+        <details class="ib-changes">
+          <summary class="ib-changes__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span class="ib-changes__title">3 files changed <span>so far</span></span>
+            <span class="ib-changes__stats"><span class="ib-changes__add">+159</span> <span class="ib-changes__del">−45</span></span>
+          </summary>
+          <div class="ib-changes__rows">
+            <button class="ib-changes__row" title="Open the diff of src/release.rs"><span class="ib-changes__path">src/release.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+86</span> <span class="ib-changes__del">−24</span></span></button>
+            <button class="ib-changes__row" title="Open the diff of src/app/release.rs"><span class="ib-changes__path">src/app/release.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+42</span> <span class="ib-changes__del">−9</span></span></button>
+            <button class="ib-changes__row" title="Open the diff of tests/release.rs"><span class="ib-changes__path">tests/release.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+31</span> <span class="ib-changes__del">−12</span></span></button>
+          </div>
+        </details>
+      </section>
+    </div>
+    <div class="ib-alog__foot">
+      <textarea class="ib-reply" rows="2" placeholder="Reply to the agent…" aria-label="Reply to the agent"></textarea>
+      <div class="ib-alog__send"><span class="ib-alog__hint">⌘↩ sends</span><span class="ib-alog__spacer"></span><button class="ib-btn ib-btn--primary" disabled>Send</button></div>
+    </div>
+  </section>
+</section>
+
+<section class="al-demo">
+  <span class="ib-cap">Finished: the story is prose, the user's reply is the only tinted block, and the run ends on its changes and outcome</span>
+  <section class="ib-alog al-mid" aria-label="Agent log of release-mechanism-based-on-git-tag.md">
+    <header class="ib-alog__head">
+      <span class="ib-alog__title">Agent log of release-mechanism-based-on-git-tag.md</span>
+      <span class="ib-alog__detail">not running</span>
+    </header>
+    <div class="ib-alog__bar">
+      <div class="ib-seg" role="group" aria-label="Log view">
+        <button aria-pressed="true">Timeline</button>
+        <button aria-pressed="false">Raw</button>
+      </div>
+    </div>
+    <div class="ib-alog__body" tabindex="0">
+      <section class="ib-run" aria-label="Run 2, today 14:02, opencode">
+        <div class="ib-run__head"><span class="ib-run__n">Run 2</span><span class="ib-run__meta">today 14:02 · <b>opencode</b></span></div>
+        <div class="ib-msg"><p>I'll add the tag check behind the existing release flag. The tag grammar stays as it is, and I'll leave the changelog alone.</p></div>
+        <details class="ib-fold">
+          <summary class="ib-fold__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span>Read 5 files, searched 2, ran 1 command</span>
+          </summary>
+          <div class="ib-fold__rows">
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">doing/release-mechanism-based-on-git-tag.md</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">src/release.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">src/app/release.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">src/git.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">tests/release.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Searched</span><span class="ib-fold__target">release_tag</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Searched</span><span class="ib-fold__target">v0.3</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Ran</span><span class="ib-fold__target"><code>cargo test --release</code></span></div>
+          </div>
+        </details>
+        <div class="ib-you">
+          <span class="ib-you__who">You</span>
+          <span class="ib-you__text">Keep the v-prefixed tags working. Two release scripts still use v0.3.0.</span>
+        </div>
+        <div class="ib-msg"><p>The tag path is in and <code>cargo test --release</code> passes. v-prefixed tags still resolve; the changelog is untouched.</p></div>
+        <details class="ib-fold">
+          <summary class="ib-fold__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span>Ran 2 commands</span>
+          </summary>
+          <div class="ib-fold__rows">
+            <div class="ib-fold__row"><span class="ib-fold__verb">Ran</span><span class="ib-fold__target"><code>cargo test --release</code></span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Ran</span><span class="ib-fold__target"><code>git tag --list</code></span></div>
+          </div>
+        </details>
+        <details class="ib-changes" open>
+          <summary class="ib-changes__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span class="ib-changes__title">5 files changed</span>
+            <span class="ib-changes__stats"><span class="ib-changes__add">+214</span> <span class="ib-changes__del">−63</span></span>
+          </summary>
+          <div class="ib-changes__rows">
+            <button class="ib-changes__row is-hover" title="Open the diff of src/release.rs"><span class="ib-changes__path">src/release.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+86</span> <span class="ib-changes__del">−24</span></span></button>
+            <button class="ib-changes__row" title="Open the diff of src/app/release.rs"><span class="ib-changes__path">src/app/release.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+42</span> <span class="ib-changes__del">−9</span></span></button>
+            <button class="ib-changes__row" title="Open the diff of src/git.rs"><span class="ib-changes__path">src/git.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+31</span> <span class="ib-changes__del">−12</span></span></button>
+            <button class="ib-changes__row" title="Open the diff of tests/release_tags.rs"><span class="ib-changes__path"><b>A</b>tests/release_tags.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+55</span> <span class="ib-changes__del">−0</span></span></button>
+            <button class="ib-changes__row" title="Open the diff of tests/release.rs"><span class="ib-changes__path">tests/release.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+0</span> <span class="ib-changes__del">−18</span></span></button>
+          </div>
+        </details>
+        <div class="ib-out">
+          <svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>
+          <span class="ib-out__label">Finished</span><span class="ib-out__time">in 3:12</span>
+        </div>
+      </section>
+    </div>
+    <div class="ib-alog__foot">
+      <textarea class="ib-reply" rows="2" aria-label="Ask the agent to do more">Good. Add a test for a missing tag.</textarea>
+      <div class="ib-alog__send"><span class="ib-alog__hint">⌘↩ sends</span><span class="ib-alog__spacer"></span><button class="ib-btn ib-btn--primary">Send</button></div>
+    </div>
+  </section>
+</section>
+
+<section class="al-demo">
+  <span class="ib-cap">Raw: the exact log, line numbered, in mono; nothing folded, nothing invented</span>
+  <section class="ib-alog al-raw" aria-label="Agent log of release-mechanism-based-on-git-tag.md, raw">
+    <header class="ib-alog__head">
+      <span class="ib-alog__title">Agent log of release-mechanism-based-on-git-tag.md</span>
+      <span class="ib-alog__detail">running</span>
+    </header>
+    <div class="ib-alog__bar">
+      <div class="ib-seg" role="group" aria-label="Log view">
+        <button aria-pressed="false">Timeline</button>
+        <button aria-pressed="true">Raw</button>
+      </div>
+    </div>
+    <div class="ib-alog__now" role="status">
+      <span class="ib-think ib-think--sm" role="img" aria-label="Working"><svg viewBox="0 0 44 44" aria-hidden="true"><g class="ib-think__turn"><rect class="ib-think__stem" x="0" y="17" width="12" height="27" rx="3"/><rect class="ib-think__card" x="0" y="0" width="12" height="12" rx="3"/></g></svg></span>
+      <span class="ib-alog__step">Running <b>cargo test --release</b></span>
+      <span class="ib-alog__clock">1:54</span>
+    </div>
+    <div class="ib-alog__body" tabindex="0">
+      <div class="ib-raw" role="region" aria-label="Raw build log">
+        <div class="ib-raw__line is-run"><span class="ib-raw__n" aria-hidden="true">1</span><span class="ib-raw__text">── today 14:02 · opencode</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">2</span><span class="ib-raw__text">→ Reading doing/release-mechanism-based-on-git-tag.md…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">3</span><span class="ib-raw__text">→ Reading src/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">4</span><span class="ib-raw__text">→ Searching release_tag…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">5</span><span class="ib-raw__text">→ Reading src/app/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">6</span><span class="ib-raw__text">→ Reading src/git.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">7</span><span class="ib-raw__text">→ Reading tests/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">8</span><span class="ib-raw__text">→ Searching v0.3…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">9</span><span class="ib-raw__text">→ Editing src/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">10</span><span class="ib-raw__text">→ Editing src/app/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">11</span><span class="ib-raw__text">→ Using shell cargo test --release…</span></div>
+        <div class="ib-raw__line is-author"><span class="ib-raw__n" aria-hidden="true">12</span><span class="ib-raw__text">▸ keep v-prefixed tags working</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">13</span><span class="ib-raw__text">→ Editing tests/release_tags.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">14</span><span class="ib-raw__text">→ Using shell cargo test --release…</span></div>
+        <div class="ib-raw__line is-ok"><span class="ib-raw__n" aria-hidden="true">15</span><span class="ib-raw__text">✓ Finished in 3:12</span></div>
+      </div>
+    </div>
+    <div class="ib-alog__foot">
+      <textarea class="ib-reply" rows="2" placeholder="Reply to the agent…" aria-label="Reply to the agent"></textarea>
+      <div class="ib-alog__send"><span class="ib-alog__hint">⌘↩ sends</span><span class="ib-alog__spacer"></span><button class="ib-btn ib-btn--primary" disabled>Send</button></div>
+    </div>
+  </section>
+</section>
+
+</div>
+
+<div class="al-grid">
+
+<section class="al-demo">
+  <span class="ib-cap">Starting up: the status says what it is doing, not a fake percentage</span>
+  <section class="ib-alog al-small" aria-label="Agent log of release-mechanism-based-on-git-tag.md, starting">
+    <header class="ib-alog__head">
+      <span class="ib-alog__title">Agent log of release-mechanism-based-on-git-tag.md</span>
+      <span class="ib-alog__detail">running</span>
+    </header>
+    <div class="ib-alog__bar">
+      <div class="ib-seg" role="group" aria-label="Log view">
+        <button aria-pressed="true">Timeline</button>
+        <button aria-pressed="false">Raw</button>
+      </div>
+    </div>
+    <div class="ib-alog__now" role="status">
+      <span class="ib-think ib-think--sm" role="img" aria-label="Working"><svg viewBox="0 0 44 44" aria-hidden="true"><g class="ib-think__turn"><rect class="ib-think__stem" x="0" y="17" width="12" height="27" rx="3"/><rect class="ib-think__card" x="0" y="0" width="12" height="12" rx="3"/></g></svg></span>
+      <span class="ib-alog__step">Reading <b>the issue</b></span>
+      <span class="ib-alog__clock">0:04</span>
+    </div>
+    <div class="ib-alog__body">
+      <div class="ib-alog__empty">
+        <p>The agent has not said anything yet.</p>
+        <span class="ib-skel" style="width:92%"></span>
+        <span class="ib-skel" style="width:74%"></span>
+        <span class="ib-skel" style="width:48%"></span>
+      </div>
+    </div>
+    <div class="ib-alog__foot">
+      <textarea class="ib-reply" rows="2" placeholder="Reply to the agent…" aria-label="Reply to the agent"></textarea>
+      <div class="ib-alog__send"><span class="ib-alog__hint">⌘↩ sends</span><span class="ib-alog__spacer"></span><button class="ib-btn ib-btn--primary" disabled>Send</button></div>
+    </div>
+  </section>
+</section>
+
+<section class="al-demo">
+  <span class="ib-cap">Stopped: the reason keeps the line, the changes stay inspectable, and the composer says what it will ask</span>
+  <section class="ib-alog al-fail" aria-label="Agent log of release-mechanism-based-on-git-tag.md, stopped">
+    <header class="ib-alog__head">
+      <span class="ib-alog__title">Agent log of release-mechanism-based-on-git-tag.md</span>
+      <span class="ib-alog__detail">not running</span>
+    </header>
+    <div class="ib-alog__bar">
+      <div class="ib-seg" role="group" aria-label="Log view">
+        <button aria-pressed="true">Timeline</button>
+        <button aria-pressed="false">Raw</button>
+      </div>
+    </div>
+    <div class="ib-alog__body" tabindex="0">
+      <section class="ib-run" aria-label="Run 2, today 14:02, opencode">
+        <div class="ib-run__head"><span class="ib-run__n">Run 2</span><span class="ib-run__meta">today 14:02 · <b>opencode</b></span></div>
+        <details class="ib-fold">
+          <summary class="ib-fold__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span>Read 2 files, ran 1 command</span>
+          </summary>
+          <div class="ib-fold__rows">
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">src/release.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Read</span><span class="ib-fold__target">tests/release.rs</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Ran</span><span class="ib-fold__target"><code>cargo test --release</code></span></div>
+          </div>
+        </details>
+        <details class="ib-changes">
+          <summary class="ib-changes__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span class="ib-changes__title">2 files changed</span>
+            <span class="ib-changes__stats"><span class="ib-changes__add">+118</span> <span class="ib-changes__del">−27</span></span>
+          </summary>
+          <div class="ib-changes__rows">
+            <button class="ib-changes__row" title="Open the diff of src/release.rs"><span class="ib-changes__path">src/release.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+86</span> <span class="ib-changes__del">−24</span></span></button>
+            <button class="ib-changes__row" title="Open the diff of tests/release.rs"><span class="ib-changes__path">tests/release.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+32</span> <span class="ib-changes__del">−3</span></span></button>
+          </div>
+        </details>
+        <div class="ib-out ib-out--bad">
+          <svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          <span class="ib-out__label">Stopped:</span><span class="ib-out__why">cargo test --release failed: 3 tests failed in tests/release.rs.</span>
+        </div>
+      </section>
+    </div>
+    <div class="ib-alog__foot">
+      <textarea class="ib-reply" rows="2" placeholder="Ask it to fix what failed…" aria-label="Ask the agent to fix the failure"></textarea>
+      <div class="ib-alog__send"><span class="ib-alog__hint">⌘↩ sends</span><span class="ib-alog__spacer"></span><button class="ib-btn ib-btn--primary" disabled>Send</button></div>
+    </div>
+  </section>
+</section>
+
+<section class="al-demo">
+  <span class="ib-cap">The same components in the dark theme, including the +/− diffstat</span>
+  <div data-theme="dark" class="al-dark">
+    <section class="ib-alog" aria-label="Agent log, dark theme">
+      <header class="ib-alog__head">
+        <span class="ib-alog__title">Agent log of release-mechanism-based-on-git-tag.md</span>
+        <span class="ib-alog__detail">not running</span>
+      </header>
+      <div class="ib-alog__bar">
+        <div class="ib-seg" role="group" aria-label="Log view">
+          <button aria-pressed="true">Timeline</button>
+          <button aria-pressed="false">Raw</button>
+        </div>
+      </div>
+      <div class="ib-alog__body" tabindex="0">
+        <section class="ib-run" aria-label="Run 2, today 14:02, opencode">
+          <div class="ib-run__head"><span class="ib-run__n">Run 2</span><span class="ib-run__meta">today 14:02 · <b>opencode</b></span></div>
+          <div class="ib-msg"><p>The tag path is in and <code>cargo test --release</code> passes.</p></div>
+          <details class="ib-changes">
+            <summary class="ib-changes__summary">
+              <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+              <span class="ib-changes__title">5 files changed</span>
+              <span class="ib-changes__stats"><span class="ib-changes__add">+214</span> <span class="ib-changes__del">−63</span></span>
+            </summary>
+            <div class="ib-changes__rows">
+              <button class="ib-changes__row" title="Open the diff of src/release.rs"><span class="ib-changes__path">src/release.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+86</span> <span class="ib-changes__del">−24</span></span></button>
+              <button class="ib-changes__row" title="Open the diff of tests/release_tags.rs"><span class="ib-changes__path"><b>A</b>tests/release_tags.rs</span><span class="ib-changes__stats"><span class="ib-changes__add">+55</span> <span class="ib-changes__del">−0</span></span></button>
+            </div>
+          </details>
+          <div class="ib-out">
+            <svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>
+            <span class="ib-out__label">Finished</span><span class="ib-out__time">in 3:12</span>
+          </div>
+        </section>
+      </div>
+      <div class="ib-alog__foot">
+        <textarea class="ib-reply" rows="2" placeholder="Ask for another pass…" aria-label="Ask the agent to do more"></textarea>
+        <div class="ib-alog__send"><span class="ib-alog__hint">⌘↩ sends</span><span class="ib-alog__spacer"></span><button class="ib-btn ib-btn--primary" disabled>Send</button></div>
+      </div>
+    </section>
+  </div>
+</section>
+
+</div>
+
+</div>
+</body>
+</html>

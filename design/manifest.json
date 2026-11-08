@@ -4,6 +4,7 @@
   "namespace": "iboard",
   "files": [
     "components/Agenda/README.md",
+    "components/AgentLog/README.md",
     "components/BoardHoldingCmd/README.md",
     "components/BoardScreen/README.md",
     "components/Button/README.md",
@@ -55,6 +56,11 @@
       "name": "Agenda",
       "group": "Activity",
       "summary": "Commits per day across every project iboard supervises, so you can see at a glance when work happened, on what, and open any day to read its commits."
+    },
+    {
+      "name": "AgentLog",
+      "group": "AI review",
+      "summary": "The build's transcript beside its issue: a live step, runs as headings, every burst of tool calls folded into one row, and the changed files opening the Diff screen."
     },
     {
       "name": "BoardHoldingCmd",
