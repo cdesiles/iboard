@@ -183,6 +183,38 @@ impl Grid<'_> {
     }
 }
 
+/// A cubic Bézier from `from` to `to` through `control1` and `control2`, as
+/// `steps` segments.
+fn curve(
+    (x0, y0): (f32, f32),
+    (x1, y1): (f32, f32),
+    (x2, y2): (f32, f32),
+    (x3, y3): (f32, f32),
+    steps: usize,
+) -> Vec<(f32, f32)> {
+    (0..=steps)
+        .map(|i| {
+            let t = i as f32 / steps as f32;
+            let s = 1.0 - t;
+            (
+                s * s * s * x0 + 3.0 * s * s * t * x1 + 3.0 * s * t * t * x2 + t * t * t * x3,
+                s * s * s * y0 + 3.0 * s * s * t * y1 + 3.0 * s * t * t * y2 + t * t * t * y3,
+            )
+        })
+        .collect()
+}
+
+/// An arc of `radius` around `center` from `from` to `to` degrees, both ends
+/// included. The degrees turn clockwise on screen, as SVG's do with y down.
+fn arc((cx, cy): (f32, f32), radius: f32, from: f32, to: f32, steps: usize) -> Vec<(f32, f32)> {
+    (0..=steps)
+        .map(|i| {
+            let turn = (from + (to - from) * i as f32 / steps as f32).to_radians();
+            (cx + radius * turn.cos(), cy + radius * turn.sin())
+        })
+        .collect()
+}
+
 /// The plain controls: add, remove, go back, refresh, close, pick, search,
 /// open a menu, expand.
 fn basic_icon(g: &Grid, icon: Icon) {
@@ -233,22 +265,27 @@ fn basic_icon(g: &Grid, icon: Icon) {
             g.segment((3.0, 21.0), (10.0, 14.0));
         }
         Icon::Bell => {
-            // Lucide's bell: two smooth halves, a flared foot and the clapper.
-            let dome = egui::epaint::CubicBezierShape::from_points_stroke(
-                [
-                    g.at(6.0, 16.5),
-                    g.at(6.0, 8.2),
-                    g.at(18.0, 8.2),
-                    g.at(18.0, 16.5),
-                ],
-                false,
-                Color32::TRANSPARENT,
-                g.stroke,
-            );
-            g.painter.add(dome);
-            g.round(&[g.at(6.0, 16.5), g.at(18.0, 16.5)]);
-            g.segment((3.8, 16.5), (20.2, 16.5));
-            g.line(&[(10.1, 19.4), (10.8, 20.6), (13.2, 20.6), (13.9, 19.4)]);
+            // Lucide's bell: a dome that flares into a foot rounded at both
+            // ends, and the clapper hanging under it.
+            let mut body = arc((4.0, 16.0), 1.0, 222.4, 90.0, 6);
+            body.extend(arc((20.0, 16.0), 1.0, 90.0, -42.3, 6));
+            body.extend(curve(
+                (20.74, 15.327),
+                (19.41, 13.956),
+                (18.0, 12.499),
+                (18.0, 8.0),
+                12,
+            ));
+            body.extend(arc((12.0, 8.0), 6.0, 0.0, -180.0, 24));
+            body.extend(curve(
+                (6.0, 8.0),
+                (6.0, 12.499),
+                (4.589, 13.956),
+                (3.262, 15.326),
+                12,
+            ));
+            g.line(&body);
+            g.line(&arc((12.0, 20.0), 2.0, 150.0, 30.0, 12));
         }
         _ => {}
     }
