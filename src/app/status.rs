@@ -62,14 +62,6 @@ impl IboardApp {
         hints
     }
 
-    /// The issues folder, or the projects of a group's board.
-    fn issues_folder(&self) -> String {
-        match self.shown_group() {
-            Some(group) => group.count(),
-            None => display_path(&self.board.root),
-        }
-    }
-
     /// While filtering: "4 of 9 issues match “bug”".
     fn filter_matches(&self) -> Option<String> {
         let filter = &self.filter_bar.filter;
@@ -89,7 +81,12 @@ impl IboardApp {
 
     /// The issues folder, then what the filter matches.
     fn folder_line(&self, ui: &mut egui::Ui) {
-        ui.label(status_meta(ui, self.issues_folder()));
+        match self.shown_group() {
+            Some(group) => {
+                ui.label(status_meta(ui, group.count()));
+            }
+            None => copyable_path(ui, display_path(&self.board.root), &self.board.root),
+        }
         if let Some(matches) = self.filter_matches() {
             status_sep(ui);
             ui.label(status_meta(ui, matches));
@@ -266,7 +263,7 @@ fn reader_facts(ui: &mut egui::Ui, issue: &Issue) {
     }
 }
 
-/// The open issue's file, `shown` as its relative path: a click copies its
+/// A path in the status bar, `shown` as it reads there: a click copies its
 /// full path, and its tooltip says so until the pointer leaves.
 fn copyable_path(ui: &mut egui::Ui, shown: String, path: &Path) {
     let id = egui::Id::unique(("copied-path", path));
