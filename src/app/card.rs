@@ -198,11 +198,8 @@ pub(super) fn issue_card(
         at_work(ui, response.rect, since);
     }
     card_edge(ui, &response, look);
-    if extras.question.is_some() && !strip {
-        let p = theme::palette(ui);
-        let dot = egui::pos2(response.rect.right() - 10.0, response.rect.top() + 10.0);
-        ui.painter().circle_filled(dot, 4.0, p.surface);
-        ui.painter().circle_filled(dot, 2.8, p.status_doing);
+    if let Some(question) = extras.question {
+        question_pin(ui, issue, response.rect, question, &mut body);
     }
     let modifiers = ui.input(|i| i.modifiers);
     let click = if response.double_clicked() && !modifiers.shift && !modifiers.command {
@@ -332,6 +329,44 @@ fn expand_action(
     body.action_rects.push(expand.rect);
     if expand.clicked() {
         body.action = Some(CardAction::Open);
+    }
+}
+
+/// The question pin: a `bubble` in `status-doing` on its own pale tint, at
+/// the card's top right and left of Expand, so a build's question is visible
+/// before the pointer arrives. A click opens the ticket on its question.
+fn question_pin(
+    ui: &mut egui::Ui,
+    issue: &Issue,
+    card: Rect,
+    question: &Question,
+    body: &mut CardBody,
+) {
+    let inset = 6.0;
+    let rect = Rect::from_min_size(
+        Pos2::new(
+            card.max.x - inset - 2.0 * widgets::CARD_ACTION - 4.0,
+            card.min.y + inset,
+        ),
+        Vec2::splat(widgets::CARD_ACTION),
+    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    let title = question.title.trim();
+    let hover = if title.is_empty() {
+        "Question".to_string()
+    } else {
+        format!("Question: {title}")
+    };
+    let pin = widgets::icon_button(
+        &mut child,
+        Icon::Bubble,
+        egui::Id::unique(("card_question_pin", &issue.path)),
+        &hover,
+        widgets::Tone::Doing,
+    );
+    body.action_rects.push(pin.rect);
+    if pin.clicked() {
+        body.action = Some(CardAction::Answer);
     }
 }
 
@@ -486,8 +521,13 @@ fn card_body(
         .show(ui, |ui| {
             ui.set_width(inner);
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+            let pinned = if extras.question.is_some() {
+                2.0 * widgets::CARD_ACTION + theme::SPACE_2
+            } else {
+                0.0
+            };
             let (review, label_clicks) = card_labels(ui, issue, labels, &extras);
-            card_text(ui, issue, inner);
+            card_text(ui, issue, (inner - pinned).max(60.0));
             let mut action = None;
             let mut action_rects = Vec::new();
             if let Some(question) = extras.question {

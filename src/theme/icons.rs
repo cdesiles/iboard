@@ -233,22 +233,22 @@ fn basic_icon(g: &Grid, icon: Icon) {
             g.segment((3.0, 21.0), (10.0, 14.0));
         }
         Icon::Bell => {
-            // A dome with a flared foot and the clapper under it.
-            g.line(&[
-                (6.0, 16.5),
-                (6.0, 9.5),
-                (6.8, 7.6),
-                (8.4, 6.2),
-                (10.5, 5.6),
-                (12.0, 5.5),
-                (13.5, 5.6),
-                (15.6, 6.2),
-                (17.2, 7.6),
-                (18.0, 9.5),
-                (18.0, 16.5),
-            ]);
-            g.segment((4.0, 16.5), (20.0, 16.5));
-            g.line(&[(10.0, 19.6), (10.6, 20.6), (13.4, 20.6), (14.0, 19.6)]);
+            // Lucide's bell: two smooth halves, a flared foot and the clapper.
+            let dome = egui::epaint::CubicBezierShape::from_points_stroke(
+                [
+                    g.at(6.0, 16.5),
+                    g.at(6.0, 8.2),
+                    g.at(18.0, 8.2),
+                    g.at(18.0, 16.5),
+                ],
+                false,
+                Color32::TRANSPARENT,
+                g.stroke,
+            );
+            g.painter.add(dome);
+            g.round(&[g.at(6.0, 16.5), g.at(18.0, 16.5)]);
+            g.segment((3.8, 16.5), (20.2, 16.5));
+            g.line(&[(10.1, 19.4), (10.8, 20.6), (13.2, 20.6), (13.9, 19.4)]);
         }
         _ => {}
     }

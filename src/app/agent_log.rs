@@ -108,8 +108,15 @@ impl IboardApp {
         let mut send = None;
         side_panel(ui, &title, &detail, |ui| {
             if let Some(question) = &question {
-                self.question_panel(ui, &path, question);
-                ui.add_space(theme::SPACE_4);
+                let start = ui.cursor().min;
+                let width = ui.available_width();
+                let mut question_ui = ui.new_child(egui::UiBuilder::new().max_rect(
+                    egui::Rect::from_min_size(start, Vec2::new(width, ui.available_height())),
+                ));
+                question_ui.set_min_size(Vec2::ZERO);
+                self.question_panel(&mut question_ui, &path, question);
+                let height = question_ui.min_rect().height();
+                ui.add_space(height + theme::SPACE_4);
             }
             if let Some(mode) = widgets::segmented(
                 ui,

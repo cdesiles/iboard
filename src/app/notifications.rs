@@ -46,7 +46,10 @@ impl IboardApp {
     /// its issue, where a question is answered and a log is read.
     pub(super) fn notifications_button(&mut self, ui: &mut egui::Ui) {
         let count = self.notification_count();
-        let button = widgets::button(ui, ButtonKind::Ghost, Some(Icon::Bell), "", None)
+        let p = theme::palette(ui);
+        let (rect, button) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+        let button = button
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
             .on_hover_text("Notifications");
         let name = if count == 0 {
             "Notifications".to_string()
@@ -55,12 +58,20 @@ impl IboardApp {
         };
         button
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &name));
+        let fade = widgets::hover_fade(ui.ctx(), button.id, button.hovered());
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(theme::RADIUS_SM),
+            p.surface_hover.gamma_multiply(fade),
+        );
+        let bell = egui::Rect::from_center_size(rect.center(), Vec2::splat(18.0));
+        theme::paint_icon_stroked(ui.painter(), Icon::Bell, bell, p.ink_muted, 1.8);
         if count > 0 {
-            let p = theme::palette(ui);
-            let dot = egui::pos2(button.rect.right() - 4.0, button.rect.top() + 4.0);
-            ui.painter().circle_filled(dot, 3.8, p.bg);
-            ui.painter().circle_filled(dot, 2.4, p.accent);
+            let dot = rect.center() + Vec2::new(5.6, -5.6);
+            ui.painter().circle_filled(dot, 5.0, p.bg);
+            ui.painter().circle_filled(dot, 3.4, p.danger);
         }
+        widgets::focus_ring(ui, &button, theme::RADIUS_SM);
 
         let mut picked = None;
         let mut mark_all = false;

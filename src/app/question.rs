@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use super::{
-    ButtonKind, CornerRadius, Duration, Frame, IboardApp, Instant, Job, Key, Path, PathBuf,
-    RichText, Stroke, Vec2, job, theme, widgets,
+    ButtonKind, CornerRadius, Duration, Frame, IboardApp, Icon, Instant, Job, Key, Path, PathBuf,
+    RichText, Sense, Stroke, Vec2, job, theme, widgets,
 };
 use crate::agent::service::{
     Field, FieldKind, Permission, PermissionReply, Question, QuestionKind,
@@ -148,6 +148,13 @@ fn number(text: &str, integer: bool) -> Result<Value, String> {
         .ok_or_else(|| format!("{text} is not a number."))
 }
 
+/// What the question card's buttons asked for.
+#[derive(Clone, Copy)]
+enum AnswerAction {
+    Send,
+    Permission(PermissionReply),
+}
+
 impl IboardApp {
     /// Opens the ticket whose build waits on an answer. The question sits
     /// above the agent log, in the ticket, not in a dialog over it.
@@ -172,88 +179,19 @@ impl IboardApp {
         let Some(draft) = self.session.answer.as_mut() else {
             return;
         };
-        let p = theme::palette(ui);
-        let width = ui.available_width();
-        let mut send = false;
-        let mut permission = None;
-        Frame::new()
-            .fill(p.surface_sunken)
-            .stroke(Stroke::new(1.0, p.status_doing.gamma_multiply(0.6)))
-            .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-            .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_3))
-            .show(ui, |ui| {
-                ui.set_width(width - 2.0 * theme::SPACE_3);
-                ui.label(
-                    RichText::new("Question")
-                        .font(theme::meta())
-                        .color(p.status_doing)
-                        .strong(),
-                );
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(&question.title)
-                            .font(theme::ui_strong())
-                            .color(p.ink),
-                    )
-                    .wrap(),
-                );
-                ui.add_space(theme::SPACE_3);
-                answer_body(ui, draft, 260.0);
-                ui.add_space(theme::SPACE_3);
-                match &question.kind {
-                    QuestionKind::Form(_) => {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if widgets::button(ui, ButtonKind::Primary, None, "Send", Some("⌘↩"))
-                                .clicked()
-                            {
-                                send = true;
-                            }
-                        });
-                    }
-                    QuestionKind::Permission(_) => {
-                        widgets::footer_bar(ui, 0.0, |ui| {
-                            if widgets::button(
-                                ui,
-                                ButtonKind::Primary,
-                                None,
-                                "Allow once",
-                                Some("⌘↩"),
-                            )
-                            .clicked()
-                            {
-                                permission = Some(PermissionReply::Once);
-                            }
-                            if widgets::button(
-                                ui,
-                                ButtonKind::Secondary,
-                                None,
-                                "Always allow",
-                                None,
-                            )
-                            .clicked()
-                            {
-                                permission = Some(PermissionReply::Always);
-                            }
-                            if widgets::button(ui, ButtonKind::Delete, None, "Reject", None)
-                                .clicked()
-                            {
-                                permission = Some(PermissionReply::Reject);
-                            }
-                        });
-                    }
-                }
-            });
-        if send {
-            self.send_answer(None);
-        } else if let Some(reply) = permission {
-            self.send_answer(Some(reply));
-        } else if ui
+        let action = answer_card(ui, question, draft);
+        let pressed = ui
             .ctx()
-            .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter))
-        {
-            let reply = matches!(&question.kind, QuestionKind::Permission(_))
-                .then_some(PermissionReply::Once);
-            self.send_answer(reply);
+            .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter));
+        match action {
+            Some(AnswerAction::Send) => self.send_answer(None),
+            Some(AnswerAction::Permission(reply)) => self.send_answer(Some(reply)),
+            None if pressed => {
+                let reply = matches!(&question.kind, QuestionKind::Permission(_))
+                    .then_some(PermissionReply::Once);
+                self.send_answer(reply);
+            }
+            None => {}
         }
     }
 
@@ -346,7 +284,98 @@ impl IboardApp {
     }
 }
 
-fn answer_body(ui: &mut egui::Ui, draft: &mut AnswerDraft, max_height: f32) {
+fn question_heading(question: &Question) -> (&str, bool) {
+    match &question.kind {
+        QuestionKind::Form(fields) if fields.len() == 1 => (
+            if fields[0].title.trim().is_empty() {
+                question.title.as_str()
+            } else {
+                fields[0].title.as_str()
+            },
+            true,
+        ),
+        _ => (
+            if question.title.trim().is_empty() {
+                "Question"
+            } else {
+                question.title.as_str()
+            },
+            false,
+        ),
+    }
+}
+
+fn answer_card(
+    ui: &mut egui::Ui,
+    question: &Question,
+    draft: &mut AnswerDraft,
+) -> Option<AnswerAction> {
+    let p = theme::palette(ui);
+    let width = ui.available_width();
+    let (heading, single) = question_heading(question);
+    let mut action = None;
+    Frame::new()
+        .fill(p.surface_sunken)
+        .stroke(Stroke::new(1.0, p.status_doing.gamma_multiply(0.6)))
+        .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+        .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_3))
+        .show(ui, |ui| {
+            ui.set_width(width - 2.0 * theme::SPACE_3);
+            question_heading_ui(ui, heading);
+            ui.add_space(theme::SPACE_3);
+            answer_body(ui, draft, single);
+            ui.add_space(theme::SPACE_3);
+            action = answer_buttons(ui, question);
+        });
+    action
+}
+
+fn question_heading_ui(ui: &mut egui::Ui, heading: &str) {
+    let p = theme::palette(ui);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_2;
+        let (icon, _) = ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
+        theme::paint_icon(ui.painter(), Icon::Bubble, icon, p.status_doing);
+        ui.add(
+            egui::Label::new(RichText::new(heading).font(theme::ui_strong()).color(p.ink)).wrap(),
+        );
+    });
+}
+
+fn answer_buttons(ui: &mut egui::Ui, question: &Question) -> Option<AnswerAction> {
+    match &question.kind {
+        QuestionKind::Form(_) => {
+            let mut send = false;
+            widgets::footer_bar(ui, 0.0, |ui| {
+                if widgets::button(ui, ButtonKind::Primary, None, "Send", Some("⌘↩")).clicked()
+                {
+                    send = true;
+                }
+            });
+            send.then_some(AnswerAction::Send)
+        }
+        QuestionKind::Permission(_) => {
+            let mut reply = None;
+            widgets::footer_bar(ui, 0.0, |ui| {
+                if widgets::button(ui, ButtonKind::Primary, None, "Allow once", Some("⌘↩"))
+                    .clicked()
+                {
+                    reply = Some(PermissionReply::Once);
+                }
+                if widgets::button(ui, ButtonKind::Secondary, None, "Always allow", None).clicked()
+                {
+                    reply = Some(PermissionReply::Always);
+                }
+                if widgets::button(ui, ButtonKind::Delete, None, "Reject", None).clicked() {
+                    reply = Some(PermissionReply::Reject);
+                }
+            });
+            reply.map(AnswerAction::Permission)
+        }
+    }
+}
+
+fn answer_body(ui: &mut egui::Ui, draft: &mut AnswerDraft, single: bool) {
     let p = theme::palette(ui);
     let AnswerDraft {
         question,
@@ -360,25 +389,23 @@ fn answer_body(ui: &mut egui::Ui, draft: &mut AnswerDraft, max_height: f32) {
     }
     match &question.kind {
         QuestionKind::Form(fields) => {
-            egui::ScrollArea::vertical()
-                .max_height(max_height)
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                    for field in fields.iter().filter(|field| !field.hidden) {
-                        let value = values
-                            .entry(field.key.clone())
-                            .or_insert_with(|| default_value(&field.kind));
-                        field_ui(ui, field, value);
-                    }
-                });
+            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+            for field in fields.iter().filter(|field| !field.hidden) {
+                let value = values
+                    .entry(field.key.clone())
+                    .or_insert_with(|| default_value(&field.kind));
+                field_ui(ui, field, value, !single);
+            }
         }
         QuestionKind::Permission(permission) => permission_body(ui, permission),
     }
 }
 
-fn field_ui(ui: &mut egui::Ui, field: &Field, value: &mut AnswerValue) {
+fn field_ui(ui: &mut egui::Ui, field: &Field, value: &mut AnswerValue, show_label: bool) {
     let p = theme::palette(ui);
-    widgets::field_label(ui, &field.title);
+    if show_label {
+        widgets::field_label(ui, &field.title);
+    }
     if !field.description.is_empty() {
         widgets::help(ui, &field.description, p.ink_muted);
         ui.add_space(theme::SPACE_2);
@@ -396,8 +423,8 @@ fn field_ui(ui: &mut egui::Ui, field: &Field, value: &mut AnswerValue) {
             if options.is_empty() {
                 widgets::text_field(ui, text, placeholder);
             } else {
-                choices(ui, options, text);
-                if *custom {
+                choices(ui, options, text, *custom);
+                if *custom && !options.iter().any(|option| option.value == *text) {
                     ui.add_space(theme::SPACE_2);
                     widgets::text_field(ui, text, "Other answer");
                 }
@@ -420,7 +447,12 @@ fn field_ui(ui: &mut egui::Ui, field: &Field, value: &mut AnswerValue) {
     }
 }
 
-fn choices(ui: &mut egui::Ui, options: &[crate::agent::service::Choice], text: &mut String) {
+fn choices(
+    ui: &mut egui::Ui,
+    options: &[crate::agent::service::Choice],
+    text: &mut String,
+    custom: bool,
+) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
         for option in options {
@@ -429,6 +461,12 @@ fn choices(ui: &mut egui::Ui, options: &[crate::agent::service::Choice], text: &
                 .clicked()
             {
                 *text = option.value.clone();
+            }
+        }
+        if custom {
+            let other = !options.iter().any(|option| option.value == *text);
+            if widgets::chip(ui, "Other…", other).clicked() {
+                text.clear();
             }
         }
     });
