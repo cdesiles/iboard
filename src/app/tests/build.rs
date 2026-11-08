@@ -693,6 +693,14 @@ fn a_build_question_shows_on_its_card_and_opens_in_the_ticket() {
     );
     assert!(
         harness
+            .get_by_label("Question: Which approach?")
+            .rect()
+            .width()
+            > 0.0,
+        "the pin sits at the card's top right"
+    );
+    assert!(
+        harness
             .get_by_label("Notifications, 1 waiting")
             .rect()
             .width()

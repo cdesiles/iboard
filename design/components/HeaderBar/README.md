@@ -11,15 +11,13 @@ The one top bar: `bar-h` 40pt, `bg` ground, a `line` rule below. It holds where 
 ## Board
 
 - Left: the project name in `ui-title` with a chevron; it opens the ProjectMenu. The issues path is no longer here: it is in the status bar.
-- Right: FilterField (220pt, 480pt while in use, growing to the left; its `line-strong` edge stays, since a text field is identified by it), Design (only when `idesign` is on, on a single project's board), Refresh (`⌘R`, only when Settings › General turns Auto off), then **New issue**, the board's one filled button (`primary`). Stats is not in the header: it opens from the ProjectMenu footer or `⌘I`.
+- Right: FilterField (220pt, 480pt while in use, growing to the left; its `line-strong` edge stays, since a text field is identified by it), Design (only when `idesign` is on, on a single project's board), Refresh (`⌘R`, only when Settings › General turns Auto off), **New issue**, the board's one filled button (`primary`), then the notification bell at the very right. Stats is not in the header: it opens from the ProjectMenu footer or `⌘I`.
 
 ## Notifications
 
-- A bell sits at the left of the right-hand controls on every screen, board, reader, diff and stats: an 18pt bell centred in a 24pt hit area, no edge at rest. It is the one header icon above the 14pt rule.
-- **Unread.** A `danger` dot, 3.4pt across with a 2pt `bg` ring, rides on the bell's top right while anything needs the author; the tooltip and the screen reader read "Notifications, N unread". Nothing unread, no dot.
-- **The list.** A click opens a 420pt popover under the bell (`popup`, `shadow-popover`, `line` edge, `radius-md`). Its head is "Notifications" in `ui-strong` with the waiting count in `meta`, and, while any notice is unread, a ghost **Mark recent read** on the right. Questions stay counted: they need an answer, not a read. `Waiting on you` lists the questions and tool approvals the build service waits on; `Recent` lists the runs that finished, newest first. Each row is 56pt: a 14pt icon, the issue title in `ui-strong`, a detail line in `ui-small` (`Question`'s title, "Build finished", "Build failed", "Review ready", "Ask finished"), the time in `meta` at the right ("waiting" for a question), and a 5pt `accent` dot while unread.
-- **Icons and colour.** A question uses `bubble` in `status-doing`; a finished build or ask uses `log` in `status-done`; a failed build uses `warning` in `danger`; a review uses `review` in `review`. Clicking a row opens its ticket and marks the notice read; a question opens the ticket on its inline question. Clicking outside, `esc` or the bell closes the list.
-- **No header badge.** The board no longer counts questions beside New issue: the bell is the one count, and a card keeps its own note. See IssueCard.
+- The bell is the header's **last** control on every screen, at the very right: an 18pt bell in a 24pt hit area, `ink-muted`, no edge at rest, 8pt after the control before it. Board: after New issue; Reader: after `…`; Editor: after Save; Diff and Stats: after their own controls.
+- It opens the Notifications tray. The count badge, the question rows under `Waiting on you`, the empty state, the keys and the focus behaviour all live in Notifications. The bell is not one of the dynamic icon buttons and has no key hint.
+- **No header badge.** No count sits beside New issue: the bell's badge is the one count, and a card keeps its own note. See IssueCard.
 
 ## Reader and Editor
 
@@ -27,9 +25,10 @@ The one top bar: `bar-h` 40pt, `bg` ground, a `line` rule below. It holds where 
 - Breadcrumb links are `ink-muted`, 24pt tall hit areas, with a `surface-hover` fill and an underline on hover. Every segment but the last is a link.
 - Right, left to right:
   1. **Edit, Add label, Delete** as dynamic icon buttons (below). Edit only in Todo and Ready (Doing and Done open read-only; Done shows Commits instead). Add label only on Todo and Ready issues (labels are settled once work starts). Delete not on Done issues, which are archived, never deleted. The Editor keeps only Delete, without a key, since `Del` edits text there.
-  2. **The AI split button**: `review` label, no edge, `review-soft` on hover. Its face follows the column. **Todo**: Refine (`⌘R`); the chevron opens Refine with a challenger (`⌘R`), Review this issue (`⌘⇧R`), the other review scope as a one-off (Deep review or Quick review), Ask… (`⌘K`) and Update from the code (`⌘U`). Reviewing refines an issue, so Refine and Review belong to Todo only. **Ready and Doing**: Update from the code (`⌘U`); the chevron opens Update from the code and Ask… (`⌘K`). **Done**: no AI split button; the `…` menu sits right after the icons. Every menu ends with the current tool and model, which opens Settings (`⌘,`). See ReviewButton for running and Review ready.
+  2. **The AI split button**: `review` label, no edge, `review-soft` on hover. Its face follows the column. **Todo**: Refine (`⌘R`); the chevron opens Refine with a challenger (`⌘R`), Review this issue (`⌘⇧R`), the other review scope as a one-off (Deep review or Quick review) and Ask… (`⌘K`). Reviewing refines an issue, so Refine and Review belong to Todo only. **Ready, Doing and Done**: no AI split button; on Done the `…` menu sits right after the icons. Every menu ends with the current tool and model, which opens Settings (`⌘,`). See ReviewButton for running and Review ready.
   3. **`…`**: Reader only, a 24pt icon button in `ink-muted`. Its menu: Refresh only when Auto is off, Agent log when the issue has one, Draft design when `idesign` is on (not on Done) and Archive on Done. The Editor has none: `esc` asks to save or discard.
   4. **Editor only**: Save (`⌘S`), the Editor's one filled button. Discard moves into the `…` menu. The Unsaved pill is in the status bar.
+  5. **The notification bell**, at the very right on both screens: after `…` in the Reader and after Save in the Editor. See Notifications.
 - Menus always show their keys, right-aligned in `meta-mono` `ink-faint`. Refresh leaves the Reader header: with Auto on (the default) the file watcher refreshes; with Auto off it is a row of the `…` menu.
 
 ### Dynamic icon buttons

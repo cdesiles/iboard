@@ -1,0 +1,334 @@
+<!-- @dsCard group="AI review" height=2220 subtitle="The card a build stops on: a form above the agent log, options as rows with their reasons visible, Send pinned, and a permission card as the rare fallback" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Question</title>
+<style>
+.ib-qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,420px));gap:var(--space-6);align-items:start}
+.ib-qdemo{display:flex;flex-direction:column;gap:var(--space-3);min-width:0}
+.ib-qctx{display:flex;flex-direction:column;min-width:0;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);overflow:hidden}
+.ib-qctx__head{display:flex;flex-direction:column;gap:var(--space-1);padding:var(--space-3) var(--space-4);background:var(--review-soft);color:var(--review)}
+.ib-qctx__title{font:var(--text-ui-strong)}
+.ib-qctx__detail{font:var(--text-meta)}
+.ib-qctx__pad{padding:var(--space-4)}
+.ib-qctx__seg{display:flex;gap:var(--space-1);margin:var(--space-4) var(--space-4) 0;padding:2px;border-radius:var(--radius-sm);background:var(--surface-sunken);align-self:flex-start}
+.ib-qctx__seg span{padding:2px var(--space-3);border-radius:var(--radius-sm);font:var(--text-ui-small);color:var(--ink-muted)}
+.ib-qctx__seg .is-on{background:var(--surface);color:var(--ink);font:var(--text-ui-strong);box-shadow:0 1px 2px var(--line-soft)}
+.ib-qctx__lines{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-4)}
+.ib-qctx__lines p{margin:0;font:var(--text-ui-small);color:var(--ink)}
+.ib-qctx__locked{padding:var(--space-3) var(--space-4);border-top:1px solid var(--line-soft);font:var(--text-meta);color:var(--ink-faint)}
+.ib-qdark{background:var(--bg);padding:var(--space-4);border-radius:var(--radius-md)}
+</style>
+</head>
+<body>
+<div class="ib-pad ib-stack" style="gap:24px">
+
+<section class="ib-qdemo" style="width:420px;max-width:100%">
+  <span class="ib-cap">In the ticket: the card is first in the agent panel, Send stays above the conversation's scroll</span>
+  <div class="ib-qctx" aria-label="Agent panel with a waiting question">
+    <header class="ib-qctx__head">
+      <span class="ib-qctx__title">Agent log of 002-display-of-agents-log-lacks-new-lines.md</span>
+      <span class="ib-qctx__detail">opencode · running · 0:34</span>
+    </header>
+    <div class="ib-qctx__pad">
+      <section class="ib-q" role="group" aria-labelledby="q1" aria-describedby="q1-who">
+        <div class="ib-q__head">
+          <svg class="ib-q__bubble" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="ib-q__who" id="q1-who">The agent asks</span>
+          <span class="ib-q__wait">18m ago</span>
+        </div>
+        <h3 class="ib-q__title" id="q1">How should a message's blank lines read?</h3>
+        <div class="ib-q__body">
+          <div class="ib-q__field">
+            <span class="ib-q__label" id="q1-f">Choose the rule</span>
+            <div class="ib-q__opts" role="radiogroup" aria-labelledby="q1-f">
+              <label class="ib-q__opt">
+                <input type="radio" name="rule" aria-describedby="q1-a">
+                <span class="ib-kbd" aria-hidden="true">1</span>
+                <span><span class="ib-q__name">Keep them</span><span class="ib-q__detail" id="q1-a">Every blank line the agent wrote stays; long pauses stay long.</span></span>
+                <span class="ib-q__mark" aria-hidden="true"></span>
+              </label>
+              <label class="ib-q__opt">
+                <input type="radio" name="rule" checked aria-describedby="q1-b">
+                <span class="ib-kbd" aria-hidden="true">2</span>
+                <span><span class="ib-q__name">Collapse runs</span><span class="ib-q__detail" id="q1-b">Two or more blank lines become one; the log stays compact.</span></span>
+                <span class="ib-q__mark" aria-hidden="true"></span>
+              </label>
+              <label class="ib-q__opt">
+                <input type="radio" name="rule" aria-describedby="q1-c">
+                <span class="ib-kbd" aria-hidden="true">3</span>
+                <span><span class="ib-q__name">Other…</span><span class="ib-q__detail" id="q1-c">Describe the rule; the agent applies it to the log reader.</span></span>
+                <span class="ib-q__mark" aria-hidden="true"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="ib-q__foot">
+          <span class="ib-spacer"></span>
+          <button class="ib-btn ib-btn--send">Send answer <span class="ib-btn__key">⌘↩</span></button>
+        </div>
+      </section>
+    </div>
+    <div class="ib-qctx__seg" role="group" aria-label="Log view"><span class="is-on">Conversation</span><span>Log</span></div>
+    <div class="ib-qctx__lines">
+      <p><b>Agent</b></p>
+      <p>I've read the log writer and the reader. The reader drops empty lines because it splits on <span class="ib-mono" style="font:var(--text-meta-mono);color:var(--ink-muted)">\n\n</span> and joins the parts with one newline. Which rule should I apply before I change it?</p>
+    </div>
+    <div class="ib-qctx__locked">Answer the question above to continue.</div>
+  </div>
+</section>
+
+<div class="ib-qgrid">
+
+<section class="ib-qdemo">
+  <span class="ib-cap">Other… picked: the field appears under its row, and only then</span>
+  <section class="ib-q" role="group" aria-labelledby="q8">
+    <div class="ib-q__head">
+      <svg class="ib-q__bubble" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="ib-q__who">The agent asks</span>
+      <span class="ib-q__wait">9m ago</span>
+    </div>
+    <h3 class="ib-q__title" id="q8">How should a message's blank lines read?</h3>
+    <div class="ib-q__body">
+      <div class="ib-q__field">
+        <span class="ib-q__label" id="q8-f">Choose the rule</span>
+        <div class="ib-q__opts" role="radiogroup" aria-labelledby="q8-f">
+          <label class="ib-q__opt">
+            <input type="radio" name="rule2">
+            <span class="ib-kbd" aria-hidden="true">1</span>
+            <span><span class="ib-q__name">Keep them</span><span class="ib-q__detail">Every blank line the agent wrote stays; long pauses stay long.</span></span>
+            <span class="ib-q__mark" aria-hidden="true"></span>
+          </label>
+          <label class="ib-q__opt">
+            <input type="radio" name="rule2">
+            <span class="ib-kbd" aria-hidden="true">2</span>
+            <span><span class="ib-q__name">Collapse runs</span><span class="ib-q__detail">Two or more blank lines become one; the log stays compact.</span></span>
+            <span class="ib-q__mark" aria-hidden="true"></span>
+          </label>
+          <label class="ib-q__opt">
+            <input type="radio" name="rule2" checked>
+            <span class="ib-kbd" aria-hidden="true">3</span>
+            <span><span class="ib-q__name">Other…</span><span class="ib-q__detail">Describe the rule; the agent applies it to the log reader.</span></span>
+            <span class="ib-q__mark" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="ib-q__other"><input class="ib-q__input" value="One blank line between runs, two inside a message." aria-label="Your rule"></div>
+      </div>
+    </div>
+    <div class="ib-q__foot">
+      <span class="ib-spacer"></span>
+      <button class="ib-btn ib-btn--send">Send answer <span class="ib-btn__key">⌘↩</span></button>
+    </div>
+  </section>
+</section>
+
+<section class="ib-qdemo">
+  <span class="ib-cap">Required field unanswered: the error sits under its field, the answers stay</span>
+  <section class="ib-q" role="group" aria-labelledby="q2">
+    <div class="ib-q__head">
+      <svg class="ib-q__bubble" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="ib-q__who">The agent asks</span>
+      <span class="ib-q__wait">2m ago</span>
+    </div>
+    <h3 class="ib-q__title" id="q2">Which version are we releasing?</h3>
+    <div class="ib-q__body">
+      <div class="ib-q__field">
+        <span class="ib-q__label" id="q2-version">Version</span>
+        <input class="ib-q__input" value="" placeholder="0.9.0" aria-labelledby="q2-version" aria-invalid="true" aria-describedby="q2-version-error">
+        <span class="ib-q__error" id="q2-version-error" role="alert"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16h.01"/></svg>Answer Version first.</span>
+      </div>
+      <div class="ib-q__field">
+        <span class="ib-q__label" id="q2-note">Commit the release note?</span>
+        <div class="ib-q__opts" role="radiogroup" aria-labelledby="q2-note">
+          <label class="ib-q__opt">
+            <input type="radio" name="note" checked>
+            <span class="ib-kbd" aria-hidden="true">1</span>
+            <span class="ib-q__name">Yes</span>
+            <span class="ib-q__mark" aria-hidden="true"></span>
+          </label>
+          <label class="ib-q__opt">
+            <input type="radio" name="note">
+            <span class="ib-kbd" aria-hidden="true">2</span>
+            <span class="ib-q__name">No, tag only</span>
+            <span class="ib-q__mark" aria-hidden="true"></span>
+          </label>
+        </div>
+      </div>
+      <div class="ib-q__field">
+        <span class="ib-q__label" id="q2-what">What goes in the note?<span class="ib-q__optional">Optional</span></span>
+        <div class="ib-q__opts" role="group" aria-labelledby="q2-what">
+          <label class="ib-q__opt">
+            <input type="checkbox" checked>
+            <span class="ib-kbd" aria-hidden="true">1</span>
+            <span class="ib-q__name">Fixed</span>
+            <span class="ib-q__mark ib-q__mark--check" aria-hidden="true"></span>
+          </label>
+          <label class="ib-q__opt">
+            <input type="checkbox" checked>
+            <span class="ib-kbd" aria-hidden="true">2</span>
+            <span class="ib-q__name">Changed</span>
+            <span class="ib-q__mark ib-q__mark--check" aria-hidden="true"></span>
+          </label>
+          <label class="ib-q__opt">
+            <input type="checkbox">
+            <span class="ib-kbd" aria-hidden="true">3</span>
+            <span class="ib-q__name">Added</span>
+            <span class="ib-q__mark ib-q__mark--check" aria-hidden="true"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="ib-q__foot">
+      <span class="ib-spacer"></span>
+      <button class="ib-btn ib-btn--send">Send answer <span class="ib-btn__key">⌘↩</span></button>
+    </div>
+  </section>
+</section>
+
+<section class="ib-qdemo">
+  <span class="ib-cap">Open answer: Inter 13, three rows, focus halo; no mono for prose</span>
+  <section class="ib-q" role="group" aria-labelledby="q3">
+    <div class="ib-q__head">
+      <svg class="ib-q__bubble" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="ib-q__who">The agent asks</span>
+      <span class="ib-q__wait">4m ago</span>
+    </div>
+    <h3 class="ib-q__title" id="q3">What should the issue say instead?</h3>
+    <div class="ib-q__body">
+      <div class="ib-q__field">
+        <span class="ib-q__label" id="q3-a">Acceptance criteria<span class="ib-q__optional">Optional</span></span>
+        <textarea class="ib-q__textarea" rows="3" placeholder="Write what done looks like, or leave it and the agent will propose one" aria-labelledby="q3-a"></textarea>
+        <span class="ib-q__help">The build waits on this answer. It can propose wording once you reply.</span>
+      </div>
+    </div>
+    <div class="ib-q__foot">
+      <span class="ib-spacer"></span>
+      <button class="ib-btn ib-btn--send">Send answer <span class="ib-btn__key">⌘↩</span></button>
+    </div>
+  </section>
+
+  <span class="ib-cap" style="margin-top:8px">Failed: the answers stay, Retry replaces Send</span>
+  <section class="ib-q" role="group" aria-labelledby="q4">
+    <div class="ib-q__head">
+      <svg class="ib-q__bubble" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="ib-q__who">The agent asks</span>
+      <span class="ib-q__wait">6m ago</span>
+    </div>
+    <h3 class="ib-q__title" id="q4">Which cache should the stats screen use?</h3>
+    <div class="ib-q__body">
+      <div class="ib-q__field">
+        <div class="ib-q__opts" role="radiogroup" aria-label="Cache">
+          <label class="ib-q__opt">
+            <input type="radio" name="cache" checked>
+            <span class="ib-kbd" aria-hidden="true">1</span>
+            <span><span class="ib-q__name">In memory</span><span class="ib-q__detail">Rebuilt on every launch; nothing to invalidate.</span></span>
+            <span class="ib-q__mark" aria-hidden="true"></span>
+          </label>
+          <label class="ib-q__opt">
+            <input type="radio" name="cache">
+            <span class="ib-kbd" aria-hidden="true">2</span>
+            <span><span class="ib-q__name">On disk</span><span class="ib-q__detail">Stays between launches, keyed by the commit.</span></span>
+            <span class="ib-q__mark" aria-hidden="true"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="ib-q__foot">
+      <span class="ib-q__error" role="alert"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16h.01"/></svg>Couldn't send: the build is no longer running.</span>
+      <span class="ib-spacer"></span>
+      <button class="ib-btn ib-btn--ghost" style="color:var(--danger)">Retry</button>
+    </div>
+  </section>
+</section>
+
+<section class="ib-qdemo">
+  <span class="ib-cap">Permission inside the project: the exact command, the scope, one allow</span>
+  <section class="ib-q" role="group" aria-labelledby="q5">
+    <div class="ib-q__head">
+      <svg class="ib-q__bubble" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="ib-q__who">The agent asks</span>
+      <span class="ib-q__wait">1m ago</span>
+    </div>
+    <h3 class="ib-q__title" id="q5">Allow a command to run?</h3>
+    <div class="ib-q__body">
+      <code class="ib-q__code">cargo test -- --nocapture</code>
+      <span class="ib-q__scope">Inside iboard/</span>
+    </div>
+    <div class="ib-q__foot">
+      <button class="ib-btn ib-btn--ghost">Reject</button>
+      <span class="ib-spacer"></span>
+      <button class="ib-btn">Always allow in iboard/</button>
+      <button class="ib-btn ib-btn--send">Allow once <span class="ib-btn__key">⌘↩</span></button>
+    </div>
+  </section>
+</section>
+
+<section class="ib-qdemo">
+  <span class="ib-cap">Permission outside the project: the one place this card raises its voice</span>
+  <section class="ib-q" role="group" aria-labelledby="q6">
+    <div class="ib-q__head">
+      <svg class="ib-q__bubble" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="ib-q__who">The agent asks</span>
+      <span class="ib-q__wait">1m ago</span>
+    </div>
+    <h3 class="ib-q__title" id="q6">Allow a command to run?</h3>
+    <div class="ib-q__body">
+      <code class="ib-q__code">rm -rf ~/workspace/perso/old-project/build</code>
+    </div>
+    <div class="ib-q__band"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19z"/><path d="M12 9v5M12 17h.01"/></svg><span>Outside iboard/. The builder should only work in its own folder.</span></div>
+    <div class="ib-q__foot">
+      <button class="ib-btn ib-btn--ghost">Reject</button>
+      <span class="ib-spacer"></span>
+      <button class="ib-btn ib-btn--send">Allow once <span class="ib-btn__key">⌘↩</span></button>
+    </div>
+  </section>
+</section>
+
+<section class="ib-qdemo">
+  <span class="ib-cap">The build stopped: a quiet note, the answers kept, nothing to send</span>
+  <div class="ib-q__gone">
+    <b>This build stopped before it was answered.</b>
+    <span>Which cache should the stats screen use?</span>
+    <div class="ib-row"><button class="ib-btn ib-btn--ghost">Dismiss</button></div>
+  </div>
+</section>
+
+<section class="ib-qdemo">
+  <span class="ib-cap">Dark: the same tokens, the review Send stays legible</span>
+  <div class="ib-qdark" data-theme="dark">
+    <section class="ib-q" role="group" aria-labelledby="q7">
+      <div class="ib-q__head">
+        <svg class="ib-q__bubble" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="ib-q__who">The agent asks</span>
+        <span class="ib-q__wait">3m ago</span>
+      </div>
+      <h3 class="ib-q__title" id="q7">Remove the update check?</h3>
+      <div class="ib-q__body">
+        <div class="ib-q__field">
+          <div class="ib-q__opts" role="radiogroup" aria-label="Remove the update check">
+            <label class="ib-q__opt">
+              <input type="radio" name="update" checked>
+              <span class="ib-kbd" aria-hidden="true">1</span>
+              <span class="ib-q__name">Yes, remove it</span>
+              <span class="ib-q__mark" aria-hidden="true"></span>
+            </label>
+            <label class="ib-q__opt">
+              <input type="radio" name="update">
+              <span class="ib-kbd" aria-hidden="true">2</span>
+              <span class="ib-q__name">Keep it, reword it</span>
+              <span class="ib-q__mark" aria-hidden="true"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="ib-q__foot">
+        <span class="ib-spacer"></span>
+        <button class="ib-btn ib-btn--send">Send answer <span class="ib-btn__key">⌘↩</span></button>
+      </div>
+    </section>
+  </div>
+</section>
+
+</div>
+</div>
+</body>
+</html>

@@ -88,11 +88,12 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 
 ## Navigation
 
-Navigation is three discreet pieces:
+Navigation is four discreet pieces:
 
 1. **Board button** at the far left of the Reader and Editor header: chevron and "Board", no edge like every header button, `surface-hover` on hover; `esc` shows beside it while ⌘ is held.
 2. **Breadcrumb in the header**, in `ink-muted`: `iboard / ○ Todo`, the column with its status icon. The issue title joins it as the last segment (`ui-strong`, `ink`) only once the page's `read-h1` has scrolled out of view, and always in the Editor. Every segment but the last is a link back, with a hover fill and underline. On the board it shows only the project name. There the project name opens the ProjectMenu: the groups (each its own board), then your projects in your own order, scrolling inside the menu and filtered by typing, then a footer strip on `bg` with **Stats** (`⌘I`) over three actions: **Add project…**, **Edit groups…** (GroupsDialog, written back to `[[workspace.group]]` in `~/.config/iboard/iboard.toml`; the board reloads in place) and **Reorder** (drag or `⌥↑ ⌥↓`, saved as a user preference).
 3. **Status bar at the bottom**, Inter `meta` in `ink-muted`: on the board the issues folder; on the Reader the file path, modified time and progress; in the Editor the path and the save pill. The current file path and save state sit on the left; the two or three shortcuts that apply to the current screen show on the right only while ⌘ is held, never more than three.
+4. **Notification bell** at the very right of the header on every screen, carrying the count of AI-builder questions waiting. It opens the tray under it. See Notifications.
 
 There is no sidebar and no tab bar. Three screens are enough: Board, Reader, Editor.
 
@@ -239,6 +240,15 @@ issue. The tool and model are chosen in the ReviewSettings dialog: a Tool select
 - **States**: idle, running (button shows "Reviewing…", `esc` cancels), result (panel open), failed (inline `danger` text with retry). Only the issue text is sent; interactive agents are run in one-shot mode, so no terminal is attached yet.
 - **Refining (RefinePanel)**: an agent in a role (the Challenger) pushes back on the issue and offers numbered resolutions. The panel has two panes: the TL;DR (`ui-title` with a 3px `review` rule) and the reasoning (`read-body`, in `read-measure`) on the left, the choices on the right so they never scroll away. Each choice is a bordered card with a short title, a muted detail, its number key and a radio; the selected one takes the `accent` edge and `accent-soft` fill. The note under the choices follows the selection ("Add a note to choice 1", or "Or answer in your own words"). Send is the one filled `review` button and names what goes out ("Send choice 1", "Send answer"). Under 900pt it stacks and folds the reasoning under the TL;DR. See `components/RefinePanel`.
 - **Waiting (Thinking)**: while the agent works (often about 10s), the iboard "i" stands in for a spinner: its blue dot stretches across the stem, the stem tucks into the freed corner, and the two hand over until the i stands again a quarter turn on (1.6s per quarter, a full square in 6.4s). The panel opens at its final size with placeholder bars and cards, the status line says what it waits for with an elapsed clock ("Challenger is reading the issue · 4s"), and after 20s it says it is slow and that `esc` cancels. No fake progress. See `components/Thinking`.
+
+### Build questions
+
+A build that needs a person stops on a **Question** card at the top of its agent panel, inside the ticket, above the conversation. The bell counts it and the Doing card pins it, but neither is where it is answered; the card is, and answering it resumes the build. See `components/Question`.
+
+- **The card is the agent talking**, so its bubble, "The agent asks" label and filled Send are `review`. The Doing orange stays on the card pin and the bell badge, where it means the ticket is blocked, not who is speaking.
+- **One card for one field or six.** The agent's title is the heading; a field label repeats it only when it adds something. Options are 36pt rows with their description always visible and a number key to pick; an open answer is Inter 13, never mono. The card is bounded to 55% of the panel, its fields scroll and Send stays pinned. A required field left empty says so under itself and takes focus; Send is never a disabled button with no explanation.
+- **While it waits, the composer goes.** The box under the conversation is one quiet line, "Answer the question above to continue.", so the panel has one filled Send, not two. Closing the panel is allowed; the pin and the bell reopen the ticket on the question.
+- **A tool permission is a fallback, not a step.** The builder's scope is its project folder. The same card shows the exact resource in mono, says "Inside `<project>`", and "Always allow" names the project. When a resource is outside it, one `danger-soft` band says the builder should stay in its own folder, and Always allow is not offered. There is no global allow.
 
 ## Using the tokens from Rust
 
