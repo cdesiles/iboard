@@ -391,7 +391,14 @@ fn no_agents_stops_the_build_and_at_most_sixteen() {
 fn doing_header_adds_and_removes_agents() {
     let (_dir, app) = board("build-stepper", "true # {prompt}");
     let mut harness = kittest(app);
-    let selector = harness.get_by_label("Build agents working at once: 1 agent");
+    let agents = "Build agents working at once: 1 agent";
+    assert!(
+        harness.query_by_label(agents).is_none(),
+        "Doing shows only its count at rest"
+    );
+    harness.get_by_label("Doing").hover();
+    harness.run_steps(2);
+    let selector = harness.get_by_label(agents);
     let anchor = selector.rect();
     assert!(
         harness.query_by_label("One more build agent").is_none(),

@@ -342,17 +342,23 @@ fn column_head(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent>) 
         }
     }
     let hovered = head.rect_contains_pointer(head_rect);
+    // Doing's agents popover outlives the header's hover.
+    let open = hovered
+        || egui::Popup::is_id_open(
+            head.ctx(),
+            egui::Id::unique(("agents", view.index)).with("popup"),
+        );
     let fade = widgets::hover_fade(
         head.ctx(),
         egui::Id::unique(("column_head", view.index)),
-        hovered,
+        open,
     );
     let actions = header_actions(view);
     let has_actions = !actions.is_empty();
     let mut title = None;
     head.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-        if hovered && has_actions {
+        if open && has_actions {
             ui.multiply_opacity(fade);
             for action in actions {
                 intents.extend(header_action(ui, view, action, &mut title));
@@ -364,7 +370,7 @@ fn column_head(ui: &mut egui::Ui, view: &ColumnView, intents: &mut Vec<Intent>) 
         }
         if let Some(title) = &title {
             action_title(ui, title);
-        } else if !hovered || !has_actions {
+        } else if !open || !has_actions {
             let shown = view.visible.len();
             // Filtered: "2/6", the total in `ink-faint`.
             let mut count = LayoutJob::default();
@@ -417,13 +423,13 @@ enum HeaderAction {
 }
 
 impl HeaderAction {
-    /// Parked notes keep Todo's `+` and its dot in view, a running build its
-    /// Stop and Doing its agents, whose popup must outlive the header's hover.
+    /// Parked notes keep Todo's `+` and its dot in view, and a running build
+    /// its Stop, while the header is not hovered.
     fn at_rest(self, view: &ColumnView) -> bool {
         match self {
             Self::NewIssue => view.parked,
-            Self::StopBuild | Self::Agents => true,
-            Self::Build | Self::ArchiveAll | Self::Release => false,
+            Self::StopBuild => true,
+            Self::Build | Self::Agents | Self::ArchiveAll | Self::Release => false,
         }
     }
 }
@@ -559,8 +565,8 @@ fn new_issue_button(
 const AGENTS_POPUP_WIDTH: f32 = 236.0;
 
 /// Doing's agents: one icon whose title says how many work at once, and whose
-/// click opens the selector under it. It stays in the header at rest, so the
-/// popover outlives the header's hover.
+/// click opens the selector under it. The header keeps it in view while the
+/// popover is open, so it outlives the header's hover.
 fn agents_button(
     ui: &mut egui::Ui,
     view: &ColumnView,
