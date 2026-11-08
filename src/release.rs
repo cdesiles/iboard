@@ -1,5 +1,6 @@
 //! What Done's Release flag writes: the next tag, the release note that goes
-//! into `CHANGELOG.md`, and the git commands that commit, tag and push it.
+//! into the project's changelog, and the git commands that commit, tag and
+//! push it. The modal's choices are kept in the user configuration.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -7,12 +8,98 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
 
 use crate::git;
+use crate::settings::{Section, UserConfig};
 
 /// The note file at the project root, newest release first.
 pub const NOTE_FILE: &str = "CHANGELOG.md";
+/// The note file names a project may already use, lower case.
+const NOTE_FILES: [&str; 2] = ["changelog.md", "release-notes.md"];
+const SECTION: &str = "release";
 const FIRST_TAG: &str = "v0.1.0";
+
+/// What the release modal opens on: whether to write a note, in which file,
+/// and whether to push afterwards. Kept in `[release]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseChoices {
+    pub note: bool,
+    pub file: String,
+    pub push: bool,
+}
+
+impl Default for ReleaseChoices {
+    fn default() -> Self {
+        Self {
+            note: true,
+            file: NOTE_FILE.to_string(),
+            push: true,
+        }
+    }
+}
+
+#[derive(Default, Deserialize, Serialize)]
+struct RawRelease {
+    note: Option<bool>,
+    file: Option<String>,
+    push: Option<bool>,
+}
+
+impl ReleaseChoices {
+    /// Reads `[release]`; an empty file name is reported and keeps the
+    /// default.
+    pub fn load(config: &mut UserConfig) -> Self {
+        let raw = config.section::<RawRelease>(SECTION);
+        let defaults = Self::default();
+        let file = match raw.file {
+            None => defaults.file,
+            Some(file) if file.trim().is_empty() => {
+                config.problem(format!("[{SECTION}]: file is empty"));
+                defaults.file
+            }
+            Some(file) => file.trim().to_string(),
+        };
+        Self {
+            note: raw.note.unwrap_or(defaults.note),
+            file,
+            push: raw.push.unwrap_or(defaults.push),
+        }
+    }
+
+    /// The `[release]` section that stores them.
+    pub fn section(&self) -> Result<Section, String> {
+        Section::new(
+            SECTION,
+            &RawRelease {
+                note: Some(self.note),
+                file: Some(self.file.clone()),
+                push: Some(self.push),
+            },
+        )
+    }
+}
+
+/// The note file the modal opens on: `preferred` when the project has it,
+/// else the `CHANGELOG.md` or `release-notes.md` it already uses, else
+/// `preferred`.
+pub fn note_file(project: &Path, preferred: &str) -> String {
+    let preferred = preferred.trim();
+    if project.join(preferred).is_file() {
+        return preferred.to_string();
+    }
+    used_note_file(project).unwrap_or_else(|| preferred.to_string())
+}
+
+fn used_note_file(project: &Path) -> Option<String> {
+    let entries = std::fs::read_dir(project).ok()?;
+    entries.filter_map(Result::ok).find_map(|entry| {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        NOTE_FILES
+            .contains(&name.to_lowercase().as_str())
+            .then_some(name)
+    })
+}
 
 /// The tag after the newest one matching `pattern`, patch bumped: `v0.3.0`
 /// gives `v0.3.1`, `rel-1.2` gives `rel-1.2.1`. No matching version gives
@@ -177,10 +264,10 @@ pub fn with_section(existing: Option<&str>, section: &str) -> String {
     }
 }
 
-/// Writes `section` to the project's changelog, newest first, and says where
-/// it went.
-pub fn write_note(project: &Path, section: &str) -> Result<PathBuf, String> {
-    let path = project.join(NOTE_FILE);
+/// Writes `section` to `file` in the project, newest first, and says where it
+/// went.
+pub fn write_note(project: &Path, file: &str, section: &str) -> Result<PathBuf, String> {
+    let path = project.join(file.trim());
     let existing = std::fs::read_to_string(&path).ok();
     let text = with_section(existing.as_deref(), section);
     crate::files::atomic_write(&path, text)
@@ -329,14 +416,53 @@ mod tests {
         let dir = repo();
         let project = dir.path();
         let first = section("v1.0.0", "1 Nov 2026", "- One");
-        let path = write_note(project, &first).unwrap();
+        let path = write_note(project, NOTE_FILE, &first).unwrap();
         let second = section("v1.1.0", "7 Nov 2026", "- Two");
-        write_note(project, &second).unwrap();
+        write_note(project, NOTE_FILE, &second).unwrap();
         let text = std::fs::read_to_string(path).unwrap();
         assert_eq!(
             text,
             "# Changelog\n\n## v1.1.0 — 7 Nov 2026\n\n- Two\n\n\
              ## v1.0.0 — 1 Nov 2026\n\n- One\n"
         );
+    }
+
+    #[test]
+    fn the_note_file_is_the_one_the_project_already_uses() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path();
+        assert_eq!(note_file(project, NOTE_FILE), NOTE_FILE);
+
+        std::fs::write(project.join("release-notes.md"), "").unwrap();
+        assert_eq!(note_file(project, NOTE_FILE), "release-notes.md");
+        assert_eq!(note_file(project, "NOTES.md"), "release-notes.md");
+
+        std::fs::write(project.join("CHANGELOG.md"), "").unwrap();
+        assert_eq!(note_file(project, NOTE_FILE), "CHANGELOG.md");
+
+        std::fs::write(project.join("NOTES.md"), "").unwrap();
+        assert_eq!(note_file(project, "NOTES.md"), "NOTES.md");
+    }
+
+    #[test]
+    fn the_choices_are_read_from_the_release_section_and_written_back() {
+        let mut config = UserConfig::parse(
+            "[release]\nnote = false\nfile = \"release-notes.md\"\npush = false\n",
+            Path::new("iboard.toml"),
+        );
+        let choices = ReleaseChoices::load(&mut config);
+        assert_eq!(
+            choices,
+            ReleaseChoices {
+                note: false,
+                file: "release-notes.md".to_string(),
+                push: false,
+            }
+        );
+        assert!(config.problems.is_empty());
+
+        let mut config = UserConfig::parse("[release]\nfile = \"  \"\n", Path::new("iboard.toml"));
+        assert_eq!(ReleaseChoices::load(&mut config), ReleaseChoices::default());
+        assert_eq!(config.problems.len(), 1, "an empty file is reported");
     }
 }

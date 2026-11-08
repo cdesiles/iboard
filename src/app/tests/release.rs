@@ -1,10 +1,10 @@
 //! Done's Release flag: its place in the header, and the note, commit, tag
-//! and push the flow makes, each confirmed, skipped or cancelled.
+//! and push the one release panel makes.
 
 use egui::accesskit::Role;
 use egui_kittest::kittest::{NodeT, Queryable};
 
-use super::super::release::{ReleaseChoice, ReleaseStep};
+use super::super::release::ReleaseChoice;
 use super::*;
 use crate::scratch_git::{git, git_env};
 
@@ -46,21 +46,9 @@ fn releasing_writes_a_note_commits_tags_and_pushes() {
     let note = std::fs::read_to_string(dir.join("CHANGELOG.md")).unwrap();
     assert!(note.starts_with("# Changelog\n\n## v0.1.1 — "), "{note}");
     assert!(note.contains("- Alpha\n- Beta\n"), "{note}");
-    assert_eq!(
-        app.session.release.as_ref().unwrap().step,
-        ReleaseStep::CommitAndTag
-    );
-
-    app.release_choice(ReleaseChoice::Confirm);
     assert_eq!(git(&dir, &["log", "-1", "--format=%s"]), "Release v0.1.1");
     assert_eq!(git(&dir, &["tag", "--list", "v0.1.1"]), "v0.1.1");
-    assert_eq!(
-        app.session.release.as_ref().unwrap().step,
-        ReleaseStep::Push
-    );
-
-    app.release_choice(ReleaseChoice::Confirm);
-    assert!(app.session.release.is_none());
+    assert!(app.session.release.is_none(), "one panel, one release");
     assert_eq!(
         app.session.notice.as_ref().map(|(text, _)| text.as_str()),
         Some("Released v0.1.1")
@@ -77,24 +65,46 @@ fn releasing_writes_a_note_commits_tags_and_pushes() {
 }
 
 #[test]
-fn skipping_the_note_commits_empty_and_skipping_push_stays_local() {
+fn tag_only_leaves_the_note_alone_and_keep_local_leaves_the_push_out() {
     let (dir, remote, mut app) = release_project("v0.1.0");
     let file = dir.join("issues/done/a.md");
 
     app.open_release(&[file]);
-    app.release_choice(ReleaseChoice::Skip);
-    assert!(!dir.join("CHANGELOG.md").exists(), "no note was written");
-
+    let flow = app.session.release.as_mut().unwrap();
+    flow.note = false;
+    flow.push = false;
     app.release_choice(ReleaseChoice::Confirm);
-    assert_eq!(git(&dir, &["log", "-1", "--format=%s"]), "Release v0.1.1");
-    assert_eq!(git(&dir, &["tag", "--list", "v0.1.1"]), "v0.1.1");
 
-    app.release_choice(ReleaseChoice::Skip);
+    assert!(!dir.join("CHANGELOG.md").exists(), "no note was written");
+    assert_eq!(
+        git(&dir, &["log", "-1", "--format=%s"]),
+        "first",
+        "tag only adds no commit"
+    );
+    assert_eq!(git(&dir, &["tag", "--list", "v0.1.1"]), "v0.1.1");
     assert!(app.session.release.is_none());
     assert_eq!(
         git(&remote, &["tag", "--list", "v0.1.1"]),
         "",
-        "the push was skipped"
+        "the push was left out"
+    );
+}
+
+#[test]
+fn a_written_note_goes_to_the_file_the_user_chose() {
+    let (dir, _remote, mut app) = release_project("v0.1.0");
+    let file = dir.join("issues/done/a.md");
+
+    app.open_release(&[file]);
+    app.session.release.as_mut().unwrap().file = "release-notes.md".to_string();
+    app.release_choice(ReleaseChoice::Confirm);
+
+    assert!(!dir.join("CHANGELOG.md").exists());
+    let note = std::fs::read_to_string(dir.join("release-notes.md")).unwrap();
+    assert!(note.starts_with("# Changelog\n\n## v0.1.1 — "), "{note}");
+    assert_eq!(
+        git(&dir, &["show", "--name-only", "--format=", "HEAD"]),
+        "release-notes.md"
     );
 }
 
@@ -112,7 +122,7 @@ fn cancelling_stops_the_release_before_anything_is_written() {
 }
 
 #[test]
-fn a_tag_git_would_refuse_stays_on_the_note_step() {
+fn a_tag_git_would_refuse_stays_on_the_panel() {
     let (dir, _remote, mut app) = release_project("v0.1.0");
     let file = dir.join("issues/done/a.md");
 
@@ -121,9 +131,23 @@ fn a_tag_git_would_refuse_stays_on_the_note_step() {
     app.release_choice(ReleaseChoice::Confirm);
 
     let flow = app.session.release.as_ref().unwrap();
-    assert_eq!(flow.step, ReleaseStep::Note);
     assert!(flow.error.is_some(), "the dialog says what is wrong");
     assert!(!dir.join("CHANGELOG.md").exists());
+    assert_eq!(git(&dir, &["tag", "--list"]), "v0.1.0");
+}
+
+#[test]
+fn a_note_file_outside_the_project_is_refused() {
+    let (dir, _remote, mut app) = release_project("v0.1.0");
+    let file = dir.join("issues/done/a.md");
+
+    app.open_release(&[file]);
+    app.session.release.as_mut().unwrap().file = "../NOTES.md".to_string();
+    app.release_choice(ReleaseChoice::Confirm);
+
+    let flow = app.session.release.as_ref().unwrap();
+    assert!(flow.error.is_some());
+    assert_eq!(git(&dir, &["tag", "--list"]), "v0.1.0");
 }
 
 #[test]
@@ -256,19 +280,69 @@ fn escape_cancels_the_release_flow() {
 }
 
 #[test]
-fn the_release_modal_walks_through_its_steps() {
+fn the_release_panel_wording_follows_its_selectors() {
     let (dir, mut app) = project("release-ui", &[("done/a.md", "# Alpha\n")]);
     let file = dir.join("issues/done/a.md");
     app.open_release(&[file]);
     let mut harness = kittest(app);
     harness.get_by_role_and_label(Role::Dialog, "Release");
 
-    press(&mut harness, "Write note");
-    assert!(dir.join("CHANGELOG.md").is_file());
-    press(&mut harness, "Skip");
-    assert!(harness.state().1.session.release.is_some());
+    harness.get_by_label("Update release note, version and push");
+    harness.get_by_label("Note file");
+
+    press(&mut harness, "Tag only");
+    harness.get_by_label("Set and push the release tag");
+    assert!(
+        harness.query_by_label("Note file").is_none(),
+        "the note file goes with the note"
+    );
+
+    press(&mut harness, "Keep it local");
+    harness.get_by_label("Set the release tag");
+
+    press(&mut harness, "Update the release note");
+    harness.get_by_label("Update release note and version");
+
     press(&mut harness, "Cancel");
     assert!(harness.state().1.session.release.is_none());
+}
+
+#[test]
+fn the_panel_makes_the_whole_release_in_one_confirmation() {
+    let (dir, remote, mut app) = release_project("v0.1.0");
+    let file = dir.join("issues/done/a.md");
+    app.open_release(&[file]);
+    let mut harness = kittest(app);
+
+    press(&mut harness, "Update release note, version and push");
+    assert!(dir.join("CHANGELOG.md").is_file());
+    assert_eq!(git(&dir, &["tag", "--list", "v0.1.1"]), "v0.1.1");
+    assert_eq!(git(&remote, &["tag", "--list", "v0.1.1"]), "v0.1.1");
+    assert!(harness.state().1.session.release.is_none());
+}
+
+#[test]
+fn the_choices_made_are_kept_in_the_settings_file() {
+    let (dir, mut app) = project("release-remember", &[("done/a.md", "# Alpha\n")]);
+    let config = dir.join("iboard.toml");
+    app.config_file = Some(config.clone());
+    app.open_release(&[dir.join("issues/done/a.md")]);
+    let mut harness = kittest(app);
+
+    press(&mut harness, "Tag only");
+    press(&mut harness, "Keep it local");
+    press(&mut harness, "Cancel");
+
+    let saved = iboard::release::ReleaseChoices::load(&mut UserConfig::load(Some(&config)));
+    assert!(!saved.note, "tag only is remembered");
+    assert!(!saved.push, "the local choice is remembered");
+
+    let mut app = harness.into_state().1;
+    app.open_release(&[dir.join("issues/done/a.md")]);
+    let flow = app.session.release.as_ref().unwrap();
+    assert!(!flow.note);
+    assert!(!flow.push);
+    assert_eq!(flow.file, "CHANGELOG.md");
 }
 
 #[test]
@@ -300,7 +374,7 @@ fn the_agent_groups_the_note_into_sections() {
 fn a_grouping_note_blocks_edits_and_shows_the_thinking_mark() {
     use egui::accesskit::Live;
     let (dir, mut app) = project("release-grouping-a11y", &[("done/a.md", "# Alpha\n")]);
-    app.prefs.agent = fake_agent("sleep 1; printf '### Added\\n- Alpha\\n' # {prompt}");
+    app.prefs.agent = fake_agent("sleep 3; printf '### Added\\n- Alpha\\n' # {prompt}");
     app.open_release(&[dir.join("issues/done/a.md")]);
     let mut harness = kittest(app);
     harness.run_steps(2);
@@ -397,9 +471,10 @@ fn a_long_note_scrolls_so_the_buttons_stay_on_screen() {
     app.open_release(&paths);
     let harness = kittest(app);
 
-    let write = harness.get_by_label("Write note").rect();
+    let confirm = harness.get_by_label("Update release note, version and push");
     assert!(
-        write.bottom() <= window().bottom(),
-        "the note scrolls, its buttons stay put: {write:?}"
+        confirm.rect().bottom() <= window().bottom(),
+        "the note scrolls, its buttons stay put: {:?}",
+        confirm.rect()
     );
 }

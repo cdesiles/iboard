@@ -10,6 +10,7 @@ use crate::filter;
 use crate::general::{self, Appearance};
 use crate::labels::{self, Labels};
 use crate::notifications;
+use crate::release::ReleaseChoices;
 use crate::settings::{Section, UserConfig};
 use crate::stats::ReleasePrefs;
 use crate::titles::{self, Engine};
@@ -62,6 +63,10 @@ pub struct Preferences {
     /// `[stats]`: the release lines on the Trends. Their checkbox writes it as
     /// it is ticked; Settings does not list it.
     pub releases: ReleasePrefs,
+    /// `[release]`: what the release modal opens on: a note, its file, and a
+    /// push. The modal writes it as its selectors change; Settings does not
+    /// list it.
+    pub release: ReleaseChoices,
     /// `[notifications]`: what reaches the bell, and whether a Doing issue
     /// opens its agent log.
     pub notifications: notifications::Prefs,
@@ -98,6 +103,7 @@ impl Preferences {
             keep_notes: general::load_keep_notes(config),
             agenda_range: agenda::load_range(config),
             releases: ReleasePrefs::load(config),
+            release: ReleaseChoices::load(config),
             notifications: notifications::load_prefs(config),
         }
     }
@@ -187,6 +193,7 @@ mod tests {
             keep_notes: true,
             agenda_range: Range::W12,
             releases: ReleasePrefs::default(),
+            release: ReleaseChoices::default(),
             notifications: notifications::Prefs::default(),
         };
         assert_eq!(Preferences::default(), defaults);
@@ -212,7 +219,8 @@ mod tests {
              [splits]\nreview = 420\n\
              [new_issue]\nkeep_notes = false\n\
              [agenda]\nrange = \"26w\"\n\
-             [stats]\nshow_releases = false\nrelease_tags = \"rel-*\"\n",
+             [stats]\nshow_releases = false\nrelease_tags = \"rel-*\"\n\
+             [release]\nnote = false\nfile = \"release-notes.md\"\npush = false\n",
         );
         let preferences = Preferences::load(&mut config);
         assert!(config.problems.is_empty(), "{:?}", config.problems);
@@ -237,6 +245,11 @@ mod tests {
                 releases: ReleasePrefs {
                     show: false,
                     tags: "rel-*".to_string(),
+                },
+                release: ReleaseChoices {
+                    note: false,
+                    file: "release-notes.md".to_string(),
+                    push: false,
                 },
                 notifications: notifications::Prefs::default(),
             }

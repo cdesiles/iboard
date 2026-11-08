@@ -1,69 +1,32 @@
-//! Done's Release flag: a note in `CHANGELOG.md`, a commit and an annotated
-//! tag, then a push. Each step waits for the user to confirm, skip or cancel.
+//! Done's Release flag: one panel that picks the version, whether to write a
+//! release note and push, then makes it all in one go.
 
-use iboard::release;
+use iboard::release::{self, ReleaseChoices};
 
 use super::{
     Align, ButtonKind, Duration, IboardApp, Icon, Instant, Job, Layout, MarginF32, Path, PathBuf,
     ReviewMode, RichText, Vec2, agent, job, theme, widgets,
 };
 
-/// The three steps of a release, in order.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum ReleaseStep {
-    Note,
-    CommitAndTag,
-    Push,
-}
-
-impl ReleaseStep {
-    fn title(self) -> &'static str {
-        match self {
-            Self::Note => "Release note",
-            Self::CommitAndTag => "Commit and tag",
-            Self::Push => "Push",
-        }
-    }
-
-    fn action(self) -> &'static str {
-        match self {
-            Self::Note => "Write note",
-            Self::CommitAndTag => "Commit and tag",
-            Self::Push => "Push",
-        }
-    }
-}
-
-/// What the user chose on the step on screen.
+/// What the user chose on the release panel.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum ReleaseChoice {
     Confirm,
-    Skip,
     Cancel,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Outcome {
-    Done,
-    Skipped,
-}
-
-impl Outcome {
-    fn word(self) -> &'static str {
-        match self {
-            Self::Done => "done",
-            Self::Skipped => "skipped",
-        }
-    }
-}
-
-/// One release in progress: its version, its note, and which step is asking.
+/// One release in progress: its version, its note, and the choices made.
 pub(super) struct ReleaseFlow {
     project: PathBuf,
     project_name: String,
     pub(super) tag: String,
     pub(super) body: String,
-    pub(super) step: ReleaseStep,
+    /// Whether the release commits an updated note before tagging.
+    pub(super) note: bool,
+    /// The note file, relative to the project root.
+    pub(super) file: String,
+    /// Whether the release pushes the branch and its new tag.
+    pub(super) push: bool,
     /// The titles the note lists, as the list the agent was asked to group.
     titles: Vec<String>,
     /// The sectioned note the agent is writing, while it runs.
@@ -74,10 +37,9 @@ pub(super) struct ReleaseFlow {
     note_error: Option<String>,
     /// The newest tag the note follows, if any: the release window.
     since: Option<String>,
-    note: Option<PathBuf>,
     committed: bool,
     tagged: bool,
-    history: Vec<(ReleaseStep, Outcome)>,
+    pushed: bool,
     pub(super) error: Option<String>,
     issues: usize,
 }
@@ -89,6 +51,7 @@ impl ReleaseFlow {
         tag: String,
         titles: Vec<String>,
         since: Option<String>,
+        choices: ReleaseChoices,
         writer: Option<Job<Result<String, String>>>,
     ) -> Self {
         Self {
@@ -96,17 +59,18 @@ impl ReleaseFlow {
             project_name,
             tag,
             body: release::note_body(&titles),
-            step: ReleaseStep::Note,
+            note: choices.note,
+            file: choices.file,
+            push: choices.push,
             issues: titles.len(),
             titles,
             writer,
             grouped: false,
             note_error: None,
             since,
-            note: None,
             committed: false,
             tagged: false,
-            history: Vec::new(),
+            pushed: false,
             error: None,
         }
     }
@@ -128,62 +92,53 @@ impl ReleaseFlow {
         Ok(())
     }
 
-    /// Runs the current step. An error stays on screen and the step stays up.
-    fn confirm(&mut self) -> Result<(), String> {
-        match self.step {
-            ReleaseStep::Note => {
-                self.check_tag()?;
-                if release::tag_exists(&self.project, self.tag.trim()) {
-                    return Err(format!("{} is already a tag.", self.tag.trim()));
-                }
-                self.note = Some(release::write_note(&self.project, &self.section())?);
-                self.writer = None;
-            }
-            ReleaseStep::CommitAndTag => {
-                self.check_tag()?;
-                if !self.committed {
-                    let message = format!("Release {}", self.tag.trim());
-                    release::commit(&self.project, self.note.as_deref(), &message)?;
-                    self.committed = true;
-                }
-                if !self.tagged {
-                    release::tag(&self.project, self.tag.trim(), &self.section())?;
-                    self.tagged = true;
-                }
-            }
-            ReleaseStep::Push => {
-                release::push(&self.project, self.tagged)?;
-            }
+    fn check_file(&self) -> Result<(), String> {
+        let file = self.file.trim();
+        if file.is_empty() {
+            return Err("The release note file can't be empty.".to_string());
         }
-        self.finish_step();
+        let path = Path::new(file);
+        if path.is_absolute()
+            || path
+                .components()
+                .any(|part| part == std::path::Component::ParentDir)
+        {
+            return Err("The release note file must stay inside the project.".to_string());
+        }
         Ok(())
     }
 
-    fn finish_step(&mut self) {
-        self.history.push((self.step, Outcome::Done));
-        self.step = match self.step {
-            ReleaseStep::Note => ReleaseStep::CommitAndTag,
-            ReleaseStep::CommitAndTag => ReleaseStep::Push,
-            ReleaseStep::Push => ReleaseStep::Push,
-        };
-        self.error = None;
-    }
-
-    fn skip(&mut self) {
-        self.history.push((self.step, Outcome::Skipped));
-        if self.step != ReleaseStep::Push {
-            self.step = match self.step {
-                ReleaseStep::Note => ReleaseStep::CommitAndTag,
-                _ => ReleaseStep::Push,
-            };
+    /// Makes the release in order: the note and its commit, the tag, the
+    /// push. An error stays on screen and the flow can be confirmed again.
+    fn confirm(&mut self) -> Result<(), String> {
+        if !self.tagged {
+            self.check_tag()?;
+            if release::tag_exists(&self.project, self.tag.trim()) {
+                return Err(format!("{} is already a tag.", self.tag.trim()));
+            }
         }
-        self.writer = None;
+        if self.note && !self.committed {
+            self.check_file()?;
+            let path = release::write_note(&self.project, &self.file, &self.section())?;
+            let message = format!("Release {}", self.tag.trim());
+            release::commit(&self.project, Some(&path), &message)?;
+            self.committed = true;
+        }
+        if !self.tagged {
+            release::tag(&self.project, self.tag.trim(), &self.section())?;
+            self.tagged = true;
+        }
+        if self.push && !self.pushed {
+            release::push(&self.project, true)?;
+            self.pushed = true;
+        }
         self.error = None;
+        Ok(())
     }
 
+    /// Whether the release is made, its push included when one was asked.
     fn finished(&self) -> bool {
-        self.step == ReleaseStep::Push
-            && matches!(self.history.last(), Some((ReleaseStep::Push, _)))
+        self.tagged && (self.pushed || !self.push)
     }
 
     /// Whether the agent is still grouping the note.
@@ -242,12 +197,12 @@ impl ReleaseFlow {
                         .auto_shrink([false, true])
                         .content_margin(theme::scroll_margin(0.0, 0.0)),
                     |ui| {
-                        self.history_ui(ui, p);
-                        match self.step {
-                            ReleaseStep::Note => self.note_ui(ui, p),
-                            ReleaseStep::CommitAndTag => self.commit_ui(ui, p),
-                            ReleaseStep::Push => self.push_ui(ui, p),
+                        self.version_ui(ui, p);
+                        self.note_choice_ui(ui, p);
+                        if self.note {
+                            self.note_ui(ui, p);
                         }
+                        self.push_ui(ui, p);
                         if let Some(error) = &self.error {
                             ui.label(RichText::new(error).font(theme::ui_small()).color(p.danger));
                         }
@@ -284,22 +239,8 @@ impl ReleaseFlow {
         ui.add_space(theme::SPACE_1);
     }
 
-    fn history_ui(&self, ui: &mut egui::Ui, p: &theme::Palette) {
-        for (step, outcome) in &self.history {
-            let color = match outcome {
-                Outcome::Done => p.status_done,
-                Outcome::Skipped => p.ink_faint,
-            };
-            ui.label(
-                RichText::new(format!("{}: {}", step.title(), outcome.word()))
-                    .font(theme::ui_small())
-                    .color(color),
-            );
-        }
-    }
-
-    fn note_ui(&mut self, ui: &mut egui::Ui, p: &theme::Palette) {
-        widgets::field_label(ui, "Tag");
+    fn version_ui(&mut self, ui: &mut egui::Ui, p: &theme::Palette) {
+        widgets::field_label(ui, "Version");
         let tag = egui::TextEdit::singleline(&mut self.tag)
             .hint_text(RichText::new("v0.4.0").color(p.ink_faint))
             .desired_width(f32::INFINITY)
@@ -312,7 +253,50 @@ impl ReleaseFlow {
                 .font(theme::ui_small())
                 .color(p.ink_muted),
         );
+    }
+
+    fn note_choice_ui(&mut self, ui: &mut egui::Ui, p: &theme::Palette) {
         widgets::field_label(ui, "Release note");
+        let picked = widgets::segmented(
+            ui,
+            self.note,
+            &[(true, "Update the release note"), (false, "Tag only")],
+        );
+        if let Some(note) = picked
+            && note != self.note
+        {
+            self.note = note;
+            self.error = None;
+            if !note {
+                self.writer = None;
+                self.note_error = None;
+            }
+        }
+        let help = match self.note {
+            true => "Commits the updated note before tagging the commit.",
+            false => "Tags the newest commit, with no release note and no new commit.",
+        };
+        ui.label(
+            RichText::new(help)
+                .font(theme::ui_small())
+                .color(p.ink_muted),
+        );
+    }
+
+    fn note_ui(&mut self, ui: &mut egui::Ui, p: &theme::Palette) {
+        widgets::field_label(ui, "Note file");
+        let file = egui::TextEdit::singleline(&mut self.file)
+            .hint_text(RichText::new(release::NOTE_FILE).color(p.ink_faint))
+            .desired_width(f32::INFINITY)
+            .margin(Vec2::new(theme::SPACE_3, 4.0));
+        if widgets::text_entry(ui, file).changed() {
+            self.error = None;
+        }
+        ui.label(
+            RichText::new("A path from the project root.")
+                .font(theme::ui_small())
+                .color(p.ink_muted),
+        );
         if self.writing() {
             self.grouping_ui(ui, p);
         } else if self.grouped {
@@ -337,14 +321,6 @@ impl ReleaseFlow {
                     .color(p.danger),
             );
         }
-        ui.label(
-            RichText::new(format!(
-                "Written at the top of {} in the project root.",
-                release::NOTE_FILE
-            ))
-            .font(theme::ui_small())
-            .color(p.ink_muted),
-        );
     }
 
     /// The Thinking mark and the time spent while the agent groups the note.
@@ -370,40 +346,33 @@ impl ReleaseFlow {
         });
     }
 
-    fn commit_ui(&self, ui: &mut egui::Ui, p: &theme::Palette) {
-        let note = match &self.note {
-            Some(path) => format!(
-                "Commit {}, then tag the commit.",
-                relative(&self.project, path)
-            ),
-            None => "No release note was written: the commit is empty, then the tag.".to_string(),
+    fn push_ui(&mut self, ui: &mut egui::Ui, p: &theme::Palette) {
+        widgets::field_label(ui, "After release");
+        if let Some(push) =
+            widgets::segmented(ui, self.push, &[(true, "Push"), (false, "Keep it local")])
+        {
+            self.push = push;
+            self.error = None;
+        }
+        let help = match self.push {
+            true => "Pushes the branch and its new tag to origin.",
+            false => "Leaves the tag on this machine.",
         };
         ui.label(
-            RichText::new(note)
+            RichText::new(help)
                 .font(theme::ui_small())
                 .color(p.ink_muted),
-        );
-        ui.label(
-            RichText::new(format!(
-                "tag -a {} -m \"{}\"",
-                self.tag.trim(),
-                self.tag.trim()
-            ))
-            .font(theme::meta())
-            .color(p.ink_faint),
         );
     }
 
-    fn push_ui(&self, ui: &mut egui::Ui, p: &theme::Palette) {
-        let what = match self.tagged {
-            true => "Push the branch and its new tag to origin.",
-            false => "No tag was made: push the branch to origin.",
-        };
-        ui.label(
-            RichText::new(what)
-                .font(theme::ui_small())
-                .color(p.ink_muted),
-        );
+    /// What the confirm button says, from the two selectors.
+    fn action(&self) -> &'static str {
+        match (self.note, self.push) {
+            (true, true) => "Update release note, version and push",
+            (true, false) => "Update release note and version",
+            (false, true) => "Set and push the release tag",
+            (false, false) => "Set the release tag",
+        }
     }
 
     fn footer(&self, ui: &mut egui::Ui) -> Option<ReleaseChoice> {
@@ -416,7 +385,7 @@ impl ReleaseFlow {
                         ui,
                         ButtonKind::Primary,
                         Some(Icon::Release),
-                        self.step.action(),
+                        self.action(),
                         Some("⌘↩"),
                     )
                 })
@@ -424,23 +393,12 @@ impl ReleaseFlow {
             if confirm.clicked() {
                 choice = Some(ReleaseChoice::Confirm);
             }
-            if widgets::button(ui, ButtonKind::Secondary, None, "Skip", None).clicked() {
-                choice = Some(ReleaseChoice::Skip);
-            }
             if widgets::button(ui, ButtonKind::Secondary, None, "Cancel", Some("esc")).clicked() {
                 choice = Some(ReleaseChoice::Cancel);
             }
         });
         choice
     }
-}
-
-/// `path` under `project`, for the dialog's text.
-fn relative(project: &Path, path: &Path) -> String {
-    path.strip_prefix(project)
-        .unwrap_or(path)
-        .display()
-        .to_string()
 }
 
 impl IboardApp {
@@ -460,25 +418,36 @@ impl IboardApp {
             })
             .map(|issue| issue.title.clone())
             .collect();
-        let writer = (self.prefs.agent.configured() && !titles.is_empty()).then(|| {
-            let prompt = release::note_prompt(&titles);
-            let note = project.join(release::NOTE_FILE);
-            let (writer, _) = agent::start_review(
-                &self.prefs.agent,
-                &prompt,
-                &note,
-                Some(project.as_path()),
-                ReviewMode::Quick,
-            );
-            writer
-        });
+        let mut choices = self.prefs.release.clone();
+        choices.file = release::note_file(&project, &choices.file);
+        let writer =
+            (choices.note && self.prefs.agent.configured() && !titles.is_empty()).then(|| {
+                let prompt = release::note_prompt(&titles);
+                let note = project.join(&choices.file);
+                let (writer, _) = agent::start_review(
+                    &self.prefs.agent,
+                    &prompt,
+                    &note,
+                    Some(project.as_path()),
+                    ReviewMode::Quick,
+                );
+                writer
+            });
         let since = last.map(|(tag, _)| tag);
-        let flow = ReleaseFlow::new(project, self.board.name(), tag, titles, since, writer);
+        let flow = ReleaseFlow::new(
+            project,
+            self.board.name(),
+            tag,
+            titles,
+            since,
+            choices,
+            writer,
+        );
         self.session.release = Some(flow);
     }
 
-    /// Confirms, skips or cancels the step on screen. A finished flow closes
-    /// and says so in the status bar.
+    /// Confirms or cancels the release on screen. A finished flow closes and
+    /// says so in the status bar.
     pub(super) fn release_choice(&mut self, choice: ReleaseChoice) {
         let Some(flow) = self.session.release.as_mut() else {
             return;
@@ -488,7 +457,6 @@ impl IboardApp {
                 self.session.release = None;
                 return;
             }
-            ReleaseChoice::Skip => flow.skip(),
             ReleaseChoice::Confirm => {
                 if flow.writing() {
                     return;
@@ -513,7 +481,7 @@ impl IboardApp {
         flow.adopt_note().then_some(job::POLL_EVERY)
     }
 
-    /// Done's release modal, while a step asks.
+    /// Done's release modal, while one is open.
     pub(super) fn release_window(&mut self, ui: &egui::Ui) {
         if let Some(after) = self.poll_release() {
             ui.ctx().request_repaint_after(after);
@@ -522,6 +490,15 @@ impl IboardApp {
             return;
         };
         let (choice, close) = flow.show(ui);
+        let choices = ReleaseChoices {
+            note: flow.note,
+            file: flow.file.clone(),
+            push: flow.push,
+        };
+        if choices != self.prefs.release {
+            self.prefs.release = choices;
+            self.remember_section(self.prefs.release.section());
+        }
         match (choice, close) {
             (Some(choice), _) => self.release_choice(choice),
             (None, true) => self.release_choice(ReleaseChoice::Cancel),

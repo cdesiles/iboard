@@ -417,8 +417,8 @@ enum HeaderAction {
     /// Done's "Archive all", which moves the issues it lists (after the
     /// filter) to `.archive/`.
     ArchiveAll,
-    /// Done's flag: write a release note from the issues it lists, commit and
-    /// tag it, then push.
+    /// Done's flag: one panel that picks the version, whether to write a
+    /// release note and whether to push, then makes the release.
     Release,
 }
 
