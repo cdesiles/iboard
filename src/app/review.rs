@@ -13,7 +13,9 @@ pub(super) use iboard::reviews::PastReview;
 mod model;
 mod panel;
 
-pub(super) use model::{CardReviews, ReviewPill, ReviewRun, ReviewRuns, ReviewState, RunKind};
+pub(super) use model::{
+    CardReviews, REVIEW_KEY, REVIEW_RUNNING, ReviewPill, ReviewRun, ReviewRuns, ReviewState,
+};
 #[cfg(test)]
 pub(super) use model::{card_pill, past_pill};
 #[cfg(test)]
@@ -56,7 +58,6 @@ impl IboardApp {
         runs.running.insert(
             target.path,
             ReviewRun {
-                kind: target.kind,
                 draft: target.draft,
                 mode: target.mode,
                 agent: self.prefs.agent.label(),
@@ -110,7 +111,6 @@ impl IboardApp {
             path: path.to_path_buf(),
             draft,
             mode,
-            kind: RunKind::Review,
         };
         self.review_with(target, |content, notes| {
             prompts::review_prompt(content, mode, notes)
@@ -127,7 +127,6 @@ impl IboardApp {
             path: review.path.clone(),
             draft,
             mode,
-            kind: RunKind::Review,
         };
         let follow_up = review.follow_up.as_deref().unwrap_or("").trim().to_string();
         if follow_up.is_empty() {
@@ -201,10 +200,7 @@ impl IboardApp {
                 let past = PastReview::new(&stored, &issue.markdown);
                 self.past_reviews.insert(path.clone(), past);
             }
-            self.session
-                .review_runs
-                .ready
-                .insert(path.clone(), run.kind);
+            self.session.review_runs.ready.insert(path.clone());
             // The issue being read shows its answer at once.
             let reading = self.session.reading() == Some(path.as_path())
                 && self.session.review.is_none()
@@ -259,5 +255,4 @@ pub(super) struct ReviewTarget {
     pub(super) path: PathBuf,
     pub(super) draft: bool,
     pub(super) mode: ReviewMode,
-    pub(super) kind: RunKind,
 }

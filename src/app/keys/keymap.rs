@@ -77,8 +77,6 @@ pub(super) enum Command {
     SwitchProject(bool),
     /// `⌘I` on the board: Project stats.
     Stats,
-    /// `⌘U`: Update with AI on the open issue or the selected card, or cancel it.
-    Update(PathBuf),
     /// `⌘↩` with a review's proposal shown: apply it.
     ApplyReview,
     /// `⌘K`: Ask AI on the open issue or the selected card, or stop the ask.
@@ -148,7 +146,6 @@ fn command_keys(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> {
             Key::Enter,
             (cx.proposal && !cx.typing).then_some(Command::ApplyReview),
         ),
-        (Key::U, target.cloned().map(Command::Update)),
         (Key::K, target.cloned().map(Command::Ask)),
         (
             Key::R,

@@ -152,7 +152,7 @@ impl IboardApp {
         vec![self.anywhere("Back"), Section::new("Diff", diff)]
     }
 
-    /// `⌘R`, `⌘⇧R`, `⌘U` and `⌘K` where the issue takes them.
+    /// `⌘R`, `⌘⇧R` and `⌘K` where the issue takes them.
     fn agent_section(&self) -> Option<Section> {
         let path = match &self.session.screen {
             Screen::Board => self.selected_issue(),
@@ -169,9 +169,6 @@ impl IboardApp {
         }
         if self.is_todo_issue(&path) {
             rows.push(("⌘⇧R", "Review"));
-        }
-        if self.updatable(&path) {
-            rows.push(("⌘U", "Update"));
         }
         rows.push(("⌘K", "Ask"));
         (!rows.is_empty()).then(|| Section::new("Agent", rows))

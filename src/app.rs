@@ -86,7 +86,6 @@ mod split;
 mod stats;
 mod status;
 mod traffic_lights;
-mod update;
 mod welcome;
 mod windows;
 

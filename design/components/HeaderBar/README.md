@@ -48,4 +48,4 @@ Leaving collapses the pill at once. With reduced motion it appears and goes in o
 
 ## Key hints
 
-Hidden at rest. While ⌘ is held: `esc` beside Board, `⌘F` in the filter, `⌘R` beside Refresh (when shown), `⌘N` beside New issue, `⌘R` (Todo) or `⌘U` (Ready, Doing) beside the AI face, `⌘S` beside Save.
+Hidden at rest. While ⌘ is held: `esc` beside Board, `⌘F` in the filter, `⌘R` beside Refresh (when shown), `⌘N` beside New issue, `⌘R` beside the AI face (Todo), `⌘S` beside Save.

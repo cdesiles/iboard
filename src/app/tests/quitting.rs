@@ -6,9 +6,9 @@ use super::*;
 /// `↩` quits. With nothing at work it quits at once.
 #[test]
 fn quitting_with_a_run_at_work_asks_first() {
-    let (dir, mut app) = project("quit-runs", &[("doing/migrate.md", "# Migrate\n")]);
+    let (dir, mut app) = project("quit-runs", &[("todo/migrate.md", "# Migrate\n")]);
     app.prefs.agent = fake_agent("sleep 30 # {prompt}");
-    app.start_update(&dir.join("issues/doing/migrate.md"));
+    app.start_review(&dir.join("issues/todo/migrate.md"), false);
     app.request_quit();
     assert!(matches!(app.session.confirm, Some(Confirm::Quit(1))));
     assert!(!app.closing);

@@ -154,8 +154,6 @@ impl IboardApp {
             vec![("↩", "open"), ("E", "edit"), ("⌘↩", "next column")]
         } else if done {
             vec![("↩", "open"), ("A", "archive")]
-        } else if self.updatable(&selected) {
-            vec![("↩", "open"), ("⌘U", "update"), ("Del", "delete")]
         } else {
             vec![("↩", "open"), ("Del", "delete")]
         }
@@ -189,14 +187,10 @@ impl IboardApp {
             .is_some_and(|column| column.accepts_new_issues());
         if todo && self.prefs.agent.configured() {
             vec![("E", "edit"), ("esc", "board"), ("⌘⇧R", "review")]
-        } else if !todo && self.can_edit(path) && self.updatable(path) {
-            vec![("E", "edit"), ("esc", "board"), ("⌘U", "update")]
         } else if self.can_edit(path) {
             vec![("E", "edit"), ("esc", "board"), ("Del", "delete")]
         } else if self.is_done_issue(path) {
             vec![("esc", "board")]
-        } else if self.updatable(path) {
-            vec![("⌘U", "update"), ("Del", "delete"), ("esc", "board")]
         } else {
             vec![("Del", "delete"), ("esc", "board")]
         }

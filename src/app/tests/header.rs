@@ -67,8 +67,8 @@ fn nothing_sits_under_the_traffic_lights() {
     assert!(harness.get_by_label("Board").rect().min.x >= lead);
 }
 
-/// Refine and Review are Todo's; Ready and Doing wear Update; Done has no AI
-/// split button, and its `…` comes right after Commits.
+/// Refine and Review are Todo's; Ready, Doing and Done have no AI split
+/// button, and Done's `…` comes right after Commits.
 #[test]
 fn the_ai_split_button_follows_the_column() {
     let (dir, app) = board("header-ai");
@@ -80,33 +80,27 @@ fn the_ai_split_button_follows_the_column() {
         "Review this issue",
         "Deep review",
         "Ask…",
-        "Update from the code",
     ] {
         assert!(has(&harness, row), "Todo offers {row}");
     }
+    assert!(!has(&harness, "Update from the code"));
     let mut app = harness.into_state().1;
 
     for column in ["ready", "doing"] {
-        let mut harness = opened(&dir, app, column);
-        harness.get_by_label("Update from the code");
+        let harness = opened(&dir, app, column);
+        assert!(!has(&harness, "AI actions"), "{column}");
         assert!(!has(&harness, "Refine"), "{column}");
-        click(&mut harness, "AI actions");
-        assert!(has(&harness, "Ask…"), "{column}");
-        assert!(!has(&harness, "Review this issue"), "{column}");
-        assert!(!has(&harness, "Refine with a challenger"), "{column}");
         app = harness.into_state().1;
     }
 
     let harness = opened(&dir, app, "done");
     assert!(!has(&harness, "AI actions"));
-    assert!(!has(&harness, "Update from the code"));
     let commits = harness.get_by_label("Commits").rect();
     let more = harness.get_by_label("More actions").rect();
     assert!(commits.max.x <= more.min.x);
 }
 
-/// Every AI menu ends with the tool and the model, which opens Settings, and
-/// a Todo row reaches Update, `⌘U`'s work.
+/// Every AI menu ends with the tool and the model, which opens Settings.
 #[test]
 fn the_ai_menu_ends_with_the_tool_and_opens_settings() {
     let (dir, mut app) = board("header-ai-settings");
@@ -116,22 +110,13 @@ fn the_ai_menu_ends_with_the_tool_and_opens_settings() {
     click(&mut harness, "AI actions");
     click(&mut harness, &label);
     assert!(harness.state().1.settings.is_some(), "Settings open");
-    harness.state_mut().1.settings = None;
-    harness.run_steps(2);
-
-    click(&mut harness, "AI actions");
-    click(&mut harness, "Update from the code");
-    assert!(
-        harness.state().1.review_is_running(&issue(&dir, "todo")),
-        "Update runs on a Todo issue too"
-    );
 }
 
-/// `Ask…` opens the dialog on a Ready issue.
+/// `Ask…` opens the dialog.
 #[test]
 fn ask_opens_from_the_ai_menu() {
     let (dir, app) = board("header-ask");
-    let mut harness = opened(&dir, app, "ready");
+    let mut harness = opened(&dir, app, "todo");
     click(&mut harness, "AI actions");
     click(&mut harness, "Ask…");
     assert!(harness.state().1.session.ask_draft.is_some());

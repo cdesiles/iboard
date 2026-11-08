@@ -13,12 +13,12 @@ The cheat sheet that appears with the key hints: while ⌘ alone has been held f
 
 - **Frame**: `surface`, 1px `line`, `radius-md`, `shadow-modal`, 24pt padding, at most 600pt wide. It sits in the middle of the window and rises 4pt as it fades in.
 - **Head**: "Keyboard shortcuts" in `ui-strong` `ink`, and on the right "Release ⌘ to hide" in `meta` `ink-faint`.
-- **Sections**, in `ui-label` uppercase `ink-muted`: **Anywhere** (`⌘N`, `⌘,`, `⌘[`, `esc`), the screen's own keys, the **Agent** keys (`⌘R`, `⌘⇧R`, `⌘U`, `⌘K`), and **Stats**' Agenda.
+- **Sections**, in `ui-label` uppercase `ink-muted`: **Anywhere** (`⌘N`, `⌘,`, `⌘[`, `esc`), the screen's own keys, the **Agent** keys (`⌘R`, `⌘⇧R`, `⌘K`), and **Stats**' Agenda.
 - **Rows**: a key cap (`Kbd`) then what it does in `meta` `ink-muted`, 4pt apart, 20pt tall. VoiceOver reads the pair together ("⌘N New issue").
 - **Two columns**, sections balanced between them by height. Narrower than 600pt, the card clamps to the window minus 48pt.
 
 ## Copy and truth
 
 - The action is the verb phrase the status bar uses ("open", "edit", "next column"), so the two never disagree.
-- A key appears only where it works: Refresh only with Auto off, Refine only on Todo and only in the Reader and Editor, Review only on Todo, Update only where an issue can be updated, Ask only with an agent configured, Archive only on Done, and the stats Agenda keys only under Stats.
+- A key appears only where it works: Refresh only with Auto off, Refine only on Todo and only in the Reader and Editor, Review only on Todo, Ask only with an agent configured, Archive only on Done, and the stats Agenda keys only under Stats.
 - Stats takes the keyboard for itself (`esc`, `⌘R` and the Agenda's arrows and ranges), so its card lists those alone.

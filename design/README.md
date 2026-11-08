@@ -128,7 +128,6 @@ Capturing an idea takes one shortcut and a sentence. iboard names the issue from
 | `⌘R` | Refresh from disk (Auto off) | Refine this issue (Todo; Refresh elsewhere, Auto off) | Refine draft (Todo) |
 | `⌘[` | | Back | Back (asks if unsaved) |
 | `⌘⇧R` | Review the selected issue (Todo) | Review this issue (Todo) | Review draft (Todo) |
-| `⌘U` | Update the selected issue from the code (Todo, Ready, Doing) | Update from the code (Todo, Ready, Doing) | Update from the code (Todo, Ready, Doing) |
 | `⌘K` | Ask… on the selected issue (Todo, Ready, Doing) | Ask… (Todo, Ready, Doing) | Ask… (Todo, Ready, Doing) |
 | `⌘I` | Stats (also in the ProjectMenu footer, and with that menu open) | | |
 | `⌘Z` | Undo the last delete (asking off) or split, until the next key or pointer press; moving a card between columns has no undo | | Undo typing |
@@ -182,7 +181,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Board | `⌘Z` after a delete | IssueRestored | Board; file and card back in place |
 | ConfirmDialog | Delete (`↩`) / Cancel (`esc`) | IssueDeleted / DeleteCancelled | Board |
 | Reader, Editor (Todo) | Review (`⌘⇧R`) | ReviewRequested → ReviewReceived | Review panel opens beside the page |
-| Reader, Editor | AI split chevron | AIMenuOpened | Todo: Refine, Review, Deep or Quick review, Ask, Update from the code. Ready, Doing: Update from the code, Ask. Done has no AI split button |
+| Reader, Editor | AI split chevron | AIMenuOpened | Todo: Refine, Review, Deep or Quick review, Ask. Ready, Doing and Done have no AI split button |
 | Reader | `…` | MoreMenuOpened | Menu: Refresh with Auto off; Agent log when the issue has one, Draft design with `idesign` on (not on Done) and Archive on Done. The Editor has no `…` |
 | Any | Hold ⌘ alone 0.5s / release or another key | KeyHintsShown / KeyHintsHidden | Same screen with key hints beside controls, in the filter, footers, popups and status bar (view state only, no file change) |
 | Any | Settings (`⌘,`, Review menu, new issue engine tag) | SettingsOpened | Settings dialog on the matching tab |
@@ -230,7 +229,7 @@ The Review button asks an agent (OpenCode, Claude, or any command the user
 configures in `~/.config/iboard/iboard.toml`, from `⌘,`) to challenge the open
 issue. The tool and model are chosen in the ReviewSettings dialog: a Tool select (OpenCode, Claude Code, Custom command) and a Model select whose first option, Default, uses the tool's first favorite model:
 
-- **Placement**: the AI split button in the Reader and Editor header, after the breadcrumb and before the `…` menu: `review` text, no edge, `review-soft` on hover. It sits after the Edit, Add label and Delete icons (see HeaderBar › Dynamic icon buttons). Its face follows the column: Refine (`⌘R`) on Todo, with Review (`⌘⇧R`), Deep or Quick review, Ask (`⌘K`) and Update from the code (`⌘U`) in its chevron; Update from the code on Ready and Doing, with Ask; none on Done. Reviewing refines an issue, so Refine and Review belong to Todo only. The current tool and model sit at the foot of the menu (`⌘,`). Ask and Update are named here so the menu is complete; their flows are specified separately. On the board, Review sits in the selected Todo card's hover strip.
+- **Placement**: the AI split button in the Reader and Editor header, after the breadcrumb and before the `…` menu: `review` text, no edge, `review-soft` on hover. It sits after the Edit, Add label and Delete icons (see HeaderBar › Dynamic icon buttons). Its face follows the column: Refine (`⌘R`) on Todo, with Review (`⌘⇧R`), Deep or Quick review and Ask (`⌘K`) in its chevron; none on Ready, Doing or Done. Reviewing refines an issue, so Refine and Review belong to Todo only. The current tool and model sit at the foot of the menu (`⌘,`). Ask is named here so the menu is complete; its flow is specified separately. On the board, Review sits in the selected Todo card's hover strip.
 - **What it returns**: three findings, always in this order, each with a verdict pill and one or two sentences.
   - *Relevance*: is this still worth doing, does it duplicate another issue?
   - *Size*: can one person or one agent finish it in one sitting, or should it split? It proposes the split.

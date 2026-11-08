@@ -12,4 +12,4 @@ A 24pt strip at the bottom of the window in `meta` (Inter 12/16), `ink-muted` on
 - Separators are `·` in `ink-faint`.
 - No total issue count on the board: the column heads already count.
 - Keep it boring and always present: no animation at rest, no colour but the save state.
-- **Key hints** are hidden at rest. While ⌘ is held, at most three shortcuts that apply to the screen slide in on the right (`↩ open  E edit  ⌘↩ next column` on the board; `E edit  esc board  ⌘⇧R review` in the Reader on Todo, `⌘U update` in its place on Ready and Doing; `⌘S save  esc leave` in the Editor). While the NewIssueModal is open they are its keys: `↩` add, `⌘↩` add & edit, `esc` close.
+- **Key hints** are hidden at rest. While ⌘ is held, at most three shortcuts that apply to the screen slide in on the right (`↩ open  E edit  ⌘↩ next column` on the board; `E edit  esc board  ⌘⇧R review` in the Reader on Todo; `⌘S save  esc leave` in the Editor). While the NewIssueModal is open they are its keys: `↩` add, `⌘↩` add & edit, `esc` close.

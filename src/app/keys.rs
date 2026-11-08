@@ -2,7 +2,6 @@
 //! keys. The [`keymap`] says what they ask for; this applies it.
 
 use super::reader::Stride;
-use super::review::RunKind;
 use super::{DetailMode, IboardApp, Key, LeaveChoice, PathBuf, Screen};
 
 mod keymap;
@@ -158,7 +157,7 @@ impl IboardApp {
             Command::Settings => self.open_settings(self.settings_tab),
             Command::Refine(path) => self.start_refinement(&path),
             Command::ToggleReview(path) => {
-                if self.session.review_runs.runs(&path, RunKind::Review) {
+                if self.review_is_running(&path) {
                     self.cancel_review_run(&path);
                 } else {
                     let draft = self.session.editing().is_some();
@@ -189,7 +188,6 @@ impl IboardApp {
             Command::Delete(path) => self.request_delete(path),
             Command::SwitchProject(forward) => self.switch_project(forward),
             Command::Stats => self.open_stats(),
-            Command::Update(path) => self.toggle_update(&path),
             Command::ApplyReview => self.apply_review_proposal(),
             Command::Ask(path) => self.toggle_ask(&path),
             Command::Scroll(stride, down) => self.reader.scroll = Some((stride, down)),

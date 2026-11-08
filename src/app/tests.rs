@@ -37,11 +37,10 @@ mod settings;
 mod splitting;
 mod stats;
 mod unsaved;
-mod update;
 mod welcome;
 mod workspace;
 use kit::{Kit, PASSING, fake_agent, kittest, kittest_with, landed, press, press_nth, project};
-use review::{land, open_issue_with_review, reviewing};
+use review::open_issue_with_review;
 
 /// A context with the design system installed, past the first frame so
 /// the bundled font families are loaded.

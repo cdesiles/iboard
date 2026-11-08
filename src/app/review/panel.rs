@@ -1,7 +1,7 @@
 //! The review panel beside the page: the findings and the actions on them,
 //! the split they led to, or the run under way.
 
-use super::model::verdict_look;
+use super::model::{REVIEW_KEY, REVIEW_READY, REVIEW_READY_HINT, verdict_look};
 use super::{
     Align, ButtonKind, CommonMarkCache, CommonMarkViewer, Duration, Frame, IboardApp, Layout, Path,
     ReviewMode, ReviewState, RichText, Split, Vec2, agent, file_name, side_panel, split, theme,
@@ -34,14 +34,14 @@ enum PanelAction {
 }
 
 impl IboardApp {
-    /// Review ready, or Update ready, beside its button once the answer on
-    /// `path` is in: a click shows it.
+    /// Review ready beside its button once the answer on `path` is in: a
+    /// click shows it.
     pub(in crate::app) fn ready_button(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let Some(kind) = self.session.review_runs.ready.get(path) else {
+        if !self.session.review_runs.is_ready(path) {
             return;
-        };
-        if widgets::button(ui, ButtonKind::Review, None, kind.ready(), None)
-            .on_hover_text(kind.ready_hint())
+        }
+        if widgets::button(ui, ButtonKind::Review, None, REVIEW_READY, None)
+            .on_hover_text(REVIEW_READY_HINT)
             .clicked()
         {
             self.show_past_review(path.to_path_buf());
@@ -100,14 +100,8 @@ impl IboardApp {
             });
             widgets::rule(ui);
             widgets::footer_bar(ui, theme::SPACE_4, |ui| {
-                widgets::button(
-                    ui,
-                    ButtonKind::Secondary,
-                    None,
-                    "Cancel",
-                    Some(run.kind.key()),
-                )
-                .clicked()
+                widgets::button(ui, ButtonKind::Secondary, None, "Cancel", Some(REVIEW_KEY))
+                    .clicked()
             })
             .inner
         });

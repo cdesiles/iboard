@@ -1,70 +1,17 @@
 //! What the review keeps between frames: the runs in the background, the
 //! panel's state, and the words and colours of a card's review pill.
 
+use std::collections::HashSet;
+
 use super::{Color32, HashMap, Job, Palette, PastReview, Path, PathBuf, ReviewMode, Split, agent};
 
-/// What a run asked the agent, for what the button and the card call it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::app) enum RunKind {
-    Review,
-    /// Update from the code.
-    Update,
-}
-
-/// What a run of one kind is called while it runs and once it is in.
-struct RunWords {
-    running: &'static str,
-    /// The key that cancels a run of this kind, and only this kind.
-    key: &'static str,
-    running_hint: &'static str,
-    ready: &'static str,
-    ready_hint: &'static str,
-}
-
-const REVIEW_WORDS: RunWords = RunWords {
-    running: "Reviewing…",
-    key: "⌘⇧R",
-    running_hint: "The review is running",
-    ready: "Review ready",
-    ready_hint: "The review is in: show it",
-};
-
-const UPDATE_WORDS: RunWords = RunWords {
-    running: "Updating…",
-    key: "⌘U",
-    running_hint: "The update is running",
-    ready: "Update ready",
-    ready_hint: "The agent's answer is in: show it",
-};
-
-impl RunKind {
-    fn words(self) -> &'static RunWords {
-        match self {
-            RunKind::Review => &REVIEW_WORDS,
-            RunKind::Update => &UPDATE_WORDS,
-        }
-    }
-
-    pub(in crate::app) fn running(self) -> &'static str {
-        self.words().running
-    }
-
-    pub(in crate::app) fn key(self) -> &'static str {
-        self.words().key
-    }
-
-    fn running_hint(self) -> &'static str {
-        self.words().running_hint
-    }
-
-    pub(super) fn ready(self) -> &'static str {
-        self.words().ready
-    }
-
-    pub(super) fn ready_hint(self) -> &'static str {
-        self.words().ready_hint
-    }
-}
+/// What a review is called while it runs and once it is in.
+pub(in crate::app) const REVIEW_RUNNING: &str = "Reviewing…";
+/// The key that cancels a review.
+pub(in crate::app) const REVIEW_KEY: &str = "⌘⇧R";
+const REVIEW_RUNNING_HINT: &str = "The review is running";
+pub(in crate::app) const REVIEW_READY: &str = "Review ready";
+pub(in crate::app) const REVIEW_READY_HINT: &str = "The review is in: show it";
 
 /// The review panel on one issue: its findings, or the split they led to.
 pub(in crate::app) struct ReviewState {
@@ -92,12 +39,11 @@ impl ReviewState {
 #[derive(Default)]
 pub(in crate::app) struct ReviewRuns {
     pub(in crate::app) running: HashMap<PathBuf, ReviewRun>,
-    pub(super) ready: HashMap<PathBuf, RunKind>,
+    pub(super) ready: HashSet<PathBuf>,
 }
 
 /// A review the agent is working on, and what to keep with its answer.
 pub(in crate::app) struct ReviewRun {
-    pub(in crate::app) kind: RunKind,
     pub(super) draft: bool,
     pub(super) mode: ReviewMode,
     pub(super) agent: String,
@@ -114,13 +60,8 @@ impl ReviewRuns {
         self.running.contains_key(path)
     }
 
-    /// Whether a run of `kind` works on `path`.
-    pub(in crate::app) fn runs(&self, path: &Path, kind: RunKind) -> bool {
-        self.running.get(path).is_some_and(|run| run.kind == kind)
-    }
-
     pub(in crate::app) fn is_ready(&self, path: &Path) -> bool {
-        self.ready.contains_key(path)
+        self.ready.contains(path)
     }
 
     pub(in crate::app) fn any_running(&self) -> bool {
@@ -143,8 +84,8 @@ impl ReviewRuns {
         if let Some(run) = self.running.remove(old) {
             self.running.insert(new.to_path_buf(), run);
         }
-        if let Some(kind) = self.ready.remove(old) {
-            self.ready.insert(new.to_path_buf(), kind);
+        if self.ready.remove(old) {
+            self.ready.insert(new.to_path_buf());
         }
     }
 }
@@ -196,10 +137,9 @@ fn verdict_hint(verdict: Option<agent::Verdict>, stale: bool) -> &'static str {
         Some(agent::Verdict::Challenge) => {
             hints!(": Challenge. Relevance, size or clarity is worth another look, nothing blocks")
         }
-        Some(agent::Verdict::Block) => hints!(
-            ": Block. Relevance, size or clarity is a real problem \
-             (for an update: done, or no longer worth doing)"
-        ),
+        Some(agent::Verdict::Block) => {
+            hints!(": Block. Relevance, size or clarity is a real problem")
+        }
         None => hints!(""),
     };
     hints[usize::from(stale)]
@@ -215,11 +155,11 @@ pub(in crate::app) struct CardReviews<'a> {
 
 impl CardReviews<'_> {
     pub(in crate::app) fn pill(&self, path: &Path, p: &Palette) -> Option<ReviewPill> {
-        if let Some(run) = self.runs.running.get(path) {
-            return Some((run.kind.running(), p.review, run.kind.running_hint()));
+        if self.runs.is_running(path) {
+            return Some((REVIEW_RUNNING, p.review, REVIEW_RUNNING_HINT));
         }
-        if let Some(kind) = self.runs.ready.get(path) {
-            return Some((kind.ready(), p.review, kind.ready_hint()));
+        if self.runs.is_ready(path) {
+            return Some((REVIEW_READY, p.review, REVIEW_READY_HINT));
         }
         self.past.get(path).map(|past| card_pill(past, p))
     }

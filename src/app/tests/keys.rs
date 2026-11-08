@@ -1,6 +1,6 @@
 //! Keys and guards agree with what the labels promise: `↩` and the scrolling
-//! keys on the Reader's page, `⌘⇧R` on a Todo card, `⌘U` and `⌘K` in the Editor,
-//! `⌘R` by Auto, and the double-click that only edits from the sheet itself.
+//! keys on the Reader's page, `⌘⇧R` on a Todo card, `⌘K` in the Editor, `⌘R`
+//! by Auto, and the double-click that only edits from the sheet itself.
 
 use egui::Modifiers;
 use egui::accesskit::Role;
@@ -9,7 +9,6 @@ use egui_kittest::kittest::Queryable;
 use super::kit::{Kit, fake_agent, press};
 use super::reading::{double_click, kit};
 use super::*;
-use crate::app::review::RunKind;
 
 const SLOW: &str = "sleep 30 # {prompt}";
 
@@ -154,7 +153,7 @@ fn command_shift_r_leaves_other_cards_and_a_dialog_alone() {
 }
 
 #[test]
-fn command_u_and_k_work_in_the_editor_as_its_menu_does() {
+fn command_k_works_in_the_editor_as_its_menu_does() {
     let (_dir, file, mut harness) = opened_in("editor-ai-keys", "ready");
     harness.state_mut().1.edit_at_line(&file, None);
     harness.run_steps(3);
@@ -162,10 +161,6 @@ fn command_u_and_k_work_in_the_editor_as_its_menu_does() {
         harness.ctx.memory(|m| m.focused().is_some()),
         "the text has the keyboard"
     );
-    hit(&mut harness, Modifiers::COMMAND, Key::U);
-    assert!(harness.state().1.review_is_running(&file));
-    hit(&mut harness, Modifiers::COMMAND, Key::U);
-    assert!(!harness.state().1.review_is_running(&file));
 
     hit(&mut harness, Modifiers::COMMAND, Key::K);
     assert!(harness.state().1.session.ask_draft.is_some());
@@ -396,12 +391,12 @@ fn the_board_keys_wait_behind_a_dialog() {
     let (_dir, file, mut harness) = board_with("board-dialog-keys", "todo");
     delete_dialog(&mut harness.state_mut().1, &file);
     harness.run_steps(2);
-    for key in [Key::I, Key::U, Key::N, Key::Comma] {
+    for key in [Key::I, Key::K, Key::N, Key::Comma] {
         hit(&mut harness, Modifiers::COMMAND, key);
     }
     let app = &harness.state().1;
     assert!(app.session.stats.is_none(), "⌘I");
-    assert!(!app.review_is_running(&file), "⌘U");
+    assert!(app.session.ask_draft.is_none(), "⌘K");
     assert!(!app.composer_open(), "⌘N");
     assert!(app.settings.is_none(), "⌘,");
 }
@@ -453,7 +448,6 @@ fn the_command_keys_wait_behind_the_refine_modal() {
     let command = Modifiers::COMMAND;
     for (modifiers, key) in [
         (command | Modifiers::SHIFT, Key::R),
-        (command, Key::U),
         (command, Key::N),
         (command, Key::OpenBracket),
     ] {
@@ -473,52 +467,20 @@ fn app_refine_stopped_or_hidden(harness: &Kit) -> bool {
     !app.refinement_shown() || app.session.refine.as_ref().is_some_and(|r| !r.is_running())
 }
 
-fn with_run(column: &str, kind: RunKind) -> (Scratch, PathBuf, Kit) {
-    let (dir, file, mut harness) = opened_in("run-keys", column);
+/// A Review that went on to Ready still shows on the issue, and a click
+/// cancels it.
+#[test]
+fn a_review_that_went_on_to_ready_still_cancels_from_its_face() {
+    let (dir, file, mut harness) = opened_in("review-on-ready", "todo");
     let app = &mut harness.state_mut().1;
-    app.start_update(&file);
-    app.session.review_runs.running.get_mut(&file).unwrap().kind = kind;
+    app.prefs.agent = fake_agent(SLOW);
+    app.start_review(&file, false);
+    let ready = dir.join("issues/ready");
+    let moved = app.move_issue(&file, &ready).expect("it moves");
+    app.open_issue(moved.clone());
     harness.run_steps(2);
-    (dir, file, harness)
-}
-
-/// A key acts on its own job: `⌘U` on Update, `⌘⇧R` on Review.
-#[test]
-fn command_u_and_command_shift_r_leave_each_others_run_alone() {
-    let (command, review) = (Modifiers::COMMAND, Modifiers::COMMAND | Modifiers::SHIFT);
-    for (modifiers, key, other, own) in [
-        (command, Key::U, RunKind::Review, RunKind::Update),
-        (review, Key::R, RunKind::Update, RunKind::Review),
-    ] {
-        let (_dir, file, mut harness) = with_run("todo", other);
-        hit(&mut harness, modifiers, key);
-        let running = &harness.state().1.session.review_runs.running;
-        assert_eq!(running.get(&file).map(|run| run.kind), Some(other));
-
-        let (_dir, file, mut harness) = with_run("todo", own);
-        hit(&mut harness, modifiers, key);
-        assert!(!harness.state().1.review_is_running(&file), "{own:?}");
-    }
-}
-
-/// The menu's Update row does what the key does while a Review runs: nothing.
-#[test]
-fn the_update_row_leaves_a_running_review_alone() {
-    let (_dir, file, mut harness) = with_run("todo", RunKind::Review);
-    press(&mut harness, "AI actions");
-    press(&mut harness, "Update from the code");
-    assert!(harness.state().1.review_is_running(&file));
-}
-
-/// A Review that went on to Ready shows on the Update face, which says it
-/// cancels it, and does: the key stays Update's.
-#[test]
-fn the_face_of_a_running_review_still_cancels_it_on_ready() {
-    let (_dir, file, mut harness) = with_run("ready", RunKind::Review);
-    hit(&mut harness, Modifiers::COMMAND, Key::U);
-    assert!(harness.state().1.review_is_running(&file));
     press(&mut harness, "Reviewing…");
-    assert!(!harness.state().1.review_is_running(&file));
+    assert!(!harness.state().1.review_is_running(&moved));
 }
 
 /// Two clicks a frame apart, as a hand makes them.

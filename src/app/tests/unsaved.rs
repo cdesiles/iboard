@@ -61,34 +61,6 @@ fn applying_over_an_unsaved_name_alone_applies() {
     assert_eq!(editor.name, "02-other.md");
 }
 
-/// An update reads the saved file, so it never holds what the Editor has
-/// since: `⌘U` from an Editor with unsaved text, then Apply, keeps that text.
-#[test]
-fn an_update_applied_keeps_the_editors_unsaved_text() {
-    let dir = scratch_dir("update-over-unsaved");
-    std::fs::create_dir_all(dir.join("issues/ready")).unwrap();
-    let file = dir.join("issues/ready/migrate.md");
-    std::fs::write(&file, "# Migrate\n").unwrap();
-    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.prefs.auto = false;
-    app.prefs.agent = fake_agent(
-        "printf 'RELEVANCE: Pass\\nok\\nSIZE: Pass\\nok\\nCLARITY: Pass\\nok\\nPROPOSAL:\\n# Migrate\\n\\nDone.' # {prompt}",
-    );
-    app.open_editor(&file);
-    let mine = "# Migrate\n\nMine.";
-    app.session.editor.as_mut().unwrap().text = mine.to_string();
-    app.toggle_update(&file);
-    assert!(until(|| {
-        app.poll_review();
-        app.session.review_runs.is_ready(&file)
-    }));
-    app.toggle_update(&file);
-    assert!(app.proposal_shown());
-    app.apply_review_proposal();
-    assert_eq!(app.session.editor.as_ref().unwrap().text, mine);
-    assert_eq!(app.session.editing(), Some(file.as_path()));
-}
-
 /// With Auto on, an applied proposal stays unsaved until the author saves it.
 #[test]
 fn an_applied_proposal_waits_for_the_author_with_auto_on() {

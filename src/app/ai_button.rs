@@ -1,8 +1,8 @@
 //! The header's AI split button: its face follows the column, its chevron
 //! opens what the agent can do on the issue. Refine and Review belong to Todo;
-//! Ready and Doing get Update from the code; Done has none.
+//! Done has none.
 
-use super::review::RunKind;
+use super::review::{REVIEW_KEY, REVIEW_RUNNING};
 use super::{ButtonKind, IboardApp, Icon, Path, ReviewMode, theme, widgets};
 use widgets::{ActionTone, MenuAction};
 
@@ -15,7 +15,6 @@ enum AiPick {
     Review,
     OtherScope,
     Ask,
-    Update,
     Settings,
 }
 
@@ -29,18 +28,13 @@ struct Face {
 }
 
 impl IboardApp {
-    /// The face while a run works on `path`: a click or its key cancels it.
+    /// The face while a review works on `path`: a click or its key cancels it.
     fn running_face(&self, path: &Path) -> Option<Face> {
-        let kind = self.session.review_runs.running.get(path)?.kind;
-        let hint = match kind {
-            RunKind::Review => "The review runs in the background: cancel it (⌘⇧R)",
-            RunKind::Update => "The agent is checking the project: cancel it  ⌘U",
-        };
-        Some(Face {
+        self.session.review_runs.is_running(path).then_some(Face {
             icon: Icon::Thinking,
-            label: kind.running(),
-            hint,
-            key: kind.key(),
+            label: REVIEW_RUNNING,
+            hint: "The review runs in the background: cancel it (⌘⇧R)",
+            key: REVIEW_KEY,
             enabled: true,
         })
     }
@@ -90,40 +84,16 @@ impl IboardApp {
         }
     }
 
-    /// The face on a Ready or Doing issue: Update from the code.
-    fn update_face(&self, path: &Path) -> Face {
-        if let Some(face) = self.running_face(path) {
-            return face;
-        }
-        let configured = self.prefs.agent.configured();
-        let hint = if configured {
-            "Ask the agent where this issue stands in the project, and to rewrite it as things are  ⌘U"
-        } else {
-            "No agent is set up yet: choose one in Settings › AI review (⌘, or the chevron)"
-        };
-        Face {
-            icon: Icon::Edit,
-            label: UPDATE,
-            hint,
-            key: "⌘U",
-            enabled: configured,
-        }
-    }
-
     /// The split button of the issue at `path`, then what its runs have to
-    /// say. A Done issue has no split button, only a run that was already
-    /// going when it got there.
+    /// say. An issue past Todo has no split button, only a run that was
+    /// already going when it got there.
     pub(super) fn ai_button(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let todo = self.is_todo_issue(path);
-        let face = if todo {
-            self.refine_face(path)
-        } else if self.updatable(path) {
-            self.update_face(path)
-        } else {
+        if !self.is_todo_issue(path) {
             self.stray_run_button(ui, path);
             self.run_buttons(ui, path);
             return;
-        };
+        }
+        let face = self.refine_face(path);
         let (main, caret) = widgets::split_button(
             ui,
             egui::Id::unique("ai-button"),
@@ -136,18 +106,12 @@ impl IboardApp {
         if main.on_hover_text(face.hint).clicked() {
             if self.review_is_running(path) {
                 self.cancel_review_run(path);
-            } else if !todo {
-                self.toggle_update(path);
             } else {
                 self.start_refinement(path);
             }
         }
         let name = "AI actions";
-        let caret = caret.on_hover_text(if todo {
-            "Refine, Review, Ask, Update"
-        } else {
-            "Update, Ask"
-        });
+        let caret = caret.on_hover_text("Refine, Review, Ask");
         caret.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
         let other_scope = match self.prefs.agent.scope {
             ReviewMode::Quick => ReviewMode::Deep,
@@ -159,7 +123,7 @@ impl IboardApp {
             "No agent set up yet".to_string()
         };
         let menu = AiMenu {
-            scope: todo.then_some(other_scope),
+            scope: other_scope,
             asking: self.asking(path),
             runs_with: &runs_with,
         };
@@ -187,9 +151,9 @@ impl IboardApp {
         self.asking_button(ui, path);
     }
 
-    /// Runs the AI menu's pick. While a review or an update runs, the rows
-    /// that would start another do nothing; with no agent set up, they open
-    /// Settings as the last row does.
+    /// Runs the AI menu's pick. While a review runs, the rows that would
+    /// start another do nothing; with no agent set up, they open Settings as
+    /// the last row does.
     fn apply_ai_pick(&mut self, path: &Path, picked: Option<AiPick>, other_scope: ReviewMode) {
         let Some(picked) = picked else {
             return;
@@ -205,18 +169,14 @@ impl IboardApp {
             AiPick::Refine => self.start_refinement(path),
             AiPick::Review => self.start_review(path, draft),
             AiPick::OtherScope => self.start_review_in(path, draft, other_scope),
-            AiPick::Update => self.toggle_update(path),
         }
     }
 }
 
-/// The label of the Update face and row.
-const UPDATE: &str = "Update from the code";
-
 /// What the AI menu lists.
 struct AiMenu<'a> {
-    /// On a Todo issue, the other review scope; elsewhere there is no review.
-    scope: Option<ReviewMode>,
+    /// The review scope the issue is not set to, as a one-off.
+    scope: ReviewMode,
     asking: bool,
     runs_with: &'a str,
 }
@@ -253,28 +213,21 @@ impl AiMenu<'_> {
             if self.asking { "Stop asking" } else { "Ask…" },
             "⌘K",
         );
-        let update = ai(Icon::Edit, UPDATE, "⌘U");
-        if let Some(scope) = self.scope {
-            let refine = ai(Icon::Narrow, "Refine with a challenger", "⌘R");
-            row(ui, AiPick::Refine, refine);
-            let review = ai(Icon::Review, "Review this issue", "⌘⇧R");
-            row(ui, AiPick::Review, review);
-            let (name, note) = match scope {
-                ReviewMode::Deep => ("Deep review", "reads the project"),
-                ReviewMode::Quick => ("Quick review", "ticket only"),
-            };
-            let other = MenuAction {
-                note,
-                ..ai(Icon::Review, name, "")
-            };
-            row(ui, AiPick::OtherScope, other);
-            widgets::menu_separator(ui);
-            row(ui, AiPick::Ask, ask);
-            row(ui, AiPick::Update, update);
-        } else {
-            row(ui, AiPick::Update, update);
-            row(ui, AiPick::Ask, ask);
-        }
+        let refine = ai(Icon::Narrow, "Refine with a challenger", "⌘R");
+        row(ui, AiPick::Refine, refine);
+        let review = ai(Icon::Review, "Review this issue", "⌘⇧R");
+        row(ui, AiPick::Review, review);
+        let (name, note) = match self.scope {
+            ReviewMode::Deep => ("Deep review", "reads the project"),
+            ReviewMode::Quick => ("Quick review", "ticket only"),
+        };
+        let other = MenuAction {
+            note,
+            ..ai(Icon::Review, name, "")
+        };
+        row(ui, AiPick::OtherScope, other);
+        widgets::menu_separator(ui);
+        row(ui, AiPick::Ask, ask);
         widgets::menu_separator(ui);
         row(
             ui,

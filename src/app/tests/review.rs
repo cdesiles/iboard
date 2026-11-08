@@ -474,13 +474,13 @@ fn the_review_runs_in_the_scope_settings_chose() {
 /// under the issue.
 #[test]
 fn a_long_agent_name_keeps_the_review_panel_in_its_place() {
-    let (dir, mut app) = project("review-head", &[("doing/migrate.md", "# Migrate\n")]);
-    let file = dir.join("issues/doing/migrate.md");
+    let (dir, mut app) = project("review-head", &[("todo/migrate.md", "# Migrate\n")]);
+    let file = dir.join("issues/todo/migrate.md");
     app.prefs.agent = AgentConfig {
         model: "a-model-whose-name-goes-on-and-on-well-past-the-panel".to_string(),
         ..fake_agent(PASSING)
     };
-    app.start_update(&file);
+    app.start_review(&file, false);
     landed(&mut app, &file);
     app.show_past_review(file);
     let mut harness = kittest(app);

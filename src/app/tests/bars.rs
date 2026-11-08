@@ -116,7 +116,6 @@ fn hints_shown(harness: &Board) -> usize {
         "next column",
         "delete",
         "archive",
-        "update",
         "review",
         "ask",
         "board",
@@ -131,7 +130,7 @@ fn hints_shown(harness: &Board) -> usize {
 }
 
 /// Wherever you are, the status bar lists three keys at most. `Del` shows only
-/// where it deletes, and gives way to `⌘U` in the Reader on Ready.
+/// where it deletes.
 #[test]
 fn the_status_bar_lists_three_keys_at_most() {
     let dir = scratch_dir("three-hints");
@@ -140,7 +139,7 @@ fn the_status_bar_lists_three_keys_at_most() {
 
     let cases = [
         ("todo/a.md", true),
-        ("ready/b.md", false),
+        ("ready/b.md", true),
         ("doing/c.md", true),
         ("done/d.md", false),
     ];
