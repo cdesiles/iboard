@@ -38,8 +38,8 @@ Edit (`E`), Add label (`L`) and Delete (`Del`) stay visible, so the actions peop
 
 | State | Looks like |
 | --- | --- |
-| Rest | The 14pt line icon in `ink-muted`, no edge, no fill. 2pt apart, 8pt before the AI split. |
-| Pointer on it, or keyboard focus | A pill grows to the **left** of the icon over `motion-hint` 120ms, holding the label in `ui-strong` 12pt: "Edit", "Add label", "Delete". Fill `surface-hover` and text `ink` (Delete: `danger` on `danger-soft`, the only red in the header). The pill is paint only and sits over the neighbours, which step aside while it shows: the icon never moves under the pointer and nothing reflows, and moving the pointer to the next icon switches labels at once. Focus adds the 2px ring round pill and icon. No tooltip, since the pill is the label. |
+| Rest | The 14pt line icon in `ink-muted`, no edge, no fill. 2pt apart, 8pt before what follows: the AI split on Todo, the `…` elsewhere. |
+| Pointer on it, or keyboard focus | The icon takes the fill and a pill grows to the **left of the whole row**, 2pt before its first icon, over `motion-hint` 120ms, holding the label in `ui-strong` 12pt: "Edit", "Add label", "Delete". Fill `surface-hover` and text `ink` (Delete: `danger` on `danger-soft`, the only red in the header). The pill is paint only and covers none of the icons, which all stay in sight: the icon never moves under the pointer and nothing reflows, and moving the pointer to the next icon switches labels at once. Focus adds the 2px ring round pill and icon. No tooltip, since the pill is the label. |
 | ⌘ held | The key slides out after each icon, in layout, in `meta-mono` (`E`, `L`, `Del`), like every other hint. |
 | ⌘ held, pointer on it | Label, icon and key. |
 
