@@ -15,20 +15,22 @@ pub fn display_path(path: &Path) -> String {
 
 /// How long ago `time` was: "just now", "5m ago", "3h ago", "2d ago".
 pub fn relative_time(time: SystemTime) -> String {
-    match time.elapsed() {
-        Ok(duration) => {
-            let secs = duration.as_secs();
-            if secs < 60 {
-                "just now".to_string()
-            } else if secs < 3600 {
-                format!("{}m ago", secs / 60)
-            } else if secs < 86_400 {
-                format!("{}h ago", secs / 3600)
-            } else {
-                format!("{}d ago", secs / 86_400)
-            }
-        }
-        Err(_) => "unknown".to_string(),
+    time.elapsed()
+        .map(relative_age)
+        .unwrap_or_else(|_| "unknown".to_string())
+}
+
+/// How long `age` is: "just now", "5m ago", "3h ago", "2d ago".
+pub fn relative_age(age: Duration) -> String {
+    let secs = age.as_secs();
+    if secs < 60 {
+        "just now".to_string()
+    } else if secs < 3600 {
+        format!("{}m ago", secs / 60)
+    } else if secs < 86_400 {
+        format!("{}h ago", secs / 3600)
+    } else {
+        format!("{}d ago", secs / 86_400)
     }
 }
 
@@ -100,6 +102,7 @@ mod tests {
         assert_eq!(ago(3 * 86_400), "3d ago");
         let later = SystemTime::now() + Duration::from_secs(60);
         assert_eq!(relative_time(later), "unknown");
+        assert_eq!(relative_age(Duration::from_secs(90)), "1m ago");
     }
 
     #[test]

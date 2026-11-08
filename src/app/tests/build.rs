@@ -242,32 +242,23 @@ fn the_agent_log_shows_what_the_build_did_on_the_issue() {
 }
 
 #[test]
-fn a_finished_build_lands_in_the_bell_and_clears_when_read() {
+fn a_finished_build_does_not_enter_the_bell() {
     let (_dir, mut app) = board("build-notify", "printf done # {prompt}");
     app.apply(vec![Intent::Build(vec![ready(&app)[0].clone()])]);
     assert!(until(|| {
         app.poll_build();
         app.session.build.is_none()
     }));
-    assert_eq!(app.notification_count(), 1);
-    let mut harness = kittest(app);
+    assert_eq!(app.notification_count(), 0);
+    let harness = kittest(app);
     assert!(
-        harness
-            .get_by_label("Notifications, 1 unread")
-            .rect()
-            .width()
-            > 0.0,
-        "the bell counts the finished build"
+        harness.get_by_label("Notifications").rect().width() > 0.0,
+        "the bell has no count once the build finished"
     );
-    harness.get_by_label("Notifications, 1 unread").click();
-    harness.run_steps(2);
-    harness.get_by_label("A: Build finished").click();
-    harness.run_steps(2);
     assert!(
-        matches!(harness.state().1.session.screen, Screen::Detail(_, _)),
-        "the notice opens its ticket"
+        harness.query_by_label("Notifications, 1 waiting").is_none(),
+        "only a waiting question counts"
     );
-    assert_eq!(harness.state().1.notification_count(), 0);
 }
 
 #[test]
@@ -702,7 +693,7 @@ fn a_build_question_shows_on_its_card_and_opens_in_the_ticket() {
     );
     assert!(
         harness
-            .get_by_label("Notifications, 1 unread")
+            .get_by_label("Notifications, 1 waiting")
             .rect()
             .width()
             > 0.0,
@@ -719,6 +710,85 @@ fn a_build_question_shows_on_its_card_and_opens_in_the_ticket() {
         "the question waits in the ticket"
     );
     assert!(harness.get_by_label("Approach").rect().width() > 0.0);
+}
+
+#[test]
+fn the_bell_lists_a_waiting_question_and_opens_its_ticket() {
+    let (_dir, mut app) = board("build-tray", "sleep 30 # {prompt}");
+    let path = ready(&app)[0].clone();
+    app.seed_question(path.clone(), form_question());
+    let mut harness = kittest(app);
+    harness.get_by_label("Notifications, 1 waiting").click();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .get_by_label("A: Which approach?, just now")
+            .rect()
+            .width()
+            > 0.0,
+        "the tray lists the ticket and its question"
+    );
+    harness.get_by_label("A: Which approach?, just now").click();
+    harness.run_steps(2);
+    assert!(
+        matches!(
+            &harness.state().1.session.screen,
+            Screen::Detail(open, _) if *open == path
+        ),
+        "the row opens its ticket"
+    );
+    assert_eq!(
+        harness.state().1.notification_count(),
+        1,
+        "looking at a question does not clear it"
+    );
+    assert!(
+        harness
+            .query_by_label("A: Which approach?, just now")
+            .is_none(),
+        "the tray closes on the row"
+    );
+}
+
+#[test]
+fn escape_closes_the_tray() {
+    let (_dir, mut app) = board("build-tray-escape", "sleep 30 # {prompt}");
+    let path = ready(&app)[0].clone();
+    app.seed_question(path, form_question());
+    let mut harness = kittest(app);
+    harness.get_by_label("Notifications, 1 waiting").click();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .get_by_label("A: Which approach?, just now")
+            .rect()
+            .width()
+            > 0.0
+    );
+    harness.key_press(Key::Escape);
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_by_label("A: Which approach?, just now")
+            .is_none(),
+        "esc closes the tray and leaves the board"
+    );
+}
+
+#[test]
+fn the_bell_says_when_no_question_waits() {
+    let (_dir, app) = board("bell-empty", "printf done # {prompt}");
+    let mut harness = kittest(app);
+    harness.get_by_label("Notifications").click();
+    harness.run_steps(2);
+    assert!(harness.get_by_label("No questions waiting.").rect().width() > 0.0);
+    assert!(
+        harness
+            .get_by_label("Questions from the AI builder land here.")
+            .rect()
+            .width()
+            > 0.0
+    );
 }
 
 #[test]

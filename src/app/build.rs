@@ -346,6 +346,17 @@ impl IboardApp {
     /// The questions the service waits on, each with the issue its build is
     /// on.
     pub(super) fn pending_questions(&self) -> Vec<(PathBuf, agent::service::Question)> {
+        self.pending_questions_since()
+            .into_iter()
+            .map(|(path, question, _)| (path, question))
+            .collect()
+    }
+
+    /// The questions the service waits on, with when the build took its issue:
+    /// the tray lists them oldest first.
+    pub(super) fn pending_questions_since(
+        &self,
+    ) -> Vec<(PathBuf, agent::service::Question, Instant)> {
         let Some(build) = self.session.build.as_ref() else {
             return Vec::new();
         };
@@ -362,7 +373,7 @@ impl IboardApp {
                 .into_iter()
                 .filter(|question| question.session == session)
             {
-                pending.push((run.issue.clone(), question));
+                pending.push((run.issue.clone(), question, run.started));
             }
         }
         pending
@@ -560,33 +571,17 @@ impl IboardApp {
         if finished.is_empty() && !build.runs.is_empty() {
             return Some(job::POLL_EVERY);
         }
-        let mut notices = Vec::new();
         for (path, result) in finished {
-            let name = file_name(&path);
-            match result {
-                Ok(_) => notices.push((
-                    iboard::notifications::Kind::BuildDone,
-                    path,
-                    "Build finished".to_string(),
-                )),
-                Err(err) => {
-                    notices.push((
-                        iboard::notifications::Kind::BuildFailed,
-                        path,
-                        err.lines().next().unwrap_or("Build failed").to_string(),
-                    ));
-                    build.queue.clear();
-                    build.failed = true;
-                    self.session.watch = None;
-                    self.error = Some(format!("Couldn't build {name}: {err}"));
-                }
+            if let Err(err) = result {
+                let name = file_name(&path);
+                build.queue.clear();
+                build.failed = true;
+                self.session.watch = None;
+                self.error = Some(format!("Couldn't build {name}: {err}"));
             }
         }
         self.refresh();
         self.fill_agents();
-        for (kind, path, detail) in notices {
-            self.notify(kind, &path, detail);
-        }
         self.session.build.is_some().then_some(job::POLL_EVERY)
     }
 

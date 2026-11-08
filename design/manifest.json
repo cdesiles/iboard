@@ -26,6 +26,7 @@
     "components/MarginComment/README.md",
     "components/Modal/README.md",
     "components/NewIssueModal/README.md",
+    "components/Notifications/README.md",
     "components/PaneDivider/README.md",
     "components/ProjectMenu/README.md",
     "components/QuickAdd/README.md",
@@ -167,6 +168,11 @@
       "group": "Board",
       "summary": "Where a new issue gets written: a large modal over the board, with your notes on the left and the issue file, exactly as it will be written, on the right.",
       "page": true
+    },
+    {
+      "name": "Notifications",
+      "group": "Navigation",
+      "summary": "The bell at the very right of every header, and the tray of AI-builder questions under it: a count badge, one row per blocked ticket, and an empty state."
     },
     {
       "name": "PaneDivider",

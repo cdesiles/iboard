@@ -65,8 +65,10 @@ impl IboardApp {
         });
     }
 
-    /// The header's buttons, laid out right to left.
+    /// The header's buttons, laid out right to left. The bell goes first so it
+    /// takes the rightmost slot.
     pub(super) fn header_controls(&mut self, ui: &mut egui::Ui) {
+        self.notifications_button(ui);
         if self.session.stats.is_some() {
             self.stats_controls(ui);
         } else {
@@ -76,7 +78,6 @@ impl IboardApp {
                 Screen::Diff => self.refresh_button(ui),
             }
         }
-        self.notifications_button(ui);
     }
 
     /// The board's toolbar: New issue, Refresh, Design and the filter.

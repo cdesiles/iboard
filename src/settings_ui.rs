@@ -91,8 +91,7 @@ pub struct Dialog {
     pub appearance: Appearance,
     /// Settings › General: reload from disk and save edits as you type.
     pub auto: bool,
-    /// Settings › General: what reaches the bell, and whether a Doing issue
-    /// opens its agent log.
+    /// Settings › General: whether a Doing issue opens its agent log.
     pub notifications: iboard::notifications::Prefs,
     /// Settings › Labels: every label and its `#rrggbb` colour. Empty: a
     /// preset's palette colour, or none.

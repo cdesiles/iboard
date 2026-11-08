@@ -1,6 +1,6 @@
 # GeneralSettings
 
-The **General** tab of the Settings dialog (`⌘,`), first of five: *General*, *AI review*, *AI build*, *Titles*, *Labels*. It holds the theme, Auto, what reaches the notification bell, then whether deleting asks first.
+The **General** tab of the Settings dialog (`⌘,`), first of five: *General*, *AI review*, *AI build*, *Titles*, *Labels*. It holds the theme, Auto, whether a Doing issue opens its agent log, then whether deleting asks first.
 
 ## Theme
 
@@ -18,9 +18,9 @@ The **General** tab of the Settings dialog (`⌘,`), first of five: *General*, *
 
 ## Notifications
 
-- Five checkboxes under the label "Notifications", all **checked by default**: "A build finishes", "A build fails", "A review is ready", "An ask finishes", and "Open the agent log on a Doing issue". The help line under them says questions always reach the bell, whichever boxes are on.
+- One checkbox under the label "Notifications", **checked by default**: "Open the agent log on a Doing issue". The help line under it says questions from a build always reach the bell, and wait in the ticket until answered.
 - **Questions are not optional.** A build waiting on its `question` tool or a tool approval always reaches the bell and waits in its ticket: a setting that silenced it would leave the build stuck with nothing to see.
-- **Auto log.** On (the default), opening a Doing issue that has an agent log opens it beside the reader in Conversation mode. Off, the log is opened from the card, the `…` menu or a notification only. A waiting question opens it whatever the setting says.
+- **Auto log.** On (the default), opening a Doing issue that has an agent log opens it beside the reader in Conversation mode. Off, the log is opened from the card, the `…` menu or the bell only. A waiting question opens it whatever the setting says.
 - Saved with the dialog's Save (`⌘↩`).
 
 ## Ask before deleting an issue
@@ -45,11 +45,7 @@ enabled = true   # false: no reload from disk, no saving as you type
 confirm = true   # false: delete without asking
 
 [notifications]
-build_done = true    # a build finishes
-build_failed = true  # a build fails
-review_ready = true  # a review is ready
-ask_done = true      # an ask finishes
-auto_log = true      # open the agent log on a Doing issue
+auto_log = true  # open the agent log on a Doing issue
 ```
 
 An unknown `theme` is reported in Settings and reads as light.

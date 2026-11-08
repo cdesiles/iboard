@@ -1,0 +1,131 @@
+<!-- @dsCard group="Navigation" height=700 subtitle="The bell at the far right of every header, and the tray of AI-builder questions under it: open, empty, dark" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Notifications</title>
+<style>
+.nt-page{padding-bottom:24px}
+.nt-stage{position:relative;min-height:392px}
+.nt-notes{width:calc(100% - 460px);max-width:600px;box-sizing:border-box;padding:24px;display:flex;flex-direction:column;gap:12px}
+.nt-lede{margin:0;font:var(--text-ui-body);color:var(--ink-muted);max-width:54ch}
+.nt-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font:var(--text-ui-small);color:var(--ink-muted)}
+.nt-list b{display:block;font:var(--text-ui-strong);color:var(--ink)}
+.nt-minis{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--space-6);padding:var(--space-5) var(--space-5) 0}
+.nt-mini{width:452px;max-width:100%;flex:none;box-sizing:border-box;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);overflow:visible}
+.nt-mini .ib-cap{display:block;padding:var(--space-3) var(--space-4) var(--space-2)}
+.nt-mini .ib-bar{flex:none;padding:0 var(--space-4);border-bottom:1px solid var(--line)}
+.nt-mini--empty{padding-bottom:126px}
+.nt-mini--dark{padding-bottom:156px;border-color:var(--line);background:var(--bg);color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="nt-page">
+
+  <div class="nt-stage">
+    <div class="ib-bar ib-bar--window">
+      <div class="ib-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+      <nav class="ib-crumbs" aria-label="Project"><a class="ib-project" title="Projects">iboard <svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a></nav>
+      <span class="ib-spacer"></span>
+      <span class="ib-field"><input class="ib-input" placeholder="Filter issues" aria-label="Filter issues"></span>
+      <button class="ib-btn ib-btn--primary"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New issue</button>
+      <span class="ib-bellwrap">
+        <button class="ib-bell" aria-label="Notifications, 3 waiting" aria-haspopup="dialog" aria-expanded="true" aria-controls="nt-tray">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>
+          <span class="ib-bell__count" aria-hidden="true">3</span>
+        </button>
+        <div class="ib-tray" id="nt-tray" role="dialog" aria-label="Notifications">
+          <div class="ib-tray__head"><span class="ib-tray__title">Notifications</span></div>
+          <p class="ib-tray__group" id="nt-group">Waiting on you</p>
+          <ul class="ib-tray__list" aria-labelledby="nt-group">
+            <li><button class="ib-tray__row">
+              <span class="ib-tray__icon" aria-hidden="true"><svg class="ib-ico" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+              <span class="ib-tray__body">
+                <span class="ib-tray__title">Monitor AI cost per ticket</span>
+                <span class="ib-tray__detail">Should the estimate cover only review runs, or every agent call including title inference?</span>
+              </span>
+              <span class="ib-tray__time">3h ago</span>
+            </button></li>
+            <li><button class="ib-tray__row is-hover">
+              <span class="ib-tray__icon" aria-hidden="true"><svg class="ib-ico" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+              <span class="ib-tray__body">
+                <span class="ib-tray__title">Agenda across supervised projects</span>
+                <span class="ib-tray__detail">Do folded empty weeks count as zero in the streak, or should the streak skip them?</span>
+              </span>
+              <span class="ib-tray__time">1h ago</span>
+            </button></li>
+            <li><button class="ib-tray__row">
+              <span class="ib-tray__icon" aria-hidden="true"><svg class="ib-ico" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+              <span class="ib-tray__body">
+                <span class="ib-tray__title">Display of agents log lacks new lines</span>
+                <span class="ib-tray__detail">Keep the raw ANSI colour codes in the log, or render them as colour?</span>
+              </span>
+              <span class="ib-tray__time">18m ago</span>
+            </button></li>
+          </ul>
+        </div>
+      </span>
+    </div>
+
+    <div class="nt-notes">
+      <span class="ib-cap">Light · open, three questions waiting</span>
+      <p class="nt-lede">The bell is the header's last control, at the very right. The tray hangs under it, aligned with the window's right gutter, and floats over the page.</p>
+      <ul class="nt-list">
+        <li><b>Badge</b>The count of unanswered questions, in the Doing colour. 1–9 read as the number; 10 or more read 9+. Nothing waiting, no badge.</li>
+        <li><b>Row</b>The ticket in ui-strong, the question in ui-small over two lines, and how long it has waited in meta. Oldest first, so the build blocked longest is on top.</li>
+        <li><b>Clears in the ticket</b>No read state and no bulk dismiss: a question leaves the tray when you answer it, not when you look at it.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="nt-minis">
+    <section class="nt-mini nt-mini--empty">
+      <span class="ib-cap">Empty · no badge, no group label</span>
+      <div class="ib-bar">
+        <nav class="ib-crumbs" aria-label="Project"><a class="ib-project">iboard</a></nav>
+        <span class="ib-spacer"></span>
+        <span class="ib-bellwrap">
+          <button class="ib-bell" aria-label="Notifications" aria-haspopup="dialog" aria-expanded="true" aria-controls="nt-tray-empty">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>
+          </button>
+          <div class="ib-tray" id="nt-tray-empty" role="dialog" aria-label="Notifications">
+            <div class="ib-tray__head"><span class="ib-tray__title">Notifications</span></div>
+            <div class="ib-tray__empty">
+              <span class="ib-tray__empty-title">No questions waiting.</span>
+              <span class="ib-tray__empty-text">Questions from the AI builder land here.</span>
+            </div>
+          </div>
+        </span>
+      </div>
+    </section>
+
+    <section class="nt-mini nt-mini--dark" data-theme="dark">
+      <span class="ib-cap">Dark · the same tokens</span>
+      <div class="ib-bar">
+        <nav class="ib-crumbs" aria-label="Project"><a class="ib-project">iboard</a></nav>
+        <span class="ib-spacer"></span>
+        <span class="ib-bellwrap">
+          <button class="ib-bell" aria-label="Notifications, 1 waiting" aria-haspopup="dialog" aria-expanded="true" aria-controls="nt-tray-dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>
+            <span class="ib-bell__count" aria-hidden="true">1</span>
+          </button>
+          <div class="ib-tray" id="nt-tray-dark" role="dialog" aria-label="Notifications">
+            <div class="ib-tray__head"><span class="ib-tray__title">Notifications</span></div>
+            <p class="ib-tray__group" id="nt-dark-group">Waiting on you</p>
+            <ul class="ib-tray__list" aria-labelledby="nt-dark-group">
+              <li><button class="ib-tray__row">
+                <span class="ib-tray__icon" aria-hidden="true"><svg class="ib-ico" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                <span class="ib-tray__body">
+                  <span class="ib-tray__title">Refactor design theme tokens</span>
+                  <span class="ib-tray__detail">Should the design panel keep the JSON preview when tokens are edited in place?</span>
+                </span>
+                <span class="ib-tray__time">6m ago</span>
+              </button></li>
+            </ul>
+          </div>
+        </span>
+      </div>
+    </section>
+  </div>
+
+</div>
+</body>
+</html>

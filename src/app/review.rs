@@ -205,11 +205,6 @@ impl IboardApp {
                 .review_runs
                 .ready
                 .insert(path.clone(), run.kind);
-            self.notify(
-                iboard::notifications::Kind::ReviewReady,
-                &path,
-                "Review ready".to_string(),
-            );
             // The issue being read shows its answer at once.
             let reading = self.session.reading() == Some(path.as_path())
                 && self.session.review.is_none()

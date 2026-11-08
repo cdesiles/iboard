@@ -35,14 +35,6 @@ impl Dialog {
         help(ui, auto_help, p.ink_muted);
         ui.add_space(theme::SPACE_5);
         field_label(ui, "Notifications");
-        widgets::checkbox(ui, &mut self.notifications.build_done, "A build finishes");
-        widgets::checkbox(ui, &mut self.notifications.build_failed, "A build fails");
-        widgets::checkbox(
-            ui,
-            &mut self.notifications.review_ready,
-            "A review is ready",
-        );
-        widgets::checkbox(ui, &mut self.notifications.ask_done, "An ask finishes");
         widgets::checkbox(
             ui,
             &mut self.notifications.auto_log,

@@ -107,9 +107,9 @@ fn the_build_agent_count_is_picked_and_saved_with_the_build_section() {
     );
 }
 
-/// Settings › General: a notification switch is saved with `[notifications]`.
+/// Settings › General: the agent log switch is saved with `[notifications]`.
 #[test]
-fn a_notification_switch_is_saved_with_the_notifications_section() {
+fn the_agent_log_switch_is_saved_with_the_notifications_section() {
     use egui_kittest::kittest::Queryable;
     let (dir, _file, mut app) = open_issue_with_review("notifications-save");
     let config = dir.join("iboard.toml");
@@ -117,7 +117,9 @@ fn a_notification_switch_is_saved_with_the_notifications_section() {
     app.open_settings(settings_ui::Tab::General);
     let mut harness = kittest(app);
 
-    harness.get_by_label("A build finishes").click();
+    harness
+        .get_by_label("Open the agent log on a Doing issue")
+        .click();
     harness.run_steps(2);
     assert!(
         !harness
@@ -127,15 +129,15 @@ fn a_notification_switch_is_saved_with_the_notifications_section() {
             .as_ref()
             .unwrap()
             .notifications
-            .build_done
+            .auto_log
     );
     harness.run_steps(12);
     harness.get_by_label("Save").click();
     harness.run_steps(2);
-    assert!(!harness.state().1.prefs.notifications.build_done);
+    assert!(!harness.state().1.prefs.notifications.auto_log);
     let text = std::fs::read_to_string(&config).unwrap();
     assert!(
-        text.contains("[notifications]") && text.contains("build_done = false"),
+        text.contains("[notifications]") && text.contains("auto_log = false"),
         "{text}"
     );
 }

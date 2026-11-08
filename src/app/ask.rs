@@ -139,11 +139,6 @@ impl IboardApp {
                         .unwrap_or("done");
                     let notice = format!("{}: {}", file_name(&path), line.trim());
                     self.session.notice = Some((notice, Instant::now()));
-                    self.notify(
-                        iboard::notifications::Kind::AskDone,
-                        &path,
-                        "Ask finished".to_string(),
-                    );
                 }
                 Err(err) => self.error = Some(job::failure("Ask on", &path, &err)),
             }

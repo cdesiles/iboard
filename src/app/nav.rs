@@ -38,7 +38,6 @@ impl IboardApp {
         if wants_log && !self.agent_log_open(&path) {
             self.toggle_agent_log(&path);
         }
-        self.mark_notifications_read(&path);
     }
 
     /// Leaves the current screen for `to`. From the editor, unsaved edits are
