@@ -247,11 +247,11 @@ The build's transcript sits beside its issue in the side panel: the head says wh
 
 ### Build questions
 
-A build that needs a person stops on a **Question** card at the top of its agent panel, inside the ticket, above the conversation. The bell counts it and the Doing card pins it, but neither is where it is answered; the card is, and answering it resumes the build. See `components/Question`.
+A build that needs a person stops on a **Question** card at the top of its agent panel, inside the ticket, above the timeline. The bell counts it and the Doing card pins it, but neither is where it is answered; the card is, and answering it resumes the build. See `components/Question`.
 
 - **The card is the agent talking**, so its bubble, "The agent asks" label and filled Send are `review`. The Doing orange stays on the card pin and the bell badge, where it means the ticket is blocked, not who is speaking.
 - **One card for one field or six.** The agent's title is the heading; a field label repeats it only when it adds something. Options are 36pt rows with their description always visible and a number key to pick; an open answer is Inter 13, never mono. The card is bounded to 55% of the panel, its fields scroll and Send stays pinned. A required field left empty says so under itself and takes focus; Send is never a disabled button with no explanation.
-- **While it waits, the composer goes.** The box under the conversation is one quiet line, "Answer the question above to continue.", so the panel has one filled Send, not two. Closing the panel is allowed; the pin and the bell reopen the ticket on the question.
+- **While it waits, the composer goes.** The box under the timeline is one quiet line, "Answer the question above to continue.", so the panel has one filled Send, not two. Closing the panel is allowed; the pin and the bell reopen the ticket on the question.
 - **A tool permission is a fallback, not a step.** The builder's scope is its project folder. The same card shows the exact resource in mono, says "Inside `<project>`", and "Always allow" names the project. When a resource is outside it, one `danger-soft` band says the builder should stay in its own folder, and Always allow is not offered. There is no global allow.
 
 ## Using the tokens from Rust

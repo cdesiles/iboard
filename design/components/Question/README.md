@@ -1,15 +1,15 @@
 # Question
 
-The card a build stops on when its agent needs a person. It sits at the top of the agent panel, inside the ticket, above the conversation. Answering it resumes the build; there is nothing to dismiss.
+The card a build stops on when its agent needs a person. It sits at the top of the agent panel, inside the ticket, above the timeline. Answering it resumes the build; there is nothing to dismiss.
 
 It replaces the first in-ticket card, where a `surface-sunken` block with an edge derived from `status-doing` held 18pt chips, a mono field for prose, two filled Send buttons and no scroll: a long form ran past the panel, an empty "Other…" looked chosen, and the agent's own question title disappeared when the form had one field.
 
 ## Placement
 
-- First block in the agent panel body, above the Conversation/Log switch and the conversation's scroll area. The panel head stays: "Agent log of `<file>`" with the agent and how long it has run.
+- First block in the agent panel body, above the Timeline/Raw switch and the timeline's scroll area. The panel head stays: "Agent log of `<file>`" with the state, now "waiting on you"; the run heading below keeps the agent and start time.
 - The question never lives in a modal, a tray or a toast. The bell and the card's pin only take you to this spot in the ticket.
 - The card is bounded: at most 55% of the panel body. Its fields scroll inside; the foot with Send is pinned. The conversation keeps its own scroll below.
-- While a question waits, the composer under the conversation is not drawn. A single quiet line takes its place: "Answer the question above to continue." No second textarea and no second Send.
+- While a question waits, the composer under the timeline is not drawn. A single quiet line takes its place: "Answer the question above to continue." No second textarea and no second Send.
 - Closing the panel is allowed, and the X never refuses with a notice. The question stays in the ticket; the card pin and the bell both reopen the ticket on it.
 
 ## Anatomy

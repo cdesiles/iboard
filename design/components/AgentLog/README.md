@@ -135,7 +135,8 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 
 ## In egui
 
-- `build_log::parse` already returns `Run`, `Step`, `Outcome`, `Author` and `Message`. Add `Entry::Edit(&str)` when a step is an edit, so the view never matches "Editing " by hand, and a `segments()` fold in the same module: consecutive steps (edits excluded) become an `Activity { steps, counts }`, a lone step stays a `Step`, and everything else passes through. Give it tests: a burst folds, a lone step does not, edits leave the burst, counts pluralise, runs split the list.
+- `build_log::parse` already returns `Run`, `Step`, `Outcome`, `Author` and `Message`. The fold needs one step per line; the lost newlines of issue 002 are the parser's bug and a prerequisite, not something this view can repair.
+- Add `Entry::Edit(&str)` when a step is an edit, so the view never matches "Editing " by hand, and a `segments()` fold in the same module: consecutive steps (edits excluded) become an `Activity { steps, counts }`, a lone step stays a `Step`, and everything else passes through. Give it tests: a burst folds, a lone step does not, edits leave the burst, counts pluralise, runs split the list.
 - `agent_log_panel` maps the fold to the new widgets. The `LogMode` enum becomes `Timeline` and `Raw`. The Now strip is the last unfurled step of the live run; it is not drawn when `building_since` is `None`. The head detail is derived from `running` and `question_for`.
 - The Changes block needs the run's file list and diffstat from the diff service. Until it can read the working tree, show the paths with no stats and no row action; do not fake the numbers.
 - Activity and Changes are `CollapsingState` rows whose 28pt summary reports `Role::Button` and its full summary text through `widget_info`, including ", collapsed". File rows are 26pt buttons named "Open the diff of `<path>`, +86 −24".
