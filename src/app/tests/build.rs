@@ -764,3 +764,56 @@ fn a_deleted_queued_issue_is_not_counted_as_built() {
     let (notice, _) = app.session.notice.clone().unwrap();
     assert_eq!(notice, "Built 1 issue");
 }
+
+/// Play stays in Ready's header with no issue in it: it turns the auto-build
+/// on and waits for one.
+#[test]
+fn play_is_offered_in_an_empty_ready() {
+    let (_dir, mut app) = board("build-empty-play", "true # {prompt}");
+    for issue in ready(&app) {
+        std::fs::remove_file(issue).unwrap();
+    }
+    app.refresh();
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let head = ctx
+        .read_response(egui::Id::unique(("column_drop", 1)))
+        .unwrap()
+        .rect;
+    let over = head.center_top() + egui::vec2(0.0, theme::CONTROL_H / 2.0);
+    draw(&ctx, &mut app, vec![moved(over)]);
+    let play = ctx
+        .read_response(egui::Id::unique(("build", 1)))
+        .expect("Ready offers Play with no issue in it")
+        .rect
+        .center();
+    draw(&ctx, &mut app, vec![moved(play)]);
+    draw(&ctx, &mut app, vec![moved(play), button(play, true)]);
+    draw(&ctx, &mut app, vec![button(play, false)]);
+    assert!(app.watching_ready(), "Play turns the auto-build on");
+    assert!(app.session.build.is_none(), "nothing to build yet");
+}
+
+/// Ready's empty well says what a drop does while the auto-build waits for a
+/// ticket, and stays quiet otherwise.
+#[test]
+fn an_empty_ready_says_what_the_auto_build_does_with_a_drop() {
+    let (_dir, mut app) = project(
+        "build-empty-well",
+        &[("todo/", ""), ("ready/", ""), ("doing/", ""), ("done/", "")],
+    );
+    app.prefs.build_agent = fake_agent("true # {prompt}");
+    let hint = "Bring a ticket here to process it with AI auto-build";
+    let mut harness = kittest(app);
+    assert!(
+        harness.query_by_label(hint).is_none(),
+        "off: nothing to say"
+    );
+    harness.state_mut().1.apply(vec![Intent::Build(Vec::new())]);
+    harness.run_steps(2);
+    assert!(
+        harness.state().1.watching_ready(),
+        "Play waits for a ticket"
+    );
+    assert!(harness.get_by_label(hint).rect().width() > 0.0);
+}

@@ -62,7 +62,13 @@ pub(super) fn highlight_drop(ui: &egui::Ui, drop_rect: Rect) {
 
 /// The dashed well of an empty column, with no fill. It is also where a
 /// dragged card lands: while one is `over` it, solid `accent` on `accent-soft`.
-pub(super) fn empty_well(ui: &mut egui::Ui, message: &str, width: f32, over: bool) {
+pub(super) fn empty_well(
+    ui: &mut egui::Ui,
+    message: &str,
+    hint: Option<&str>,
+    width: f32,
+    over: bool,
+) {
     let p = theme::palette(ui);
     let corner = CornerRadius::same(theme::RADIUS_MD);
     let response = Frame::new()
@@ -81,6 +87,13 @@ pub(super) fn empty_well(ui: &mut egui::Ui, message: &str, width: f32, over: boo
                         .font(theme::ui_small())
                         .color(p.ink_faint),
                 );
+                if let Some(hint) = hint {
+                    ui.label(
+                        RichText::new(hint)
+                            .font(theme::ui_small())
+                            .color(p.ink_faint),
+                    );
+                }
             });
         })
         .response;

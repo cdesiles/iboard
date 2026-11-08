@@ -443,7 +443,7 @@ fn header_actions(view: &ColumnView) -> Vec<HeaderAction> {
     if discovery::is_ready_column(&column.dir) {
         if view.builds.active() {
             actions.push(HeaderAction::StopBuild);
-        } else if view.visible.iter().any(|issue| build::buildable(issue)) {
+        } else {
             actions.push(HeaderAction::Build);
         }
     }
@@ -472,8 +472,9 @@ fn header_action(
     match action {
         HeaderAction::NewIssue => new_issue_button(ui, view, title),
         HeaderAction::Build => {
-            let hover = "Build with AI, top to bottom";
-            action_button(ui, view, Icon::Play, "build", "Build with AI", hover, title)
+            let hover = "Enable AI auto-build: build Ready's issues top to bottom, and the ones that arrive";
+            let short = "Enable AI auto-build";
+            action_button(ui, view, Icon::Play, "build", short, hover, title)
                 .then(|| Intent::Build(view.visible_paths()))
         }
         HeaderAction::StopBuild => {
@@ -660,7 +661,9 @@ fn column_cards(
         } else {
             view.filter.empty_message()
         };
-        drop::empty_well(ui, &message, view.width, over);
+        let hint = (view.builds.watching && discovery::is_ready_column(&column.dir))
+            .then_some("Bring a ticket here to process it with AI auto-build");
+        drop::empty_well(ui, &message, hint, view.width, over);
     }
     let mut cards = Vec::new();
     for issue in &view.visible {
