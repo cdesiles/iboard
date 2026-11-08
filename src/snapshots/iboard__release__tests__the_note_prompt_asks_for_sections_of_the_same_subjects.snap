@@ -1,0 +1,9 @@
+---
+source: src/release.rs
+expression: note_prompt(&subjects)
+---
+You write the release note of a software project from the subjects of the commits it ships. Group them under a few `### ` headings that fit what they do, such as Added, Changed, Fixed or Removed. Keep every subject's words exactly as written, list every subject once, and invent nothing: the subjects below are all there is, so read no file. Answer with nothing but the sections, each a `### Heading` line then its `- Subject` lines, with no introduction or closing.
+
+---
+- Add a flag
+- Fix the box

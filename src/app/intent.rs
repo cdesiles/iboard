@@ -38,8 +38,8 @@ pub(super) enum Intent {
     Agents(usize),
     /// "Archive all", in Done's hovered header.
     ArchiveAll(Vec<PathBuf>),
-    /// "Release", in Done's hovered header: the issues its note lists.
-    Release(Vec<PathBuf>),
+    /// "Release", in Done's hovered header: the commits since the last tag.
+    Release,
     /// Open or close the LabelPicker on the issue.
     ToggleLabels(PathBuf),
     /// A label was clicked: filter the board by it.
@@ -107,7 +107,7 @@ impl IboardApp {
                 Intent::Diff(path) => self.show_issue_diff(&path),
                 Intent::AgentLog(path) => self.show_agent_log(path),
                 Intent::ArchiveAll(paths) => self.archive_all(&paths),
-                Intent::Release(paths) => self.open_release(&paths),
+                Intent::Release => self.open_release(),
                 Intent::Build(paths) => self.start_build(paths),
                 Intent::StopBuild => self.stop_build(),
                 Intent::StopAgent(path) => self.stop_agent(&path),

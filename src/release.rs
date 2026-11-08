@@ -208,31 +208,49 @@ pub fn tag_exists(project: &Path, tag: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// The Done issues as the note's list, one `- Title` per issue.
-pub fn note_body(titles: &[String]) -> String {
+/// The subjects of the commits since the newest tag matching `pattern`, oldest
+/// first: the list the release note is written from. An untagged repository
+/// lists every commit.
+pub fn commit_subjects(dir: &Path, pattern: &str) -> Vec<String> {
+    let range = match newest_tag(dir, pattern) {
+        Some(tag) => format!("{tag}..HEAD"),
+        None => "HEAD".to_string(),
+    };
+    let Ok(out) = git::output(dir, &["log", "--reverse", "--format=%s", &range]) else {
+        return Vec::new();
+    };
+    out.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The commit subjects as the note's list, one `- Subject` per commit.
+pub fn note_body(subjects: &[String]) -> String {
     let mut body = String::new();
-    for title in titles {
+    for subject in subjects {
         body.push_str("- ");
-        body.push_str(title.trim());
+        body.push_str(subject.trim());
         body.push('\n');
     }
     body
 }
 
-/// The instruction for the agent that groups the note: the release's issue
-/// titles into sections, rather than handing back the raw list.
-pub fn note_prompt(titles: &[String]) -> String {
+/// The instruction for the agent that groups the note: the release's commit
+/// subjects into sections, rather than handing back the raw list.
+pub fn note_prompt(subjects: &[String]) -> String {
     format!(
-        "You write the release note of a software project from the titles of the issues it \
-         closes. Group them under a few `### ` headings that fit what they do, such as Added, \
-         Changed, Fixed or Removed. Keep every title's words exactly as written, list every \
-         title once, and invent nothing: the titles below are all there is, so read no file. \
-         Answer with nothing but the sections, each a `### Heading` line then its `- Title` \
+        "You write the release note of a software project from the subjects of the commits it \
+         ships. Group them under a few `### ` headings that fit what they do, such as Added, \
+         Changed, Fixed or Removed. Keep every subject's words exactly as written, list every \
+         subject once, and invent nothing: the subjects below are all there is, so read no file. \
+         Answer with nothing but the sections, each a `### Heading` line then its `- Subject` \
          lines, with no introduction or closing.\n\
          \n\
          ---\n\
          {}",
-        note_body(titles)
+        note_body(subjects)
     )
 }
 
@@ -374,9 +392,36 @@ mod tests {
     }
 
     #[test]
-    fn a_note_lists_the_done_issues_under_a_dated_heading() {
-        let titles = ["Add a flag".to_string(), "Fix the box".to_string()];
-        let body = note_body(&titles);
+    fn the_commit_subjects_are_the_ones_since_the_newest_tag_oldest_first() {
+        let dir = repo();
+        let dir = dir.path();
+        git(dir, &["tag", "v0.1.0"]);
+        for subject in ["Add a flag", "Fix the box"] {
+            git(dir, &["commit", "-q", "--allow-empty", "-m", subject]);
+        }
+        assert_eq!(
+            commit_subjects(dir, "v*"),
+            ["Add a flag", "Fix the box"],
+            "the tag's own commit stays out"
+        );
+        assert_eq!(
+            commit_subjects(dir, "rel-*"),
+            ["first", "Add a flag", "Fix the box"]
+        );
+    }
+
+    #[test]
+    fn an_untagged_repository_lists_every_commit() {
+        let dir = repo();
+        let dir = dir.path();
+        git(dir, &["commit", "-q", "--allow-empty", "-m", "second"]);
+        assert_eq!(commit_subjects(dir, "v*"), ["first", "second"]);
+    }
+
+    #[test]
+    fn a_note_lists_the_commits_under_a_dated_heading() {
+        let subjects = ["Add a flag".to_string(), "Fix the box".to_string()];
+        let body = note_body(&subjects);
         let note = section("v1.2.0", "7 Nov 2026", &body);
         assert_eq!(
             note,
@@ -389,9 +434,9 @@ mod tests {
     }
 
     #[test]
-    fn the_note_prompt_asks_for_sections_of_the_same_titles() {
-        let titles = ["Add a flag".to_string(), "Fix the box".to_string()];
-        insta::assert_snapshot!(note_prompt(&titles));
+    fn the_note_prompt_asks_for_sections_of_the_same_subjects() {
+        let subjects = ["Add a flag".to_string(), "Fix the box".to_string()];
+        insta::assert_snapshot!(note_prompt(&subjects));
     }
 
     #[test]

@@ -6,7 +6,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 
 use super::super::release::ReleaseChoice;
 use super::*;
-use crate::scratch_git::{git, git_env};
+use crate::scratch_git::git;
 
 /// A git project with one Done issue and a bare `origin`, so push runs
 /// somewhere real.
@@ -23,6 +23,7 @@ fn release_project(tag: &str) -> (Scratch, Scratch, IboardApp) {
     if !tag.is_empty() {
         git(&dir, &["tag", tag]);
     }
+    git(&dir, &["commit", "-q", "--allow-empty", "-m", "Add a flag"]);
     let remote = scratch_dir("release-remote");
     git(&remote, &["init", "-q", "--bare"]);
     git(&dir, &["remote", "add", "origin", remote.to_str().unwrap()]);
@@ -34,12 +35,14 @@ fn release_project(tag: &str) -> (Scratch, Scratch, IboardApp) {
 #[test]
 fn releasing_writes_a_note_commits_tags_and_pushes() {
     let (dir, remote, mut app) = release_project("v0.1.0");
-    let file = dir.join("issues/done/a.md");
 
-    app.open_release(&[file]);
+    app.open_release();
     let flow = app.session.release.as_mut().unwrap();
     assert_eq!(flow.tag, "v0.1.1", "the next patch after the newest tag");
-    assert_eq!(flow.body, "- Alpha\n", "the Done issues become the note");
+    assert_eq!(
+        flow.body, "- Add a flag\n",
+        "the commits since the tag become the note"
+    );
     flow.body = "- Alpha\n- Beta\n".to_string();
 
     app.release_choice(ReleaseChoice::Confirm);
@@ -67,9 +70,7 @@ fn releasing_writes_a_note_commits_tags_and_pushes() {
 #[test]
 fn tag_only_leaves_the_note_alone_and_keep_local_leaves_the_push_out() {
     let (dir, remote, mut app) = release_project("v0.1.0");
-    let file = dir.join("issues/done/a.md");
-
-    app.open_release(&[file]);
+    app.open_release();
     let flow = app.session.release.as_mut().unwrap();
     flow.note = false;
     flow.push = false;
@@ -78,7 +79,7 @@ fn tag_only_leaves_the_note_alone_and_keep_local_leaves_the_push_out() {
     assert!(!dir.join("CHANGELOG.md").exists(), "no note was written");
     assert_eq!(
         git(&dir, &["log", "-1", "--format=%s"]),
-        "first",
+        "Add a flag",
         "tag only adds no commit"
     );
     assert_eq!(git(&dir, &["tag", "--list", "v0.1.1"]), "v0.1.1");
@@ -93,9 +94,7 @@ fn tag_only_leaves_the_note_alone_and_keep_local_leaves_the_push_out() {
 #[test]
 fn a_written_note_goes_to_the_file_the_user_chose() {
     let (dir, _remote, mut app) = release_project("v0.1.0");
-    let file = dir.join("issues/done/a.md");
-
-    app.open_release(&[file]);
+    app.open_release();
     app.session.release.as_mut().unwrap().file = "release-notes.md".to_string();
     app.release_choice(ReleaseChoice::Confirm);
 
@@ -111,9 +110,7 @@ fn a_written_note_goes_to_the_file_the_user_chose() {
 #[test]
 fn cancelling_stops_the_release_before_anything_is_written() {
     let (dir, _remote, mut app) = release_project("v0.1.0");
-    let file = dir.join("issues/done/a.md");
-
-    app.open_release(&[file]);
+    app.open_release();
     app.release_choice(ReleaseChoice::Cancel);
 
     assert!(app.session.release.is_none());
@@ -124,9 +121,7 @@ fn cancelling_stops_the_release_before_anything_is_written() {
 #[test]
 fn a_tag_git_would_refuse_stays_on_the_panel() {
     let (dir, _remote, mut app) = release_project("v0.1.0");
-    let file = dir.join("issues/done/a.md");
-
-    app.open_release(&[file]);
+    app.open_release();
     app.session.release.as_mut().unwrap().tag = "two words".to_string();
     app.release_choice(ReleaseChoice::Confirm);
 
@@ -139,9 +134,7 @@ fn a_tag_git_would_refuse_stays_on_the_panel() {
 #[test]
 fn a_note_file_outside_the_project_is_refused() {
     let (dir, _remote, mut app) = release_project("v0.1.0");
-    let file = dir.join("issues/done/a.md");
-
-    app.open_release(&[file]);
+    app.open_release();
     app.session.release.as_mut().unwrap().file = "../NOTES.md".to_string();
     app.release_choice(ReleaseChoice::Confirm);
 
@@ -153,6 +146,9 @@ fn a_note_file_outside_the_project_is_refused() {
 #[test]
 fn hovering_done_offers_release_left_of_archive_all() {
     let (dir, mut app) = project("release-head", &[("done/a.md", "# A\n"), ("todo/", "")]);
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "first"]);
     let index = app
         .board
         .columns
@@ -270,9 +266,8 @@ fn an_empty_done_column_without_commits_keeps_release_disabled() {
 
 #[test]
 fn escape_cancels_the_release_flow() {
-    let (dir, mut app) = project("release-esc", &[("done/a.md", "# Alpha\n")]);
-    let file = dir.join("issues/done/a.md");
-    app.open_release(&[file]);
+    let (_dir, mut app) = project("release-esc", &[("done/a.md", "# Alpha\n")]);
+    app.open_release();
     let mut harness = kittest(app);
     harness.key_press(Key::Escape);
     harness.run_steps(2);
@@ -281,9 +276,8 @@ fn escape_cancels_the_release_flow() {
 
 #[test]
 fn the_release_panel_wording_follows_its_selectors() {
-    let (dir, mut app) = project("release-ui", &[("done/a.md", "# Alpha\n")]);
-    let file = dir.join("issues/done/a.md");
-    app.open_release(&[file]);
+    let (_dir, mut app) = project("release-ui", &[("done/a.md", "# Alpha\n")]);
+    app.open_release();
     let mut harness = kittest(app);
     harness.get_by_role_and_label(Role::Dialog, "Release");
 
@@ -310,8 +304,7 @@ fn the_release_panel_wording_follows_its_selectors() {
 #[test]
 fn the_panel_makes_the_whole_release_in_one_confirmation() {
     let (dir, remote, mut app) = release_project("v0.1.0");
-    let file = dir.join("issues/done/a.md");
-    app.open_release(&[file]);
+    app.open_release();
     let mut harness = kittest(app);
 
     press(&mut harness, "Update release note, version and push");
@@ -326,7 +319,7 @@ fn the_choices_made_are_kept_in_the_settings_file() {
     let (dir, mut app) = project("release-remember", &[("done/a.md", "# Alpha\n")]);
     let config = dir.join("iboard.toml");
     app.config_file = Some(config.clone());
-    app.open_release(&[dir.join("issues/done/a.md")]);
+    app.open_release();
     let mut harness = kittest(app);
 
     press(&mut harness, "Tag only");
@@ -338,7 +331,7 @@ fn the_choices_made_are_kept_in_the_settings_file() {
     assert!(!saved.push, "the local choice is remembered");
 
     let mut app = harness.into_state().1;
-    app.open_release(&[dir.join("issues/done/a.md")]);
+    app.open_release();
     let flow = app.session.release.as_ref().unwrap();
     assert!(!flow.note);
     assert!(!flow.push);
@@ -348,8 +341,11 @@ fn the_choices_made_are_kept_in_the_settings_file() {
 #[test]
 fn the_agent_groups_the_note_into_sections() {
     let (dir, mut app) = project("release-agent", &[("done/a.md", "# Alpha\n")]);
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "Alpha"]);
     app.prefs.agent = fake_agent("printf '### Added\\n- Alpha\\n' # {prompt}");
-    app.open_release(&[dir.join("issues/done/a.md")]);
+    app.open_release();
     assert_eq!(
         app.session.release.as_ref().unwrap().body,
         "- Alpha\n",
@@ -374,8 +370,11 @@ fn the_agent_groups_the_note_into_sections() {
 fn a_grouping_note_blocks_edits_and_shows_the_thinking_mark() {
     use egui::accesskit::Live;
     let (dir, mut app) = project("release-grouping-a11y", &[("done/a.md", "# Alpha\n")]);
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "Alpha"]);
     app.prefs.agent = fake_agent("sleep 3; printf '### Added\\n- Alpha\\n' # {prompt}");
-    app.open_release(&[dir.join("issues/done/a.md")]);
+    app.open_release();
     let mut harness = kittest(app);
     harness.run_steps(2);
 
@@ -417,58 +416,37 @@ fn a_grouping_note_blocks_edits_and_shows_the_thinking_mark() {
 }
 
 #[test]
-fn the_note_lists_only_the_issues_done_since_the_last_release() {
+fn the_note_lists_only_the_commits_since_the_last_release() {
     let dir = scratch_dir("release-window");
-    let done = dir.join("issues/done");
-    std::fs::create_dir_all(&done).unwrap();
-    let old = done.join("old.md");
-    let new = done.join("new.md");
-    std::fs::write(&old, "# Old\n").unwrap();
+    std::fs::create_dir_all(dir.join("issues")).unwrap();
     git(&dir, &["init", "-q", "-b", "main"]);
-    git(&dir, &["add", "."]);
-    let january = [
-        ("GIT_AUTHOR_DATE", "2026-01-01T00:00:00+00:00"),
-        ("GIT_COMMITTER_DATE", "2026-01-01T00:00:00+00:00"),
-    ];
-    git_env(&dir, &january, &["commit", "-q", "-m", "old"]);
-    let release = [
-        ("GIT_AUTHOR_DATE", "2026-01-15T00:00:00+00:00"),
-        ("GIT_COMMITTER_DATE", "2026-01-15T00:00:00+00:00"),
-    ];
-    git_env(
-        &dir,
-        &release,
-        &["commit", "-q", "--allow-empty", "-m", "release"],
-    );
+    git(&dir, &["commit", "-q", "--allow-empty", "-m", "old"]);
     git(&dir, &["tag", "v0.3.0"]);
-    std::fs::write(&new, "# New\n").unwrap();
-    git(&dir, &["add", "."]);
-    let june = [
-        ("GIT_AUTHOR_DATE", "2026-06-01T00:00:00+00:00"),
-        ("GIT_COMMITTER_DATE", "2026-06-01T00:00:00+00:00"),
-    ];
-    git_env(&dir, &june, &["commit", "-q", "-m", "new"]);
+    git(&dir, &["commit", "-q", "--allow-empty", "-m", "Add a flag"]);
 
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.open_release(&[old, new]);
+    app.open_release();
     let flow = app.session.release.as_ref().unwrap();
     assert_eq!(flow.tag, "v0.3.1");
-    assert_eq!(flow.body, "- New\n", "the old release's issues stay out");
+    assert_eq!(
+        flow.body, "- Add a flag\n",
+        "the old release's commits stay out"
+    );
 }
 
 #[test]
 fn a_long_note_scrolls_so_the_buttons_stay_on_screen() {
     let dir = scratch_dir("release-long");
-    let done = dir.join("issues/done");
-    std::fs::create_dir_all(&done).unwrap();
-    let mut paths = Vec::new();
+    std::fs::create_dir_all(dir.join("issues")).unwrap();
+    git(&dir, &["init", "-q", "-b", "main"]);
     for n in 0..40 {
-        let path = done.join(format!("{n:02}.md"));
-        std::fs::write(&path, format!("# Issue {n}\n")).unwrap();
-        paths.push(path);
+        git(
+            &dir,
+            &["commit", "-q", "--allow-empty", "-m", &format!("Issue {n}")],
+        );
     }
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    app.open_release(&paths);
+    app.open_release();
     let harness = kittest(app);
 
     let confirm = harness.get_by_label("Update release note, version and push");

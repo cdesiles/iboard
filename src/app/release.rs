@@ -27,8 +27,9 @@ pub(super) struct ReleaseFlow {
     pub(super) file: String,
     /// Whether the release pushes the branch and its new tag.
     pub(super) push: bool,
-    /// The titles the note lists, as the list the agent was asked to group.
-    titles: Vec<String>,
+    /// The commit subjects the note lists, as the list the agent was asked to
+    /// group.
+    subjects: Vec<String>,
     /// The sectioned note the agent is writing, while it runs.
     writer: Option<Job<Result<String, String>>>,
     /// Whether the agent grouped the note into sections.
@@ -41,7 +42,6 @@ pub(super) struct ReleaseFlow {
     tagged: bool,
     pushed: bool,
     pub(super) error: Option<String>,
-    issues: usize,
 }
 
 impl ReleaseFlow {
@@ -49,7 +49,7 @@ impl ReleaseFlow {
         project: PathBuf,
         project_name: String,
         tag: String,
-        titles: Vec<String>,
+        subjects: Vec<String>,
         since: Option<String>,
         choices: ReleaseChoices,
         writer: Option<Job<Result<String, String>>>,
@@ -58,12 +58,11 @@ impl ReleaseFlow {
             project,
             project_name,
             tag,
-            body: release::note_body(&titles),
+            body: release::note_body(&subjects),
             note: choices.note,
             file: choices.file,
             push: choices.push,
-            issues: titles.len(),
-            titles,
+            subjects,
             writer,
             grouped: false,
             note_error: None,
@@ -159,7 +158,7 @@ impl ReleaseFlow {
         match result {
             Ok(text) => {
                 let text = text.trim();
-                if !text.is_empty() && self.body == release::note_body(&self.titles) {
+                if !text.is_empty() && self.body == release::note_body(&self.subjects) {
                     self.body = format!("{text}\n");
                     self.grouped = true;
                 }
@@ -221,17 +220,21 @@ impl ReleaseFlow {
                 .font(theme::ui_title())
                 .color(p.ink),
         );
-        let noun = if self.issues == 1 { "issue" } else { "issues" };
+        let noun = if self.subjects.len() == 1 {
+            "commit"
+        } else {
+            "commits"
+        };
         let window = match &self.since {
             Some(tag) => format!("since {tag}"),
-            None => "in Done".to_string(),
+            None => "in the repository".to_string(),
         };
         ui.label(
             RichText::new(format!(
                 "{} · {} · {} {noun} {window}",
                 self.project_name,
                 self.tag.trim(),
-                self.issues
+                self.subjects.len()
             ))
             .font(theme::meta())
             .color(p.ink_muted),
@@ -402,27 +405,19 @@ impl ReleaseFlow {
 }
 
 impl IboardApp {
-    /// Opens the release flow on `paths`, the Done issues its note lists.
-    /// Only the issues done since the newest release tag are kept, and the
-    /// refinement agent groups their titles into sections when it is set up.
-    pub(super) fn open_release(&mut self, paths: &[PathBuf]) {
+    /// Opens the release flow: its note lists the commits made since the
+    /// newest release tag, and the refinement agent groups their subjects into
+    /// sections when it is set up.
+    pub(super) fn open_release(&mut self) {
         let project = self.board.project_dir.clone();
         let last = release::last_release(&project, &self.prefs.releases.tags);
         let tag = release::next_tag(&project, &self.prefs.releases.tags);
-        let titles: Vec<String> = paths
-            .iter()
-            .filter_map(|path| self.board.find(path))
-            .filter(|issue| match (&last, issue.done_at) {
-                (Some((_, since)), Some(done)) => done >= *since,
-                _ => true,
-            })
-            .map(|issue| issue.title.clone())
-            .collect();
+        let subjects = release::commit_subjects(&project, &self.prefs.releases.tags);
         let mut choices = self.prefs.release.clone();
         choices.file = release::note_file(&project, &choices.file);
         let writer =
-            (choices.note && self.prefs.agent.configured() && !titles.is_empty()).then(|| {
-                let prompt = release::note_prompt(&titles);
+            (choices.note && self.prefs.agent.configured() && !subjects.is_empty()).then(|| {
+                let prompt = release::note_prompt(&subjects);
                 let note = project.join(&choices.file);
                 let (writer, _) = agent::start_review(
                     &self.prefs.agent,
@@ -438,7 +433,7 @@ impl IboardApp {
             project,
             self.board.name(),
             tag,
-            titles,
+            subjects,
             since,
             choices,
             writer,

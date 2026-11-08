@@ -499,23 +499,17 @@ fn header_action(
             .then(|| Intent::ArchiveAll(view.visible_paths()))
         }
         HeaderAction::Release => {
-            let count = view.visible.len();
-            let enabled = count > 0
-                || release::has_commits_since_last_release(
-                    &view.board.project_dir,
-                    view.release_tags,
-                );
-            let hover = match (enabled, count) {
-                (false, _) => "Release: no commits since the last release".to_string(),
-                (true, 0) => "Release: write a note, commit, tag and push".to_string(),
-                (true, count) => {
-                    let noun = if count == 1 { "issue" } else { "issues" };
-                    format!("Release: write a note from the {count} {noun}, commit, tag and push")
+            let enabled =
+                release::has_commits_since_last_release(&view.board.project_dir, view.release_tags);
+            let hover = match enabled {
+                false => "Release: no commits since the last release".to_string(),
+                true => {
+                    "Release: write a note from the commits, then commit, tag and push".to_string()
                 }
             };
             ui.add_enabled_ui(enabled, |ui| {
                 action_button(ui, view, Icon::Release, "release", "Release", &hover, title)
-                    .then(|| Intent::Release(view.visible_paths()))
+                    .then_some(Intent::Release)
             })
             .inner
         }
