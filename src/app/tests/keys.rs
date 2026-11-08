@@ -89,7 +89,7 @@ fn the_keys_scroll_the_readers_page() {
 
 #[test]
 fn the_keys_leave_the_page_to_a_menu_or_a_dialog() {
-    let (_dir, file, mut harness) = opened_in("reader-scroll-guard", "doing");
+    let (_dir, file, mut harness) = opened_in("reader-scroll-guard", "done");
     let top = page_top(&harness);
     press(&mut harness, "More actions");
     hit(&mut harness, Modifiers::NONE, Key::ArrowDown);

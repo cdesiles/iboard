@@ -174,29 +174,16 @@ fn the_dynamic_buttons_follow_the_column_and_the_mode() {
     assert!(!has(&harness, "More actions"));
 }
 
-/// Move to… lists the other columns, and a pick moves the issue.
-#[test]
-fn the_more_menu_moves_the_issue() {
-    let (dir, app) = board("header-move");
-    let mut harness = opened(&dir, app, "ready");
-    click(&mut harness, "More actions");
-    harness.get_by_label("Move to…").click();
-    harness.run_steps(3);
-    assert!(has(&harness, "Doing"));
-    click(&mut harness, "Doing");
-    assert!(dir.join("issues/doing/ready.md").exists());
-}
-
 /// `esc` closes the menu and stays on the issue.
 #[test]
 fn esc_closes_a_menu_before_leaving_the_issue() {
     let (dir, app) = board("header-esc");
-    let mut harness = opened(&dir, app, "ready");
+    let mut harness = opened(&dir, app, "done");
     click(&mut harness, "More actions");
-    assert!(has(&harness, "Move to…"));
+    assert!(has(&harness, "Archive"));
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
-    assert!(!has(&harness, "Move to…"));
+    assert!(!has(&harness, "Archive"));
     assert!(matches!(
         harness.state().1.session.screen,
         Screen::Detail(..)

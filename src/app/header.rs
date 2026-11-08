@@ -3,8 +3,8 @@
 use super::board::column_status;
 use super::labelling::set_label_anchor;
 use super::{
-    Align, ButtonKind, IboardApp, Icon, Layout, Path, PathBuf, Pos2, RichText, Screen, Sense,
-    Stroke, UNIFIED_TITLEBAR, Vec2, file_name, theme, widgets,
+    Align, ButtonKind, IboardApp, Icon, Layout, Path, Pos2, RichText, Screen, Sense, Stroke,
+    UNIFIED_TITLEBAR, Vec2, file_name, theme, widgets,
 };
 use widgets::DynamicButton;
 

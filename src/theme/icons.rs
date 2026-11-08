@@ -56,10 +56,6 @@ pub enum Icon {
     Bars,
     /// Three dots in a row: a menu of what is left.
     More,
-    /// An arrow pointing right: Move to….
-    ArrowRight,
-    /// A small right chevron: a row that opens a submenu.
-    ChevronRight,
     /// Three narrowing lines: refine.
     Narrow,
     /// A speech bubble: ask an agent.
@@ -108,7 +104,7 @@ pub fn paint_icon_stroked(painter: &Painter, icon: Icon, rect: Rect, color: Colo
         Icon::Layers | Icon::Grip | Icon::Warning | Icon::Flame | Icon::Bars | Icon::Release => {
             project_icon(&grid, icon);
         }
-        Icon::More | Icon::ArrowRight | Icon::ChevronRight | Icon::Narrow | Icon::Bubble => {
+        Icon::More | Icon::Narrow | Icon::Bubble => {
             menu_icon(&grid, icon);
         }
     }
@@ -395,11 +391,6 @@ fn menu_icon(g: &Grid, icon: Icon) {
                     .circle_filled(g.at(x, 12.0), 1.5 * g.scale, g.stroke.color);
             }
         }
-        Icon::ArrowRight => {
-            g.line(&[(5.0, 12.0), (19.0, 12.0)]);
-            g.line(&[(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]);
-        }
-        Icon::ChevronRight => g.line(&[(9.0, 6.0), (15.0, 12.0), (9.0, 18.0)]),
         Icon::Narrow => {
             g.line(&[(4.0, 6.0), (20.0, 6.0)]);
             g.line(&[(7.0, 12.0), (17.0, 12.0)]);

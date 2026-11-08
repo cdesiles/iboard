@@ -51,22 +51,6 @@ fn an_issue_is_numbered_in_ready_and_unnumbered_when_taken() {
     assert!(app.error.is_none());
 }
 
-/// Move to… sends the open issue to another column; the Reader stays on it.
-#[test]
-fn move_to_sends_the_open_issue_and_keeps_it_open() {
-    let (dir, mut app) = project(
-        "move-to",
-        &[("ready/", ""), ("doing/task.md", "# Task\n"), ("done/", "")],
-    );
-    let file = dir.join("issues/doing/task.md");
-    app.open_issue(file.clone());
-    let done = dir.join("issues/done");
-    app.send_to(&file, &done);
-    let moved = done.join("task.md");
-    assert!(moved.exists() && !file.exists());
-    assert!(matches!(&app.session.screen, Screen::Detail(open, _) if *open == moved));
-}
-
 #[test]
 fn moving_never_overwrites_an_existing_file() {
     let (dir, mut app) = project(

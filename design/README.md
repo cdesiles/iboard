@@ -169,7 +169,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Board | Click a suggestion, or type | FilterSuggestionPicked / FilterChanged | Board shows matches only; counts read "2/6" |
 | Board | `esc` in the filter | FilterCleared | Full board; field back to 220pt on blur |
 | Reader, Editor | Two-finger swipe right on the trackpad, or `⌘[` | NavigatedBack | One level up the breadcrumb: Editor to Reader, Reader to the board |
-| Any | Move to column (drag, or menu) | IssueMoved | Same screen; file moved between folders |
+| Any | Move to column (drag) | IssueMoved | Same screen; file moved between folders |
 | Board, Reader | Add label (card action, Reader header button, `L`) | LabelPickerOpened | LabelPicker under the trigger, field focused |
 | LabelPicker | Type, `↩` (or click a board label, or `↓` then `↩`) | LabelAdded / LabelAddFailed | Same popup, field cleared; the label shows on the card and the Reader, and the file is rewritten |
 | LabelPicker | Click a label the issue has | LabelRemoved | Same popup; the label turns off and the file is rewritten |
@@ -183,7 +183,7 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | ConfirmDialog | Delete (`↩`) / Cancel (`esc`) | IssueDeleted / DeleteCancelled | Board |
 | Reader, Editor (Todo) | Review (`⌘⇧R`) | ReviewRequested → ReviewReceived | Review panel opens beside the page |
 | Reader, Editor | AI split chevron | AIMenuOpened | Todo: Refine, Review, Deep or Quick review, Ask, Update from the code. Ready, Doing: Update from the code, Ask. Done has no AI split button |
-| Reader | `…` | MoreMenuOpened | Menu: Move to…; Refresh with Auto off; Agent log when the issue has one, Draft design with `idesign` on (not on Done) and Archive on Done. The Editor has no `…` |
+| Reader | `…` | MoreMenuOpened | Menu: Refresh with Auto off; Agent log when the issue has one, Draft design with `idesign` on (not on Done) and Archive on Done. The Editor has no `…` |
 | Any | Hold ⌘ alone 0.5s / release or another key | KeyHintsShown / KeyHintsHidden | Same screen with key hints beside controls, in the filter, footers, popups and status bar (view state only, no file change) |
 | Any | Settings (`⌘,`, Review menu, new issue engine tag) | SettingsOpened | Settings dialog on the matching tab |
 | Settings › AI review | Pick tool, pick model, Save (`⌘↩`) | ReviewToolChosen, ReviewModelChosen → SettingsSaved | Back to the screen; Review menu shows the new tool and model |

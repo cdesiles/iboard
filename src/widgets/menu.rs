@@ -107,7 +107,7 @@ pub enum ActionTone {
 }
 
 /// One row of the header's menus: an icon, a name, and at the right its key
-/// in `meta-mono` `ink-faint`, a `meta` note, or a submenu's chevron.
+/// in `meta-mono` `ink-faint` or a `meta` note.
 #[derive(Default)]
 pub struct MenuAction<'a> {
     pub icon: Option<Icon>,
@@ -115,7 +115,6 @@ pub struct MenuAction<'a> {
     pub key: &'a str,
     pub note: &'a str,
     pub tone: ActionTone,
-    pub submenu: bool,
 }
 
 pub fn menu_action(ui: &mut Ui, action: MenuAction<'_>) -> Response {
@@ -153,10 +152,6 @@ pub fn menu_action(ui: &mut Ui, action: MenuAction<'_>) -> Response {
         left += theme::ICON_SIZE + theme::SPACE_3;
     }
     let mut right = inner.max.x;
-    if action.submenu {
-        right -= theme::ICON_SIZE;
-        theme::paint_icon(painter, Icon::ChevronRight, box_at(right), p.ink_faint);
-    }
     let meta = if action.key.is_empty() {
         (!action.note.is_empty()).then(|| galley(ui, action.note, theme::meta(), p.ink_muted))
     } else {

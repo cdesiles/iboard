@@ -63,13 +63,6 @@ impl IboardApp {
         }
     }
 
-    /// Move to… in the Reader: `path` goes to the end of the column `dir`,
-    /// and the Reader follows it there.
-    pub(super) fn send_to(&mut self, path: &Path, dir: &Path) {
-        self.session.picked.clear();
-        self.place_issue(path, dir, None);
-    }
-
     /// `⌘↩` on the board: moves the selected ticket to the next column, left
     /// to right. A ticket in the last column stays put.
     pub(super) fn move_selection_to_next(&mut self) {
