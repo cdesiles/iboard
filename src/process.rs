@@ -5,6 +5,7 @@
 //! a recycled process id is never hit.
 
 use std::io::Read;
+use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -90,15 +91,52 @@ pub fn run(
 /// for a tool that reports its steps while it works. Without a `timeout` only
 /// `cancel` stops it.
 pub fn run_with(
+    command: Command,
+    what: &str,
+    cancel: &Cancel,
+    timeout: Option<Duration>,
+    on_line: impl FnMut(&str),
+) -> Result<Output, String> {
+    capture(command, what, cancel, timeout, Stdio::piped(), on_line)
+}
+
+/// [`run`] with standard output written to `path` instead of a pipe, then
+/// read back into [`Output::stdout`]. A tool that drops the tail of a large
+/// reply when its reader is a pipe keeps all of it while writing a file.
+pub fn run_to_file(
+    command: Command,
+    what: &str,
+    cancel: &Cancel,
+    timeout: Duration,
+    path: &Path,
+) -> Result<Output, String> {
+    let file = std::fs::File::create(path)
+        .map_err(|err| format!("Couldn't open {what}'s output: {err}"))?;
+    let mut output = capture(
+        command,
+        what,
+        cancel,
+        Some(timeout),
+        Stdio::from(file),
+        |_| {},
+    )?;
+    output.stdout = std::fs::read_to_string(path)
+        .map_err(|err| format!("Couldn't read {what}'s output: {err}"))?;
+    Ok(output)
+}
+
+/// [`run_with`] with the standard-output sink chosen by the caller.
+fn capture(
     mut command: Command,
     what: &str,
     cancel: &Cancel,
     timeout: Option<Duration>,
+    sink: Stdio,
     mut on_line: impl FnMut(&str),
 ) -> Result<Output, String> {
     command
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .stdout(sink)
         .stderr(Stdio::piped());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);

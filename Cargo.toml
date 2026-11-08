@@ -30,6 +30,7 @@ pulldown-cmark = { version = "0.13.4", default-features = false }
 egui_extras = { version = "0.37.0", optional = true, default-features = false, features = ["image", "file", "svg", "syntect"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+tempfile = "3.27"
 toml = "1.1.6"
 image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg", "tiff"] }
 toml_edit = "0.25.15"
@@ -59,7 +60,6 @@ objc2-foundation = "0.3.2"
 egui = { version = "0.37.0", features = ["monochrome_emoji_fonts"] }
 egui_kittest = "0.37.0"
 insta = "1"
-tempfile = "3.27"
 
 [profile.dev]
 debug = "line-tables-only"

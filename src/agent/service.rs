@@ -644,9 +644,6 @@ fn call(project: &Path, args: &[&str], body: Option<&str>) -> Result<String, Str
     call_with(project, args, body, CALL)
 }
 
-/// Runs one request. A read whose reply is not valid JSON is tried again: the
-/// service's CLI drops the tail of a reply too large for a pipe, cutting it at
-/// a write boundary instead of reporting an error.
 fn call_with(
     project: &Path,
     args: &[&str],
@@ -654,19 +651,41 @@ fn call_with(
     timeout: Duration,
 ) -> Result<String, String> {
     let binary = binary().ok_or_else(|| "opencode is not installed".to_string())?;
+    request(&binary, project, args, body, timeout)
+}
+
+/// Runs `binary` for one request, its reply read from a file: the service's
+/// CLI drops the tail of a reply too large for a pipe, at a write boundary,
+/// and retrying only gets the same cut text back. A read whose reply is still
+/// not valid JSON is tried again, in case the service was busy.
+fn request(
+    binary: &Path,
+    project: &Path,
+    args: &[&str],
+    body: Option<&str>,
+    timeout: Duration,
+) -> Result<String, String> {
     let reads = args.first().is_some_and(|method| *method == "get");
     let attempts = if reads { RETRIES } else { 1 };
     let deadline = Instant::now() + timeout;
     let mut text = String::new();
     for attempt in 1..=attempts {
         let left = deadline.saturating_duration_since(Instant::now());
-        let mut command = std::process::Command::new(&binary);
+        let reply = tempfile::NamedTempFile::new()
+            .map_err(|err| format!("Couldn't open a reply file: {err}"))?;
+        let mut command = std::process::Command::new(binary);
         command.arg("api").args(args).current_dir(project);
         if let Some(body) = body {
             command.args(["-d", body]);
         }
-        text = process::run(command, "opencode api", &Cancel::default(), left)?
-            .into_result("opencode api")?;
+        text = process::run_to_file(
+            command,
+            "opencode api",
+            &Cancel::default(),
+            left,
+            reply.path(),
+        )?
+        .into_result("opencode api")?;
         if attempt == attempts || serde_json::from_str::<Value>(&text).is_ok() {
             break;
         }
@@ -790,6 +809,33 @@ mod tests {
         assert_eq!(session_of(&handle), None);
         remember(&handle, "ses_42");
         assert_eq!(session_of(&handle).as_deref(), Some("ses_42"));
+    }
+
+    /// The service's CLI drops the tail of a reply too large for a pipe. A
+    /// reply written to a file arrives whole.
+    #[test]
+    fn a_large_reply_is_read_whole_from_a_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join("opencode");
+        std::fs::write(
+            &binary,
+            "#!/bin/sh\n\
+             if [ -p /dev/stdout ]; then printf '{\"data\":[';\n\
+             else printf '{\"data\":[{\"id\":\"ses_1\"}]}';\n\
+             fi\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let reply = request(
+            &binary,
+            dir.path(),
+            &["get", "/api/session/ses_1/message"],
+            None,
+            CALL,
+        )
+        .unwrap();
+        assert_eq!(parse(&reply).unwrap()["data"][0]["id"], "ses_1");
     }
 
     #[test]
