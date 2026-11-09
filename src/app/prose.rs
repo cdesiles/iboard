@@ -28,10 +28,11 @@ const MARKER_W: f32 = 20.0;
 pub(super) const CODE_SIZE: f32 = 13.0;
 /// A code span's height: its background, and its baseline against the text's.
 const CODE_LINE: f32 = 20.0;
-/// A code span's side padding: egui breaks a line at any space but this one,
-/// which a small font narrows.
-const CODE_PAD: &str = "\u{A0}";
-const CODE_PAD_SIZE: f32 = 6.0;
+/// A code span's side padding: two zero-width spaces, tracked apart to the
+/// pad's width. They share the code's metrics, unlike a smaller face, so the
+/// background stays one rectangle.
+const CODE_PAD: &str = "\u{200B}\u{200B}";
+const CODE_PAD_WIDTH: f32 = 3.6;
 
 /// A task box clicked this frame: where it is and what it now says.
 pub(super) type Ticked = Option<(Range<usize>, bool)>;
@@ -227,7 +228,7 @@ fn append(ui: &Ui, job: &mut LayoutJob, span: &Span, font: &FontId, line: f32) {
         format.valign = Align::Center;
         format.expand_bg = 0.0;
         let pad = TextFormat {
-            font_id: FontId::monospace(CODE_PAD_SIZE),
+            extra_letter_spacing: CODE_PAD_WIDTH,
             ..format.clone()
         };
         job.append(CODE_PAD, 0.0, pad.clone());
@@ -259,9 +260,9 @@ mod tests {
     }
 
     /// At no width does a line end on the padding of a code span that starts
-    /// on the next line.
+    /// on the next line, and its background is one rectangle on each line.
     #[test]
-    fn a_code_span_keeps_its_padding_when_it_wraps() {
+    fn a_code_span_keeps_its_padding_and_one_background() {
         let spans = [
             span("Text like ", false),
             span("TextEditState", true),
@@ -282,9 +283,29 @@ mod tests {
                     let text: String = row.row.glyphs.iter().map(|glyph| glyph.chr).collect();
                     let stranded = format!(" {CODE_PAD}");
                     assert!(!text.ends_with(&stranded), "{width}pt: {text:?}");
+                    let backgrounds = backgrounds(row);
+                    if let Some(first) = backgrounds.first() {
+                        for rect in &backgrounds[1..] {
+                            assert_eq!(rect.top(), first.top(), "{width}pt: {backgrounds:?}");
+                            assert_eq!(rect.bottom(), first.bottom(), "{width}pt: {backgrounds:?}");
+                        }
+                    }
                 }
             }
         });
         output.textures_delta.clear();
+    }
+
+    /// The background rectangles of `row`, in the order the row draws them.
+    fn backgrounds(row: &egui::epaint::text::Row) -> Vec<Rect> {
+        row.visuals.mesh.vertices[..row.visuals.glyph_vertex_range.start]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|quad| {
+                let corners: Vec<Pos2> = quad.iter().map(|vertex| vertex.pos).collect();
+                Rect::from_points(&corners)
+            })
+            .collect()
     }
 }
