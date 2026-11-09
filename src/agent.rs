@@ -937,6 +937,7 @@ fn model_of(config: &AgentConfig) -> String {
 }
 
 mod answer;
+pub mod build;
 mod chat;
 mod direnv;
 mod draft;

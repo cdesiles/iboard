@@ -2,114 +2,20 @@
 //! each moved to the next column while an agent works on it. Doing's header
 //! sets how many agents work at once.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 use super::card::CardBuild;
 use super::{
-    Column, Duration, IboardApp, Instant, Issue, Job, Path, PathBuf, agent, discovery, file_name,
-    job, prompts, settings_ui,
+    Column, Duration, IboardApp, Instant, Issue, Path, PathBuf, agent, discovery, file_name, job,
+    prompts, settings_ui,
 };
+use crate::agent::build::{self as queue, Run};
+pub(super) use crate::agent::build::{Build, MAX_AGENTS, Watch};
 use crate::build_log;
+use crate::domains::board::lifecycle;
+#[cfg(test)]
+use crate::job::Job;
 use crate::reviews;
-
-/// The most agents an AI build runs at once.
-pub(super) const MAX_AGENTS: usize = crate::agent::MAX_AGENTS;
-
-/// The issues an AI build goes through, and the ones its agents are on.
-pub(super) struct Build {
-    /// The issues still to build, top first.
-    queue: VecDeque<PathBuf>,
-    /// The issues the agents work on, in their new column.
-    runs: Vec<Run>,
-    /// How many issues left the queue so far.
-    taken: usize,
-    total: usize,
-    /// An agent failed: the rest of the queue was dropped.
-    failed: bool,
-}
-
-impl Build {
-    fn new(queue: Vec<PathBuf>) -> Self {
-        Self {
-            total: queue.len(),
-            queue: queue.into(),
-            runs: Vec::new(),
-            taken: 0,
-            failed: false,
-        }
-    }
-
-    /// Follows an issue renamed from `old` to `new`, queued or at work.
-    pub(super) fn rename(&mut self, old: &Path, new: &Path) {
-        let runs = self.runs.iter_mut().map(|run| &mut run.issue);
-        for issue in self.queue.iter_mut().chain(runs) {
-            if issue == old {
-                *issue = new.to_path_buf();
-            }
-        }
-    }
-
-    /// Lets go of an issue that left the board: it is no longer queued, its
-    /// agent stops, and the run no longer counts it.
-    pub(super) fn forget(&mut self, path: &Path) {
-        let queued = self.queue.len();
-        self.queue.retain(|issue| issue != path);
-        self.total -= queued - self.queue.len();
-        if let Some(index) = self.runs.iter().position(|run| run.issue == path) {
-            let run = self.runs.remove(index);
-            run.stop();
-            let at = run.at;
-            self.taken = self.taken.saturating_sub(1);
-            self.total = self.total.saturating_sub(1);
-            for run in self.runs.iter_mut().filter(|run| run.at > at) {
-                run.at -= 1;
-            }
-        }
-    }
-}
-
-/// Play stays pressed until Stop: an issue that arrives in Ready, dropped
-/// there or written by another process, joins the build.
-pub(super) struct Watch {
-    /// Ready's issues when the board was last looked at.
-    ready: HashSet<PathBuf>,
-    /// The board generation `ready` was read from.
-    generation: u64,
-}
-
-impl Watch {
-    /// Follows an issue renamed from `old` to `new`: a Ready issue
-    /// renumbered does not arrive again.
-    pub(super) fn rename(&mut self, old: &Path, new: &Path) {
-        if self.ready.remove(old) {
-            self.ready.insert(new.to_path_buf());
-        }
-    }
-}
-
-/// One agent at work on one issue.
-struct Run {
-    issue: PathBuf,
-    answer: Job<Result<String, String>>,
-    /// The project the agent works in, and the service session it lives in
-    /// when it runs there rather than in a child process.
-    project: PathBuf,
-    session: agent::service::Handle,
-    /// When the agent took `issue`.
-    started: Instant,
-    /// Where `issue` stands in the whole run, from 1.
-    at: usize,
-}
-
-impl Run {
-    /// Stops the agent, wherever it runs: the service is told to interrupt,
-    /// a child process is stopped when its job drops.
-    fn stop(&self) {
-        if let Some(session) = agent::service::session_of(&self.session) {
-            agent::service::interrupt(&self.project, &session);
-        }
-    }
-}
 
 /// The AI build as the board shows it: the issues at work and since when,
 /// and how many agents may work at once.
@@ -144,13 +50,9 @@ pub(super) fn card_build(column: &Column, issue: &Issue, builds: Builds) -> Opti
     retry.then_some(CardBuild::Retry)
 }
 
-/// The label that keeps an issue away from the build agent: work that is not
-/// code, such as a quote or an email.
-pub(super) const MANUAL: &str = "manual";
-
 /// Whether Play hands `issue` to the build agent.
 pub(super) fn buildable(issue: &Issue) -> bool {
-    !issue.labels.iter().any(|label| label == MANUAL)
+    queue::buildable(&issue.labels)
 }
 
 impl IboardApp {
@@ -164,10 +66,10 @@ impl IboardApp {
         }
         paths.retain(|path| self.board.find(path).is_some_and(buildable));
         self.session.agents = self.session.agents.max(1);
-        self.session.watch = Some(Watch {
-            ready: self.ready_issues().into_iter().collect(),
-            generation: self.board_generation,
-        });
+        self.session.watch = Some(Watch::new(
+            self.ready_issues().into_iter().collect(),
+            self.board_generation,
+        ));
         self.session.build = Some(Build::new(paths));
         self.fill_agents();
     }
@@ -226,11 +128,7 @@ impl IboardApp {
             return;
         }
         self.session.agents = self.session.agents.max(runs.len());
-        let mut build = Build::new(Vec::new());
-        build.taken = runs.len();
-        build.total = runs.len();
-        build.runs = runs;
-        self.session.build = Some(build);
+        self.session.build = Some(Build::adopted(runs));
     }
 
     /// The issue whose file has `slug`, wherever it stands on the board.
@@ -251,17 +149,11 @@ impl IboardApp {
         let Some(watch) = self.session.watch.as_mut() else {
             return;
         };
-        if watch.generation == generation {
-            return;
-        }
-        watch.generation = generation;
-        let arrived: Vec<PathBuf> = ready
-            .iter()
-            .filter(|path| !watch.ready.contains(*path))
+        let arrived: Vec<PathBuf> = watch
+            .arrivals(generation, ready)
+            .into_iter()
             .filter(|path| self.board.find(path).is_some_and(buildable))
-            .cloned()
             .collect();
-        watch.ready = ready.into_iter().collect();
         if arrived.is_empty() {
             return;
         }
@@ -270,10 +162,7 @@ impl IboardApp {
             .build
             .get_or_insert_with(|| Build::new(Vec::new()));
         for path in arrived {
-            if !build.queue.contains(&path) {
-                build.total += 1;
-                build.queue.push_back(path);
-            }
+            build.enqueue(path);
         }
         self.fill_agents();
     }
@@ -299,14 +188,7 @@ impl IboardApp {
             .build
             .take()
             .unwrap_or_else(|| Build::new(Vec::new()));
-        let at = match build.runs.iter().position(|run| run.issue == path) {
-            Some(index) => build.runs.remove(index).at,
-            None => {
-                build.taken += 1;
-                build.total += 1;
-                build.taken
-            }
-        };
+        let at = build.retry(&path);
         let name = file_name(&path);
         match self.start_agent(path, at) {
             Some(run) => build.runs.push(run),
@@ -495,20 +377,19 @@ impl IboardApp {
             return;
         };
         while build.runs.len() < self.session.agents {
-            let Some(path) = build.queue.pop_front() else {
+            let Some(path) = build.take() else {
                 break;
             };
             let Some(moved) = self.take_for_build(&path) else {
-                build.total -= 1;
+                build.skip();
                 continue;
             };
-            build.taken += 1;
-            build.runs.extend(self.start_agent(moved, build.taken));
+            let at = build.place();
+            build.runs.extend(self.start_agent(moved, at));
         }
         if !build.runs.is_empty() {
             self.session.build = Some(build);
-        } else if build.total > 0 && !build.failed {
-            let total = build.total;
+        } else if let Some(total) = build.done() {
             let noun = if total == 1 { "issue" } else { "issues" };
             self.session.notice = Some((format!("Built {total} {noun}"), Instant::now()));
         }
@@ -542,11 +423,12 @@ impl IboardApp {
     /// Moves a Ready issue to the column after Ready, where an agent takes
     /// it; `None` when it left Ready since the build started.
     fn take_for_build(&mut self, path: &Path) -> Option<PathBuf> {
-        let index = self.board.columns.iter().position(|column| {
-            discovery::is_ready_column(&column.dir)
-                && column.issues.iter().any(|issue| issue.path == path)
-        })?;
-        match self.board.columns.get(index + 1).map(|c| c.dir.clone()) {
+        let column = self.board.column_of(path)?;
+        if !discovery::is_ready_column(&column.dir) {
+            return None;
+        }
+        let next = lifecycle::next_column(&self.board, path).map(Path::to_path_buf);
+        match next {
             Some(next) => self.move_issue(path, &next),
             None => Some(path.to_path_buf()),
         }
@@ -574,8 +456,7 @@ impl IboardApp {
         for (path, result) in finished {
             if let Err(err) = result {
                 let name = file_name(&path);
-                build.queue.clear();
-                build.failed = true;
+                build.fail();
                 self.session.watch = None;
                 self.error = Some(format!("Couldn't build {name}: {err}"));
             }
@@ -592,10 +473,7 @@ impl IboardApp {
         let project = self.board.project_of(&path).to_path_buf();
         let session = agent::service::Handle::default();
         agent::service::remember(&session, &question.session);
-        let mut build = Build::new(Vec::new());
-        build.taken = 1;
-        build.total = 1;
-        build.runs.push(Run {
+        let run = Run {
             issue: path,
             answer: Job::spawn(|cancel| {
                 while !cancel.is_cancelled() {
@@ -607,8 +485,8 @@ impl IboardApp {
             session,
             started: Instant::now(),
             at: 1,
-        });
-        self.session.build = Some(build);
+        };
+        self.session.build = Some(Build::adopted(vec![run]));
         self.session.adopted = true;
         self.session.feeds.insert(
             project,
@@ -622,6 +500,6 @@ impl IboardApp {
     pub(super) fn build_place(&self) -> Option<(usize, usize)> {
         let build = self.session.build.as_ref()?;
         let run = build.runs.first()?;
-        Some((run.at, build.total))
+        Some((run.at, build.total()))
     }
 }

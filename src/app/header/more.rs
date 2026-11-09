@@ -2,6 +2,7 @@
 //! shown only where it applies.
 
 use super::{ButtonKind, IboardApp, Icon, Path, Vec2, widgets};
+use crate::domains::board::lifecycle::{self, Exit};
 use widgets::MenuAction;
 
 /// The `…` menu: its width.
@@ -39,7 +40,10 @@ impl IboardApp {
                 reading && !done && self.design_reachable(),
                 More::DraftDesign,
             ),
-            (reading && done, More::Archive),
+            (
+                reading && lifecycle::exit(done) == Exit::Archive,
+                More::Archive,
+            ),
         ]
         .into_iter()
         .filter_map(|(shown, row)| shown.then_some(row))

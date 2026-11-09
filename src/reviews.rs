@@ -110,6 +110,32 @@ impl PastReview {
     }
 }
 
+/// What a card's verdict pill means: the worst of the review's three axes,
+/// then whether the issue changed since.
+pub fn verdict_hint(verdict: Option<Verdict>, stale: bool) -> &'static str {
+    macro_rules! hints {
+        ($said:literal) => {
+            [
+                concat!("Last AI review", $said, ". Click to show it"),
+                concat!(
+                    "Last AI review",
+                    $said,
+                    ", before the issue's last edit. Click to show it"
+                ),
+            ]
+        };
+    }
+    let hints = match verdict {
+        Some(Verdict::Pass) => hints!(": Pass. Relevance, size and clarity are all fine"),
+        Some(Verdict::Challenge) => {
+            hints!(": Challenge. Relevance, size or clarity is worth another look, nothing blocks")
+        }
+        Some(Verdict::Block) => hints!(": Block. Relevance, size or clarity is a real problem"),
+        None => hints!(""),
+    };
+    hints[usize::from(stale)]
+}
+
 /// A note the reader left on one block of the issue.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Comment {
@@ -267,6 +293,25 @@ mod tests {
             ..stored
         };
         assert_eq!(PastReview::new(&unparsed, "# X\n").verdict(), None);
+    }
+
+    #[test]
+    fn a_stale_hint_is_the_verdict_s_and_the_edit_since() {
+        let verdicts = [
+            None,
+            Some(Verdict::Pass),
+            Some(Verdict::Challenge),
+            Some(Verdict::Block),
+        ];
+        for verdict in verdicts {
+            let fresh = verdict_hint(verdict, false);
+            let stale = verdict_hint(verdict, true);
+            let said = fresh.strip_suffix(". Click to show it").unwrap();
+            assert_eq!(
+                stale,
+                format!("{said}, before the issue's last edit. Click to show it")
+            );
+        }
     }
 
     #[test]

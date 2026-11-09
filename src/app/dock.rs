@@ -4,6 +4,7 @@ use super::board::dashed_rect;
 use super::{
     CornerRadius, IboardApp, Icon, PathBuf, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, theme,
 };
+use crate::domains::board::lifecycle::{self, Exit};
 
 /// An issue being dragged across the board. The payload is the issue's file,
 /// which a drop moves into the target column's directory, or hands to one of
@@ -77,10 +78,9 @@ impl IboardApp {
                 );
                 // Done cards are archived, never deleted; the others are
                 // deleted, never archived.
-                let zone = if archivable {
-                    DropZone::Archive
-                } else {
-                    DropZone::Delete
+                let zone = match lifecycle::exit(archivable) {
+                    Exit::Archive => DropZone::Archive,
+                    Exit::Delete => DropZone::Delete,
                 };
                 if let Some(path) = drop_zone(ui, inner, zone, self.prefs.confirm_delete) {
                     dropped = Some(match zone {

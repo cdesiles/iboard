@@ -4,7 +4,7 @@
 use iboard::release::{self, ReleaseChoices};
 
 use super::{
-    Align, ButtonKind, Duration, IboardApp, Icon, Instant, Job, Layout, MarginF32, Path, PathBuf,
+    Align, ButtonKind, Duration, IboardApp, Icon, Instant, Job, Layout, MarginF32, PathBuf,
     ReviewMode, RichText, Vec2, agent, job, theme, widgets,
 };
 
@@ -38,9 +38,7 @@ pub(super) struct ReleaseFlow {
     note_error: Option<String>,
     /// The newest tag the note follows, if any: the release window.
     since: Option<String>,
-    committed: bool,
-    tagged: bool,
-    pushed: bool,
+    progress: release::ReleaseProgress,
     pub(super) error: Option<String>,
 }
 
@@ -67,9 +65,7 @@ impl ReleaseFlow {
             grouped: false,
             note_error: None,
             since,
-            committed: false,
-            tagged: false,
-            pushed: false,
+            progress: release::ReleaseProgress::default(),
             error: None,
         }
     }
@@ -80,64 +76,25 @@ impl ReleaseFlow {
         release::section(self.tag.trim(), &day, &self.body)
     }
 
-    fn check_tag(&self) -> Result<(), String> {
-        let tag = self.tag.trim();
-        if tag.is_empty() {
-            return Err("The tag can't be empty.".to_string());
-        }
-        if tag.starts_with('-') || tag.contains(char::is_whitespace) {
-            return Err(format!("`{tag}` is not a tag git accepts."));
-        }
-        Ok(())
-    }
-
-    fn check_file(&self) -> Result<(), String> {
-        let file = self.file.trim();
-        if file.is_empty() {
-            return Err("The release note file can't be empty.".to_string());
-        }
-        let path = Path::new(file);
-        if path.is_absolute()
-            || path
-                .components()
-                .any(|part| part == std::path::Component::ParentDir)
-        {
-            return Err("The release note file must stay inside the project.".to_string());
-        }
-        Ok(())
-    }
-
     /// Makes the release in order: the note and its commit, the tag, the
     /// push. An error stays on screen and the flow can be confirmed again.
     fn confirm(&mut self) -> Result<(), String> {
-        if !self.tagged {
-            self.check_tag()?;
-            if release::tag_exists(&self.project, self.tag.trim()) {
-                return Err(format!("{} is already a tag.", self.tag.trim()));
-            }
-        }
-        if self.note && !self.committed {
-            self.check_file()?;
-            let path = release::write_note(&self.project, &self.file, &self.section())?;
-            let message = format!("Release {}", self.tag.trim());
-            release::commit(&self.project, Some(&path), &message)?;
-            self.committed = true;
-        }
-        if !self.tagged {
-            release::tag(&self.project, self.tag.trim(), &self.section())?;
-            self.tagged = true;
-        }
-        if self.push && !self.pushed {
-            release::push(&self.project, true)?;
-            self.pushed = true;
-        }
+        release::confirm(
+            &self.project,
+            &self.tag,
+            &self.section(),
+            &self.file,
+            self.note,
+            self.push,
+            &mut self.progress,
+        )?;
         self.error = None;
         Ok(())
     }
 
     /// Whether the release is made, its push included when one was asked.
     fn finished(&self) -> bool {
-        self.tagged && (self.pushed || !self.push)
+        self.progress.finished(self.push)
     }
 
     /// Whether the agent is still grouping the note.

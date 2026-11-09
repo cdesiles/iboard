@@ -4,6 +4,7 @@
 use std::collections::HashSet;
 
 use super::{Color32, HashMap, Job, Palette, PastReview, Path, PathBuf, ReviewMode, Split, agent};
+use crate::reviews::verdict_hint;
 
 /// What a review is called while it runs and once it is in.
 pub(in crate::app) const REVIEW_RUNNING: &str = "Reviewing…";
@@ -117,34 +118,6 @@ pub(super) fn verdict_look(verdict: agent::Verdict, p: &Palette) -> (&'static st
     }
 }
 
-/// What a card's verdict pill means: the worst of the review's three axes,
-/// then whether the issue changed since.
-fn verdict_hint(verdict: Option<agent::Verdict>, stale: bool) -> &'static str {
-    macro_rules! hints {
-        ($said:literal) => {
-            [
-                concat!("Last AI review", $said, ". Click to show it"),
-                concat!(
-                    "Last AI review",
-                    $said,
-                    ", before the issue's last edit. Click to show it"
-                ),
-            ]
-        };
-    }
-    let hints = match verdict {
-        Some(agent::Verdict::Pass) => hints!(": Pass. Relevance, size and clarity are all fine"),
-        Some(agent::Verdict::Challenge) => {
-            hints!(": Challenge. Relevance, size or clarity is worth another look, nothing blocks")
-        }
-        Some(agent::Verdict::Block) => {
-            hints!(": Block. Relevance, size or clarity is a real problem")
-        }
-        None => hints!(""),
-    };
-    hints[usize::from(stale)]
-}
-
 /// What the cards' review pill says: the review running or ready, else the
 /// last verdict.
 #[derive(Clone, Copy)]
@@ -162,29 +135,5 @@ impl CardReviews<'_> {
             return Some((REVIEW_READY, p.review, REVIEW_READY_HINT));
         }
         self.past.get(path).map(|past| card_pill(past, p))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_stale_hint_is_the_verdict_s_and_the_edit_since() {
-        let verdicts = [
-            None,
-            Some(agent::Verdict::Pass),
-            Some(agent::Verdict::Challenge),
-            Some(agent::Verdict::Block),
-        ];
-        for verdict in verdicts {
-            let fresh = verdict_hint(verdict, false);
-            let stale = verdict_hint(verdict, true);
-            let said = fresh.strip_suffix(". Click to show it").unwrap();
-            assert_eq!(
-                stale,
-                format!("{said}, before the issue's last edit. Click to show it")
-            );
-        }
     }
 }

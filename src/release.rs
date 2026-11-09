@@ -208,6 +208,87 @@ pub fn tag_exists(project: &Path, tag: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// How far a release got: the note committed, the tag made, the push done.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReleaseProgress {
+    pub committed: bool,
+    pub tagged: bool,
+    pub pushed: bool,
+}
+
+impl ReleaseProgress {
+    /// Whether the release is made, its push included when one was asked.
+    pub fn finished(&self, push: bool) -> bool {
+        self.tagged && (self.pushed || !push)
+    }
+}
+
+/// Whether `tag` is a name git accepts.
+pub fn check_tag(tag: &str) -> Result<(), String> {
+    let tag = tag.trim();
+    if tag.is_empty() {
+        return Err("The tag can't be empty.".to_string());
+    }
+    if tag.starts_with('-') || tag.contains(char::is_whitespace) {
+        return Err(format!("`{tag}` is not a tag git accepts."));
+    }
+    Ok(())
+}
+
+/// Whether `file` stays inside the project.
+pub fn check_file(file: &str) -> Result<(), String> {
+    let file = file.trim();
+    if file.is_empty() {
+        return Err("The release note file can't be empty.".to_string());
+    }
+    let path = Path::new(file);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|part| part == std::path::Component::ParentDir)
+    {
+        return Err("The release note file must stay inside the project.".to_string());
+    }
+    Ok(())
+}
+
+/// Makes the release in order: the note and its commit, the tag, the push.
+/// An error stops it where it is, and a later confirm resumes from there.
+pub fn confirm(
+    project: &Path,
+    name: &str,
+    note: &str,
+    file: &str,
+    update_note: bool,
+    push_after: bool,
+    progress: &mut ReleaseProgress,
+) -> Result<(), String> {
+    let version = name.trim();
+    let file = file.trim();
+    if !progress.tagged {
+        check_tag(version)?;
+        if tag_exists(project, version) {
+            return Err(format!("{version} is already a tag."));
+        }
+    }
+    if update_note && !progress.committed {
+        check_file(file)?;
+        let path = write_note(project, file, note)?;
+        let message = format!("Release {version}");
+        commit(project, Some(&path), &message)?;
+        progress.committed = true;
+    }
+    if !progress.tagged {
+        tag(project, version, note)?;
+        progress.tagged = true;
+    }
+    if push_after && !progress.pushed {
+        push(project, true)?;
+        progress.pushed = true;
+    }
+    Ok(())
+}
+
 /// The subjects of the commits since the newest tag matching `pattern`, oldest
 /// first: the list the release note is written from. An untagged repository
 /// lists every commit.
@@ -487,6 +568,89 @@ mod tests {
 
         std::fs::write(project.join("NOTES.md"), "").unwrap();
         assert_eq!(note_file(project, "NOTES.md"), "NOTES.md");
+    }
+
+    #[test]
+    fn a_release_refuses_a_tag_or_note_file_the_project_cannot_take() {
+        assert!(check_tag("").is_err());
+        assert!(check_tag("two words").is_err());
+        assert!(check_tag("-oops").is_err());
+        assert!(check_tag("v0.4.0").is_ok());
+
+        assert!(check_file("").is_err());
+        assert!(check_file("../NOTES.md").is_err());
+        assert!(check_file("/tmp/NOTES.md").is_err());
+        assert!(check_file("docs/CHANGELOG.md").is_ok());
+    }
+
+    #[test]
+    fn a_release_runs_its_steps_once_and_resumes_where_it_stopped() {
+        let dir = repo();
+        let project = dir.path();
+        let note = section("v0.2.0", "8 Nov 2026", "- One");
+        let mut progress = ReleaseProgress::default();
+
+        confirm(
+            project,
+            "v0.2.0",
+            &note,
+            NOTE_FILE,
+            true,
+            false,
+            &mut progress,
+        )
+        .unwrap();
+        assert_eq!(
+            progress,
+            ReleaseProgress {
+                committed: true,
+                tagged: true,
+                pushed: false,
+            }
+        );
+        assert!(progress.finished(false));
+        assert!(project.join(NOTE_FILE).is_file());
+        let head = git(project, &["rev-parse", "HEAD"]);
+
+        confirm(
+            project,
+            "v0.2.0",
+            &note,
+            NOTE_FILE,
+            true,
+            false,
+            &mut progress,
+        )
+        .unwrap();
+        assert_eq!(
+            git(project, &["rev-parse", "HEAD"]),
+            head,
+            "a later confirm adds nothing"
+        );
+        assert_eq!(git(project, &["tag", "--list", "v0.2.0"]), "v0.2.0");
+    }
+
+    #[test]
+    fn a_tag_already_taken_stops_the_release() {
+        let dir = repo();
+        let project = dir.path();
+        git(project, &["tag", "v0.2.0"]);
+        let note = section("v0.2.0", "8 Nov 2026", "- One");
+        let mut progress = ReleaseProgress::default();
+
+        let error = confirm(
+            project,
+            "v0.2.0",
+            &note,
+            NOTE_FILE,
+            true,
+            false,
+            &mut progress,
+        )
+        .unwrap_err();
+        assert!(error.contains("already a tag"), "{error}");
+        assert_eq!(progress, ReleaseProgress::default());
+        assert!(!project.join(NOTE_FILE).exists());
     }
 
     #[test]

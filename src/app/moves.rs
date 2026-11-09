@@ -4,6 +4,7 @@ use super::{
     Confirm, Deleted, IboardApp, Instant, Path, PathBuf, Removal, Screen, Session, Undo,
     atomic_write, discovery, file_name, images, trash,
 };
+use crate::domains::board::lifecycle::{self, Exit};
 use crate::priority;
 
 impl IboardApp {
@@ -69,20 +70,7 @@ impl IboardApp {
         let Some(path) = self.selected_issue() else {
             return;
         };
-        let Some(index) = self
-            .board
-            .columns
-            .iter()
-            .position(|column| column.issues.iter().any(|issue| issue.path == path))
-        else {
-            return;
-        };
-        let Some(target) = self
-            .board
-            .columns
-            .get(index + 1)
-            .map(|column| column.dir.clone())
-        else {
+        let Some(target) = lifecycle::next_column(&self.board, &path).map(Path::to_path_buf) else {
             return;
         };
         self.place_issue(&path, &target, None);
@@ -134,7 +122,7 @@ impl IboardApp {
         let paths: Vec<PathBuf> = self
             .selection_of(&path)
             .into_iter()
-            .filter(|path| !self.is_done_issue(path))
+            .filter(|path| lifecycle::exit(self.is_done_issue(path)) == Exit::Delete)
             .collect();
         if paths.is_empty() || self.asks_to_stop(Removal::Delete, &paths) {
             return;
