@@ -155,27 +155,4 @@ name = "Client"
 repos = ["~/code/app", "~/code/site"]
 ```
 
-A group's columns merge by kind (every Doing in one Doing), each issue is
-labelled `repo:<folder>` and `group:<name>` so the filter narrows the board to
-one project, and each project keeps its own `issues/`. A project can be in
-several groups. A folder
-without its own `issues/` is skipped with a warning.
-
-Each group is a row at the top of the project menu, and the first group's
-board opens by itself when iboard starts outside any project (in a folder
-holding several of them, or from the Dock before any project was opened).
-Below the groups, the menu lists your projects in your own order: type to
-filter them, `↩` opens the first match. Its footer holds **Add project…**,
-**Edit groups…** and **Reorder** (drag a row, or `⌥↑ ⌥↓`; Done saves the
-order as `[workspace] projects`). A project opened for the first time goes to
-the top. **Edit groups…** opens a dialog to create, rename, fill
-and delete groups; it writes the `[[workspace.group]]` tables back and leaves
-the rest of the file as it was. An edit made to the file outside iboard is
-picked up within a second. Cards move within their own project; a new issue
-goes to the project the filter names (`repo:app`), else the selected card's;
-reviews and builds run in the card's project.
-
-Todo and Ready keep each project's own order in its file names (`001-`). How
-the projects interleave is kept apart, one file per group in `group-order/`
-beside the user configuration: moving a card among other projects' cards renames nothing,
-and only a project whose own order changed is renumbered.
+> Please note: each ticket keep each project's own order in its file names.
