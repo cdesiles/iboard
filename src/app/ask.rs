@@ -110,7 +110,12 @@ impl IboardApp {
             return;
         };
         let leash = draft.leash();
-        let prompt = prompts::ask_prompt(&self.relative(&draft.path), &content, request, leash);
+        let prompt = prompts::ask_prompt(
+            &self.project_relative(&draft.path),
+            &content,
+            request,
+            leash,
+        );
         let project = self.board.project_of(&draft.path).to_path_buf();
         let log = build_log::path(self.board.root_of(&draft.path), &draft.path);
         let ends = (project.as_path(), log.as_path());

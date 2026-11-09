@@ -116,7 +116,8 @@ fn a_review_runs_in_its_project_and_is_kept_there() {
 #[test]
 fn play_builds_each_card_in_its_own_project() {
     let (_scratch, app_dir, site_dir, mut app) = two_projects("all-build");
-    app.prefs.build_agent = fake_agent("touch built # {prompt}");
+    app.prefs.build_agent =
+        fake_agent("cat \"$IBOARD_PROMPT\" > prompt.txt && touch built # {prompt}");
     app.session.agents = 2;
     let ready: Vec<PathBuf> = app.board.columns[1]
         .issues
@@ -131,6 +132,10 @@ fn play_builds_each_card_in_its_own_project() {
         app.session.build.is_none()
     }));
     assert!(app_dir.join("built").exists() && site_dir.join("built").exists());
+    let a = std::fs::read_to_string(app_dir.join("prompt.txt")).unwrap();
+    assert!(a.contains("`issues/doing/a.md`"), "{a}");
+    let b = std::fs::read_to_string(site_dir.join("prompt.txt")).unwrap();
+    assert!(b.contains("`issues/doing/b.md`"), "{b}");
 }
 
 #[test]

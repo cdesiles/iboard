@@ -666,6 +666,15 @@ impl IboardApp {
         }
     }
 
+    /// A path relative to the project folder, where the agents run.
+    fn project_relative(&self, path: &Path) -> String {
+        match path.strip_prefix(self.board.project_of(path)) {
+            Ok(relative) if relative.as_os_str().is_empty() => "./".to_string(),
+            Ok(relative) => relative.display().to_string(),
+            Err(_) => display_path(path),
+        }
+    }
+
     /// Draws the whole window: header bar, the current screen, status bar.
     fn draw(&mut self, ui: &mut egui::Ui) {
         if self.welcoming() {

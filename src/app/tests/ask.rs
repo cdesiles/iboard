@@ -41,6 +41,22 @@ fn cmd_k_asks_the_agent_about_the_open_issue() {
     assert!(app.has_agent_log(&file));
 }
 
+#[test]
+fn an_ask_prompt_names_the_issue_from_the_project() {
+    let (dir, mut app) = project("ask-prompt", &[("doing/migrate.md", "# Migrate\n")]);
+    app.prefs.build_agent = fake_agent("cat \"$IBOARD_PROMPT\" > prompt.md # {prompt}");
+    let file = dir.join("issues/doing/migrate.md");
+    app.toggle_ask(&file);
+    app.session.ask_draft.as_mut().unwrap().request = "Take care of it".to_string();
+    app.send_ask();
+    assert!(until(|| {
+        app.poll_asks();
+        !app.asking(&file)
+    }));
+    let prompt = std::fs::read_to_string(dir.join("prompt.md")).unwrap();
+    assert!(prompt.contains("`issues/doing/migrate.md`"), "{prompt}");
+}
+
 /// Bug: a renumber in Todo left the Ask dialog and the ask at work on the
 /// issue's old name: Send found no issue, and the answer missed the reader.
 #[test]

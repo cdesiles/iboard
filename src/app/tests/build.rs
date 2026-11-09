@@ -105,6 +105,21 @@ fn play_builds_ready_top_to_bottom_from_the_project() {
 }
 
 #[test]
+fn a_build_prompt_names_the_issue_from_the_project() {
+    let (dir, mut app) = board(
+        "build-prompt",
+        "cat \"$IBOARD_PROMPT\" > prompt.md # {prompt}",
+    );
+    app.apply(vec![Intent::Build(vec![ready(&app)[0].clone()])]);
+    assert!(until(|| {
+        app.poll_build();
+        app.session.build.is_none()
+    }));
+    let prompt = std::fs::read_to_string(dir.join("prompt.md")).unwrap();
+    assert!(prompt.contains("`issues/doing/a.md`"), "{prompt}");
+}
+
+#[test]
 fn a_failed_build_stops_the_run() {
     let (dir, mut app) = board("build-fail", "echo broke >&2; exit 3 # {prompt}");
     app.apply(vec![Intent::Build(ready(&app))]);
