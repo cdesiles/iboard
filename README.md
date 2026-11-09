@@ -8,6 +8,10 @@
 > [!NOTE]
 > **iboard** is an opinionated issue tracker that lives entirely as Markdown files right next to your code.
 
+<p align="center">
+  <img src="assets/iboard-screenshot.png" alt="The iboard window: Todo, Ready, Doing and Done columns, a search for 'bug' filtering the Todo column, and a card's hover preview" width="100%">
+</p>
+
 ⚡ Why iboard?
 
 Designed for small, high-impact teams and solopreneurs, it eliminates the friction of bouncing between Jira, Notion, and GitHub. 
