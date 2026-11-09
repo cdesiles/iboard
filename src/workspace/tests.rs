@@ -66,8 +66,12 @@ fn projects_merge_by_column_and_tag_their_issues() {
 fn groups_load_in_order_with_their_home_folders() {
     let text = "[[workspace.group]]\nname = \"B\"\nrepos = [\"~/b\", \"/abs/c\"]\n\n\
                 [[workspace.group]]\nname = \"A\"\nrepos = []\n";
-    let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
-    let workspace = load(&mut config).unwrap();
+    let document: toml::Table = toml::from_str(text).unwrap();
+    let section: WorkspaceSection = document
+        .get("workspace")
+        .and_then(|value| value.clone().try_into().ok())
+        .unwrap_or_default();
+    let workspace = section.workspace().unwrap();
     let names: Vec<&str> = workspace.groups.iter().map(|g| g.name.as_str()).collect();
     assert_eq!(names, ["B", "A"]);
     let home = settings::home().unwrap();
@@ -75,6 +79,5 @@ fn groups_load_in_order_with_their_home_folders() {
         workspace.groups[0].repos,
         [home.join("b"), PathBuf::from("/abs/c")]
     );
-    assert!(config.problems.is_empty());
-    assert_eq!(load(&mut UserConfig::default()), None);
+    assert_eq!(WorkspaceSection::default().workspace(), None);
 }

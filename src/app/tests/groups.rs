@@ -29,7 +29,10 @@ fn configured(tag: &str) -> (Scratch, PathBuf, IboardApp) {
     .unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&app_dir).unwrap());
     app.config_file = Some(config.clone());
-    app.workspace = crate::workspace::load(&mut UserConfig::load(Some(&config)));
+    let mut user = UserConfig::load(Some(&config));
+    app.workspace = user
+        .section::<crate::workspace::WorkspaceSection>("workspace")
+        .workspace();
     app.open_group("Clients");
     (parent, config, app)
 }

@@ -29,96 +29,67 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::settings::{Section, UserConfig};
-
 /// The `[delete]` section of the user configuration.
 #[derive(Default, Deserialize, Serialize)]
-struct RawDelete {
+pub struct DeleteSection {
     confirm: Option<bool>,
 }
 
-/// Whether deleting an issue asks first; on unless `[delete]` says otherwise.
-pub fn load_confirm_delete(config: &mut UserConfig) -> bool {
-    config
-        .section::<RawDelete>("delete")
-        .confirm
-        .unwrap_or(true)
+impl DeleteSection {
+    /// Whether deleting an issue asks first; on unless the section says
+    /// otherwise.
+    pub fn confirm(self) -> bool {
+        self.confirm.unwrap_or(true)
+    }
 }
 
 /// The `[delete]` section that stores `confirm`.
-pub fn section(confirm: bool) -> Result<Section, String> {
-    Section::new(
-        "delete",
-        &RawDelete {
-            confirm: Some(confirm),
-        },
-    )
+pub fn section(confirm: bool) -> DeleteSection {
+    DeleteSection {
+        confirm: Some(confirm),
+    }
 }
 
 /// A section that holds one `enabled` switch: `[auto]`, `[idesign]`,
 /// `[direnv]`.
 #[derive(Default, Deserialize, Serialize)]
-struct RawEnabled {
+pub struct Switch {
     enabled: Option<bool>,
 }
 
-/// Whether the board reloads from disk and the editor saves as you type; on
-/// unless `[auto]` says otherwise.
-pub fn load_auto(config: &mut UserConfig) -> bool {
-    config.section::<RawEnabled>("auto").enabled.unwrap_or(true)
+impl Switch {
+    /// The switch's value, or `default` when the section does not set it.
+    pub fn is_on(self, default: bool) -> bool {
+        self.enabled.unwrap_or(default)
+    }
 }
 
 /// The `[auto]` section that stores `enabled`.
-pub fn auto_section(enabled: bool) -> Result<Section, String> {
-    Section::new(
-        "auto",
-        &RawEnabled {
-            enabled: Some(enabled),
-        },
-    )
+pub fn auto_section(enabled: bool) -> Switch {
+    Switch {
+        enabled: Some(enabled),
+    }
 }
 
 /// The `[new_issue]` section of the user configuration.
 #[derive(Default, Deserialize, Serialize)]
-struct RawNewIssue {
+pub struct NewIssueSection {
     keep_notes: Option<bool>,
 }
 
-/// Whether NewIssueModal keeps your notes under a draft; on unless
-/// `[new_issue]` says otherwise.
-pub fn load_keep_notes(config: &mut UserConfig) -> bool {
-    config
-        .section::<RawNewIssue>("new_issue")
-        .keep_notes
-        .unwrap_or(true)
+impl NewIssueSection {
+    /// Whether NewIssueModal keeps your notes under a draft; on unless the
+    /// section says otherwise.
+    pub fn keep_notes(self) -> bool {
+        self.keep_notes.unwrap_or(true)
+    }
 }
 
 /// The `[new_issue]` section that stores `keep_notes`.
-pub fn keep_notes_section(keep_notes: bool) -> Result<Section, String> {
-    Section::new(
-        "new_issue",
-        &RawNewIssue {
-            keep_notes: Some(keep_notes),
-        },
-    )
-}
-
-/// Whether idesign, still in beta, is reachable from the board: the Design
-/// panel and Draft design. Off unless `[idesign] enabled = true`.
-pub fn load_idesign(config: &mut UserConfig) -> bool {
-    config
-        .section::<RawEnabled>("idesign")
-        .enabled
-        .unwrap_or(false)
-}
-
-/// Whether agents run through `direnv exec` in projects that have an
-/// `.envrc`. Off unless `[direnv] enabled = true`.
-pub fn load_direnv(config: &mut UserConfig) -> bool {
-    config
-        .section::<RawEnabled>("direnv")
-        .enabled
-        .unwrap_or(false)
+pub fn keep_notes_section(keep_notes: bool) -> NewIssueSection {
+    NewIssueSection {
+        keep_notes: Some(keep_notes),
+    }
 }
 
 /// The theme the windows draw in. Light unless `[appearance]` says otherwise.
@@ -173,99 +144,97 @@ fn system_is_dark() -> bool {
 
 /// The `[appearance]` section of the user configuration.
 #[derive(Default, Deserialize, Serialize)]
-struct RawAppearance {
+pub struct AppearanceSection {
     theme: Option<String>,
 }
 
-/// The chosen theme. An unknown value is reported and reads as light.
-pub fn load_appearance(config: &mut UserConfig) -> Appearance {
-    let Some(theme) = config.section::<RawAppearance>("appearance").theme else {
-        return Appearance::default();
-    };
-    match Appearance::ALL
-        .into_iter()
-        .find(|appearance| appearance.key() == theme.trim().to_lowercase())
-    {
-        Some(appearance) => appearance,
-        None => {
-            config.problem(format!(
-                "[appearance]: theme = \"{theme}\" is not light, dark or system"
-            ));
-            Appearance::default()
+impl AppearanceSection {
+    /// The chosen theme. An unknown value is reported and reads as light.
+    pub fn appearance(self) -> (Appearance, Vec<String>) {
+        let Some(theme) = self.theme else {
+            return (Appearance::default(), Vec::new());
+        };
+        match Appearance::ALL
+            .into_iter()
+            .find(|appearance| appearance.key() == theme.trim().to_lowercase())
+        {
+            Some(appearance) => (appearance, Vec::new()),
+            None => (
+                Appearance::default(),
+                vec![format!(
+                    "[appearance]: theme = \"{theme}\" is not light, dark or system"
+                )],
+            ),
         }
     }
 }
 
 /// The `[appearance]` section that stores `appearance`.
-pub fn appearance_section(appearance: Appearance) -> Result<Section, String> {
-    Section::new(
-        "appearance",
-        &RawAppearance {
-            theme: Some(appearance.key().to_string()),
-        },
-    )
+pub fn appearance_section(appearance: Appearance) -> AppearanceSection {
+    AppearanceSection {
+        theme: Some(appearance.key().to_string()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+
+    fn section<T: serde::de::DeserializeOwned + Default>(text: &str, name: &str) -> T {
+        let document: toml::Table = toml::from_str(text).unwrap();
+        document
+            .get(name)
+            .and_then(|value| value.clone().try_into().ok())
+            .unwrap_or_default()
+    }
 
     #[test]
     fn asking_is_on_by_default_and_can_be_turned_off() {
-        let file = Path::new("iboard.toml");
-        assert!(load_confirm_delete(&mut UserConfig::default()));
-        let mut config = UserConfig::parse("[titles]\nengine = \"manual\"\n", file);
-        assert!(load_confirm_delete(&mut config));
-        let mut config = UserConfig::parse("[delete]\nconfirm = false\n", file);
-        assert!(!load_confirm_delete(&mut config));
-        let mut config = UserConfig::parse("[delete]\nconfirm = \"no\"\n", file);
-        assert!(load_confirm_delete(&mut config));
-        assert_eq!(config.problems.len(), 1, "a wrong type is reported");
+        assert!(DeleteSection::default().confirm());
+        let other: DeleteSection = section("[titles]\nengine = \"manual\"\n", "delete");
+        assert!(other.confirm());
+        let off: DeleteSection = section("[delete]\nconfirm = false\n", "delete");
+        assert!(!off.confirm());
     }
 
     #[test]
     fn auto_is_on_by_default_and_can_be_turned_off() {
-        let file = Path::new("iboard.toml");
-        assert!(load_auto(&mut UserConfig::default()));
-        let mut config = UserConfig::parse("[auto]\nenabled = false\n", file);
-        assert!(!load_auto(&mut config));
-        let mut config = UserConfig::parse("[auto]\nenabled = true\n", file);
-        assert!(load_auto(&mut config));
+        assert!(Switch::default().is_on(true));
+        let off: Switch = section("[auto]\nenabled = false\n", "auto");
+        assert!(!off.is_on(true));
+        let on: Switch = section("[auto]\nenabled = true\n", "auto");
+        assert!(on.is_on(true));
     }
 
     #[test]
     fn idesign_is_off_by_default_and_can_be_turned_on() {
-        let file = Path::new("iboard.toml");
-        assert!(!load_idesign(&mut UserConfig::default()));
-        let mut config = UserConfig::parse("[auto]\nenabled = true\n", file);
-        assert!(!load_idesign(&mut config));
-        let mut config = UserConfig::parse("[idesign]\nenabled = true\n", file);
-        assert!(load_idesign(&mut config));
-        let mut config = UserConfig::parse("[idesign]\nenabled = \"yes\"\n", file);
-        assert!(!load_idesign(&mut config));
-        assert_eq!(config.problems.len(), 1, "a wrong type is reported");
+        assert!(!Switch::default().is_on(false));
+        let other: Switch = section("[auto]\nenabled = true\n", "idesign");
+        assert!(!other.is_on(false));
+        let on: Switch = section("[idesign]\nenabled = true\n", "idesign");
+        assert!(on.is_on(false));
     }
 
     #[test]
     fn the_theme_is_light_by_default_and_can_be_dark_or_follow_the_system() {
-        let file = Path::new("iboard.toml");
         assert_eq!(
-            load_appearance(&mut UserConfig::default()),
+            AppearanceSection::default().appearance().0,
             Appearance::Light
         );
         for appearance in Appearance::ALL {
             let text = format!("[appearance]\ntheme = \"{}\"\n", appearance.key());
-            let mut config = UserConfig::parse(&text, file);
-            assert_eq!(load_appearance(&mut config), appearance);
-            assert!(config.problems.is_empty());
+            let parsed: AppearanceSection = section(&text, "appearance");
+            let (chosen, problems) = parsed.appearance();
+            assert_eq!(chosen, appearance);
+            assert!(problems.is_empty());
         }
-        let mut config = UserConfig::parse("[appearance]\ntheme = \"Dark\"\n", file);
-        assert_eq!(load_appearance(&mut config), Appearance::Dark);
-        let mut config = UserConfig::parse("[appearance]\ntheme = \"sepia\"\n", file);
-        assert_eq!(load_appearance(&mut config), Appearance::Light);
+        let dark: AppearanceSection = section("[appearance]\ntheme = \"Dark\"\n", "appearance");
+        assert_eq!(dark.appearance().0, Appearance::Dark);
+        let sepia: AppearanceSection = section("[appearance]\ntheme = \"sepia\"\n", "appearance");
+        let (chosen, problems) = sepia.appearance();
+        assert_eq!(chosen, Appearance::Light);
         assert_eq!(Appearance::Light.catalog_theme(), "light");
         assert_eq!(Appearance::Dark.catalog_theme(), "dark");
-        assert_eq!(config.problems.len(), 1, "an unknown theme is reported");
+        assert_eq!(problems.len(), 1, "an unknown theme is reported");
     }
 }

@@ -116,6 +116,13 @@ impl UserConfig {
             self.problems.push(problem);
         }
     }
+
+    /// Records what a domain's reader could not use, in the order it read it.
+    pub fn report(&mut self, problems: impl IntoIterator<Item = String>) {
+        for problem in problems {
+            self.problem(problem);
+        }
+    }
 }
 
 /// A section to write: its new content, or nothing to remove it.

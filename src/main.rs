@@ -200,7 +200,11 @@ fn app_icon() -> Option<egui::IconData> {
 /// Whether the user configuration lists `[[workspace.group]]` projects.
 fn has_workspace() -> bool {
     let file = settings::config_file();
-    workspace::load(&mut settings::UserConfig::load(file.as_deref())).is_some()
+    let mut config = settings::UserConfig::load(file.as_deref());
+    config
+        .section::<workspace::WorkspaceSection>("workspace")
+        .workspace()
+        .is_some()
 }
 
 /// Each group's board, one after the other.
@@ -227,7 +231,10 @@ fn print_groups(workspace: &workspace::Workspace) {
 fn workspace_or_exit() -> workspace::Workspace {
     let file = settings::config_file();
     let mut config = settings::UserConfig::load(file.as_deref());
-    let Some(workspace) = workspace::load(&mut config) else {
+    let Some(workspace) = config
+        .section::<workspace::WorkspaceSection>("workspace")
+        .workspace()
+    else {
         let file = file.map_or("the user configuration".to_string(), |file| {
             file.display().to_string()
         });

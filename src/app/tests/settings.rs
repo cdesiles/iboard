@@ -287,7 +287,8 @@ fn the_review_scope_is_saved_with_the_review_agent() {
     let config = dir.join("iboard.toml");
     let mine = "# mine\n[ai]\ntool = \"claude\" # my agent\nmodel = \"default\"\n";
     std::fs::write(&config, mine).unwrap();
-    app.prefs.agent = agent::load(&mut settings::UserConfig::load(Some(&config)));
+    let mut user = settings::UserConfig::load(Some(&config));
+    app.prefs.agent = user.section::<agent::AiSection>("ai").agent().0;
     assert_eq!(
         app.prefs.agent.scope,
         ReviewMode::Quick,

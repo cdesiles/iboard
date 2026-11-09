@@ -147,6 +147,14 @@ mod tests {
         }
     }
 
+    fn workspace(text: &str) -> super::super::WorkspaceSection {
+        let document: toml::Table = toml::from_str(text).unwrap();
+        document
+            .get("workspace")
+            .and_then(|value| value.clone().try_into().ok())
+            .unwrap_or_default()
+    }
+
     #[test]
     fn only_the_group_tables_change() {
         let dir = tempfile::tempdir().unwrap();
@@ -178,8 +186,8 @@ mod tests {
         );
         assert!(after.contains("name = \"Empty\"\nrepos = []"), "{after}");
 
-        let mut config = crate::settings::UserConfig::parse(&after, &file);
-        let names: Vec<String> = super::super::load(&mut config)
+        let names: Vec<String> = workspace(&after)
+            .workspace()
             .unwrap()
             .groups
             .into_iter()
@@ -264,9 +272,7 @@ mod tests {
         );
 
         save(&file, &[group("B", &[])], None, Some(fingerprint(&file))).unwrap();
-        let mut config =
-            crate::settings::UserConfig::parse(&std::fs::read_to_string(&file).unwrap(), &file);
-        let expanded = super::super::load_projects(&mut config);
+        let expanded = workspace(&std::fs::read_to_string(&file).unwrap()).projects();
         assert_eq!(expanded.len(), 2, "saving the groups keeps the order");
         assert_eq!(expanded[1], PathBuf::from("/a"));
     }

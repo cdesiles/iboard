@@ -8,7 +8,7 @@ use super::reader::{column_mark, image_base_uri, sheet_rule};
 use super::{
     Align, ButtonKind, CCursor, CCursorRange, Color32, CommonMarkCache, CommonMarkViewer,
     CornerRadius, Engine, Frame, IboardApp, Key, Labels, Layout, Margin, Path, Pos2, Rect,
-    RichText, Sense, Shape, Stroke, Vec2, files, labels, sheet, theme, titles, widgets,
+    RichText, Sense, Shape, Stroke, Vec2, files, labels, settings, sheet, theme, titles, widgets,
 };
 use crate::theme::Icon;
 use iboard::{general, new_issue};
@@ -96,7 +96,10 @@ impl IboardApp {
             })
             .inner;
         if self.prefs.keep_notes != keep_notes {
-            self.remember_section(general::keep_notes_section(self.prefs.keep_notes));
+            self.remember_section(settings::Section::new(
+                "new_issue",
+                &general::keep_notes_section(self.prefs.keep_notes),
+            ));
         }
         for action in actions {
             self.compose_action(action);

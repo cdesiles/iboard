@@ -494,7 +494,9 @@ impl IboardApp {
         app.restore_splits(&cc.egui_ctx);
         agent::set_direnv(app.prefs.direnv);
         theme::apply(&cc.egui_ctx, app.prefs.appearance);
-        app.workspace = workspace::load(&mut config);
+        app.workspace = config
+            .section::<workspace::WorkspaceSection>("workspace")
+            .workspace();
         app.reload_project_order(&mut config);
         app.order_dir = workspace::order::dir();
         app.catalog = Catalog::probing();

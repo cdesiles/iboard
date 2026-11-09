@@ -20,13 +20,13 @@ use serde::{Deserialize, Serialize};
 use super::{Listed, STOPPED};
 use crate::git;
 use crate::job::Cancel;
-use crate::settings::{Section, UserConfig};
 
 const SECTION: &str = "stats";
 const DEFAULT_TAGS: &str = "v*";
 
+/// The `[stats]` section of the user configuration.
 #[derive(Default, Deserialize, Serialize)]
-struct RawStats {
+pub struct ReleasePrefsSection {
     show_releases: Option<bool>,
     release_tags: Option<String>,
 }
@@ -48,34 +48,41 @@ impl Default for ReleasePrefs {
     }
 }
 
-impl ReleasePrefs {
-    /// Reads `[stats]`; empty `release_tags` is reported and keeps the default.
-    pub fn load(config: &mut UserConfig) -> Self {
-        let raw = config.section::<RawStats>(SECTION);
-        let defaults = Self::default();
-        let tags = match raw.release_tags {
+impl ReleasePrefsSection {
+    /// The preferences it names; empty `release_tags` is reported and keeps
+    /// the default.
+    pub fn prefs(self) -> (ReleasePrefs, Vec<String>) {
+        let defaults = ReleasePrefs::default();
+        let tags = match self.release_tags {
             None => defaults.tags,
             Some(tags) if tags.trim().is_empty() => {
-                config.problem(format!("[{SECTION}]: release_tags is empty"));
-                defaults.tags
+                return (
+                    ReleasePrefs {
+                        show: self.show_releases.unwrap_or(defaults.show),
+                        tags: defaults.tags,
+                    },
+                    vec![format!("[{SECTION}]: release_tags is empty")],
+                );
             }
             Some(tags) => tags.trim().to_string(),
         };
-        Self {
-            show: raw.show_releases.unwrap_or(defaults.show),
-            tags,
-        }
-    }
-
-    /// The `[stats]` section that stores them.
-    pub fn section(&self) -> Result<Section, String> {
-        Section::new(
-            SECTION,
-            &RawStats {
-                show_releases: Some(self.show),
-                release_tags: Some(self.tags.clone()),
+        (
+            ReleasePrefs {
+                show: self.show_releases.unwrap_or(defaults.show),
+                tags,
             },
+            Vec::new(),
         )
+    }
+}
+
+impl ReleasePrefs {
+    /// The `[stats]` section that stores them.
+    pub fn section(&self) -> ReleasePrefsSection {
+        ReleasePrefsSection {
+            show_releases: Some(self.show),
+            release_tags: Some(self.tags.clone()),
+        }
     }
 }
 
@@ -393,6 +400,14 @@ mod tests {
         }
     }
 
+    fn stats(text: &str) -> ReleasePrefsSection {
+        let document: toml::Table = toml::from_str(text).unwrap();
+        document
+            .get("stats")
+            .and_then(|value| value.clone().try_into().ok())
+            .unwrap_or_default()
+    }
+
     #[test]
     fn the_section_keeps_comments_and_both_keys() {
         let scratch = tempfile::tempdir().unwrap();
@@ -402,25 +417,29 @@ mod tests {
             "# mine\n[stats]\nrelease_tags = \"rel-*\" # our scheme\n",
         )
         .unwrap();
-        let mut prefs = ReleasePrefs::load(&mut UserConfig::load(Some(&file)));
+        let mut prefs = stats(&std::fs::read_to_string(&file).unwrap()).prefs().0;
         assert_eq!(prefs.tags, "rel-*");
         assert!(prefs.show);
         prefs.show = false;
-        settings::save(&file, &[prefs.section().unwrap()]).unwrap();
+        settings::save(
+            &file,
+            &[settings::Section::new("stats", &prefs.section()).unwrap()],
+        )
+        .unwrap();
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             "# mine\n[stats]\nrelease_tags = \"rel-*\" # our scheme\nshow_releases = false\n"
         );
         assert_eq!(
-            ReleasePrefs::load(&mut UserConfig::load(Some(&file))),
+            stats(&std::fs::read_to_string(&file).unwrap()).prefs().0,
             prefs
         );
     }
 
     #[test]
     fn empty_release_tags_are_reported() {
-        let mut config = UserConfig::parse("[stats]\nrelease_tags = \" \"\n", Path::new("c.toml"));
-        assert_eq!(ReleasePrefs::load(&mut config), ReleasePrefs::default());
-        assert_eq!(config.problems, ["[stats]: release_tags is empty"]);
+        let (prefs, problems) = stats("[stats]\nrelease_tags = \" \"\n").prefs();
+        assert_eq!(prefs, ReleasePrefs::default());
+        assert_eq!(problems, ["[stats]: release_tags is empty"]);
     }
 }

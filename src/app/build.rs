@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use super::card::CardBuild;
 use super::{
     Column, Duration, IboardApp, Instant, Issue, Path, PathBuf, agent, discovery, file_name, job,
-    prompts, settings_ui,
+    prompts, settings, settings_ui,
 };
 use crate::agent::build::{self as queue, Run};
 pub(super) use crate::agent::build::{Build, MAX_AGENTS, Watch};
@@ -323,7 +323,10 @@ impl IboardApp {
     pub(super) fn set_agents(&mut self, agents: usize) {
         self.apply_agents(agents);
         self.prefs.agents = self.session.agents;
-        self.remember_section(agent::agents_section(self.prefs.agents));
+        self.remember_section(settings::Section::partial(
+            "build",
+            &agent::agents_section(self.prefs.agents),
+        ));
     }
 
     /// Applies a count from the header or from Settings, without saving it.

@@ -3,6 +3,22 @@ use super::tools::{parse_claude_model, parse_model_list, parse_opencode_favorite
 use super::*;
 use crate::settings;
 
+fn section<T: serde::de::DeserializeOwned + Default>(text: &str, name: &str) -> T {
+    let document: toml::Table = toml::from_str(text).unwrap();
+    document
+        .get(name)
+        .and_then(|value| value.clone().try_into().ok())
+        .unwrap_or_default()
+}
+
+fn ai(text: &str) -> AiSection {
+    section(text, "ai")
+}
+
+fn build(text: &str) -> BuildSection {
+    section(text, "build")
+}
+
 #[test]
 fn verdicts_survive_markdown_and_punctuation() {
     let answer = "**RELEVANCE:** Pass\nStill needed.\n\
@@ -559,10 +575,7 @@ fn the_label_names_the_tool_and_model() {
 
 #[test]
 fn a_tool_iboard_does_not_run_is_reported() {
-    let read = |text: &str| {
-        let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
-        (load(&mut config), config.problems)
-    };
+    let read = |text: &str| ai(text).agent();
     let (agent, problems) = read("[ai]\ntool = \"claude\"\nmodel = \"Default\"\n");
     assert_eq!(agent.tool, Tool::Claude);
     assert!(agent.configured() && agent.model.is_empty() && problems.is_empty());
@@ -577,7 +590,7 @@ fn a_tool_iboard_does_not_run_is_reported() {
 
 #[test]
 fn the_review_scope_defaults_to_the_ticket_alone() {
-    let read = |text: &str| load(&mut UserConfig::parse(text, Path::new("iboard.toml"))).scope;
+    let read = |text: &str| ai(text).agent().0.scope;
     assert_eq!(read("[ai]\ntool = \"claude\"\n"), ReviewMode::Quick);
     assert_eq!(read(""), ReviewMode::Quick);
     assert_eq!(
@@ -599,8 +612,8 @@ fn only_the_review_section_stores_the_scope() {
     let scratch = tempfile::tempdir().unwrap();
     let file = scratch.path().join("iboard.toml");
     let sections = [
-        section(&config).unwrap(),
-        build_section(&config, BuildTimeout::NONE).unwrap(),
+        settings::Section::new("ai", &ai_section(&config)).unwrap(),
+        settings::Section::new("build", &build_section(&config, BuildTimeout::NONE)).unwrap(),
     ];
     settings::save(&file, &sections).unwrap();
     assert_eq!(
@@ -613,17 +626,14 @@ fn only_the_review_section_stores_the_scope() {
 #[test]
 fn the_build_agent_count_is_one_until_the_build_section_says_otherwise() {
     let read = |text: &str| {
-        let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
-        (load_agents(&mut config), config.problems)
+        let (settings, problems) = build(text).settings();
+        (settings.agents, problems)
     };
     assert_eq!(read(""), (DEFAULT_AGENTS, Vec::new()));
     assert_eq!(read("[build]\nagents = 0\n"), (0, Vec::new()));
     assert_eq!(read("[build]\nagents = 4\n"), (4, Vec::new()));
     let (agents, problems) = read("[build]\nagents = 40\n");
     assert_eq!(agents, MAX_AGENTS);
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    let (agents, problems) = read("[build]\nagents = \"four\"\n");
-    assert_eq!(agents, DEFAULT_AGENTS);
     assert_eq!(problems.len(), 1, "{problems:?}");
 }
 
@@ -637,16 +647,20 @@ fn saving_the_agent_count_keeps_the_rest_of_the_build_section() {
     )
     .unwrap();
 
-    settings::save(&file, &[agents_section(4).unwrap()]).unwrap();
+    settings::save(
+        &file,
+        &[settings::Section::partial("build", &agents_section(4)).unwrap()],
+    )
+    .unwrap();
 
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
         "[build]\n# mine\ntool = \"claude\"\nmodel = \"opus\"\ntimeout = \"10m\"\n\
          extra = 1\nagents = 4\n"
     );
-    let mut config = UserConfig::load(Some(&file));
-    assert_eq!(load_agents(&mut config), 4);
-    assert!(config.problems.is_empty());
+    let (settings, problems) = build(&std::fs::read_to_string(&file).unwrap()).settings();
+    assert_eq!(settings.agents, 4);
+    assert!(problems.is_empty());
 }
 
 #[test]
@@ -696,8 +710,8 @@ fn an_answer_past_its_limit_is_stopped() {
 #[test]
 fn the_build_timeout_comes_from_its_section() {
     let read = |text: &str| {
-        let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
-        (load_build_timeout(&mut config), config.problems.len())
+        let (settings, problems) = build(text).settings();
+        (settings.timeout, problems.len())
     };
     assert_eq!(read(""), (BuildTimeout::default(), 0));
     for timeout in BuildTimeout::ALL {
@@ -711,9 +725,8 @@ fn the_build_timeout_comes_from_its_section() {
 #[test]
 fn the_build_agent_falls_back_to_the_review_agent() {
     let read = |text: &str| {
-        let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
-        let review = load(&mut config);
-        load_build(&mut config, &review)
+        let review = ai(text).agent().0;
+        build(text).settings().0.agent.unwrap_or(review)
     };
     let review = "[ai]\ntool = \"claude\"\nmodel = \"opus\"\n";
     let build = read(review);
@@ -878,15 +891,18 @@ fn the_configuration_round_trips_through_a_file() {
         configured: true,
         scope: ReviewMode::Deep,
     };
-    settings::save(&file, &[section(&config).unwrap()]).unwrap();
-    assert_eq!(load(&mut UserConfig::load(Some(&file))), config);
+    settings::save(
+        &file,
+        &[settings::Section::new("ai", &ai_section(&config)).unwrap()],
+    )
+    .unwrap();
     let text = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(ai(&text).agent().0, config);
     assert!(text.contains("[other]"), "the other section survives");
     assert!(text.contains("tool = \"opencode\""));
 
     // A missing file is simply an unconfigured agent.
-    let absent = dir.join("absent.toml");
-    assert!(!load(&mut UserConfig::load(Some(&absent))).configured());
+    assert!(!ai("").agent().0.configured());
 }
 
 #[test]

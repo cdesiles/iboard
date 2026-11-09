@@ -62,7 +62,9 @@ impl IboardApp {
     }
 
     pub(super) fn reload_project_order(&mut self, user: &mut UserConfig) {
-        self.projects = workspace::load_projects(user)
+        self.projects = user
+            .section::<workspace::WorkspaceSection>("workspace")
+            .projects()
             .iter()
             .map(|project| recents::canonical(project))
             .collect();

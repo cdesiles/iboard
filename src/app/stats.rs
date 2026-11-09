@@ -13,7 +13,7 @@ use super::agenda;
 use super::compose::Composer;
 use super::{
     Align, ButtonKind, Color32, CornerRadius, Duration, Frame, IboardApp, Icon, Instant, Job, Key,
-    Layout, Pos2, Rect, RichText, Sense, Shape, Stroke, Vec2, job, theme, widgets,
+    Layout, Pos2, Rect, RichText, Sense, Shape, Stroke, Vec2, job, settings, theme, widgets,
 };
 
 pub(super) mod blocks;
@@ -297,11 +297,17 @@ impl IboardApp {
         let range = panel.agenda.range;
         if range != self.prefs.agenda_range {
             self.prefs.agenda_range = range;
-            self.remember_section(iboard::agenda::range_section(range));
+            self.remember_section(settings::Section::new(
+                "agenda",
+                &iboard::agenda::range_section(range),
+            ));
         }
         if show_releases != self.prefs.releases.show {
             self.prefs.releases.show = show_releases;
-            self.remember_section(self.prefs.releases.section());
+            self.remember_section(settings::Section::new(
+                "stats",
+                &self.prefs.releases.section(),
+            ));
         }
         if let Some(ask) = ask {
             self.stats_ask(ask);

@@ -34,7 +34,6 @@ use crate::build_log;
 use crate::files;
 use crate::job::{Cancel, Job};
 use crate::process;
-use crate::settings::{Section, UserConfig};
 
 /// What a [`AgentConfig::model`] of "the tool's first favorite" is written as.
 const DEFAULT_MODEL: &str = "default";
@@ -182,30 +181,11 @@ impl AgentConfig {
             Tool::Custom => self.command.contains("{session}"),
         }
     }
-
-    fn to_raw(&self) -> RawAgent {
-        let model = self.model.trim();
-        RawAgent {
-            tool: self.tool.key().to_string(),
-            model: if model.is_empty() {
-                DEFAULT_MODEL.to_string()
-            } else {
-                model.to_string()
-            },
-            command: if self.tool == Tool::Custom {
-                self.command.clone()
-            } else {
-                String::new()
-            },
-            scope: self.scope.scope_key().to_string(),
-            timeout: String::new(),
-        }
-    }
 }
 
 /// The `[ai]` section as written on disk.
 #[derive(Debug, Default, Deserialize, Serialize)]
-struct RawAgent {
+pub struct AiSection {
     #[serde(default)]
     tool: String,
     #[serde(default)]
@@ -214,34 +194,114 @@ struct RawAgent {
     command: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     scope: String,
+}
+
+impl AiSection {
+    /// The agent it names; unconfigured when there is none, or when its tool
+    /// is not one iboard runs, which is reported.
+    pub fn agent(self) -> (AgentConfig, Vec<String>) {
+        let mut problems = Vec::new();
+        let agent = parse_agent(
+            &self.tool,
+            &self.model,
+            &self.command,
+            &self.scope,
+            "ai",
+            &mut problems,
+        )
+        .unwrap_or_default();
+        (agent, problems)
+    }
+}
+
+/// The `[build]` section as written on disk.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct BuildSection {
+    #[serde(default)]
+    tool: String,
+    #[serde(default)]
+    model: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    timeout: String,
+    command: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    scope: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timeout: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agents: Option<usize>,
 }
 
-/// The agent in the `[ai]` section; unconfigured when there is none, or when
-/// its tool is not one iboard runs, which is reported.
-pub fn load(config: &mut UserConfig) -> AgentConfig {
-    load_section(config, "ai").unwrap_or_default()
+/// What `[build]` holds: its agent, when it names one, its timeout and its
+/// agent count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildSettings {
+    pub agent: Option<AgentConfig>,
+    pub timeout: BuildTimeout,
+    pub agents: usize,
 }
 
-/// The agent in the `[build]` section, or `review`'s when there is none.
-pub fn load_build(config: &mut UserConfig, review: &AgentConfig) -> AgentConfig {
-    load_section(config, "build").unwrap_or_else(|| review.clone())
+impl BuildSection {
+    /// Reads the section; a tool, timeout or count iboard cannot use is
+    /// reported and falls back on its default.
+    pub fn settings(self) -> (BuildSettings, Vec<String>) {
+        let mut problems = Vec::new();
+        let agent = parse_agent(
+            &self.tool,
+            &self.model,
+            &self.command,
+            &self.scope,
+            "build",
+            &mut problems,
+        );
+        let timeout = match self.timeout {
+            None => BuildTimeout::default(),
+            Some(key) => BuildTimeout::from_key(key.trim()).unwrap_or_else(|| {
+                problems.push(format!(
+                    "[build]: timeout \"{key}\" is not 5m, 10m, 20m, 30m, 60m, 180m or none"
+                ));
+                BuildTimeout::default()
+            }),
+        };
+        let agents = match self.agents {
+            None => DEFAULT_AGENTS,
+            Some(agents) if agents > MAX_AGENTS => {
+                problems.push(format!(
+                    "[build]: agents {agents} is more than {MAX_AGENTS}"
+                ));
+                MAX_AGENTS
+            }
+            Some(agents) => agents,
+        };
+        (
+            BuildSettings {
+                agent,
+                timeout,
+                agents,
+            },
+            problems,
+        )
+    }
 }
 
-fn load_section(config: &mut UserConfig, name: &str) -> Option<AgentConfig> {
-    let raw: RawAgent = config.section(name);
-    let tool = raw.tool.trim();
+fn parse_agent(
+    tool: &str,
+    model: &str,
+    command: &str,
+    scope: &str,
+    name: &str,
+    problems: &mut Vec<String>,
+) -> Option<AgentConfig> {
+    let tool = tool.trim();
     if tool.is_empty() {
         return None;
     }
     let Some(tool) = Tool::from_key(tool) else {
-        config.problem(format!(
+        problems.push(format!(
             "[{name}]: tool \"{tool}\" is not opencode, claude or custom"
         ));
         return None;
     };
-    let model = raw.model.trim();
+    let model = model.trim();
     Some(AgentConfig {
         tool,
         model: if model.eq_ignore_ascii_case(DEFAULT_MODEL) {
@@ -249,77 +309,63 @@ fn load_section(config: &mut UserConfig, name: &str) -> Option<AgentConfig> {
         } else {
             model.to_string()
         },
-        command: raw.command,
+        command: command.to_string(),
         configured: true,
-        scope: ReviewMode::from_scope_key(&raw.scope),
+        scope: ReviewMode::from_scope_key(scope),
     })
 }
 
-/// The `[ai]` section that stores `config`.
-pub fn section(config: &AgentConfig) -> Result<Section, String> {
-    Section::new("ai", &config.to_raw())
-}
-
-/// The `timeout` of the `[build]` section; an unknown one is reported.
-pub fn load_build_timeout(config: &mut UserConfig) -> BuildTimeout {
-    let raw: RawBuildTimeout = config.section("build");
-    let Some(key) = raw.timeout else {
-        return BuildTimeout::default();
-    };
-    BuildTimeout::from_key(key.trim()).unwrap_or_else(|| {
-        config.problem(format!(
-            "[build]: timeout \"{key}\" is not 5m, 10m, 20m, 30m, 60m, 180m or none"
-        ));
-        BuildTimeout::default()
-    })
-}
-
-#[derive(Default, Deserialize)]
-struct RawBuildTimeout {
-    timeout: Option<String>,
-}
-
-/// The `[build]` section that stores `config` and `timeout`.
-pub fn build_section(config: &AgentConfig, timeout: BuildTimeout) -> Result<Section, String> {
-    let raw = RawAgent {
-        scope: String::new(),
-        timeout: timeout.key(),
-        ..config.to_raw()
-    };
-    Section::new("build", &raw)
-}
-
-/// The `[build]` section's `agents`, alone.
-#[derive(Default, Deserialize, Serialize)]
-struct RawBuildAgents {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    agents: Option<usize>,
-}
-
-/// How many build agents may work at once; one unless `[build]` says
-/// otherwise. More than [`MAX_AGENTS`] is reported and reads as the most.
-pub fn load_agents(config: &mut UserConfig) -> usize {
-    let Some(agents) = config.section::<RawBuildAgents>("build").agents else {
-        return DEFAULT_AGENTS;
-    };
-    if agents > MAX_AGENTS {
-        config.problem(format!(
-            "[build]: agents {agents} is more than {MAX_AGENTS}"
-        ));
-        MAX_AGENTS
+fn model_key(model: &str) -> String {
+    let model = model.trim();
+    if model.is_empty() {
+        DEFAULT_MODEL.to_string()
     } else {
-        agents
+        model.to_string()
     }
 }
 
+fn command_key(config: &AgentConfig) -> String {
+    if config.tool == Tool::Custom {
+        config.command.clone()
+    } else {
+        String::new()
+    }
+}
+
+/// The `[ai]` section that stores `config`.
+pub fn ai_section(config: &AgentConfig) -> AiSection {
+    AiSection {
+        tool: config.tool.key().to_string(),
+        model: model_key(&config.model),
+        command: command_key(config),
+        scope: config.scope.scope_key().to_string(),
+    }
+}
+
+/// The `[build]` section that stores `config` and `timeout`.
+pub fn build_section(config: &AgentConfig, timeout: BuildTimeout) -> BuildSection {
+    BuildSection {
+        tool: config.tool.key().to_string(),
+        model: model_key(&config.model),
+        command: command_key(config),
+        scope: String::new(),
+        timeout: Some(timeout.key().to_string()),
+        agents: None,
+    }
+}
+
+/// The `[build]` section's `agents`, alone.
+#[derive(Debug, Serialize)]
+pub struct AgentsSection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agents: Option<usize>,
+}
+
 /// The `[build]` key that stores `agents`, leaving its agent and timeout be.
-pub fn agents_section(agents: usize) -> Result<Section, String> {
-    Section::partial(
-        "build",
-        &RawBuildAgents {
-            agents: Some(agents.min(MAX_AGENTS)),
-        },
-    )
+pub fn agents_section(agents: usize) -> AgentsSection {
+    AgentsSection {
+        agents: Some(agents.min(MAX_AGENTS)),
+    }
 }
 
 /// How long a review may take, Quick or Deep, the Challenger's rounds and a

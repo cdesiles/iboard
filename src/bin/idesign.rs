@@ -109,7 +109,11 @@ fn main() -> ExitCode {
         {
             let file = iboard::settings::config_file();
             let mut config = iboard::settings::UserConfig::load(file.as_deref());
-            let theme = iboard::general::load_appearance(&mut config).catalog_theme();
+            let theme = config
+                .section::<iboard::general::AppearanceSection>("appearance")
+                .appearance()
+                .0
+                .catalog_theme();
             return match design::catalog::show(&system, theme) {
                 Ok(path) => {
                     println!("{}", path.display());
@@ -529,7 +533,11 @@ fn run_gui(start: PathBuf) -> ExitCode {
             iboard::theme::install(&cc.egui_ctx);
             let file = iboard::settings::config_file();
             let mut config = iboard::settings::UserConfig::load(file.as_deref());
-            iboard::theme::apply(&cc.egui_ctx, iboard::general::load_appearance(&mut config));
+            let appearance = config
+                .section::<iboard::general::AppearanceSection>("appearance")
+                .appearance()
+                .0;
+            iboard::theme::apply(&cc.egui_ctx, appearance);
             egui_extras::install_image_loaders(&cc.egui_ctx);
             #[cfg(target_os = "macos")]
             {

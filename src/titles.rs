@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use crate::agent::{self, AgentConfig};
 use crate::files;
 use crate::job::Job;
-use crate::settings::{Section, UserConfig};
 
 /// The longest title the composer accepts.
 pub const MAX_TITLE_CHARS: usize = 80;
@@ -233,32 +232,34 @@ fn cut(text: &str, max: usize) -> String {
 
 /// The `[titles]` section of the user configuration.
 #[derive(Default, Deserialize, Serialize)]
-struct RawTitles {
+pub struct TitlesSection {
     engine: Option<String>,
 }
 
-/// The engine `[titles]` names; Apple by default.
-pub fn load_engine(config: &mut UserConfig) -> Engine {
-    let raw: RawTitles = config.section("titles");
-    let Some(key) = raw.engine else {
-        return Engine::default();
-    };
-    Engine::from_key(key.trim()).unwrap_or_else(|| {
-        config.problem(format!(
-            "[titles]: engine \"{key}\" is not apple, agent or off"
-        ));
-        Engine::default()
-    })
+impl TitlesSection {
+    /// The engine the section names; Apple by default. An unknown one is
+    /// reported.
+    pub fn engine(self) -> (Engine, Vec<String>) {
+        let Some(key) = self.engine else {
+            return (Engine::default(), Vec::new());
+        };
+        match Engine::from_key(key.trim()) {
+            Some(engine) => (engine, Vec::new()),
+            None => (
+                Engine::default(),
+                vec![format!(
+                    "[titles]: engine \"{key}\" is not apple, agent or off"
+                )],
+            ),
+        }
+    }
 }
 
 /// The `[titles]` section that stores `engine`.
-pub fn section(engine: Engine) -> Result<Section, String> {
-    Section::new(
-        "titles",
-        &RawTitles {
-            engine: Some(engine.key().to_string()),
-        },
-    )
+pub fn section(engine: Engine) -> TitlesSection {
+    TitlesSection {
+        engine: Some(engine.key().to_string()),
+    }
 }
 
 #[cfg(apple_titles)]
@@ -419,6 +420,14 @@ mod apple {
 mod tests {
     use super::*;
 
+    fn titles(text: &str) -> TitlesSection {
+        let document: toml::Table = toml::from_str(text).unwrap();
+        document
+            .get("titles")
+            .and_then(|value| value.clone().try_into().ok())
+            .unwrap_or_default()
+    }
+
     #[test]
     fn the_agent_prompt() {
         insta::assert_snapshot!(agent_prompt(
@@ -459,10 +468,14 @@ mod tests {
         let scratch = tempfile::tempdir().unwrap();
         let dir = scratch.path();
         let file = dir.join("iboard.toml");
-        let engine = || load_engine(&mut UserConfig::load(Some(&file)));
+        let engine = || titles(&std::fs::read_to_string(&file).unwrap()).engine().0;
         std::fs::write(&file, "[ai]\ntool = \"claude\"\n").unwrap();
         assert_eq!(engine(), Engine::Apple);
-        crate::settings::save(&file, &[section(Engine::Off).unwrap()]).unwrap();
+        crate::settings::save(
+            &file,
+            &[crate::settings::Section::new("titles", &section(Engine::Off)).unwrap()],
+        )
+        .unwrap();
         assert_eq!(engine(), Engine::Off);
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(
@@ -470,12 +483,12 @@ mod tests {
             "other sections stay: {text}"
         );
         assert!(text.contains("engine = \"off\""), "{text}");
-        let mut config = UserConfig::parse("[titles]\nengine = \"manual\"\n", &file);
-        assert_eq!(load_engine(&mut config), Engine::Off, "the old name");
-        assert!(config.problems.is_empty(), "{:?}", config.problems);
-        let mut config = UserConfig::parse("[titles]\nengine = \"nope\"\n", &file);
-        assert_eq!(load_engine(&mut config), Engine::Apple);
-        assert_eq!(config.problems.len(), 1);
+        let (engine, problems) = titles("[titles]\nengine = \"manual\"\n").engine();
+        assert_eq!(engine, Engine::Off, "the old name");
+        assert!(problems.is_empty(), "{problems:?}");
+        let (engine, problems) = titles("[titles]\nengine = \"nope\"\n").engine();
+        assert_eq!(engine, Engine::Apple);
+        assert_eq!(problems.len(), 1);
     }
 
     #[test]

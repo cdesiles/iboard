@@ -13,7 +13,6 @@ use serde::Deserialize;
 
 use crate::issue::Issue;
 use crate::labels;
-use crate::settings::UserConfig;
 
 /// How many labels the field suggests when nothing is pinned.
 const TOP_LABELS: usize = 3;
@@ -113,25 +112,26 @@ pub fn suggestions<'a>(
 
 /// The `[filter]` section of the user configuration.
 #[derive(Debug, Default, Deserialize)]
-struct RawFilter {
+pub struct FilterSection {
     suggestions: Option<Vec<String>>,
 }
 
-/// The suggestions pinned in `[filter]`; `None` when the section or the key
-/// is missing, so the board's labels are offered.
-pub fn load_suggestions(config: &mut UserConfig) -> Option<Vec<String>> {
-    let raw: RawFilter = config.section("filter");
-    raw.suggestions.map(|words| {
-        let mut picked: Vec<String> = Vec::new();
-        for word in words {
-            if let Some(word) = labels::normalize(&word)
-                && !picked.contains(&word)
-            {
-                picked.push(word);
+impl FilterSection {
+    /// The suggestions pinned in the section; `None` when the key is missing,
+    /// so the board's labels are offered.
+    pub fn suggestions(self) -> Option<Vec<String>> {
+        self.suggestions.map(|words| {
+            let mut picked: Vec<String> = Vec::new();
+            for word in words {
+                if let Some(word) = labels::normalize(&word)
+                    && !picked.contains(&word)
+                {
+                    picked.push(word);
+                }
             }
-        }
-        picked
-    })
+            picked
+        })
+    }
 }
 
 #[cfg(test)]
@@ -208,9 +208,14 @@ mod tests {
     #[test]
     fn suggestions_are_pinned_only_by_the_config() {
         let pinned = |text: &str| {
-            load_suggestions(&mut UserConfig::parse(text, std::path::Path::new("c.toml")))
+            let document: toml::Table = toml::from_str(text).unwrap();
+            let section: FilterSection = document
+                .get("filter")
+                .and_then(|value| value.clone().try_into().ok())
+                .unwrap_or_default();
+            section.suggestions()
         };
-        assert_eq!(load_suggestions(&mut UserConfig::default()), None);
+        assert_eq!(FilterSection::default().suggestions(), None);
         assert_eq!(pinned("[ai]\ntool = \"claude\"\n"), None);
         assert_eq!(
             pinned("[filter]\nsuggestions = [\"Chore\", \"bug\", \"\"]\n"),

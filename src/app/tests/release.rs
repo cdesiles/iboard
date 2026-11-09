@@ -326,7 +326,11 @@ fn the_choices_made_are_kept_in_the_settings_file() {
     press(&mut harness, "Keep it local");
     press(&mut harness, "Cancel");
 
-    let saved = iboard::release::ReleaseChoices::load(&mut UserConfig::load(Some(&config)));
+    let mut user = UserConfig::load(Some(&config));
+    let saved = user
+        .section::<iboard::release::ReleaseSection>("release")
+        .choices()
+        .0;
     assert!(!saved.note, "tag only is remembered");
     assert!(!saved.push, "the local choice is remembered");
 

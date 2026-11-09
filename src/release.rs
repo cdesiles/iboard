@@ -11,7 +11,6 @@ use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 use crate::git;
-use crate::settings::{Section, UserConfig};
 
 /// The note file at the project root, newest release first.
 pub const NOTE_FILE: &str = "CHANGELOG.md";
@@ -39,44 +38,52 @@ impl Default for ReleaseChoices {
     }
 }
 
+/// The `[release]` section of the user configuration.
 #[derive(Default, Deserialize, Serialize)]
-struct RawRelease {
+pub struct ReleaseSection {
     note: Option<bool>,
     file: Option<String>,
     push: Option<bool>,
 }
 
-impl ReleaseChoices {
-    /// Reads `[release]`; an empty file name is reported and keeps the
+impl ReleaseSection {
+    /// The choices it names; an empty file name is reported and keeps the
     /// default.
-    pub fn load(config: &mut UserConfig) -> Self {
-        let raw = config.section::<RawRelease>(SECTION);
-        let defaults = Self::default();
-        let file = match raw.file {
+    pub fn choices(self) -> (ReleaseChoices, Vec<String>) {
+        let defaults = ReleaseChoices::default();
+        let file = match self.file {
             None => defaults.file,
             Some(file) if file.trim().is_empty() => {
-                config.problem(format!("[{SECTION}]: file is empty"));
-                defaults.file
+                return (
+                    ReleaseChoices {
+                        note: self.note.unwrap_or(defaults.note),
+                        file: defaults.file,
+                        push: self.push.unwrap_or(defaults.push),
+                    },
+                    vec![format!("[{SECTION}]: file is empty")],
+                );
             }
             Some(file) => file.trim().to_string(),
         };
-        Self {
-            note: raw.note.unwrap_or(defaults.note),
-            file,
-            push: raw.push.unwrap_or(defaults.push),
-        }
-    }
-
-    /// The `[release]` section that stores them.
-    pub fn section(&self) -> Result<Section, String> {
-        Section::new(
-            SECTION,
-            &RawRelease {
-                note: Some(self.note),
-                file: Some(self.file.clone()),
-                push: Some(self.push),
+        (
+            ReleaseChoices {
+                note: self.note.unwrap_or(defaults.note),
+                file,
+                push: self.push.unwrap_or(defaults.push),
             },
+            Vec::new(),
         )
+    }
+}
+
+impl ReleaseChoices {
+    /// The `[release]` section that stores them.
+    pub fn section(&self) -> ReleaseSection {
+        ReleaseSection {
+            note: Some(self.note),
+            file: Some(self.file.clone()),
+            push: Some(self.push),
+        }
     }
 }
 
@@ -570,6 +577,14 @@ mod tests {
         assert_eq!(note_file(project, "NOTES.md"), "NOTES.md");
     }
 
+    fn release(text: &str) -> ReleaseSection {
+        let document: toml::Table = toml::from_str(text).unwrap();
+        document
+            .get("release")
+            .and_then(|value| value.clone().try_into().ok())
+            .unwrap_or_default()
+    }
+
     #[test]
     fn a_release_refuses_a_tag_or_note_file_the_project_cannot_take() {
         assert!(check_tag("").is_err());
@@ -655,11 +670,9 @@ mod tests {
 
     #[test]
     fn the_choices_are_read_from_the_release_section_and_written_back() {
-        let mut config = UserConfig::parse(
-            "[release]\nnote = false\nfile = \"release-notes.md\"\npush = false\n",
-            Path::new("iboard.toml"),
-        );
-        let choices = ReleaseChoices::load(&mut config);
+        let (choices, problems) =
+            release("[release]\nnote = false\nfile = \"release-notes.md\"\npush = false\n")
+                .choices();
         assert_eq!(
             choices,
             ReleaseChoices {
@@ -668,10 +681,10 @@ mod tests {
                 push: false,
             }
         );
-        assert!(config.problems.is_empty());
+        assert!(problems.is_empty());
 
-        let mut config = UserConfig::parse("[release]\nfile = \"  \"\n", Path::new("iboard.toml"));
-        assert_eq!(ReleaseChoices::load(&mut config), ReleaseChoices::default());
-        assert_eq!(config.problems.len(), 1, "an empty file is reported");
+        let (choices, problems) = release("[release]\nfile = \"  \"\n").choices();
+        assert_eq!(choices, ReleaseChoices::default());
+        assert_eq!(problems.len(), 1, "an empty file is reported");
     }
 }

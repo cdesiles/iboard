@@ -5,7 +5,7 @@ use iboard::release::{self, ReleaseChoices};
 
 use super::{
     Align, ButtonKind, Duration, IboardApp, Icon, Instant, Job, Layout, MarginF32, PathBuf,
-    ReviewMode, RichText, Vec2, agent, job, theme, widgets,
+    ReviewMode, RichText, Vec2, agent, job, settings, theme, widgets,
 };
 
 /// What the user chose on the release panel.
@@ -449,7 +449,10 @@ impl IboardApp {
         };
         if choices != self.prefs.release {
             self.prefs.release = choices;
-            self.remember_section(self.prefs.release.section());
+            self.remember_section(settings::Section::new(
+                "release",
+                &self.prefs.release.section(),
+            ));
         }
         match (choice, close) {
             (Some(choice), _) => self.release_choice(choice),

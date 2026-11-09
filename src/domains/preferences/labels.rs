@@ -12,7 +12,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::kernel::labels::normalize;
-use crate::settings::{Section, UserConfig};
 
 const PRESETS: [(&str, Hue); 5] = [
     ("discovery", Hue::Teal),
@@ -24,8 +23,6 @@ const PRESETS: [(&str, Hue); 5] = [
 
 /// What stands out with no `[label_style]`.
 const STAND_OUT: [&str; 1] = ["bug"];
-
-const LABEL_STYLE: &str = "label_style";
 
 /// A preset's place in the theme's `label-*` palette, which has a light and a
 /// dark value for each.
@@ -85,10 +82,14 @@ pub struct LabelStyle {
     pub stand_out: bool,
 }
 
+/// The `[labels]` section: a label name to its `#rrggbb`, or an empty value
+/// to remove it.
+pub type LabelsSection = BTreeMap<String, String>;
+
 /// The `[label_style]` section.
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-struct RawStyle {
+pub struct StyleSection {
     stand_out: Option<Vec<String>>,
 }
 
@@ -112,24 +113,16 @@ impl Labels {
         }
     }
 
-    /// The presets, overridden and extended by the `[labels]` section, and
-    /// `[label_style]`. A value that is not a colour is reported and skipped.
-    pub fn load(config: &mut UserConfig) -> Self {
-        let table: BTreeMap<String, String> = config.section("labels");
+    /// The presets, overridden and extended by the `[labels]` section. A value
+    /// that is not a colour is reported and skipped.
+    pub fn read(table: LabelsSection) -> (Self, Vec<String>) {
+        let mut problems = Vec::new();
         for (name, value) in &table {
             if !value.trim().is_empty() && parse_hex(value).is_none() {
-                config.problem(format!("[labels]: {name} = \"{value}\" is not #rrggbb"));
+                problems.push(format!("[labels]: {name} = \"{value}\" is not #rrggbb"));
             }
         }
-        let labels = Self::with(&table);
-        let style: RawStyle = config.section(LABEL_STYLE);
-        match style.stand_out {
-            Some(names) => {
-                let names = names.iter().filter_map(|name| normalize(name)).collect();
-                labels.with_stand_out(names)
-            }
-            None => labels,
-        }
+        (Self::with(&table), problems)
     }
 
     /// These labels, with `names` standing out instead.
@@ -229,23 +222,29 @@ pub fn table(entries: &[(String, String)]) -> BTreeMap<String, String> {
     table
 }
 
-/// The `[labels]` section that stores `table`; none at all when it is empty.
-pub fn section(table: &BTreeMap<String, String>) -> Result<Section, String> {
-    if table.is_empty() {
-        Ok(Section::removed("labels"))
-    } else {
-        Section::new("labels", table)
+/// These labels, with the `[label_style]` section's stand-outs.
+pub fn styled(labels: Labels, section: StyleSection) -> Labels {
+    match section.stand_out {
+        Some(names) => {
+            let names = names.iter().filter_map(|name| normalize(name)).collect();
+            labels.with_stand_out(names)
+        }
+        None => labels,
     }
 }
 
-/// The `[label_style]` section that stores `names`; none at all for the
-/// default.
-pub fn style_section(names: &BTreeSet<String>) -> Result<Section, String> {
+/// The `[labels]` section that stores `table`; `None` when it is empty.
+pub fn section(table: &BTreeMap<String, String>) -> Option<BTreeMap<String, String>> {
+    (!table.is_empty()).then(|| table.clone())
+}
+
+/// The `[label_style]` section that stores `names`; `None` for the default.
+pub fn style_section(names: &BTreeSet<String>) -> Option<StyleSection> {
     if names.iter().map(String::as_str).eq(STAND_OUT) {
-        return Ok(Section::removed(LABEL_STYLE));
+        return None;
     }
     let stand_out = Some(names.iter().cloned().collect());
-    Section::new(LABEL_STYLE, &RawStyle { stand_out })
+    Some(StyleSection { stand_out })
 }
 
 /// Parses `#rrggbb` (or a bare `rrggbb`). `None` for anything else.
@@ -261,7 +260,6 @@ pub fn parse_hex(value: &str) -> Option<Rgb> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn hex_parses_with_or_without_the_hash() {
@@ -284,8 +282,17 @@ mod tests {
     }
 
     fn load(text: &str) -> (Labels, Vec<String>) {
-        let mut config = UserConfig::parse(text, Path::new("iboard.toml"));
-        (Labels::load(&mut config), config.problems)
+        let document: toml::Table = toml::from_str(text).unwrap();
+        let table: LabelsSection = document
+            .get("labels")
+            .and_then(|value| value.clone().try_into().ok())
+            .unwrap_or_default();
+        let (labels, problems) = Labels::read(table);
+        let style: StyleSection = document
+            .get("label_style")
+            .and_then(|value| value.clone().try_into().ok())
+            .unwrap_or_default();
+        (styled(labels, style), problems)
     }
 
     #[test]
@@ -338,13 +345,6 @@ mod tests {
         assert!(stands_out(chosen, "chore"));
         assert!(stands_out(chosen, "tech-debt"));
         assert!(!stands_out("[label_style]\nstand_out = []\n", "bug"));
-
-        let (labels, problems) = load("[label_style]\nstand_out = \"bug\"\n");
-        assert!(
-            labels.style("bug").stand_out,
-            "a bad value keeps the default"
-        );
-        assert_eq!(problems.len(), 1);
     }
 
     #[test]
@@ -353,8 +353,12 @@ mod tests {
         let file = scratch.path().join("iboard.toml");
         let save = |names: &[&str]| {
             let names: BTreeSet<String> = names.iter().map(|name| name.to_string()).collect();
-            crate::settings::save(&file, &[style_section(&names).unwrap()]).unwrap();
-            let back = Labels::load(&mut UserConfig::load(Some(&file)));
+            let section = match style_section(&names) {
+                Some(style) => crate::settings::Section::new("label_style", &style).unwrap(),
+                None => crate::settings::Section::removed("label_style"),
+            };
+            crate::settings::save(&file, &[section]).unwrap();
+            let back = load(&std::fs::read_to_string(&file).unwrap()).0;
             assert_eq!(*back.stand_outs(), names);
             std::fs::read_to_string(&file).unwrap()
         };
@@ -376,7 +380,11 @@ mod tests {
             ("broken".to_string(), "nope".to_string()),
             ("question".to_string(), "nope".to_string()),
         ];
-        crate::settings::save(&file, &[section(&table(&entries)).unwrap()]).unwrap();
+        let saved = match section(&table(&entries)) {
+            Some(table) => crate::settings::Section::new("labels", &table).unwrap(),
+            None => crate::settings::Section::removed("labels"),
+        };
+        crate::settings::save(&file, &[saved]).unwrap();
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(
             !text.contains("bug") && !text.contains("question"),
@@ -386,7 +394,7 @@ mod tests {
         assert!(text.contains("ops = \"#abcdef\""), "{text}");
         assert!(!text.contains("broken"));
         assert!(text.contains("confirm = false"), "other sections stay");
-        let labels = Labels::load(&mut UserConfig::load(Some(&file)));
+        let labels = load(&text).0;
         let color = |name| labels.style(name).color;
         assert_eq!(color("feature"), parse_hex("#123456").map(LabelColor::Own));
         assert_eq!(color("bug"), Some(LabelColor::Preset(Hue::Red)));

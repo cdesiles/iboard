@@ -87,7 +87,9 @@ impl IboardApp {
     /// is read, so a problem that is still there stays reported.
     fn reload_groups(&mut self) {
         let mut user = UserConfig::load(self.config_file.as_deref());
-        let groups = workspace::load(&mut user)
+        let groups = user
+            .section::<workspace::WorkspaceSection>("workspace")
+            .workspace()
             .map(|w| w.groups)
             .unwrap_or_default();
         if user.problems.is_empty() {

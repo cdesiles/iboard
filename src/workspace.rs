@@ -20,7 +20,7 @@ use crate::files;
 use crate::issue::Issue;
 use crate::labels;
 use crate::priority;
-use crate::settings::{self, UserConfig};
+use crate::settings;
 
 pub mod config;
 pub mod draft;
@@ -55,8 +55,9 @@ impl Group {
     }
 }
 
+/// The `[workspace]` section of the user configuration.
 #[derive(Default, Deserialize)]
-struct RawWorkspace {
+pub struct WorkspaceSection {
     #[serde(default)]
     group: Vec<RawGroup>,
     #[serde(default)]
@@ -70,25 +71,26 @@ struct RawGroup {
     repos: Vec<String>,
 }
 
-/// The `[[workspace.group]]` tables of the user configuration, in their
-/// order; `None` when there is none.
-pub fn load(config: &mut UserConfig) -> Option<Workspace> {
-    let raw: RawWorkspace = config.section("workspace");
-    let groups: Vec<Group> = raw
-        .group
-        .into_iter()
-        .map(|group| Group {
-            name: group.name,
-            repos: group.repos.iter().map(|repo| expand(repo)).collect(),
-        })
-        .collect();
-    (!groups.is_empty()).then_some(Workspace { groups })
-}
+impl WorkspaceSection {
+    /// The `[[workspace.group]]` tables, in their order; `None` when there is
+    /// none.
+    pub fn workspace(self) -> Option<Workspace> {
+        let groups: Vec<Group> = self
+            .group
+            .into_iter()
+            .map(|group| Group {
+                name: group.name,
+                repos: group.repos.iter().map(|repo| expand(repo)).collect(),
+            })
+            .collect();
+        (!groups.is_empty()).then_some(Workspace { groups })
+    }
 
-/// `workspace.projects`: the user's own order of their projects, as written.
-pub fn load_projects(config: &mut UserConfig) -> Vec<PathBuf> {
-    let raw: RawWorkspace = config.section("workspace");
-    raw.projects.iter().map(|path| expand(path)).collect()
+    /// `workspace.projects`: the user's own order of their projects, as
+    /// written.
+    pub fn projects(self) -> Vec<PathBuf> {
+        self.projects.iter().map(|path| expand(path)).collect()
+    }
 }
 
 fn expand(path: &str) -> PathBuf {

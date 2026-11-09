@@ -10,9 +10,9 @@ use crate::domains::preferences::labels::{self, Labels};
 use crate::filter;
 use crate::general::{self, Appearance};
 use crate::notifications;
-use crate::release::ReleaseChoices;
+use crate::release::{ReleaseChoices, ReleaseSection};
 use crate::settings::{Section, UserConfig};
-use crate::stats::ReleasePrefs;
+use crate::stats::{ReleasePrefs, ReleasePrefsSection};
 use crate::titles::{self, Engine};
 
 const SPLITS: &str = "splits";
@@ -84,27 +84,62 @@ impl Preferences {
     /// be used keeps its default and is reported in `config.problems`, in
     /// reading order.
     pub fn load(config: &mut UserConfig) -> Self {
-        let agent = agent::load(config);
-        let build_agent = agent::load_build(config, &agent);
+        let (agent, problems) = config.section::<agent::AiSection>("ai").agent();
+        config.report(problems);
+        let (build, problems) = config.section::<agent::BuildSection>("build").settings();
+        config.report(problems);
+        let build_agent = build.agent.unwrap_or_else(|| agent.clone());
+        let suggestions = config
+            .section::<filter::FilterSection>("filter")
+            .suggestions();
+        let (title_engine, problems) = config.section::<titles::TitlesSection>("titles").engine();
+        config.report(problems);
+        let confirm_delete = config.section::<general::DeleteSection>("delete").confirm();
+        let (appearance, problems) = config
+            .section::<general::AppearanceSection>("appearance")
+            .appearance();
+        config.report(problems);
+        let auto = config.section::<general::Switch>("auto").is_on(true);
+        let idesign = config.section::<general::Switch>("idesign").is_on(false);
+        let direnv = config.section::<general::Switch>("direnv").is_on(false);
+        let labels = {
+            let table = config.section::<labels::LabelsSection>("labels");
+            let (labels, problems) = Labels::read(table);
+            config.report(problems);
+            let style = config.section::<labels::StyleSection>("label_style");
+            labels::styled(labels, style)
+        };
+        let splits = config.section(SPLITS);
+        let keep_notes = config
+            .section::<general::NewIssueSection>("new_issue")
+            .keep_notes();
+        let (agenda_range, problems) = config.section::<agenda::AgendaSection>("agenda").range();
+        config.report(problems);
+        let (releases, problems) = config.section::<ReleasePrefsSection>("stats").prefs();
+        config.report(problems);
+        let (release, problems) = config.section::<ReleaseSection>("release").choices();
+        config.report(problems);
         Self {
             agent,
             build_agent,
-            build_timeout: agent::load_build_timeout(config),
-            agents: agent::load_agents(config),
-            suggestions: filter::load_suggestions(config),
-            title_engine: titles::load_engine(config),
-            confirm_delete: general::load_confirm_delete(config),
-            appearance: general::load_appearance(config),
-            auto: general::load_auto(config),
-            idesign: general::load_idesign(config),
-            direnv: general::load_direnv(config),
-            labels: Labels::load(config),
-            splits: config.section(SPLITS),
-            keep_notes: general::load_keep_notes(config),
-            agenda_range: agenda::load_range(config),
-            releases: ReleasePrefs::load(config),
-            release: ReleaseChoices::load(config),
-            notifications: notifications::load_prefs(config),
+            build_timeout: build.timeout,
+            agents: build.agents,
+            suggestions,
+            title_engine,
+            confirm_delete,
+            appearance,
+            auto,
+            idesign,
+            direnv,
+            labels,
+            splits,
+            keep_notes,
+            agenda_range,
+            releases,
+            release,
+            notifications: config
+                .section::<notifications::PrefsSection>("notifications")
+                .prefs(),
         }
     }
 
@@ -114,36 +149,61 @@ impl Preferences {
     pub fn sections_since(&self, before: &Self) -> Result<Vec<Section>, String> {
         let mut sections = Vec::new();
         if self.agent != before.agent {
-            sections.push(agent::section(&self.agent)?);
+            sections.push(Section::new("ai", &agent::ai_section(&self.agent))?);
         }
         if self.build_agent != before.build_agent || self.build_timeout != before.build_timeout {
-            sections.push(agent::build_section(&self.build_agent, self.build_timeout)?);
+            sections.push(Section::new(
+                "build",
+                &agent::build_section(&self.build_agent, self.build_timeout),
+            )?);
             if self.agents != agent::DEFAULT_AGENTS {
-                sections.push(agent::agents_section(self.agents)?);
+                sections.push(Section::partial(
+                    "build",
+                    &agent::agents_section(self.agents),
+                )?);
             }
         } else if self.agents != before.agents {
-            sections.push(agent::agents_section(self.agents)?);
+            sections.push(Section::partial(
+                "build",
+                &agent::agents_section(self.agents),
+            )?);
         }
         if self.title_engine != before.title_engine {
-            sections.push(titles::section(self.title_engine)?);
+            sections.push(Section::new("titles", &titles::section(self.title_engine))?);
         }
         if self.confirm_delete != before.confirm_delete {
-            sections.push(general::section(self.confirm_delete)?);
+            sections.push(Section::new(
+                "delete",
+                &general::section(self.confirm_delete),
+            )?);
         }
         if self.appearance != before.appearance {
-            sections.push(general::appearance_section(self.appearance)?);
+            sections.push(Section::new(
+                "appearance",
+                &general::appearance_section(self.appearance),
+            )?);
         }
         if self.auto != before.auto {
-            sections.push(general::auto_section(self.auto)?);
+            sections.push(Section::new("auto", &general::auto_section(self.auto))?);
         }
         if self.labels.entries() != before.labels.entries() {
-            sections.push(labels::section(&labels::table(&self.labels.entries()))?);
+            let table = labels::table(&self.labels.entries());
+            sections.push(match labels::section(&table) {
+                Some(table) => Section::new("labels", &table)?,
+                None => Section::removed("labels"),
+            });
         }
         if self.labels.stand_outs() != before.labels.stand_outs() {
-            sections.push(labels::style_section(self.labels.stand_outs())?);
+            sections.push(match labels::style_section(self.labels.stand_outs()) {
+                Some(style) => Section::new("label_style", &style)?,
+                None => Section::removed("label_style"),
+            });
         }
         if self.notifications != before.notifications {
-            sections.push(notifications::prefs_section(&self.notifications)?);
+            sections.push(Section::new(
+                "notifications",
+                &notifications::prefs_section(&self.notifications),
+            )?);
         }
         Ok(sections)
     }

@@ -9,7 +9,6 @@ use chrono::{Datelike, Duration as Days, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use crate::git;
-use crate::settings::{Section, UserConfig};
 
 /// How many days the agenda reads, up to today: as many as its widest range
 /// shows.
@@ -108,34 +107,34 @@ impl Range {
 
 /// The `[agenda]` section of the user configuration.
 #[derive(Default, Deserialize, Serialize)]
-struct RawAgenda {
+pub struct AgendaSection {
     range: Option<String>,
 }
 
-/// The range the Agenda opens on; 12w unless `[agenda]` says otherwise.
-pub fn load_range(config: &mut UserConfig) -> Range {
-    let Some(name) = config.section::<RawAgenda>("agenda").range else {
-        return Range::default();
-    };
-    match Range::ALL.iter().find(|(_, known)| *known == name.trim()) {
-        Some((range, _)) => *range,
-        None => {
-            config.problem(format!(
-                "[agenda]: range = \"{name}\" is not 4w, 12w, 26w or 1y"
-            ));
-            Range::default()
+impl AgendaSection {
+    /// The range the Agenda opens on; 12w unless the section says otherwise.
+    /// An unknown one is reported.
+    pub fn range(self) -> (Range, Vec<String>) {
+        let Some(name) = self.range else {
+            return (Range::default(), Vec::new());
+        };
+        match Range::ALL.iter().find(|(_, known)| *known == name.trim()) {
+            Some((range, _)) => (*range, Vec::new()),
+            None => (
+                Range::default(),
+                vec![format!(
+                    "[agenda]: range = \"{name}\" is not 4w, 12w, 26w or 1y"
+                )],
+            ),
         }
     }
 }
 
 /// The `[agenda]` section that stores `range`.
-pub fn range_section(range: Range) -> Result<Section, String> {
-    Section::new(
-        "agenda",
-        &RawAgenda {
-            range: Some(range.name().to_string()),
-        },
-    )
+pub fn range_section(range: Range) -> AgendaSection {
+    AgendaSection {
+        range: Some(range.name().to_string()),
+    }
 }
 
 /// The Agenda's range and the day it shows.
@@ -325,19 +324,22 @@ mod tests {
 
     #[test]
     fn the_range_is_read_from_its_section_and_written_back() {
-        let parse = |text: &str| UserConfig::parse(text, Path::new("iboard.toml"));
-        assert_eq!(load_range(&mut parse("")), Range::W12);
+        let parse = |text: &str| -> AgendaSection {
+            let document: toml::Table = toml::from_str(text).unwrap();
+            document
+                .get("agenda")
+                .and_then(|value| value.clone().try_into().ok())
+                .unwrap_or_default()
+        };
+        assert_eq!(parse("").range().0, Range::W12);
+        assert_eq!(parse("[agenda]\nrange = \"1y\"\n").range().0, Range::Y1);
+        let (range, problems) = parse("[agenda]\nrange = \"2w\"\n").range();
+        assert_eq!(range, Range::W12);
         assert_eq!(
-            load_range(&mut parse("[agenda]\nrange = \"1y\"\n")),
-            Range::Y1
-        );
-        let mut wrong = parse("[agenda]\nrange = \"2w\"\n");
-        assert_eq!(load_range(&mut wrong), Range::W12);
-        assert_eq!(
-            wrong.problems,
+            problems,
             ["[agenda]: range = \"2w\" is not 4w, 12w, 26w or 1y"]
         );
-        assert!(range_section(Range::W26).is_ok());
+        assert_eq!(range_section(Range::W26).range().0, Range::W26);
     }
 
     #[test]

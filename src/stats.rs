@@ -28,7 +28,7 @@ use crate::git::{self, Batch};
 use crate::job::Cancel;
 pub use cycle::{Cycle, Cycles, span};
 pub use measure::{FileMetrics, Language, language_of, measure};
-pub use release::{Release, ReleasePrefs, Releases};
+pub use release::{Release, ReleasePrefs, ReleasePrefsSection, Releases};
 use source::Listed;
 pub use source::{Measures, Need, Source};
 pub use watch::{Limits, Signal, culprits, cycle_drift, refactor_draft, refactor_due, signals};
