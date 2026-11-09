@@ -1004,8 +1004,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-changes__path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ib-changes__path b{font-weight:400;color:var(--ink-faint);margin-right:var(--space-2)}
 
-.ib-out{display:flex;align-items:baseline;gap:var(--space-2);min-width:0;font:var(--text-ui-small);font-weight:500;color:var(--status-done);overflow-wrap:anywhere}
-.ib-out .ib-ico{width:12px;height:12px;flex:none;align-self:center}
+.ib-out{display:flex;align-items:flex-start;gap:var(--space-2);min-width:0;font:var(--text-ui-small);font-weight:500;color:var(--status-done);overflow-wrap:anywhere}
+.ib-out .ib-ico{width:12px;height:12px;flex:none;margin-top:2px}
 .ib-out__label{flex:none;white-space:nowrap}
 .ib-out__time{font:var(--text-meta);font-weight:400;color:var(--ink-muted);white-space:nowrap}
 .ib-out__why{flex:1;min-width:0;font:var(--text-ui-small);font-weight:400;color:var(--danger)}
