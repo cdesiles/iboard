@@ -12,7 +12,7 @@ use std::time::{Duration, SystemTime};
 use chrono::{DateTime, Local};
 
 use crate::files;
-use crate::labels;
+use crate::kernel::labels;
 use crate::markdown;
 
 /// Maximum number of characters shown in a card summary (before the ellipsis).

@@ -20,15 +20,15 @@ pub mod design;
 #[cfg(feature = "gui")]
 pub mod design_ui;
 pub mod diff;
-pub mod discovery;
+pub mod domains;
 pub mod files;
 pub mod filter;
 pub mod format;
 pub mod general;
 pub mod git;
 pub mod history;
-pub mod issue;
 pub mod job;
+pub mod kernel;
 pub mod labels;
 pub mod markdown;
 #[cfg(all(feature = "gui", target_os = "macos"))]
@@ -58,3 +58,6 @@ pub mod trash;
 #[cfg(feature = "gui")]
 pub mod widgets;
 pub mod workspace;
+
+pub use kernel::board as discovery;
+pub use kernel::issue;

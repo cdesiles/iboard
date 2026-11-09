@@ -6,9 +6,9 @@ use std::collections::BTreeMap;
 
 use crate::agenda::{self, Range};
 use crate::agent::{self, AgentConfig, BuildTimeout};
+use crate::domains::preferences::labels::{self, Labels};
 use crate::filter;
 use crate::general::{self, Appearance};
-use crate::labels::{self, Labels};
 use crate::notifications;
 use crate::release::ReleaseChoices;
 use crate::settings::{Section, UserConfig};

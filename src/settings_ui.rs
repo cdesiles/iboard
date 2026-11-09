@@ -27,7 +27,7 @@ use crate::theme;
 use crate::titles::{Availability, Engine};
 use crate::widgets::{self, FooterClick};
 pub use catalog::Catalog;
-use iboard::labels::{self as label_config, LabelColor, Labels};
+use iboard::domains::preferences::labels::{self as label_config, LabelColor, Labels};
 use iboard::preferences::Preferences;
 use select_menu::SelectMenu;
 

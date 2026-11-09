@@ -480,7 +480,7 @@ pub fn meter(ui: &mut Ui, done: usize, total: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::labels::{LabelColor, LabelStyle, Rgb};
+    use crate::domains::preferences::labels::{LabelColor, LabelStyle, Rgb};
 
     #[test]
     fn a_key_cap_is_sunken_with_no_edge() {

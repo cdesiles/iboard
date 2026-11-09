@@ -9,11 +9,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::issue::Issue;
 use crate::build_log;
 use crate::config::Config;
 use crate::files;
 use crate::history;
-use crate::issue::Issue;
 
 /// A resolved project: where the issues live and how it was configured.
 #[derive(Clone, Debug)]

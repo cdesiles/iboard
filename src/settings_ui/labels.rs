@@ -5,7 +5,8 @@ use std::collections::{BTreeSet, HashMap};
 use egui::{CornerRadius, FontId, Frame, Stroke, Vec2};
 
 use super::Dialog;
-use crate::labels::{self, Hue, LabelColor, LabelStyle, Rgb};
+use crate::domains::preferences::labels::{self, Hue, LabelColor, LabelStyle, Rgb};
+use crate::kernel::labels::{MAX_LABEL_CHARS, normalize};
 use crate::theme::{self, Icon};
 use crate::widgets::{self, ButtonKind, field_label, help};
 
@@ -77,7 +78,7 @@ fn hex_field(ui: &mut egui::Ui, hex: &mut String, hint: &str) -> egui::Response 
 /// The label a name typed in Settings › Labels stands for, the same way a
 /// title's `[Tech debt]` gives `tech-debt`.
 fn new_label_name(typed: &str) -> Option<String> {
-    labels::normalize(typed.trim().trim_matches(['[', ']']))
+    normalize(typed.trim().trim_matches(['[', ']']))
 }
 
 /// The hue a row's empty colour stands for, unless it was removed.
@@ -134,7 +135,7 @@ fn label_row(ui: &mut egui::Ui, row: Row, edits: &mut RowEdits) {
             let field = widgets::text_entry(
                 ui,
                 widgets::field_edit(ui, &mut rename.text, "name", theme::ui_body())
-                    .char_limit(labels::MAX_LABEL_CHARS)
+                    .char_limit(MAX_LABEL_CHARS)
                     .desired_width(140.0),
             );
             if std::mem::take(&mut rename.focus) {
@@ -357,7 +358,7 @@ impl Dialog {
         let Some(old) = self.label_rows.get(index).map(|(name, _)| name.clone()) else {
             return;
         };
-        let Some(new) = labels::normalize(&text) else {
+        let Some(new) = normalize(&text) else {
             return;
         };
         if new == old {

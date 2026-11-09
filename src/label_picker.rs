@@ -11,7 +11,8 @@ use egui::{
     TextFormat, Vec2,
 };
 
-use crate::labels::{self, Labels};
+use crate::domains::preferences::labels::Labels;
+use crate::labels;
 use crate::theme::{self, Icon};
 use crate::widgets;
 

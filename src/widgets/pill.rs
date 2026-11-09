@@ -5,7 +5,7 @@ use egui::{
 };
 
 use super::{galley, hover_fade};
-use crate::labels::LabelStyle;
+use crate::domains::preferences::labels::LabelStyle;
 use crate::theme::{self, Icon};
 
 /// An 18pt pill with a dot and a word, outlined in its state color.
@@ -232,7 +232,7 @@ fn tag_with(ui: &mut Ui, text: &str, fills: [Color32; 2], edge: Color32, ink: Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::labels::{Hue, LabelColor, Rgb};
+    use crate::domains::preferences::labels::{Hue, LabelColor, Rgb};
 
     const RED: Option<LabelColor> = Some(LabelColor::Preset(Hue::Red));
 

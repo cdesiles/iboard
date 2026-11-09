@@ -22,8 +22,8 @@ pub use thinking::thinking_mark;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::domains::preferences::labels::{Hue, LabelColor, Rgb};
 use crate::general::Appearance;
-use crate::labels::{Hue, LabelColor, Rgb};
 
 use egui::epaint::Shadow;
 use egui::{
