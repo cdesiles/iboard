@@ -25,6 +25,7 @@ mod load;
 mod model;
 pub mod open_design;
 pub mod render;
+pub mod rust_tokens;
 mod save;
 mod scaffold;
 mod validate;

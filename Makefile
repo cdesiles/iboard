@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help hooks run iboard idesign list check test lint fmt toolchain build release install app install-app bump clean
+.PHONY: help hooks run iboard idesign list check test lint fmt tokens toolchain build release install app install-app bump clean
 
 # `make run` launches iboard; `make run idesign` switches to the design tool.
 BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
@@ -57,6 +57,9 @@ lint: ## Check formatting, clippy, an egui-free core and swift-format (fails on 
 ifneq ($(SWIFT_FORMAT),)
 	$(SWIFT_FORMAT) lint --strict macos/*.swift
 endif
+
+tokens: ## Regenerate src/theme/tokens.rs from design/tokens.json
+	cargo run --bin idesign -- tokens --rust
 
 fmt: ## Format code in place
 	cargo fmt

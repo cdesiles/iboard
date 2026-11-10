@@ -9,6 +9,7 @@
 //! idesign show                          # the default summary
 //! idesign list                          # one line per component
 //! idesign tokens                        # every token, per section
+//! idesign tokens --rust                 # rewrite src/theme/tokens.rs
 //! idesign validate                      # fatal errors and warnings
 //! idesign add-component NAME [PATH]     # scaffold components/NAME
 //! idesign import PACKAGE [PATH]         # Open Design package -> design/
@@ -38,6 +39,7 @@ struct Flags {
     height: Option<u32>,
     view: bool,
     browser: bool,
+    rust: bool,
 }
 
 impl Flags {
@@ -154,6 +156,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, ExitCode> {
             "--height" => flags.height = Some(take_number(&mut args, "--height")?),
             "--view" => flags.view = true,
             "--browser" => flags.browser = true,
+            "--rust" => flags.rust = true,
             other if other.starts_with('-') => {
                 return Err(Failure::Unknown(format!("unknown option `{other}`")).report());
             }
@@ -215,6 +218,7 @@ fn run(cli: &Cli) -> Result<(), Failure> {
     match command {
         "show" => print!("{}", system.describe()),
         "list" => list(&system),
+        "tokens" if flags.rust => return rust_tokens(&system, flags),
         "tokens" => tokens(&system),
         "validate" => return validate(&system),
         "catalog" => return catalog(&system, flags),
@@ -351,6 +355,21 @@ fn tokens(system: &DesignSystem) {
     }
 }
 
+/// Rewrite the committed Rust tokens, by default at `<project>/src/theme/tokens.rs`.
+fn rust_tokens(system: &DesignSystem, flags: &Flags) -> Result<(), Failure> {
+    let path = match &flags.out {
+        Some(out) => PathBuf::from(out),
+        None => system
+            .root
+            .parent()
+            .ok_or_else(|| "the design system has no project folder".to_string())?
+            .join("src/theme/tokens.rs"),
+    };
+    design::rust_tokens::write(system, &path)?;
+    println!("{}", path.display());
+    Ok(())
+}
+
 fn format_value(value: &TokenValue, themes: &[&str]) -> String {
     match value {
         TokenValue::Plain(value) => value.clone(),
@@ -404,14 +423,14 @@ fn print_help() {
          Create, browse, import and render a design system at design/.\n\
          Run with no command in a terminal to open the live catalog (or the\n         egui browser with --browser).\n\
          \n\
-         USAGE:\n    {name} [COMMAND] [PATH]\n    {name} add-component NAME [PATH] [--group G] [--intent \"...\"]\n    {name} import PACKAGE [PATH] [--into DIR]\n    {name} preview NAME [PATH] [--out FILE] [--theme light|dark] [--width N] [--height N]\n    {name} catalog [PATH] [--out FILE] [--theme light|dark] [--view]\n    {name} render INPUT.html OUTPUT.png [--width N] [--height N]\n\
+         USAGE:\n    {name} [COMMAND] [PATH]\n    {name} add-component NAME [PATH] [--group G] [--intent \"...\"]\n    {name} import PACKAGE [PATH] [--into DIR]\n    {name} preview NAME [PATH] [--out FILE] [--theme light|dark] [--width N] [--height N]\n    {name} catalog [PATH] [--out FILE] [--theme light|dark] [--view]\n    {name} tokens [PATH] [--rust] [--out FILE]\n    {name} render INPUT.html OUTPUT.png [--width N] [--height N]\n\
          \n\
          PATH defaults to the current directory; parent folders are searched for\n\
          a design/ or design-system.json. COMMAND defaults to show.\n\
          \n\
-         COMMANDS:\n    show             Summary of the system (default)\n    list             One line per component\n    tokens           Every token, per section\n    validate         Fatal errors and warnings (exit 1 on error)\n    add-component    Scaffold components/NAME with a README and a preview\n    import           Turn an Open Design package into design/\n    catalog          Write a live, interactive catalog page of the system\n    preview          Render a component preview to a PNG\n    render           Render any HTML file to a PNG\n\
+         COMMANDS:\n    show             Summary of the system (default)\n    list             One line per component\n    tokens           Every token, per section; --rust rewrites src/theme/tokens.rs\n    validate         Fatal errors and warnings (exit 1 on error)\n    add-component    Scaffold components/NAME with a README and a preview\n    import           Turn an Open Design package into design/\n    catalog          Write a live, interactive catalog page of the system\n    preview          Render a component preview to a PNG\n    render           Render any HTML file to a PNG\n\
          \n\
-         OPTIONS:\n    --group G        The component group for add-component (default Components)\n    --intent TEXT    One line of intent for the README\n    --into DIR       Where import writes the design system (default PATH/design)\n    --out FILE       Where preview writes the PNG, or catalog the page\n    --theme NAME     The token theme to apply (default light)\n    --view           Open the catalog in a webview window (catalog only)\n    --browser        Open the egui panel instead of the live catalog\n    --width N        Render width in points (default {width})\n    --height N       Render height in points (default {height})\n    -h, --help       Print this help\n    -V, --version    Print the version",
+         OPTIONS:\n    --group G        The component group for add-component (default Components)\n    --intent TEXT    One line of intent for the README\n    --into DIR       Where import writes the design system (default PATH/design)\n    --out FILE       Where preview writes the PNG, catalog the page, or tokens.rs\n    --theme NAME     The token theme to apply (default light)\n    --view           Open the catalog in a webview window (catalog only)\n    --browser        Open the egui panel instead of the live catalog\n    --rust           Rewrite src/theme/tokens.rs from the tokens (tokens only)\n    --width N        Render width in points (default {width})\n    --height N       Render height in points (default {height})\n    -h, --help       Print this help\n    -V, --version    Print the version",
         name = env!("CARGO_BIN_NAME"),
         version = env!("CARGO_PKG_VERSION"),
         width = DEFAULT_WIDTH,
@@ -598,7 +617,7 @@ mod tests {
     fn every_option_is_read() {
         let cli = parse(args(
             "--group Controls --intent -x --into dir --out a.png --theme dark \
-             --width 10 --height 20 --view --browser",
+             --width 10 --height 20 --view --browser --rust",
         ))
         .unwrap();
         assert!(cli.positionals.is_empty());
@@ -614,6 +633,7 @@ mod tests {
                 height: Some(20),
                 view: true,
                 browser: true,
+                rust: true,
             }
         );
     }
@@ -632,6 +652,7 @@ mod tests {
             "--height 0",
             "--view",
             "--browser",
+            "--rust",
         ] {
             assert!(parse(args(option)).unwrap().flags.any(), "{option}");
         }
