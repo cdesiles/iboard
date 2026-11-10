@@ -39,6 +39,10 @@ pub(super) struct DiffView {
     scroll: Option<f32>,
     /// The scroll offset last frame.
     offset: f32,
+    /// A file to scroll to once the diff is in.
+    focus: Option<String>,
+    /// The files to keep, when the set is a run's changes.
+    only: Vec<String>,
 }
 
 /// One drawn row of the diff.
@@ -79,6 +83,50 @@ impl DiffView {
             find: None,
             scroll: None,
             offset: 0.0,
+            focus: None,
+            only: Vec::new(),
+        }
+    }
+
+    /// Starts reading the working tree of `dir`, to show what the run
+    /// changed, scrolled to `focus` when one is named.
+    pub(super) fn open_worktree(
+        issue: PathBuf,
+        dir: PathBuf,
+        focus: Option<String>,
+        only: Vec<String>,
+    ) -> Self {
+        Self {
+            issue,
+            load: Some(Job::spawn(move |cancel| {
+                diff::worktree(&dir, cancel).map(|set| vec![set])
+            })),
+            diffs: Vec::new(),
+            error: None,
+            rows: Vec::new(),
+            expanded: HashSet::new(),
+            colours: HashMap::new(),
+            find: None,
+            scroll: None,
+            offset: 0.0,
+            focus,
+            only,
+        }
+    }
+
+    /// Scrolls to the file the screen was opened on, once its rows exist.
+    fn scroll_to_focus(&mut self) {
+        let Some(path) = self.focus.take() else {
+            return;
+        };
+        let found = self.rows.iter().enumerate().find_map(|(at, row)| {
+            let Row::File(commit, file) = *row else {
+                return None;
+            };
+            (self.diffs[commit].files[file].path() == path).then_some(at)
+        });
+        if let Some(at) = found {
+            self.scroll_to_row(at);
         }
     }
 
@@ -91,7 +139,15 @@ impl DiffView {
         match answer {
             Ok(diffs) => {
                 self.diffs = diffs;
+                if !self.only.is_empty() {
+                    let only = std::mem::take(&mut self.only);
+                    for diff in &mut self.diffs {
+                        diff.files
+                            .retain(|file| only.iter().any(|path| file.path() == path));
+                    }
+                }
                 self.build_rows();
+                self.scroll_to_focus();
             }
             Err(err) => self.error = Some(err),
         }
@@ -316,6 +372,24 @@ impl IboardApp {
         let dir = self.board.project_of(issue).to_path_buf();
         self.session.commits = None;
         self.session.diff = Some(DiffView::open(issue.to_path_buf(), dir, hashes));
+        self.session.screen = Screen::Diff;
+    }
+
+    /// Opens the Diff screen on the run's changes, scrolled to `focus`'s file.
+    pub(super) fn open_worktree_diff(
+        &mut self,
+        issue: &Path,
+        focus: Option<String>,
+        only: Vec<String>,
+    ) {
+        let dir = self.board.project_of(issue).to_path_buf();
+        self.session.commits = None;
+        self.session.diff = Some(DiffView::open_worktree(
+            issue.to_path_buf(),
+            dir,
+            focus,
+            only,
+        ));
         self.session.screen = Screen::Diff;
     }
 

@@ -2,6 +2,7 @@
 
 use super::*;
 
+mod agent_log;
 mod ask;
 mod bars;
 mod board_look;

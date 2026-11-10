@@ -129,6 +129,61 @@ fn show_one(dir: &Path, hash: &str, cancel: &Cancel) -> Result<CommitDiff, Strin
     Ok(parse_show(&output))
 }
 
+/// The working tree's changes in `dir`: the tracked files git reports, then
+/// the ones it does not track yet. One set, named "working tree".
+pub fn worktree(dir: &Path, cancel: &Cancel) -> Result<CommitDiff, String> {
+    let mut files = parse(&tracked(dir, cancel)?);
+    files.extend(untracked(dir, cancel)?);
+    Ok(CommitDiff {
+        hash: "working tree".to_string(),
+        subject: "not committed yet".to_string(),
+        files,
+    })
+}
+
+/// `git diff` against the last commit, or against the index in a repository
+/// that has no commit yet.
+fn tracked(dir: &Path, cancel: &Cancel) -> Result<String, String> {
+    let diff = |rev: Option<&str>| {
+        let mut command = git::command(dir);
+        command.args(["diff", "--no-color", "--no-ext-diff", "--find-renames"]);
+        if let Some(rev) = rev {
+            command.arg(rev);
+        }
+        command.arg("--");
+        process::run(command, "git diff", cancel, GIT_TIMEOUT)?.into_result("git diff")
+    };
+    match diff(Some("HEAD")) {
+        Ok(output) => Ok(output),
+        Err(_) => diff(None),
+    }
+}
+
+/// The files git does not track, as added files.
+fn untracked(dir: &Path, cancel: &Cancel) -> Result<Vec<FileDiff>, String> {
+    let mut command = git::command(dir);
+    command.args(["ls-files", "--others", "--exclude-standard", "-z"]);
+    let output =
+        process::run(command, "git ls-files", cancel, GIT_TIMEOUT)?.into_result("git ls-files")?;
+    let mut files = Vec::new();
+    for path in output.split('\0').filter(|path| !path.is_empty()) {
+        let mut command = git::command(dir);
+        command.args([
+            "diff",
+            "--no-index",
+            "--no-color",
+            "--no-ext-diff",
+            "--",
+            "/dev/null",
+            path,
+        ]);
+        // `--no-index` exits 1 when the files differ, which is the point.
+        let output = process::run(command, "git diff", cancel, GIT_TIMEOUT)?;
+        files.extend(parse(&output.stdout));
+    }
+    Ok(files)
+}
+
 /// A `git show --format=%h%x09%s` output: its first line, then the patch.
 pub fn parse_show(output: &str) -> CommitDiff {
     let (first, patch) = output.split_once('\n').unwrap_or((output, ""));
@@ -406,6 +461,35 @@ rename to new name.rs
         assert_eq!(file("web/index.test.ts").extension(), "ts");
         assert_eq!(file("Makefile").extension(), "Makefile");
         assert_eq!(file(".bashrc").extension(), "bashrc");
+    }
+
+    #[test]
+    fn the_working_tree_diff_reads_edits_and_new_files() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        git(dir, &["init", "-q"]);
+        std::fs::write(dir.join("a.txt"), "one\ntwo\n").unwrap();
+        git(dir, &["add", "."]);
+        git(dir, &["commit", "-q", "-m", "First"]);
+        std::fs::write(dir.join("a.txt"), "one\nthree\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "new\n").unwrap();
+
+        let diff = worktree(dir, &Cancel::default()).unwrap();
+        assert_eq!(diff.hash, "working tree");
+        let paths: Vec<&str> = diff.files.iter().map(FileDiff::path).collect();
+        assert_eq!(paths, ["a.txt", "b.txt"]);
+        assert_eq!((diff.files[0].added, diff.files[0].removed), (1, 1));
+        assert_eq!(diff.files[1].status(), FileStatus::Added);
+        assert_eq!((diff.files[1].added, diff.files[1].removed), (1, 0));
+
+        git(dir, &["add", "b.txt"]);
+        git(dir, &["checkout", "--", "a.txt"]);
+        let staged = worktree(dir, &Cancel::default()).unwrap();
+        let paths: Vec<&str> = staged.files.iter().map(FileDiff::path).collect();
+        assert_eq!(paths, ["b.txt"], "staged work is still uncommitted");
+        git(dir, &["add", "a.txt"]);
+        git(dir, &["commit", "-q", "-m", "Second"]);
+        assert!(worktree(dir, &Cancel::default()).unwrap().files.is_empty());
     }
 
     #[test]

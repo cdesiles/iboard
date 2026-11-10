@@ -3,27 +3,38 @@
 
 use super::side_panel::side_panel;
 use super::{
-    ButtonKind, CommonMarkCache, CommonMarkViewer, CornerRadius, Frame, IboardApp, Instant, Key,
-    Path, PathBuf, RichText, Vec2, clock, file_name, theme, widgets,
+    ButtonKind, CommonMarkCache, IboardApp, Instant, Key, Path, PathBuf, RichText, file_name, job,
+    theme, widgets,
 };
-use crate::build_log::{self, Entry};
+use crate::build_log;
+use crate::job::Job;
+use iboard::diff::{self, FileDiff};
 
-/// How the panel reads the log: the agent's messages as a conversation, or
-/// every run, step and message as it was written.
+mod timeline;
+
+/// How the panel reads the log: the runs as a timeline of what the agent
+/// said and did, or every line as it was written.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum LogMode {
-    Conversation,
-    Log,
+    Timeline,
+    Raw,
 }
 
 /// The log open beside the reader, read again whenever its file grows.
 pub(super) struct LogView {
     pub(super) path: PathBuf,
     file: PathBuf,
+    /// The project the log's changes are read from.
+    dir: PathBuf,
     len: Option<u64>,
     pub(super) text: String,
     cache: CommonMarkCache,
     pub(super) mode: LogMode,
+    /// The working tree, read off the UI thread.
+    changes: Option<Job<Result<Vec<FileDiff>, String>>>,
+    files: Vec<FileDiff>,
+    /// A newer log landed while the working tree was being read.
+    stale: bool,
     /// What the author is writing to the agent.
     pub(super) reply: String,
 }
@@ -31,9 +42,34 @@ pub(super) struct LogView {
 impl LogView {
     fn reload(&mut self) {
         let len = std::fs::metadata(&self.file).ok().map(|meta| meta.len());
-        if len != self.len {
-            self.len = len;
-            self.text = build_log::load(&self.file).unwrap_or_default();
+        if len == self.len {
+            return;
+        }
+        self.len = len;
+        self.text = build_log::load(&self.file).unwrap_or_default();
+        self.reload_changes();
+    }
+
+    /// Reads the working tree again, unless a read is already on its way.
+    fn reload_changes(&mut self) {
+        if self.changes.is_some() {
+            self.stale = true;
+            return;
+        }
+        let dir = self.dir.clone();
+        self.changes = Some(Job::spawn(move |cancel| {
+            diff::worktree(&dir, cancel).map(|set| set.files)
+        }));
+    }
+
+    fn poll_changes(&mut self) {
+        let Some(answer) = self.changes.as_ref().and_then(Job::answer) else {
+            return;
+        };
+        self.changes = None;
+        self.files = answer.unwrap_or_default();
+        if std::mem::take(&mut self.stale) {
+            self.reload_changes();
         }
     }
 }
@@ -69,66 +105,95 @@ impl IboardApp {
 
     pub(super) fn toggle_agent_log(&mut self, path: &Path) {
         if self.agent_log_open(path) {
-            if self.question_for(path).is_some() {
-                self.session.notice = Some((
-                    "Answer the build's question first".to_string(),
-                    Instant::now(),
-                ));
-                return;
-            }
             self.session.agent_log = None;
         } else {
             self.session.agent_log = Some(LogView {
                 path: path.to_path_buf(),
                 file: build_log::path(self.board.root_of(path), path),
+                dir: self.board.project_of(path).to_path_buf(),
                 len: None,
                 text: String::new(),
                 cache: CommonMarkCache::default(),
-                mode: LogMode::Conversation,
+                mode: LogMode::Timeline,
+                changes: None,
+                files: Vec::new(),
+                stale: false,
                 reply: String::new(),
             });
         }
     }
 
-    /// The log's panel: a waiting question first, then the conversation or
-    /// the raw log, then a box to tell the agent what to do next.
+    /// The waiting question above the switch, and the room it took.
+    fn question_card(
+        &mut self,
+        ui: &mut egui::Ui,
+        path: &Path,
+        question: Option<&crate::agent::service::Question>,
+    ) {
+        let Some(question) = question else {
+            return;
+        };
+        let start = ui.cursor().min;
+        let width = ui.available_width();
+        let mut question_ui = ui.new_child(egui::UiBuilder::new().max_rect(
+            egui::Rect::from_min_size(start, egui::Vec2::new(width, ui.available_height())),
+        ));
+        question_ui.set_min_size(egui::Vec2::ZERO);
+        self.question_panel(&mut question_ui, path, question);
+        let height = question_ui.min_rect().height();
+        ui.add_space(height + theme::SPACE_4);
+    }
+
+    /// The log's panel: a waiting question first, the switch and the live
+    /// step, the timeline or the raw log, then a box to tell the agent what
+    /// to do next.
     pub(super) fn agent_log_panel(&mut self, ui: &mut egui::Ui) {
         let Some(mut log) = self.session.agent_log.take() else {
             return;
         };
         log.reload();
+        log.poll_changes();
+        if log.changes.is_some() {
+            ui.ctx().request_repaint_after(job::POLL_EVERY);
+        }
         let path = log.path.clone();
         let question = self.question_for(&path);
         let running = self.building_since(&path);
-        let detail = match running {
-            Some(since) => format!("running · {}", clock(since.elapsed())),
-            None => "not running".to_string(),
+        let replyable = running.is_none() || self.build_service_run(&path).is_some();
+        let state = if running.is_some() {
+            Composer::Running
+        } else {
+            match build_log::timeline(&log.text)
+                .last()
+                .and_then(|run| run.outcome)
+            {
+                Some((false, _)) => Composer::Stopped,
+                _ => Composer::Finished,
+            }
+        };
+        let detail = if question.is_some() {
+            "waiting on you"
+        } else if running.is_some() {
+            "running"
+        } else {
+            "not running"
         };
         let title = format!("Agent log of {}", file_name(&path));
         let mut send = None;
-        side_panel(ui, &title, &detail, |ui| {
-            if let Some(question) = &question {
-                let start = ui.cursor().min;
-                let width = ui.available_width();
-                let mut question_ui = ui.new_child(egui::UiBuilder::new().max_rect(
-                    egui::Rect::from_min_size(start, Vec2::new(width, ui.available_height())),
-                ));
-                question_ui.set_min_size(Vec2::ZERO);
-                self.question_panel(&mut question_ui, &path, question);
-                let height = question_ui.min_rect().height();
-                ui.add_space(height + theme::SPACE_4);
-            }
+        let mut open_diff = None;
+        side_panel(ui, &title, detail, |ui| {
+            self.question_card(ui, &path, question.as_ref());
             if let Some(mode) = widgets::segmented(
                 ui,
                 log.mode,
-                &[
-                    (LogMode::Conversation, "Conversation"),
-                    (LogMode::Log, "Log"),
-                ],
+                &[(LogMode::Timeline, "Timeline"), (LogMode::Raw, "Raw")],
             ) {
                 log.mode = mode;
             }
             ui.add_space(theme::SPACE_2);
+            if let (Some(since), Some((verb, object))) = (running, timeline::live(&log.text)) {
+                timeline::now(ui, since, &verb, &object);
+            }
             let height = (ui.available_height() - 78.0).max(80.0);
             theme::scroll_area(
                 ui,
@@ -146,21 +211,37 @@ impl IboardApp {
                         );
                     }
                     match log.mode {
-                        LogMode::Conversation => {
-                            conversation_entries(ui, &log.text, &mut log.cache)
-                        }
-                        LogMode::Log => log_entries(ui, &log.text, &mut log.cache),
+                        LogMode::Timeline => timeline::timeline(
+                            ui,
+                            &log.text,
+                            &mut log.cache,
+                            &log.files,
+                            running.is_some(),
+                            &mut open_diff,
+                        ),
+                        LogMode::Raw => timeline::raw(ui, &log.text),
                     }
                 },
             );
             ui.add_space(theme::SPACE_2);
-            send = reply_box(ui, &mut log.reply, question.is_some(), running.is_some());
+            if question.is_some() {
+                ui.label(
+                    RichText::new("Answer the question above to continue.")
+                        .font(theme::ui_small())
+                        .color(theme::palette(ui).ink_muted),
+                );
+            } else {
+                send = reply_box(ui, &mut log.reply, state, replyable);
+            }
         });
         if let Some(text) = send {
             log.reply.clear();
-            self.send_instruction(path, text);
+            self.send_instruction(path.clone(), text);
         }
         self.session.agent_log = Some(log);
+        if let Some(open) = open_diff {
+            self.open_worktree_diff(&path, Some(open.path), open.files);
+        }
     }
 
     /// Tells the running build's session what to do next, or starts an Ask
@@ -202,148 +283,42 @@ impl IboardApp {
     }
 }
 
-/// The log read as what it is: each run under its heading, the agent's
-/// messages as rendered markdown, its steps and outcomes as quiet lines.
-fn log_entries(ui: &mut egui::Ui, text: &str, cache: &mut CommonMarkCache) {
-    let p = theme::palette(ui);
-    ui.style_mut()
-        .text_styles
-        .insert(egui::TextStyle::Body, theme::read_body());
-    ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-    for (at, entry) in build_log::parse(text).into_iter().enumerate() {
-        match entry {
-            Entry::Run(run) => {
-                if at > 0 {
-                    ui.add_space(theme::SPACE_3);
-                    ui.separator();
-                }
-                ui.label(
-                    RichText::new(run)
-                        .font(theme::meta())
-                        .color(p.review)
-                        .strong(),
-                );
-            }
-            Entry::Step(step) => {
-                ui.label(
-                    RichText::new(format!("→ {step}"))
-                        .font(theme::meta())
-                        .color(p.ink_faint),
-                );
-            }
-            Entry::Outcome { ok, text } => {
-                let (mark, color) = if ok {
-                    ("✓", p.status_done)
-                } else {
-                    ("✗", p.danger)
-                };
-                ui.label(
-                    RichText::new(format!("{mark} {text}"))
-                        .color(color)
-                        .strong(),
-                );
-            }
-            Entry::Author(text) => {
-                ui.label(
-                    RichText::new(format!("You: {text}"))
-                        .font(theme::ui_small())
-                        .color(p.accent),
-                );
-            }
-            Entry::Message(message) => {
-                ui.push_id(("message", at), |ui| {
-                    CommonMarkViewer::new().show(ui, cache, &message);
-                });
-            }
-        }
-    }
+/// What the composer says it will do, from the run's state.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Composer {
+    Running,
+    Finished,
+    Stopped,
 }
 
-/// The conversation: what the agent said, what you told it, and the quiet
-/// outcomes; the steps stay in the raw log.
-fn conversation_entries(ui: &mut egui::Ui, text: &str, cache: &mut CommonMarkCache) {
+/// The box under the timeline: tell the agent what to do next.
+fn reply_box(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    state: Composer,
+    replyable: bool,
+) -> Option<String> {
     let p = theme::palette(ui);
-    ui.style_mut()
-        .text_styles
-        .insert(egui::TextStyle::Body, theme::read_body());
-    ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-    let entries = build_log::parse(text);
-    if let Some(step) = entries.iter().rev().find_map(|entry| match entry {
-        Entry::Step(step) => Some(*step),
-        _ => None,
-    }) {
+    let hint = match state {
+        Composer::Running => "Reply to the agent…",
+        Composer::Finished => "Ask for another pass…",
+        Composer::Stopped => "Ask it to fix what failed…",
+    };
+    if !replyable {
         ui.label(
-            RichText::new(format!("→ {step}"))
-                .font(theme::meta())
-                .color(p.ink_faint),
+            RichText::new("This build cannot take a reply.")
+                .font(theme::ui_small())
+                .color(p.ink_muted),
         );
     }
-    for (at, entry) in entries.into_iter().enumerate() {
-        match entry {
-            Entry::Message(message) => {
-                ui.push_id(("message", at), |ui| {
-                    CommonMarkViewer::new().show(ui, cache, &message);
-                });
-            }
-            Entry::Author(text) => {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                    Frame::new()
-                        .fill(p.accent_soft)
-                        .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-                        .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_2))
-                        .show(ui, |ui| {
-                            ui.set_max_width((ui.available_width() * 0.86).max(120.0));
-                            ui.spacing_mut().item_spacing.y = theme::SPACE_1;
-                            ui.label(
-                                RichText::new("You")
-                                    .font(theme::meta())
-                                    .color(p.accent)
-                                    .strong(),
-                            );
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(text).font(theme::ui_small()).color(p.ink),
-                                )
-                                .wrap(),
-                            );
-                        });
-                });
-            }
-            Entry::Outcome { ok, text } => {
-                let (mark, color) = if ok {
-                    ("✓", p.status_done)
-                } else {
-                    ("✗", p.danger)
-                };
-                ui.label(
-                    RichText::new(format!("{mark} {text}"))
-                        .font(theme::meta())
-                        .color(color),
-                );
-            }
-            Entry::Run(_) | Entry::Step(_) => {}
-        }
-    }
-}
-
-/// The box under the conversation: tell the agent what to do next.
-fn reply_box(ui: &mut egui::Ui, text: &mut String, locked: bool, running: bool) -> Option<String> {
-    let p = theme::palette(ui);
-    let hint = if locked {
-        "Answer the question first"
-    } else if running {
-        "Reply to the agent…"
-    } else {
-        "Ask the agent to do more…"
-    };
-    widgets::text_entry(
+    let field = widgets::text_entry(
         ui,
         egui::TextEdit::multiline(text)
             .hint_text(hint)
             .desired_rows(2)
-            .interactive(!locked),
+            .interactive(replyable),
     );
-    let ready = !locked && !text.trim().is_empty();
+    let ready = replyable && !text.trim().is_empty();
     let mut send = false;
     ui.horizontal(|ui| {
         ui.label(
@@ -361,6 +336,7 @@ fn reply_box(ui: &mut egui::Ui, text: &mut String, locked: bool, running: bool) 
         });
     });
     if ready
+        && field.has_focus()
         && ui
             .ctx()
             .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter))

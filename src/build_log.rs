@@ -124,12 +124,42 @@ pub enum Entry<'a> {
     Run(&'a str),
     /// A tool the agent used.
     Step(&'a str),
+    /// The file an edit tool wrote.
+    Edit(&'a str),
     /// How a run ended, and whether it went well.
     Outcome { ok: bool, text: &'a str },
     /// What the author told the agent, while it worked or after.
     Author(&'a str),
     /// What the agent said, in markdown, over one or more lines.
     Message(String),
+}
+
+/// The edit tools an agent logs, whose step is a change to a file rather
+/// than something to fold into an activity row.
+const EDIT_TOOLS: &[&str] = &[
+    "edit",
+    "edit_file",
+    "write",
+    "multiedit",
+    "multi_edit",
+    "apply_patch",
+    "patch",
+    "notebookedit",
+    "create_file",
+    "str_replace_editor",
+];
+
+/// The file a step edited, when the step is an edit tool's.
+fn edited(step: &str) -> Option<&str> {
+    let step = step.strip_suffix('…').unwrap_or(step);
+    if let Some(path) = step.strip_prefix("Editing ") {
+        return (!path.trim().is_empty()).then_some(path.trim());
+    }
+    let (tool, path) = step.strip_prefix("Using ")?.split_once(' ')?;
+    EDIT_TOOLS
+        .contains(&tool.to_ascii_lowercase().as_str())
+        .then(|| path.trim())
+        .filter(|path| !path.is_empty())
 }
 
 /// The log's `text` cut into its runs, steps, outcomes and messages; the
@@ -148,7 +178,8 @@ pub fn parse(text: &str) -> Vec<Entry<'_>> {
         let marked = if let Some(rest) = line.strip_prefix("── ") {
             Some(Entry::Run(rest.trim()))
         } else if let Some(rest) = line.strip_prefix("→ ") {
-            Some(Entry::Step(rest.trim()))
+            let step = rest.trim();
+            Some(edited(step).map_or(Entry::Step(step), Entry::Edit))
         } else if let Some(rest) = line.strip_prefix("✓ ") {
             Some(Entry::Outcome {
                 ok: true,
@@ -172,6 +203,206 @@ pub fn parse(text: &str) -> Vec<Entry<'_>> {
     }
     flush(&mut message, &mut entries);
     entries
+}
+
+/// The kind of a step, from the verb its tool logs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind<'a> {
+    Read,
+    Search,
+    Command,
+    Lookup,
+    /// A tool the summary names by itself: `fetch`, `edit`, `task`.
+    Tool(&'a str),
+}
+
+/// The kind of `step`, from its first word.
+pub fn kind_of(step: &str) -> Kind<'_> {
+    let step = step.strip_suffix('…').unwrap_or(step);
+    let mut words = step.split(' ');
+    match words.next().unwrap_or_default() {
+        "Reading" => Kind::Read,
+        "Searching" => Kind::Search,
+        "Running" => Kind::Command,
+        "Looking" => Kind::Lookup,
+        "Editing" => Kind::Tool("edit"),
+        "Using" => match words.next().unwrap_or_default() {
+            tool if EDIT_TOOLS.contains(&tool.to_ascii_lowercase().as_str()) => Kind::Tool("edit"),
+            tool => Kind::Tool(tool),
+        },
+        _ => Kind::Tool(step),
+    }
+}
+
+/// A step's verb and what it touched: `Reading src/app.rs`.
+pub fn step_parts(step: &str) -> (&str, &str) {
+    let step = step.strip_suffix('…').unwrap_or(step).trim();
+    for verb in ["Looking up ", "Using "] {
+        if let Some(rest) = step.strip_prefix(verb) {
+            return (verb.trim_end(), rest);
+        }
+    }
+    step.split_once(' ').unwrap_or((step, ""))
+}
+
+/// The steps between two messages in one line: "Read 5 files, searched 2,
+/// ran 1 command". Most used first; ties keep the order they appeared in.
+pub fn summary(steps: &[&str]) -> String {
+    let mut tallies: Vec<(Kind, usize)> = Vec::new();
+    for step in steps {
+        let kind = kind_of(step);
+        match tallies.iter_mut().find(|(seen, _)| *seen == kind) {
+            Some((_, count)) => *count += 1,
+            None => tallies.push((kind, 1)),
+        }
+    }
+    tallies.sort_by_key(|left| std::cmp::Reverse(left.1));
+    let parts: Vec<String> = tallies
+        .into_iter()
+        .map(|(kind, count)| phrase(kind, count))
+        .collect();
+    parts.join(", ")
+}
+
+fn phrase(kind: Kind<'_>, count: usize) -> String {
+    match kind {
+        Kind::Read if count == 1 => "Read 1 file".to_string(),
+        Kind::Read => format!("Read {count} files"),
+        Kind::Search => format!("searched {count}"),
+        Kind::Command if count == 1 => "ran 1 command".to_string(),
+        Kind::Command => format!("ran {count} commands"),
+        Kind::Lookup => format!("looked up {count}"),
+        Kind::Tool(tool) => format!(
+            "used {tool} {count} time{}",
+            if count == 1 { "" } else { "s" }
+        ),
+    }
+}
+
+/// A run heading's when and agent: `2026-10-17 14:02 · opencode`.
+pub fn run_parts(run: &str) -> (&str, &str) {
+    run.split_once(" · ").unwrap_or((run, ""))
+}
+
+/// A run's start time, short: "today 14:02", or "Nov 7 · 14:02".
+pub fn when_label(at: &str) -> String {
+    let Ok(when) = chrono::NaiveDateTime::parse_from_str(at, "%Y-%m-%d %H:%M") else {
+        return at.to_string();
+    };
+    if when.date() == chrono::Local::now().date_naive() {
+        format!("today {}", when.format("%H:%M"))
+    } else {
+        when.format("%b %-d · %H:%M").to_string()
+    }
+}
+
+/// What the timeline shows: a run's head, then its messages, its steps
+/// folded into bursts, its edits, and how it ended.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Segment<'a> {
+    Run(&'a str),
+    Message(String),
+    Author(&'a str),
+    /// The steps between two messages, when there are two or more.
+    Activity(Vec<&'a str>),
+    /// One step between two messages: no disclosure onto itself.
+    Step(&'a str),
+    Edit(&'a str),
+    Outcome {
+        ok: bool,
+        text: &'a str,
+    },
+}
+
+/// The log's entries folded for the timeline: consecutive steps become one
+/// [`Segment::Activity`], a lone one stays a [`Segment::Step`], and an edit
+/// leaves the burst it sits in.
+pub fn segments(entries: Vec<Entry<'_>>) -> Vec<Segment<'_>> {
+    fn flush<'a>(burst: &mut Vec<&'a str>, out: &mut Vec<Segment<'a>>) {
+        match burst.len() {
+            0 => {}
+            1 => out.push(Segment::Step(burst[0])),
+            _ => out.push(Segment::Activity(std::mem::take(burst))),
+        }
+        burst.clear();
+    }
+    let mut out = Vec::new();
+    let mut burst = Vec::new();
+    for entry in entries {
+        match entry {
+            Entry::Step(step) => burst.push(step),
+            Entry::Edit(edit) => {
+                flush(&mut burst, &mut out);
+                out.push(Segment::Edit(edit));
+            }
+            Entry::Message(message) => {
+                flush(&mut burst, &mut out);
+                out.push(Segment::Message(message));
+            }
+            Entry::Author(text) => {
+                flush(&mut burst, &mut out);
+                out.push(Segment::Author(text));
+            }
+            Entry::Run(run) => {
+                flush(&mut burst, &mut out);
+                out.push(Segment::Run(run));
+            }
+            Entry::Outcome { ok, text } => {
+                flush(&mut burst, &mut out);
+                out.push(Segment::Outcome { ok, text });
+            }
+        }
+    }
+    flush(&mut burst, &mut out);
+    out
+}
+
+/// A run of the timeline: its heading, what happened in it, the files it
+/// edited, and how it ended.
+#[derive(Debug, PartialEq, Eq)]
+pub struct RunLog<'a> {
+    pub head: &'a str,
+    pub body: Vec<Segment<'a>>,
+    pub edits: Vec<&'a str>,
+    pub outcome: Option<(bool, &'a str)>,
+}
+
+impl<'a> RunLog<'a> {
+    fn new(head: &'a str) -> Self {
+        Self {
+            head,
+            body: Vec::new(),
+            edits: Vec::new(),
+            outcome: None,
+        }
+    }
+}
+
+/// The log's segments grouped into runs. Content before the first heading
+/// makes a run of its own, so an old log still reads.
+pub fn runs(segments: Vec<Segment<'_>>) -> Vec<RunLog<'_>> {
+    fn current<'b, 'a>(runs: &'b mut Vec<RunLog<'a>>) -> &'b mut RunLog<'a> {
+        if runs.is_empty() {
+            runs.push(RunLog::new(""));
+        }
+        let last = runs.len() - 1;
+        &mut runs[last]
+    }
+    let mut runs: Vec<RunLog> = Vec::new();
+    for segment in segments {
+        match segment {
+            Segment::Run(head) => runs.push(RunLog::new(head)),
+            Segment::Outcome { ok, text } => current(&mut runs).outcome = Some((ok, text)),
+            Segment::Edit(edit) => current(&mut runs).edits.push(edit),
+            segment => current(&mut runs).body.push(segment),
+        }
+    }
+    runs
+}
+
+/// The log's `text` as runs of messages and folded activity.
+pub fn timeline(text: &str) -> Vec<RunLog<'_>> {
+    runs(segments(parse(text)))
 }
 
 #[cfg(test)]
@@ -207,13 +438,14 @@ mod tests {
 
     #[test]
     fn a_log_parses_into_runs_steps_messages_and_outcomes() {
-        let log = "── 2026-10-17 · opencode\nLet me **look**.\n\n- one\n- two\n→ Reading app.rs…\nDone.\n▸ go on\n✓ Finished\n── later · claude\n✗ stopped\n";
+        let log = "── 2026-10-17 · opencode\nLet me **look**.\n\n- one\n- two\n→ Reading app.rs…\n→ Using edit src/app.rs…\nDone.\n▸ go on\n✓ Finished\n── later · claude\n✗ stopped\n";
         assert_eq!(
             parse(log),
             [
                 Entry::Run("2026-10-17 · opencode"),
                 Entry::Message("Let me **look**.\n\n- one\n- two".into()),
                 Entry::Step("Reading app.rs…"),
+                Entry::Edit("src/app.rs"),
                 Entry::Message("Done.".into()),
                 Entry::Author("go on"),
                 Entry::Outcome {
@@ -228,6 +460,66 @@ mod tests {
             ]
         );
         assert!(parse("").is_empty());
+    }
+
+    #[test]
+    fn a_burst_folds_but_a_lone_step_does_not() {
+        let log = "→ Reading a.rs…\n→ Searching fn x…\n→ Running make…\nhi\n→ Reading b.rs…\n";
+        let segments = segments(parse(log));
+        assert_eq!(
+            segments,
+            [
+                Segment::Activity(vec!["Reading a.rs…", "Searching fn x…", "Running make…"]),
+                Segment::Message("hi".into()),
+                Segment::Step("Reading b.rs…"),
+            ]
+        );
+        assert_eq!(
+            summary(&["Reading a.rs…", "Searching fn x…", "Running make…"]),
+            "Read 1 file, searched 1, ran 1 command"
+        );
+    }
+
+    #[test]
+    fn an_edit_leaves_the_burst_and_lands_in_its_run() {
+        let log = "── t · opencode\n→ Reading a.rs…\n→ Reading b.rs…\n→ Using edit a.rs…\n→ Reading c.rs…\n✓ Finished\n";
+        let runs = timeline(log);
+        assert_eq!(
+            runs[0].body,
+            [
+                Segment::Activity(vec!["Reading a.rs…", "Reading b.rs…"]),
+                Segment::Step("Reading c.rs…"),
+            ],
+            "the edit does not join either burst"
+        );
+        assert_eq!(runs[0].edits, ["a.rs"]);
+        assert_eq!(runs[0].outcome, Some((true, "Finished")));
+    }
+
+    #[test]
+    fn activity_counts_pluralise_and_sort_by_use() {
+        let steps = [
+            "Reading a.rs…",
+            "Searching x…",
+            "Searching y…",
+            "Reading b.rs…",
+            "Reading c.rs…",
+        ];
+        assert_eq!(summary(&steps), "Read 3 files, searched 2");
+        assert_eq!(summary(&["Running make…"]), "ran 1 command");
+        assert_eq!(summary(&["Using fetch https://x…"]), "used fetch 1 time");
+    }
+
+    #[test]
+    fn runs_split_the_timeline() {
+        let log = "── 2026-11-07 14:02 · opencode\nhi\n✓ Finished\n── 2026-11-08 09:00 · claude\nbye\n✗ stopped\n";
+        let runs = timeline(log);
+        assert_eq!(runs.len(), 2);
+        assert_eq!(run_parts(runs[1].head), ("2026-11-08 09:00", "claude"));
+        assert_eq!(runs[0].body, [Segment::Message("hi".into())]);
+        assert_eq!(runs[1].outcome, Some((false, "stopped")));
+        assert_eq!(when_label("2020-11-07 14:02"), "Nov 7 · 14:02");
+        assert_eq!(timeline("no heading\n").len(), 1, "an old log still reads");
     }
 
     #[test]
