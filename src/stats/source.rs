@@ -5,19 +5,18 @@
 //! [`Measures`] outlives a [`Source`], so a refresh or another page never
 //! measures a commit twice, even while the job it replaced is still stopping.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use super::{
     Blobs, Cycles, FileStat, PAGE, Progress, Releases, STOPPED, Snapshot, Stats, cycle, files_at,
     release,
 };
-use crate::agenda::{self, DayCommit};
+use crate::agenda::{self, AgendaDays, Repo};
 use crate::files;
 use crate::git::{self, Batch};
 use crate::job::Cancel;
@@ -151,13 +150,15 @@ pub struct Source {
     page: usize,
     release_tags: String,
     measures: Arc<Measures>,
+    /// The projects the Agenda reads, the open one first.
+    supervised: Vec<Repo>,
     /// How far the measuring got, for the UI.
     pub progress: Progress,
     listing: Memo<Listing>,
     snapshots: Memo<Vec<Snapshot>>,
     cycles: Memo<Cycles>,
     files: Memo<Vec<FileStat>>,
-    agenda: Memo<BTreeMap<NaiveDate, Vec<DayCommit>>>,
+    agenda: Memo<AgendaDays>,
     releases: Memo<Releases>,
 }
 
@@ -171,6 +172,7 @@ impl Source {
             page,
             release_tags: release::ReleasePrefs::default().tags,
             measures,
+            supervised: vec![Repo::new(dir)],
             progress: Progress::default(),
             listing: Memo::default(),
             snapshots: Memo::default(),
@@ -187,6 +189,18 @@ impl Source {
         self
     }
 
+    /// The same source, its Agenda reading `repos` instead of its own folder
+    /// alone.
+    pub fn with_supervised(mut self, repos: Vec<Repo>) -> Self {
+        self.supervised = repos;
+        self
+    }
+
+    /// The projects the Agenda reads.
+    pub fn supervised(&self) -> &[Repo] {
+        &self.supervised
+    }
+
     /// The pattern of the tags it reads as releases.
     pub fn release_tags(&self) -> &str {
         &self.release_tags
@@ -201,6 +215,7 @@ impl Source {
     pub fn at_page(&self, page: usize) -> Self {
         Self::new(&self.dir, &self.root, page, Arc::clone(&self.measures))
             .with_release_tags(&self.release_tags)
+            .with_supervised(self.supervised.clone())
     }
 
     /// The [`Stats`] with what `needs` asks for filled in and the rest empty.
@@ -221,7 +236,9 @@ impl Source {
                 Need::Cycles => stats.cycles.clone_from(&*self.cycles(cancel)?),
                 Need::Files => stats.files.clone_from(&*self.files(cancel)?),
                 Need::Agenda => {
-                    let agenda = self.agenda.get(cancel, || agenda::collect(&self.dir))?;
+                    let agenda = self
+                        .agenda
+                        .get(cancel, || agenda::collect_all(&self.supervised, cancel))?;
                     stats.agenda.clone_from(&*agenda);
                 }
                 Need::Releases => stats.releases.clone_from(&*self.releases(cancel)?),

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use iboard::agenda::{Agenda, Range};
+use iboard::agenda::{Agenda, Range, supervised};
 use iboard::format::{display_path, thousands};
 use iboard::stats::{self, Limits, Measures, Snapshot, Source, Stats};
 
@@ -110,20 +110,12 @@ pub(super) struct StatsPanel {
     /// The history popup of a row clicked in the files table.
     pub(super) history: Option<FileHistory>,
     pub(super) agenda: Agenda,
-    /// The project's name, as the Agenda's day panel says it.
-    project: String,
     /// The Releases checkbox of the Trends.
     pub(super) show_releases: bool,
 }
 
 impl StatsPanel {
-    fn new(
-        source: Source,
-        project: String,
-        page: usize,
-        range: Range,
-        show_releases: bool,
-    ) -> Self {
+    fn new(source: Source, page: usize, range: Range, show_releases: bool) -> Self {
         Self {
             page,
             blocks: Blocks::new(source),
@@ -132,7 +124,6 @@ impl StatsPanel {
             all_files: false,
             history: None,
             agenda: Agenda::new(range),
-            project,
             show_releases,
         }
     }
@@ -180,11 +171,12 @@ impl IboardApp {
             let dir = &self.located.project_dir;
             let measures = Arc::new(Measures::new(dir));
             let releases = &self.prefs.releases;
-            let source =
-                Source::new(dir, &self.located.root, 0, measures).with_release_tags(&releases.tags);
+            let projects = supervised(dir, &self.recents);
+            let source = Source::new(dir, &self.located.root, 0, measures)
+                .with_release_tags(&releases.tags)
+                .with_supervised(projects);
             self.session.stats = Some(StatsPanel::new(
                 source,
-                self.board.name(),
                 0,
                 self.prefs.agenda_range,
                 releases.show,
@@ -200,8 +192,9 @@ impl IboardApp {
         (reading || history).then_some(job::POLL_EVERY)
     }
 
-    /// The panel owns the keyboard while up: `⌘R` refreshes it and the Agenda
-    /// takes its keys once it has days. A file's history over it takes them all.
+    /// The panel owns the keyboard while up: `⌘R` refreshes it, `esc` clears
+    /// the Agenda's project filter then closes the panel, and the Agenda takes
+    /// its keys once it has days. A file's history over it takes them all.
     pub(super) fn stats_keys(&mut self, ctx: &egui::Context) {
         if self
             .session
@@ -212,8 +205,18 @@ impl IboardApp {
             return;
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
-            self.session.stats = None;
-            return;
+            let filtered = self
+                .session
+                .stats
+                .as_ref()
+                .is_some_and(|panel| panel.agenda.filter().is_some());
+            if !filtered {
+                self.session.stats = None;
+                return;
+            }
+            if let Some(panel) = self.session.stats.as_mut() {
+                panel.agenda.clear_filter();
+            }
         }
         let Some(panel) = self.session.stats.as_mut() else {
             return;
@@ -322,8 +325,7 @@ impl IboardApp {
             StatsAsk::Page(page) => {
                 let range = panel.agenda.range;
                 let source = panel.blocks.source().at_page(page);
-                let project = std::mem::take(&mut panel.project);
-                *panel = StatsPanel::new(source, project, page, range, panel.show_releases);
+                *panel = StatsPanel::new(source, page, range, panel.show_releases);
             }
             StatsAsk::Refresh => panel.refresh(),
             StatsAsk::DraftRefactor(title, description) => {
@@ -422,14 +424,18 @@ fn stats_body(ui: &mut egui::Ui, panel: &mut StatsPanel) -> Option<StatsAsk> {
 fn agenda_block(ui: &mut egui::Ui, panel: &mut StatsPanel) {
     let phase = panel.blocks.phase(Part::Agenda);
     let clock = panel.blocks.clock(Part::Agenda);
+    let projects = panel.blocks.source().supervised().len();
     let show = match &phase {
-        Phase::Waiting { pulse } => agenda::Show::Waiting { pulse: *pulse },
+        Phase::Waiting { pulse } => agenda::Show::Waiting {
+            pulse: *pulse,
+            projects,
+        },
         Phase::Failed(error) => agenda::Show::Failed(error),
         Phase::Loaded { stats, .. } => agenda::Show::Days(&stats.agenda),
     };
     let scope = ui.scope(|ui| {
         blocks::dim_if_stale(ui, &phase);
-        agenda::agenda_ui(ui, &mut panel.agenda, &panel.project, show, clock)
+        agenda::agenda_ui(ui, &mut panel.agenda, show, clock)
     });
     if scope.inner {
         panel.blocks.start(Part::Agenda);

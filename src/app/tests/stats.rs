@@ -563,6 +563,105 @@ fn release_tags_pick_another_pattern() {
     harness.get_by_label(&release_label(&harness, "rel-1"));
 }
 
+/// The Agenda counts the open project and the recent ones, groups the day
+/// panel by project, and filters from a "By project" row until its token's ×
+/// or `esc`.
+#[test]
+fn the_agenda_counts_every_supervised_project() {
+    let (_dir, located) = project("agenda-supervised");
+    let (other, _) = project("agenda-other");
+    let other_name = iboard::files::file_name(&other);
+    let mut app = IboardApp::from_located(located);
+    app.recents = vec![crate::recents::canonical(&other)];
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+
+    let panel = harness.state().1.session.stats.as_ref().unwrap();
+    let days = &panel.blocks.loaded(Part::Agenda).unwrap().agenda;
+    assert_eq!(days.projects.len(), 2);
+    assert_eq!(days.days.values().map(Vec::len).sum::<usize>(), 6);
+    harness.get_by_label("6 commits · 2 projects · 1 active day");
+    let row = format!("{other_name}, 3 commits, last today");
+    harness.get_by_label(&row);
+    harness.get_by_label(&format!("{other_name} · 3"));
+
+    harness.get_by_label(&row).click();
+    harness.run_steps(2);
+    let panel = harness.state().1.session.stats.as_ref().unwrap();
+    assert_eq!(panel.agenda.filter(), Some(other_name.as_str()));
+    harness.get_by_label("3 commits · 1 active day");
+    harness.get_by_label(&format!("Remove {other_name}"));
+
+    press(&mut harness, &format!("Remove {other_name}"));
+    harness.get_by_label("6 commits · 2 projects · 1 active day");
+    assert!(
+        harness
+            .state()
+            .1
+            .session
+            .stats
+            .as_ref()
+            .unwrap()
+            .agenda
+            .filter()
+            .is_none()
+    );
+
+    harness.get_by_label(&row).click();
+    harness.run_steps(2);
+    harness.key_press(Key::Escape);
+    harness.run_steps(2);
+    let panel = harness.state().1.session.stats.as_ref().unwrap();
+    assert!(panel.agenda.filter().is_none(), "esc clears the filter");
+    harness.key_press(Key::Escape);
+    harness.run_steps(2);
+    assert!(
+        harness.state().1.session.stats.is_none(),
+        "then closes Stats"
+    );
+}
+
+/// While it reads, the Agenda says how many projects it is reading.
+#[test]
+fn the_agenda_says_how_many_projects_it_reads() {
+    let (_dir, located) = project("agenda-loading");
+    let (other, _) = project("agenda-loading-other");
+    let mut app = IboardApp::from_located(located);
+    app.recents = vec![crate::recents::canonical(&other)];
+    app.open_stats();
+    let panel = app.session.stats.as_mut().unwrap();
+    panel.blocks.reading(Part::Agenda, slow());
+    let mut harness = tall(app);
+    harness.run_steps(1);
+    harness.get_by_label("Reading git history in 2 projects…");
+}
+
+/// A supervised folder git cannot read keeps its row and error while the
+/// others still count.
+#[test]
+fn a_supervised_folder_git_cannot_read_still_leaves_the_others() {
+    let (_dir, located) = project("agenda-broken");
+    let bare = scratch_dir("agenda-bare");
+    let bare_name = iboard::files::file_name(&bare);
+    let mut app = IboardApp::from_located(located);
+    app.recents = vec![crate::recents::canonical(&bare)];
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+
+    let panel = harness.state().1.session.stats.as_ref().unwrap();
+    let days = &panel.blocks.loaded(Part::Agenda).unwrap().agenda;
+    assert_eq!(days.projects.len(), 1);
+    assert_eq!(days.failed.len(), 1);
+    assert_eq!(days.failed[0].0, bare_name);
+    harness.get_by_label("3 commits · 1 project · 1 active day");
+    harness.get_by_label(&bare_name);
+    harness.get_by_label("Retry");
+}
+
 /// A day past its five commits says how many more, and in which project.
 #[test]
 fn the_agenda_names_the_project_of_a_days_other_commits() {

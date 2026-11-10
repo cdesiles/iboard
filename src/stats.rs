@@ -16,14 +16,13 @@ mod release;
 mod source;
 mod watch;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
-use crate::agenda::DayCommit;
+use crate::agenda::AgendaDays;
 use crate::git::{self, Batch};
 use crate::job::Cancel;
 pub use cycle::{Cycle, Cycles, span};
@@ -133,8 +132,8 @@ pub struct Stats {
     /// Oldest first.
     pub snapshots: Vec<Snapshot>,
     /// The commits of each local day, newest first, over the
-    /// [`agenda::AGENDA_DAYS`] up to today.
-    pub agenda: BTreeMap<NaiveDate, Vec<DayCommit>>,
+    /// [`agenda::AGENDA_DAYS`] up to today, across the supervised projects.
+    pub agenda: AgendaDays,
     /// The source files at the page's newest commit, most code first.
     pub files: Vec<FileStat>,
     /// The issues the page's commits closed, and how long each took.
@@ -349,7 +348,7 @@ mod tests {
         assert_eq!((last.files, last.tests, last.test_code), (2, 1, 2));
         assert_eq!(last.complexity, 3);
         assert!(!stats.older);
-        assert_eq!(stats.agenda.values().map(Vec::len).sum::<usize>(), 4);
+        assert_eq!(stats.agenda.days.values().map(Vec::len).sum::<usize>(), 4);
         let lib = stats.files.iter().find(|f| f.path == "src/lib.rs").unwrap();
         assert_eq!((lib.changes, lib.code), (2, 3));
         assert_eq!(stats.files[0].path, "src/lib.rs", "most code first");

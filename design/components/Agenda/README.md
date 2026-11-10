@@ -8,7 +8,7 @@ Commits per day across every project iboard supervises, so you can see at a glan
 - **Summary** in `meta`: "**105** commits · 3 projects · 23 active days · 9-day streak". The streak only shows from 2 days.
 - **Heatmap**: one column per week, Monday on top. Month names above the week where the month starts, `Mon` `Wed` `Fri` on the left, all in `meta`. Days are 18pt squares with a 3pt gap and 4pt radius.
 - **Legend** under the grid, with the counts each shade stands for ("1–4 5–8 9–12 13+") and the today mark.
-- **By project**, last 12 weeks: one 28pt row per project, sorted by commits. Each row shows the name, 12 weekly bars in `accent` (an empty week is a 1pt `line` tick), the total, and the date of the last commit.
+- **By project**, last 12 weeks: one 28pt row per supervised project, sorted by commits. Each row shows the name, 12 weekly bars in `accent` (an empty week is a 1pt `line` tick), the total, and the date of the last commit.
 - **Day panel** on the right (min 260pt): the selected day, "15 commits · 2 projects", then the commits grouped by project, busiest first. Each commit shows its time, short sha in `accent` and subject, newest first. A project with more than 5 commits that day ends with "6 more in iboard".
 
 ## Colour
@@ -33,9 +33,9 @@ Commits per day across every project iboard supervises, so you can see at a glan
 | Agenda | Click a range | AgendaRangeChanged | Grid rebuilt, scale and legend recomputed, selection kept if still in range |
 | Agenda | Click a project row | AgendaProjectFiltered | Grid, summary and day panel for that project only; other rows go `ink-faint` |
 | Agenda | Click the row again, the token's ×, `esc` | AgendaFilterCleared | All projects |
-| Any | Refresh, or a project's repo changes | CommitsScanned | Same screen; counts update in place |
+| Any | Refresh, or a supervised repo changes | CommitsScanned | Same screen; counts update in place |
 
-Read model: `AgendaDays` is a map from (day, project) to a commit count, built from `CommitsScanned` per supervised repo using author dates in local time. The day panel reads the commits for one day on demand.
+Read model: `AgendaDays` is a map from (day, project) to a commit count, built from `CommitsScanned` per supervised repo using author dates in local time; a repo git cannot read is kept with its error beside the others. The day panel reads the commits for one day on demand. The scan runs off the UI thread, one `git log` per repository.
 
 ## Keyboard
 
@@ -47,4 +47,4 @@ Arrow keys move the selected day; `[` and `]` go to the previous or next week, `
 - **Empty**: "No commits in the last 4 weeks. The last one was on 16 Sep in site." plus a button that widens the range.
 - **A repo that can't be read**: its row says why in `danger` with Retry. The other projects still count.
 
-The consumer provides the supervised repos and today's date. In egui, `theme::agenda_fill(p, commits, step)` returns a day's shade.
+The consumer provides the supervised repos and today's date. Supervised means the open project and the projects opened recently (the header's project menu), each once, so the Agenda follows the work without waiting for every project to be open. In egui, `theme::agenda_fill(p, commits, step)` returns a day's shade.
