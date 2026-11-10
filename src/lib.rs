@@ -14,22 +14,17 @@ pub mod agenda;
 pub mod agent;
 pub mod assets;
 pub mod build_log;
-pub mod commits;
-pub mod config;
 pub mod design;
 #[cfg(feature = "gui")]
 pub mod design_ui;
 pub mod diff;
 pub mod domains;
 pub mod files;
-pub mod filter;
 pub mod format;
 pub mod general;
 pub mod git;
-pub mod history;
 pub mod job;
 pub mod kernel;
-pub mod labels;
 pub mod markdown;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod menu;
@@ -39,7 +34,6 @@ pub mod notifications;
 pub mod pasteboard;
 pub mod plan;
 pub mod preferences;
-pub mod priority;
 pub mod process;
 pub mod prompts;
 pub mod prose;
@@ -54,10 +48,9 @@ pub mod stats;
 #[cfg(feature = "gui")]
 pub mod theme;
 pub mod titles;
-pub mod trash;
 #[cfg(feature = "gui")]
 pub mod widgets;
 pub mod workspace;
 
-pub use kernel::board as discovery;
+pub use domains::board::{commits, config, discovery, filter, history, labels, priority, trash};
 pub use kernel::issue;
