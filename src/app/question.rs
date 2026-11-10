@@ -6,132 +6,245 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use super::{
-    ButtonKind, CornerRadius, Duration, Frame, IboardApp, Icon, Instant, Job, Key, Path, PathBuf,
-    RichText, Sense, Stroke, Vec2, job, theme, widgets,
+    Align, ButtonKind, CornerRadius, Duration, Frame, IboardApp, Icon, Instant, Job, Key, Layout,
+    Path, PathBuf, Pos2, RichText, Sense, Stroke, StrokeKind, Vec2, file_name, job, theme, widgets,
 };
 use crate::agent::service::{
-    Field, FieldKind, Permission, PermissionReply, Question, QuestionKind,
+    Choice, Field, FieldKind, Permission, PermissionReply, Question, QuestionKind,
 };
+
+mod card;
+mod fields;
 
 /// One question open for an answer.
 pub(super) struct AnswerDraft {
     pub(super) path: PathBuf,
     question: Question,
     values: BTreeMap<String, AnswerValue>,
-    error: Option<String>,
+    field_error: Option<FieldError>,
+    failure: Option<String>,
     reply: Option<Job<Result<(), String>>>,
+    focus: Option<Focus>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
 enum AnswerValue {
-    Text(String),
-    Boolean(bool),
-    Multi(Vec<String>),
+    Text {
+        text: String,
+        other: bool,
+    },
+    Boolean(Option<bool>),
+    Multi {
+        chosen: Vec<String>,
+        other: bool,
+        custom: String,
+    },
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct FieldError {
+    key: String,
+    message: String,
+}
+
+impl FieldError {
+    fn new(field: &Field, message: String) -> Self {
+        Self {
+            key: field.key.clone(),
+            message,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum Focus {
+    Field(String),
 }
 
 impl AnswerDraft {
     fn new(path: PathBuf, question: Question) -> Self {
+        let mut focus = None;
         let values = match &question.kind {
-            QuestionKind::Form(fields) => fields
-                .iter()
-                .filter(|field| !field.hidden)
-                .map(|field| (field.key.clone(), default_value(&field.kind)))
-                .collect(),
+            QuestionKind::Form(fields) => {
+                focus = fields
+                    .iter()
+                    .find(|field| !field.hidden)
+                    .map(|field| Focus::Field(field.key.clone()));
+                fields
+                    .iter()
+                    .filter(|field| !field.hidden)
+                    .map(|field| (field.key.clone(), default_value(&field.kind)))
+                    .collect()
+            }
             QuestionKind::Permission(_) => BTreeMap::new(),
         };
         Self {
             path,
             question,
             values,
-            error: None,
+            field_error: None,
+            failure: None,
             reply: None,
+            focus,
         }
     }
 
     /// The form's answers, as the service reads them.
-    fn form_answer(&self) -> Result<Map<String, Value>, String> {
+    fn form_answer(&self) -> Result<Map<String, Value>, FieldError> {
         let QuestionKind::Form(fields) = &self.question.kind else {
             return Ok(Map::new());
         };
         let mut answer = Map::new();
         for field in fields.iter().filter(|field| !field.hidden) {
-            let value = self.values.get(&field.key);
-            match (&field.kind, value) {
-                (
-                    FieldKind::Text {
-                        options, custom, ..
-                    },
-                    Some(AnswerValue::Text(text)),
-                ) => {
-                    let text = text.trim();
-                    if text.is_empty() {
-                        if field.required {
-                            return Err(missing(&field.title));
-                        }
-                        continue;
-                    }
-                    if !options.is_empty()
-                        && !custom
-                        && !options.iter().any(|option| option.value == text)
-                    {
-                        return Err(format!("Choose an option for {}.", field.title));
-                    }
-                    answer.insert(field.key.clone(), Value::String(text.to_string()));
-                }
-                (FieldKind::Number { integer, .. }, Some(AnswerValue::Text(text))) => {
-                    let text = text.trim();
-                    if text.is_empty() {
-                        if field.required {
-                            return Err(missing(&field.title));
-                        }
-                        continue;
-                    }
-                    answer.insert(field.key.clone(), number(text, *integer)?);
-                }
-                (FieldKind::Boolean { .. }, Some(AnswerValue::Boolean(checked))) => {
-                    answer.insert(field.key.clone(), Value::Bool(*checked));
-                }
-                (
-                    FieldKind::Multi {
-                        options, custom, ..
-                    },
-                    Some(AnswerValue::Multi(values)),
-                ) => {
-                    if values.is_empty() {
-                        if field.required {
-                            return Err(missing(&field.title));
-                        }
-                        continue;
-                    }
-                    if !custom
-                        && let Some(unknown) = values
-                            .iter()
-                            .find(|value| !options.iter().any(|option| &option.value == *value))
-                    {
-                        return Err(format!("Choose options for {}: {unknown}.", field.title));
-                    }
-                    let values = values.iter().cloned().map(Value::String).collect();
-                    answer.insert(field.key.clone(), Value::Array(values));
-                }
-                _ => {}
+            if let Some(value) = self.values.get(&field.key) {
+                answer_field(field, value, &mut answer)?;
             }
         }
         Ok(answer)
     }
 }
 
+fn answer_field(
+    field: &Field,
+    value: &AnswerValue,
+    answer: &mut Map<String, Value>,
+) -> Result<(), FieldError> {
+    match (&field.kind, value) {
+        (
+            FieldKind::Text {
+                options, custom, ..
+            },
+            AnswerValue::Text { text, other },
+        ) => {
+            let text = text.trim();
+            if text.is_empty() {
+                if field.required {
+                    return Err(missing(field));
+                }
+                return Ok(());
+            }
+            if !options.is_empty()
+                && !*other
+                && !*custom
+                && !options.iter().any(|option| option.value == text)
+            {
+                return Err(FieldError::new(
+                    field,
+                    format!("Choose an option for {}.", field.title),
+                ));
+            }
+            answer.insert(field.key.clone(), Value::String(text.to_string()));
+        }
+        (FieldKind::Number { integer, .. }, AnswerValue::Text { text, .. }) => {
+            let text = text.trim();
+            if text.is_empty() {
+                if field.required {
+                    return Err(missing(field));
+                }
+                return Ok(());
+            }
+            let value = number(text, *integer).map_err(|error| FieldError::new(field, error))?;
+            answer.insert(field.key.clone(), value);
+        }
+        (FieldKind::Boolean { .. }, AnswerValue::Boolean(checked)) => match checked {
+            Some(checked) => {
+                answer.insert(field.key.clone(), Value::Bool(*checked));
+            }
+            None if field.required => return Err(missing(field)),
+            None => {}
+        },
+        (
+            FieldKind::Multi {
+                options, custom, ..
+            },
+            AnswerValue::Multi {
+                chosen,
+                other,
+                custom: text,
+            },
+        ) => {
+            let mut values = chosen.clone();
+            if *other {
+                let text = text.trim();
+                if !text.is_empty() {
+                    values.push(text.to_string());
+                }
+            }
+            if values.is_empty() {
+                if field.required {
+                    return Err(missing(field));
+                }
+                return Ok(());
+            }
+            if !*custom
+                && let Some(unknown) = values
+                    .iter()
+                    .find(|value| !options.iter().any(|option| &option.value == *value))
+            {
+                return Err(FieldError::new(
+                    field,
+                    format!("Choose options for {}: {unknown}.", field.title),
+                ));
+            }
+            let values = values.into_iter().map(Value::String).collect();
+            answer.insert(field.key.clone(), Value::Array(values));
+        }
+        (FieldKind::External { .. }, _) => {}
+        _ => {}
+    }
+    Ok(())
+}
+
 fn default_value(kind: &FieldKind) -> AnswerValue {
     match kind {
-        FieldKind::Text { default, .. } => AnswerValue::Text(default.clone()),
-        FieldKind::Number { default, .. } => AnswerValue::Text(default.clone()),
-        FieldKind::Boolean { default } => AnswerValue::Boolean(*default),
-        FieldKind::Multi { default, .. } => AnswerValue::Multi(default.clone()),
-        FieldKind::External { .. } => AnswerValue::Text(String::new()),
+        FieldKind::Text {
+            options,
+            default,
+            custom,
+            ..
+        } => {
+            let other = *custom
+                && !default.trim().is_empty()
+                && !options.iter().any(|option| option.value == *default);
+            AnswerValue::Text {
+                text: default.clone(),
+                other,
+            }
+        }
+        FieldKind::Number { default, .. } => AnswerValue::Text {
+            text: default.clone(),
+            other: false,
+        },
+        FieldKind::Boolean { default } => AnswerValue::Boolean(default.then_some(true)),
+        FieldKind::Multi {
+            options,
+            default,
+            custom,
+        } => {
+            let mut chosen = Vec::new();
+            let mut text = String::new();
+            for value in default {
+                if options.iter().any(|option| option.value == *value) {
+                    chosen.push(value.clone());
+                } else if *custom {
+                    text = value.clone();
+                }
+            }
+            AnswerValue::Multi {
+                chosen,
+                other: !text.is_empty(),
+                custom: text,
+            }
+        }
+        FieldKind::External { .. } => AnswerValue::Text {
+            text: String::new(),
+            other: false,
+        },
     }
 }
 
-fn missing(title: &str) -> String {
-    format!("Answer {title} first.")
+fn missing(field: &Field) -> FieldError {
+    FieldError::new(field, format!("Answer {} first.", field.title))
 }
 
 fn number(text: &str, integer: bool) -> Result<Value, String> {
@@ -167,7 +280,13 @@ impl IboardApp {
 
     /// The question the build on `path` waits on, drawn above the log it
     /// belongs to. Answering it resumes the run; it never leaves the ticket.
-    pub(super) fn question_panel(&mut self, ui: &mut egui::Ui, path: &Path, question: &Question) {
+    pub(super) fn question_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        path: &Path,
+        question: &Question,
+        max_height: f32,
+    ) {
         if self
             .session
             .answer
@@ -176,13 +295,23 @@ impl IboardApp {
         {
             self.session.answer = Some(AnswerDraft::new(path.to_path_buf(), question.clone()));
         }
+        let since = self.building_since(path);
+        let project = self.question_project(question);
         let Some(draft) = self.session.answer.as_mut() else {
             return;
         };
-        let action = answer_card(ui, question, draft);
+        let action = card::answer_card(ui, question, draft, max_height, since, project.as_deref());
         let pressed = ui
             .ctx()
             .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter));
+        if self
+            .session
+            .answer
+            .as_ref()
+            .is_some_and(|draft| draft.reply.is_some())
+        {
+            return;
+        }
         match action {
             Some(AnswerAction::Send) => self.send_answer(None),
             Some(AnswerAction::Permission(reply)) => self.send_answer(Some(reply)),
@@ -192,6 +321,73 @@ impl IboardApp {
                 self.send_answer(reply);
             }
             None => {}
+        }
+    }
+
+    /// The question a stopped build left behind, for the quiet note in its
+    /// place.
+    pub(super) fn stale_question(&self, path: &Path) -> Option<&Question> {
+        self.session
+            .answer
+            .as_ref()
+            .filter(|draft| draft.path == path)
+            .filter(|_| self.question_for(path).is_none())
+            .map(|draft| &draft.question)
+    }
+
+    pub(super) fn dismiss_answer(&mut self, path: &Path) {
+        let stale = self
+            .session
+            .answer
+            .as_ref()
+            .is_some_and(|draft| draft.path == path);
+        if !stale {
+            return;
+        }
+        if let Some(draft) = self.session.answer.take() {
+            self.forget_question(&draft.question);
+        }
+    }
+
+    /// A stopped build's question: a quiet note, its answers kept in case the
+    /// build resumes.
+    pub(super) fn stale_answer_card(
+        &mut self,
+        ui: &mut egui::Ui,
+        path: &Path,
+        question: &Question,
+    ) {
+        let p = theme::palette(ui);
+        let width = ui.available_width();
+        let mut dismiss = false;
+        Frame::new()
+            .fill(p.surface_sunken)
+            .corner_radius(CornerRadius::same(theme::RADIUS_MD))
+            .inner_margin(Vec2::splat(theme::SPACE_4))
+            .show(ui, |ui| {
+                ui.set_width(width - 2.0 * theme::SPACE_4);
+                ui.add(
+                    egui::Label::new(
+                        RichText::new("This build stopped before it was answered.")
+                            .font(theme::ui_strong())
+                            .color(p.ink),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(theme::SPACE_2);
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(&question.title)
+                            .font(theme::ui_small())
+                            .color(p.ink_muted),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(theme::SPACE_3);
+                dismiss = widgets::button(ui, ButtonKind::Ghost, None, "Dismiss", None).clicked();
+            });
+        if dismiss {
+            self.dismiss_answer(path);
         }
     }
 
@@ -213,7 +409,11 @@ impl IboardApp {
             QuestionKind::Form(_) => match draft.form_answer() {
                 Ok(answer) => Some(answer),
                 Err(error) => {
-                    self.fail_answer(error);
+                    if let Some(draft) = self.session.answer.as_mut() {
+                        draft.failure = None;
+                        draft.focus = Some(Focus::Field(error.key.clone()));
+                        draft.field_error = Some(error);
+                    }
                     return;
                 }
             },
@@ -233,14 +433,16 @@ impl IboardApp {
             (None, None) => return,
         };
         if let Some(draft) = self.session.answer.as_mut() {
-            draft.error = None;
+            draft.field_error = None;
+            draft.failure = None;
             draft.reply = Some(result);
         }
     }
 
     fn fail_answer(&mut self, error: String) {
         if let Some(draft) = self.session.answer.as_mut() {
-            draft.error = Some(error);
+            draft.field_error = None;
+            draft.failure = Some(error);
         }
     }
 
@@ -262,7 +464,8 @@ impl IboardApp {
                 Err(error) => {
                     if let Some(draft) = self.session.answer.as_mut() {
                         draft.reply = None;
-                        draft.error = Some(error);
+                        draft.field_error = None;
+                        draft.failure = Some(error);
                     }
                 }
             }
@@ -282,237 +485,43 @@ impl IboardApp {
             draft.reply = Some(Job::done(Ok(())));
         }
     }
-}
 
-fn question_heading(question: &Question) -> (&str, bool) {
-    match &question.kind {
-        QuestionKind::Form(fields) if fields.len() == 1 => (
-            if fields[0].title.trim().is_empty() {
-                question.title.as_str()
-            } else {
-                fields[0].title.as_str()
-            },
-            true,
-        ),
-        _ => (
-            if question.title.trim().is_empty() {
-                "Question"
-            } else {
-                question.title.as_str()
-            },
-            false,
-        ),
-    }
-}
-
-fn answer_card(
-    ui: &mut egui::Ui,
-    question: &Question,
-    draft: &mut AnswerDraft,
-) -> Option<AnswerAction> {
-    let p = theme::palette(ui);
-    let width = ui.available_width();
-    let (heading, single) = question_heading(question);
-    let mut action = None;
-    Frame::new()
-        .fill(p.surface_sunken)
-        .stroke(Stroke::new(1.0, p.status_doing.gamma_multiply(0.6)))
-        .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-        .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_3))
-        .show(ui, |ui| {
-            ui.set_width(width - 2.0 * theme::SPACE_3);
-            question_heading_ui(ui, heading);
-            ui.add_space(theme::SPACE_3);
-            answer_body(ui, draft, single);
-            ui.add_space(theme::SPACE_3);
-            action = answer_buttons(ui, question);
-        });
-    action
-}
-
-fn question_heading_ui(ui: &mut egui::Ui, heading: &str) {
-    let p = theme::palette(ui);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-        let (icon, _) = ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
-        theme::paint_icon(ui.painter(), Icon::Bubble, icon, p.status_doing);
-        ui.add(
-            egui::Label::new(RichText::new(heading).font(theme::ui_strong()).color(p.ink)).wrap(),
-        );
-    });
-}
-
-fn answer_buttons(ui: &mut egui::Ui, question: &Question) -> Option<AnswerAction> {
-    match &question.kind {
-        QuestionKind::Form(_) => {
-            let mut send = false;
-            widgets::footer_bar(ui, 0.0, |ui| {
-                if widgets::button(ui, ButtonKind::Primary, None, "Send", Some("⌘↩")).clicked()
-                {
-                    send = true;
-                }
-            });
-            send.then_some(AnswerAction::Send)
-        }
-        QuestionKind::Permission(_) => {
-            let mut reply = None;
-            widgets::footer_bar(ui, 0.0, |ui| {
-                if widgets::button(ui, ButtonKind::Primary, None, "Allow once", Some("⌘↩"))
-                    .clicked()
-                {
-                    reply = Some(PermissionReply::Once);
-                }
-                if widgets::button(ui, ButtonKind::Secondary, None, "Always allow", None).clicked()
-                {
-                    reply = Some(PermissionReply::Always);
-                }
-                if widgets::button(ui, ButtonKind::Delete, None, "Reject", None).clicked() {
-                    reply = Some(PermissionReply::Reject);
-                }
-            });
-            reply.map(AnswerAction::Permission)
+    #[cfg(test)]
+    pub(super) fn fail_answer_for_test(&mut self, error: &str) {
+        if let Some(draft) = self.session.answer.as_mut() {
+            draft.reply = Some(Job::done(Err(error.to_string())));
         }
     }
+
+    #[cfg(test)]
+    pub(super) fn form_answer_for_test(&self) -> Result<Map<String, Value>, String> {
+        let Some(draft) = self.session.answer.as_ref() else {
+            return Err("no answer".to_string());
+        };
+        draft.form_answer().map_err(|error| error.message)
+    }
 }
 
-fn answer_body(ui: &mut egui::Ui, draft: &mut AnswerDraft, single: bool) {
-    let p = theme::palette(ui);
-    let AnswerDraft {
-        question,
-        values,
-        error,
-        ..
-    } = draft;
-    if let Some(error) = error {
-        widgets::help(ui, error, p.danger);
-        ui.add_space(theme::SPACE_3);
-    }
+fn question_heading(question: &Question) -> String {
     match &question.kind {
+        QuestionKind::Permission(permission) => {
+            let action = permission.action.trim();
+            let action = if action.is_empty() {
+                "a command"
+            } else {
+                action
+            };
+            format!("Allow {action}?")
+        }
         QuestionKind::Form(fields) => {
-            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            for field in fields.iter().filter(|field| !field.hidden) {
-                let value = values
-                    .entry(field.key.clone())
-                    .or_insert_with(|| default_value(&field.kind));
-                field_ui(ui, field, value, !single);
+            if !question.title.trim().is_empty() {
+                return question.title.trim().to_string();
             }
-        }
-        QuestionKind::Permission(permission) => permission_body(ui, permission),
-    }
-}
-
-fn field_ui(ui: &mut egui::Ui, field: &Field, value: &mut AnswerValue, show_label: bool) {
-    let p = theme::palette(ui);
-    if show_label {
-        widgets::field_label(ui, &field.title);
-    }
-    if !field.description.is_empty() {
-        widgets::help(ui, &field.description, p.ink_muted);
-        ui.add_space(theme::SPACE_2);
-    }
-    match (&field.kind, value) {
-        (
-            FieldKind::Text {
-                options,
-                placeholder,
-                custom,
-                ..
-            },
-            AnswerValue::Text(text),
-        ) => {
-            if options.is_empty() {
-                widgets::text_field(ui, text, placeholder);
-            } else {
-                choices(ui, options, text, *custom);
-                if *custom && !options.iter().any(|option| option.value == *text) {
-                    ui.add_space(theme::SPACE_2);
-                    widgets::text_field(ui, text, "Other answer");
-                }
+            let visible: Vec<&Field> = fields.iter().filter(|field| !field.hidden).collect();
+            if visible.len() == 1 && !visible[0].title.trim().is_empty() {
+                return visible[0].title.trim().to_string();
             }
+            "Question".to_string()
         }
-        (FieldKind::Number { integer, .. }, AnswerValue::Text(text)) => {
-            let hint = if *integer { "42" } else { "0" };
-            widgets::text_field(ui, text, hint);
-        }
-        (FieldKind::Boolean { .. }, AnswerValue::Boolean(checked)) => {
-            widgets::checkbox(ui, checked, "Yes");
-        }
-        (FieldKind::Multi { options, .. }, AnswerValue::Multi(chosen)) => {
-            multi(ui, options, chosen);
-        }
-        (FieldKind::External { url }, _) if !url.is_empty() => {
-            ui.hyperlink_to("Open", url);
-        }
-        _ => {}
     }
-}
-
-fn choices(
-    ui: &mut egui::Ui,
-    options: &[crate::agent::service::Choice],
-    text: &mut String,
-    custom: bool,
-) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
-        for option in options {
-            if widgets::chip(ui, &option.label, text == &option.value)
-                .on_hover_text(&option.description)
-                .clicked()
-            {
-                *text = option.value.clone();
-            }
-        }
-        if custom {
-            let other = !options.iter().any(|option| option.value == *text);
-            if widgets::chip(ui, "Other…", other).clicked() {
-                text.clear();
-            }
-        }
-    });
-}
-
-fn multi(ui: &mut egui::Ui, options: &[crate::agent::service::Choice], chosen: &mut Vec<String>) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::splat(theme::SPACE_2);
-        for option in options {
-            let current = chosen.contains(&option.value);
-            if widgets::chip(ui, &option.label, current)
-                .on_hover_text(&option.description)
-                .clicked()
-            {
-                match chosen.iter().position(|value| value == &option.value) {
-                    Some(at) => {
-                        chosen.remove(at);
-                    }
-                    None => chosen.push(option.value.clone()),
-                }
-            }
-        }
-    });
-}
-
-fn permission_body(ui: &mut egui::Ui, permission: &Permission) {
-    let p = theme::palette(ui);
-    widgets::field_label(ui, "The agent wants to run");
-    for resource in &permission.resources {
-        ui.label(
-            RichText::new(resource)
-                .font(theme::meta_mono())
-                .color(p.ink),
-        );
-    }
-    if let Some(message) = &permission.message {
-        ui.add_space(theme::SPACE_3);
-        widgets::help(ui, message, p.ink_muted);
-    }
-    ui.add_space(theme::SPACE_3);
-    widgets::help(
-        ui,
-        &format!(
-            "{} is asking from its build. Allow once to run it, always to let this agent use it, or reject to stop the tool.",
-            permission.action
-        ),
-        p.ink_muted,
-    );
 }

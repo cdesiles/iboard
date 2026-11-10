@@ -130,18 +130,21 @@ impl IboardApp {
         path: &Path,
         question: Option<&crate::agent::service::Question>,
     ) {
-        let Some(question) = question else {
+        if let Some(question) = question {
+            let cap = (ui.available_height() * 0.55).max(120.0);
+            let card = ui
+                .scope(|ui| self.question_panel(ui, path, question, cap))
+                .response;
+            ui.add_space(card.rect.height() + theme::SPACE_4);
+            return;
+        }
+        let Some(stale) = self.stale_question(path).cloned() else {
             return;
         };
-        let start = ui.cursor().min;
-        let width = ui.available_width();
-        let mut question_ui = ui.new_child(egui::UiBuilder::new().max_rect(
-            egui::Rect::from_min_size(start, egui::Vec2::new(width, ui.available_height())),
-        ));
-        question_ui.set_min_size(egui::Vec2::ZERO);
-        self.question_panel(&mut question_ui, path, question);
-        let height = question_ui.min_rect().height();
-        ui.add_space(height + theme::SPACE_4);
+        let card = ui
+            .scope(|ui| self.stale_answer_card(ui, path, &stale))
+            .response;
+        ui.add_space(card.rect.height() + theme::SPACE_4);
     }
 
     /// The log's panel: a waiting question first, the switch and the live

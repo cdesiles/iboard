@@ -29,6 +29,7 @@ mod naming;
 mod panes;
 mod plan;
 mod project_menu;
+mod question;
 mod quitting;
 mod reading;
 mod refine;

@@ -11,7 +11,7 @@ use crate::build_log::{self, Entry};
 
 /// A board with `ready/001-a.md` and `ready/002-b.md`, and an empty Todo,
 /// Doing and Done; its build agent runs `command`.
-fn board(tag: &str, command: &str) -> (Scratch, IboardApp) {
+pub(super) fn board(tag: &str, command: &str) -> (Scratch, IboardApp) {
     let dir = scratch_dir(tag);
     for column in ["todo", "ready", "doing", "done"] {
         std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
@@ -24,7 +24,7 @@ fn board(tag: &str, command: &str) -> (Scratch, IboardApp) {
     (dir, app)
 }
 
-fn ready(app: &IboardApp) -> Vec<PathBuf> {
+pub(super) fn ready(app: &IboardApp) -> Vec<PathBuf> {
     let column = app
         .board
         .columns
@@ -648,7 +648,7 @@ fn deleting_an_issue_at_work_asks_to_stop_its_agent() {
     stop_agents(&mut app, &dir, 2);
 }
 
-fn form_question() -> Question {
+pub(super) fn form_question() -> Question {
     Question {
         session: "ses_1".into(),
         id: "frm_1".into(),
@@ -664,23 +664,23 @@ fn form_question() -> Question {
                     Choice {
                         value: "fast".into(),
                         label: "Fast".into(),
-                        description: String::new(),
+                        description: "Ship it today.".into(),
                     },
                     Choice {
                         value: "careful".into(),
                         label: "Careful".into(),
-                        description: String::new(),
+                        description: "Check every edge first.".into(),
                     },
                 ],
                 placeholder: String::new(),
                 default: String::new(),
-                custom: false,
+                custom: true,
             },
         }]),
     }
 }
 
-fn permission_question() -> Question {
+pub(super) fn permission_question() -> Question {
     Question {
         session: "ses_1".into(),
         id: "per_1".into(),
@@ -834,13 +834,21 @@ fn answering_a_question_takes_it_off_the_board() {
 fn a_tool_approval_answers_from_the_same_feed() {
     let (_dir, mut app) = board("build-permission", "sleep 30 # {prompt}");
     let path = ready(&app)[0].clone();
+    let project = app.board.project_of(&path).to_path_buf();
     app.seed_question(path, permission_question());
     let mut harness = kittest(app);
     harness.get_by_label("Answer: Allow bash?").click();
     harness.run_steps(2);
     assert!(harness.get_by_label("Allow once").rect().width() > 0.0);
-    assert!(harness.get_by_label("Always allow").rect().width() > 0.0);
+    assert!(
+        harness
+            .get_by_label(&format!("Always allow in {}/", file_name(&project)))
+            .rect()
+            .width()
+            > 0.0
+    );
     assert!(harness.get_by_label("Reject").rect().width() > 0.0);
+    harness.get_by_label_contains("Inside ");
 }
 
 /// Bug: a queued issue deleted was skipped but still counted as built.
