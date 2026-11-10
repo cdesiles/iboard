@@ -6,6 +6,7 @@ use super::*;
 use crate::agent::service::{Choice, Field, FieldKind, Permission, Question, QuestionKind};
 use crate::app::build::{self, Builds};
 use crate::app::card::CardBuild;
+use crate::app::intent::Intent;
 use crate::build_log::{self, Entry};
 
 /// A board with `ready/001-a.md` and `ready/002-b.md`, and an empty Todo,

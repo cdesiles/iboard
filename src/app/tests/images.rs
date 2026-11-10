@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::app::images::{Clipboard, ImageChecks, with_placeholders};
+use crate::app::reader::image_base_uri;
 use crate::assets;
 
 /// A 4×4 screenshot, as PNG bytes.

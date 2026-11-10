@@ -129,6 +129,7 @@ fn piece_of(line: &str, partial: &mut bool) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::custom;
     use super::*;
 
     #[test]
@@ -145,12 +146,9 @@ mod tests {
 
     #[test]
     fn a_custom_command_streams_its_lines() {
-        let config = AgentConfig {
-            tool: Tool::Custom,
-            command: "printf '{\"title\":\"Export\"}\\n{\"section\":\"Context\",\"text\":\"Hi\"}\\n' # {prompt}"
-                .to_string(),
-            ..AgentConfig::default()
-        };
+        let config = custom(
+            "printf '{\"title\":\"Export\"}\\n{\"section\":\"Context\",\"text\":\"Hi\"}\\n' # {prompt}",
+        );
         let (job, text) = start_draft(&config, "notes", None);
         let answer = job.wait().expect("answered").expect("drafted");
         assert!(answer.contains("Context"));

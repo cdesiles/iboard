@@ -1,6 +1,7 @@
 //! The header's filter: its placeholder sits on the field's middle line.
 
 use super::*;
+use crate::app::filter_bar::filter_id;
 
 /// Where the "Filter issues" placeholder is drawn, its middle.
 fn placeholder_middle(shapes: &[egui::Shape]) -> Option<f32> {

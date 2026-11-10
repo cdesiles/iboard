@@ -66,7 +66,7 @@ fn a_line_that_only_looks_like_a_finding_stays_text() {
     assert!(parse(&echoed).is_none(), "an agent repeating the prompt");
 }
 
-fn custom(command: &str) -> AgentConfig {
+pub(super) fn custom(command: &str) -> AgentConfig {
     AgentConfig {
         tool: Tool::Custom,
         model: String::new(),
@@ -473,12 +473,7 @@ fn an_agent_failing_in_its_stream_reports_its_own_error() {
 
 #[test]
 fn a_review_reports_its_steps_and_answers() {
-    let config = AgentConfig {
-        tool: Tool::Custom,
-        command: "printf %s \"$IBOARD_MODE\" # {prompt}".into(),
-        configured: true,
-        ..AgentConfig::default()
-    };
+    let config = custom("printf %s \"$IBOARD_MODE\" # {prompt}");
     let (job, progress) = start_review(&config, "x", Path::new("a.md"), None, ReviewMode::Deep);
     assert_eq!(job.wait().unwrap(), Ok("deep".to_string()));
     assert_eq!(step(&progress), None, "a custom command reports no steps");

@@ -100,8 +100,6 @@ pub use quitting::on_signals;
 use reader::Reader;
 use review::{PastReview, ReviewState};
 use windows::{CommitHash, CommitsPanel};
-#[cfg(test)]
-use {filter_bar::filter_id, intent::Intent, reader::image_base_uri};
 
 #[cfg(target_os = "macos")]
 const ABOUT: &str = "**iboard** is an opinionated issue tracker that lives entirely as Markdown \
