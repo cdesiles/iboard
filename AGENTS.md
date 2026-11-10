@@ -27,7 +27,7 @@ a reference to the closed ticket like so:
 closes 000-board-and-reader.md
 ```
 
-A ticket's title starts with its labels (see `design/components/Label`). Give it one kind: `[bug]` (fixes too), `[feat]` (not `[feature]`), `[discovery]`, `[chore]`, `[refactor]` or `[perf]`. Topic labels such as `[ux]`, `[design]` or `[quality]` may follow.
+A ticket's title starts with its labels (see `design/components/Label`). Give it one kind: `[bug]` (fixes too), `[feat]` (not `[feature]`), `[discovery]`, `[chore]`, `[refactor]` or `[perf]`. Topic labels are the domain names in `docs/domains.md`: `[board]`, `[agent]`, `[authoring]`, `[workspace]`, `[delivery]`, `[insights]`, `[design]`, `[preferences]`, `[shell]` or `[platform]`. `[ux]` and `[quality]` may follow.
 
 Ticket file names must stay unique across every column: the `closes <file>.md` line is what links a ticket to its commits.
 
