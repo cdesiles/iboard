@@ -912,6 +912,7 @@ mod reply;
 pub mod service;
 mod stream;
 mod tools;
+mod transcript;
 mod usage;
 
 pub(crate) use stream::{describe_tool, session_of, step_of};

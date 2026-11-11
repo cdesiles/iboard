@@ -180,6 +180,15 @@ fn edited(step: &str) -> Option<&str> {
 /// The verbs a step starts with, as the engines describe their tools.
 const VERBS: &[&str] = &["Reading", "Searching", "Running", "Looking up", "Using"];
 
+/// Whether the run `lines` open on marks its steps. One that does keeps every
+/// other line as the agent's prose, however much it reads like a step.
+fn marks_steps(lines: &[&str]) -> bool {
+    lines
+        .iter()
+        .take_while(|line| !line.starts_with("── "))
+        .any(|line| line.starts_with("→ "))
+}
+
 /// A step logged without its arrow, as service builds once wrote theirs: a
 /// line that is a verb, its target, and the ellipsis.
 fn unmarked(line: &str) -> Option<&str> {
@@ -215,11 +224,17 @@ pub fn parse(text: &str) -> Vec<Entry<'_>> {
         }
         message.clear();
     };
-    for line in text.lines() {
-        let step = line
-            .strip_prefix("→ ")
-            .map(str::trim)
-            .or_else(|| unmarked(line));
+    let lines: Vec<&str> = text.lines().collect();
+    let mut marked_run = marks_steps(&lines);
+    for (at, &line) in lines.iter().enumerate() {
+        if line.starts_with("── ") {
+            marked_run = marks_steps(&lines[at + 1..]);
+        }
+        let step = match line.strip_prefix("→ ") {
+            Some(step) => Some(step.trim()),
+            None if marked_run => None,
+            None => unmarked(line),
+        };
         let marked = if let Some(step) = step {
             Some(edited(step).map_or(Entry::Step(step), Entry::Edit))
         } else if let Some(rest) = line.strip_prefix("── ") {
@@ -559,6 +574,17 @@ mod tests {
         assert_eq!(
             parse(&step("Running make…".into())),
             [Entry::Step("Running make…")]
+        );
+        assert_eq!(
+            parse("── old\nRunning make…\n── new\nRunning the tests…\n→ Running make…\n"),
+            [
+                Entry::Run("old"),
+                Entry::Step("Running make…"),
+                Entry::Run("new"),
+                Entry::Message("Running the tests…".into()),
+                Entry::Step("Running make…"),
+            ],
+            "a run that marks its steps keeps the rest as prose"
         );
     }
 

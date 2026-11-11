@@ -1,6 +1,6 @@
 //! Asking the service and reading what it answers: one request, its reply read
 //! from a file, the last step and answer of a session, and the wait for a run
-//! to finish.
+//! to finish while its transcript goes to the build log.
 
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::poller::project_poller;
 use super::service::{Finished, POLL, backoff, interrupt};
+use super::transcript::Transcript;
 use super::{Progress, describe_tool};
 use crate::domains::agent::artifacts::build_log;
 use crate::platform::job::{Cancel, Job};
@@ -98,16 +99,16 @@ pub(super) fn parse(text: &str) -> Result<Value, String> {
     serde_json::from_str(text).map_err(|err| format!("opencode api: {err}"))
 }
 
-/// The last step `session` took, and the answer of its last message. Only its
-/// newest messages: a transcript grows without bound, and the service's reply
-/// loses its tail once large enough (see [`call_with`]).
-fn read(project: &Path, session: &str) -> Result<(Option<String>, Option<String>), String> {
+/// The newest messages of `session`, oldest first. Only its newest: a
+/// transcript grows without bound, and the service's reply loses its tail
+/// once large enough (see [`call_with`]).
+fn read(project: &Path, session: &str) -> Result<Vec<Value>, String> {
     let path = format!("/api/session/{session}/message?order=desc&limit={PAGE}");
     let reply = call(project, &["get", &path], None)?;
     let value = parse(&reply)?;
     let mut messages = value["data"].as_array().cloned().unwrap_or_default();
     messages.reverse();
-    Ok(scan(&messages))
+    Ok(messages)
 }
 
 /// The last step and the last answer in `messages`.
@@ -136,21 +137,21 @@ fn scan(messages: &[Value]) -> (Option<String>, Option<String>) {
     (step, answer)
 }
 
-/// Waits for `session` to finish, reporting its steps as they come. The job
-/// that runs this is dropped when the window closes; the service keeps
-/// working, so stopping only stops the watching.
+/// Waits for `session` to finish, reporting its steps and writing its
+/// `transcript` as they come. The job that runs this is dropped when the
+/// window closes; the service keeps working, so stopping only stops the
+/// watching.
 pub(super) fn await_answer(
     project: &Path,
     session: &str,
     cancel: &Cancel,
     timeout: Option<Duration>,
     progress: Option<&Progress>,
-    log: Option<&Path>,
+    mut transcript: Transcript,
 ) -> Result<Finished, String> {
     let started = Instant::now();
     let poller = project_poller(project);
     let _subscription = poller.subscribe(false);
-    let mut log = log.and_then(|path| build_log::open(path).ok());
     let mut last = String::new();
     let mut seen = 0;
     let mut misses = 0;
@@ -182,9 +183,13 @@ pub(super) fn await_answer(
         };
         let (status, usage) = (polled.status, polled.usage);
         if !status.running {
-            match read(project, session) {
-                Ok((_, Some(answer))) => return Ok(Finished { answer, usage }),
-                Ok((_, None)) => {
+            let answer = read(project, session).map(|messages| {
+                transcript.write(&messages);
+                scan(&messages).1
+            });
+            match answer {
+                Ok(Some(answer)) => return Ok(Finished { answer, usage }),
+                Ok(None) => {
                     if observed == Some(at) {
                         rest(cancel, POLL);
                         continue;
@@ -212,17 +217,15 @@ pub(super) fn await_answer(
             interrupt(project, session);
             return Err("the agent stopped writing".to_string());
         }
-        if status.updated != seen {
+        if status.updated != seen || transcript.waiting() {
             seen = status.updated;
-            if let Ok((step, _)) = read(project, session)
-                && let Some(step) = step.filter(|step| *step != last)
-            {
-                last = step.clone();
-                if let Some(progress) = progress {
-                    *progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(step.clone());
-                }
-                if let Some(log) = log.as_mut() {
-                    let _ = build_log::write_line(log, &build_log::step(step));
+            if let Ok(messages) = read(project, session) {
+                transcript.write(&messages);
+                if let Some(step) = scan(&messages).0.filter(|step| *step != last)
+                    && let Some(progress) = progress
+                {
+                    last.clone_from(&step);
+                    *progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(step);
                 }
             }
         }
@@ -234,7 +237,8 @@ pub(super) fn await_answer(
 /// restart: nothing to start, only an answer to wait for.
 pub fn watch(project: PathBuf, session: String, log: PathBuf) -> Job<Result<String, String>> {
     Job::spawn(move |cancel| {
-        let (result, usage) = match await_answer(&project, &session, cancel, None, None, Some(&log))
+        let transcript = Transcript::resumed(&log);
+        let (result, usage) = match await_answer(&project, &session, cancel, None, None, transcript)
         {
             Ok(finished) => (Ok(finished.answer), finished.usage),
             Err(error) => (Err(error), None),

@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 
 use super::poller::{project_poller, status_of};
 use super::reply::{await_answer, call, now, parse};
+use super::transcript::Transcript;
 use super::{Progress, Usage};
 use crate::domains::agent::artifacts::{reviews, usage_log};
 use crate::platform::job::{Cancel, Job};
@@ -402,7 +403,7 @@ pub fn start(
         cancel,
         build.timeout,
         progress,
-        Some(build.log),
+        Transcript::new(build.log),
     )
 }
 
