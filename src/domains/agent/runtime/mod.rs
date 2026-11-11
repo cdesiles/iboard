@@ -987,6 +987,7 @@ pub mod build;
 mod chat;
 mod direnv;
 mod draft;
+mod poller;
 pub mod service;
 mod stream;
 mod tools;

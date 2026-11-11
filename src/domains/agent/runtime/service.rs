@@ -12,6 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
+use super::poller::project_poller;
 use super::{Progress, describe_tool};
 use crate::job::{Cancel, Job};
 use crate::{build_log, process, reviews};
@@ -27,7 +28,7 @@ const LIST: Duration = Duration::from_secs(4);
 const PAGE: usize = 20;
 
 /// How often a watched session is asked how it is doing.
-const POLL: Duration = Duration::from_millis(700);
+pub(super) const POLL: Duration = Duration::from_millis(700);
 
 /// The longest wait between two polls while the service does not answer.
 const BACKOFF_MAX: Duration = Duration::from_secs(30);
@@ -175,38 +176,32 @@ impl Feed {
             .unwrap_or_else(PoisonError::into_inner)
             .retain(|question| question.session != session || question.id != id);
     }
+
+    /// Replaces the pending questions with what the service just said.
+    pub(super) fn publish(&self, mut questions: Vec<Question>) {
+        let settled = self.settled.lock().unwrap_or_else(PoisonError::into_inner);
+        questions
+            .retain(|question| !settled.contains(&(question.session.clone(), question.id.clone())));
+        let mut current = self
+            .questions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if *current != questions {
+            *current = questions;
+        }
+    }
 }
 
 /// Polls `project`'s pending forms and permission requests in the background
 /// until the job is dropped.
 pub fn follow_questions(project: PathBuf) -> (Job<()>, Feed) {
-    let feed = Feed::default();
-    let writing = feed.clone();
+    let poller = project_poller(&project);
+    let feed = poller.feed();
+    let subscription = poller.subscribe(true);
     let job = Job::spawn(move |cancel| {
-        let mut seen: Option<Vec<Question>> = None;
-        let mut misses = 0;
+        let _subscription = subscription;
         while !cancel.is_cancelled() {
-            match pending(&project) {
-                Ok(mut questions) => {
-                    misses = 0;
-                    let settled = writing
-                        .settled
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner);
-                    questions.retain(|question| {
-                        !settled.contains(&(question.session.clone(), question.id.clone()))
-                    });
-                    if seen.as_ref() != Some(&questions) {
-                        *writing
-                            .questions
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner) = questions.clone();
-                        seen = Some(questions);
-                    }
-                }
-                Err(_) => misses += 1,
-            }
-            rest(cancel, backoff(misses));
+            std::thread::sleep(POLL);
         }
     });
     (job, feed)
@@ -470,25 +465,22 @@ pub fn interrupt(project: &Path, session: &str) {
 
 /// How a session stands, as the service keeps it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Status {
+pub(super) struct Status {
     running: bool,
     /// Wall-clock milliseconds, as the service counts them.
     created: u64,
     updated: u64,
 }
 
-fn status(project: &Path, session: &str) -> Result<Status, String> {
-    let path = format!("/api/session/{session}");
-    let reply = call(project, &["get", &path], None)?;
-    let value = parse(&reply)?;
-    let data = &value["data"];
-    let millis = |key: &str| data["time"][key].as_u64().unwrap_or(0);
+/// The state of one service session.
+pub(super) fn status_of(session: &Value) -> Status {
+    let millis = |key: &str| session["time"][key].as_u64().unwrap_or(0);
     let (busy, idle) = (millis("busy"), millis("idle"));
-    Ok(Status {
+    Status {
         running: busy > 0 && idle < busy,
         created: millis("created"),
         updated: millis("updated").max(busy),
-    })
+    }
 }
 
 /// The last step `session` took, and the answer of its last message. Only its
@@ -541,10 +533,14 @@ pub fn await_answer(
     log: Option<&Path>,
 ) -> Result<String, String> {
     let started = Instant::now();
+    let poller = project_poller(project);
+    let _subscription = poller.subscribe(false);
     let mut log = log.and_then(|path| build_log::open(path).ok());
     let mut last = String::new();
     let mut seen = 0;
     let mut misses = 0;
+    let mut quiet = 0;
+    let mut observed = None;
     loop {
         if cancel.is_cancelled() {
             return Err("stopped watching the agent".to_string());
@@ -556,13 +552,15 @@ pub fn await_answer(
                 minutes(timeout)
             ));
         }
-        let status = match status(project, session) {
-            Ok(status) => {
+        let (status, at) = match poller.status(session, started) {
+            Some(pair) => {
                 misses = 0;
-                status
+                pair
             }
-            Err(_) => {
+            None => {
                 misses += 1;
+                quiet = 0;
+                observed = None;
                 rest(cancel, backoff(misses));
                 continue;
             }
@@ -570,14 +568,30 @@ pub fn await_answer(
         if !status.running {
             match read(project, session) {
                 Ok((_, Some(answer))) => return Ok(answer),
-                Ok((_, None)) => return Err("the agent returned no answer".to_string()),
+                Ok((_, None)) => {
+                    if observed == Some(at) {
+                        rest(cancel, POLL);
+                        continue;
+                    }
+                    observed = Some(at);
+                    quiet += 1;
+                    if quiet >= 2 {
+                        return Err("the agent returned no answer".to_string());
+                    }
+                    rest(cancel, POLL);
+                    continue;
+                }
                 Err(_) => {
                     misses += 1;
+                    quiet = 0;
+                    observed = None;
                     rest(cancel, backoff(misses));
                     continue;
                 }
             }
         }
+        quiet = 0;
+        observed = None;
         if now().saturating_sub(status.updated) > STALE.as_millis() as u64 {
             interrupt(project, session);
             return Err("the agent stopped writing".to_string());
@@ -630,12 +644,11 @@ fn found(session: &Value, project: &Path) -> Option<Found> {
     if Path::new(directory) != project {
         return None;
     }
-    let millis = |key: &str| session["time"][key].as_u64().unwrap_or(0);
-    let (busy, idle) = (millis("busy"), millis("idle"));
-    if busy == 0 || idle >= busy {
+    let status = status_of(session);
+    if !status.running {
         return None;
     }
-    let elapsed = Duration::from_millis(now().saturating_sub(millis("created")));
+    let elapsed = Duration::from_millis(now().saturating_sub(status.created));
     Some(Found {
         session: session["id"].as_str()?.to_string(),
         slug,
@@ -652,7 +665,7 @@ pub fn started(elapsed: Duration) -> Instant {
 
 /// One request to the service, from `project`, so it reads that project's
 /// configuration.
-fn call(project: &Path, args: &[&str], body: Option<&str>) -> Result<String, String> {
+pub(super) fn call(project: &Path, args: &[&str], body: Option<&str>) -> Result<String, String> {
     call_with(project, args, body, CALL)
 }
 
@@ -716,7 +729,7 @@ fn binary() -> Option<PathBuf> {
         })
 }
 
-fn parse(text: &str) -> Result<Value, String> {
+pub(super) fn parse(text: &str) -> Result<Value, String> {
     serde_json::from_str(text).map_err(|err| format!("opencode api: {err}"))
 }
 
@@ -735,7 +748,7 @@ fn minutes(timeout: Duration) -> String {
 }
 
 /// The wait after `misses` polls in a row without an answer.
-fn backoff(misses: u32) -> Duration {
+pub(super) fn backoff(misses: u32) -> Duration {
     POLL.saturating_mul(1u32 << misses.min(TRIES))
         .min(BACKOFF_MAX)
 }
