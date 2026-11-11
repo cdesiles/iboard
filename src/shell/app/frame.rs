@@ -4,9 +4,10 @@
 use super::editor::EditorState;
 use super::release::ReleaseChoice;
 use super::{
-    Confirm, IboardApp, Instant, Key, RESCAN_EVERY, Vec2, quitting, scan_stamps, settings_ui,
-    widgets,
+    Confirm, Duration, IboardApp, Instant, Job, Key, RESCAN_EVERY, Screen, Vec2, agent, quitting,
+    scan_stamps, settings_ui, widgets,
 };
+use crate::job::Poll;
 
 /// How far two fingers swipe right, in points, to go back.
 const SWIPE_BACK: f32 = 120.0;
@@ -64,10 +65,47 @@ impl IboardApp {
             self.poll_answers(),
             self.poll_stats(),
             self.poll_plan(),
+            self.poll_spend(),
         ];
         if let Some(after) = wake.into_iter().flatten().min() {
             ctx.request_repaint_after(after);
         }
+    }
+
+    /// The board's spend feed: what the sessions running in its projects cost
+    /// so far, asked of the service every 30 seconds while the board shows. A
+    /// test has no usage log, so it never starts it.
+    fn poll_spend(&mut self) -> Option<Duration> {
+        if !matches!(self.session.screen, Screen::Board) || self.usage_log_file.is_none() {
+            self.session.spend_feed = None;
+            return None;
+        }
+        if let Some(feed) = self.session.spend_feed.take() {
+            match feed.poll() {
+                Poll::Waiting => {
+                    self.session.spend_feed = Some(feed);
+                    return None;
+                }
+                Poll::Ready(live) => self.session.live_spend = live,
+                Poll::Lost => {}
+            }
+            self.session.spend_read = Some(Instant::now());
+            return Some(agent::spend::EVERY);
+        }
+        let left = self
+            .session
+            .spend_read
+            .map(|read| agent::spend::EVERY.saturating_sub(read.elapsed()));
+        if left.is_some_and(|left| !left.is_zero()) {
+            return left;
+        }
+        let projects = self.board_projects();
+        let feed = Job::spawn(move |_| agent::spend::Live::read(&projects));
+        if let Some(ctx) = self.ctx.clone() {
+            feed.wake(move || ctx.request_repaint());
+        }
+        self.session.spend_feed = Some(feed);
+        Some(agent::spend::EVERY)
     }
 
     /// The dialog up owns the keyboard: Settings, which `⌘,` closes as it

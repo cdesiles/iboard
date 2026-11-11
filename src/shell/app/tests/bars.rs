@@ -440,3 +440,119 @@ fn meters_are_only_for_subscriptions() {
             .is_none()
     );
 }
+
+/// An entry of `project` the log keeps, ended now.
+fn spend_entry(project: &Path, session: &str, billing: Billing, cost: f64) -> Entry {
+    let at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    Entry {
+        session: session.to_string(),
+        project: project.to_path_buf(),
+        engine: "opencode".to_string(),
+        provider: Some("deepseek".to_string()),
+        model: None,
+        billing,
+        cost: Some(cost),
+        tokens: Tokens::default(),
+        started: at.clone(),
+        ended: at,
+    }
+}
+
+/// The board's right side says what the projects spent today; its tooltip
+/// holds the week and the last finished session.
+#[test]
+fn the_board_shows_what_it_spent_today() {
+    let (_dir, app) = project("board-spend", &[("todo/a.md", "# A\n")]);
+    let mut harness = kittest(app);
+    let root = harness.state().1.located.project_dir.clone();
+    harness.state_mut().1.usage_entries = vec![spend_entry(&root, "ses_1", Billing::Metered, 0.42)];
+    harness.run_steps(2);
+
+    harness.get_by_label("$0.42");
+    let spot = harness.get_by_label("$0.42").rect().center();
+    harness.event(moved(spot));
+    harness.run_steps(4);
+    harness.get_by_label_contains("This week · $0.42");
+    harness.get_by_label_contains("Last session · $0.42");
+}
+
+/// A board that spent nothing says `$0.00`.
+#[test]
+fn a_board_that_spent_nothing_shows_zero() {
+    let (_dir, app) = project("board-spend-nothing", &[("todo/a.md", "# A\n")]);
+    let harness = kittest(app);
+    harness.get_by_label("$0.00");
+}
+
+/// While an agent works, the figure names the build and adds what the live
+/// session has cost so far to the log's finished spend today.
+#[test]
+fn the_board_builds_its_figure_from_the_live_session() {
+    let (_dir, app) = project("board-spend-live", &[("todo/a.md", "# A\n")]);
+    let mut harness = kittest(app);
+    let root = harness.state().1.located.project_dir.clone();
+    let app = &mut harness.state_mut().1;
+    app.usage_entries = vec![spend_entry(&root, "ses_1", Billing::Metered, 0.30)];
+    app.session.live_spend = agent::spend::Live {
+        sessions: 1,
+        cost: 0.12,
+    };
+    harness.run_steps(2);
+
+    harness.get_by_label("Building · $0.42");
+}
+
+/// The keys slide in to the left of the spend, which stays where it is.
+#[test]
+fn the_spend_stays_put_while_the_keys_slide_in() {
+    let dir = scratch_dir("board-spend-hints");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let mut harness = board(&dir);
+    let root = harness.state().1.located.project_dir.clone();
+    harness.state_mut().1.usage_entries = vec![spend_entry(&root, "ses_1", Billing::Metered, 0.42)];
+    harness.run_steps(2);
+    let at_rest = harness.get_by_label("$0.42").rect();
+
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    harness.run_steps(7);
+    assert_eq!(harness.get_by_label("$0.42").rect(), at_rest);
+    assert!(
+        harness.get_by_label("filter").rect().max.x <= at_rest.min.x,
+        "the hints slide in to its left"
+    );
+}
+
+/// A group board sums the spend of its projects.
+#[test]
+fn a_group_board_sums_its_projects_spend() {
+    let parent = scratch_dir("board-spend-group");
+    for name in ["app", "site"] {
+        std::fs::create_dir_all(parent.join(name).join("issues/todo")).unwrap();
+    }
+    let config = parent.join("iboard.toml");
+    let (app_dir, site_dir) = (parent.join("app"), parent.join("site"));
+    std::fs::write(
+        &config,
+        format!(
+            "[[workspace.group]]\nname = \"Clients\"\nrepos = [{:?}, {:?}]\n",
+            app_dir.display().to_string(),
+            site_dir.display().to_string(),
+        ),
+    )
+    .unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&app_dir).unwrap());
+    app.config_file = Some(config.clone());
+    let mut user = UserConfig::load(Some(&config));
+    app.workspace = user
+        .section::<crate::workspace::WorkspaceSection>("workspace")
+        .workspace();
+    app.open_group("Clients");
+    settled(&mut app);
+    app.usage_entries = vec![
+        spend_entry(&app_dir, "ses_app", Billing::Metered, 0.25),
+        spend_entry(&site_dir, "ses_site", Billing::Metered, 0.40),
+    ];
+    let harness = kittest(app);
+
+    harness.get_by_label("$0.65");
+}

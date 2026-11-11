@@ -41,6 +41,15 @@ impl IboardApp {
         self.shown_group().is_some()
     }
 
+    /// The project folders whose spend the board reports: every project of a
+    /// group, else the open project.
+    pub(super) fn board_projects(&self) -> Vec<PathBuf> {
+        match self.shown_group() {
+            Some(group) => group.repos.clone(),
+            None => vec![self.board.project_dir.clone()],
+        }
+    }
+
     /// Where the shown group keeps its order across projects.
     pub(super) fn group_order_file(&self) -> Option<PathBuf> {
         let dir = self.order_dir.as_deref()?;

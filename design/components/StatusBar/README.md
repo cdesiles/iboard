@@ -4,7 +4,7 @@ A 24pt strip at the bottom of the window in `meta` (Inter 12/16), `ink-muted` on
 
 | Screen | Left | Right |
 | --- | --- | --- |
-| Board | The issues folder (`~/workspace/perso/iboard/issues`; it left the header). While filtering: "4 of 9 issues match “bug”". After a delete: "Moved … to the Trash · ⌘Z" | The subscription rings at rest. While ⌘ is held, the key hints sit to their left |
+| Board | The issues folder (`~/workspace/perso/iboard/issues`; it left the header). While filtering: "4 of 9 issues match “bug”". After a delete: "Moved … to the Trash · ⌘Z" | The project's spend at rest. The subscription rings sit to its left. While ⌘ is held, the key hints slide in to their left |
 | Reader | The file path · "modified 15d ago" · checklist progress (a 48pt `status-done` meter and "1/3 done"), or the word count when there are no checkboxes. The sheet no longer repeats any of these. | The subscription rings at rest |
 | Editor | The file path | The subscription rings, then the save state pill (Unsaved, Saved, the write error) |
 
@@ -13,6 +13,15 @@ A 24pt strip at the bottom of the window in `meta` (Inter 12/16), `ink-muted` on
 - No total issue count on the board: the column heads already count.
 - Keep it boring and always present: no animation at rest, no colour but the save state and the rings' `accent`.
 - **Key hints** are hidden at rest. While ⌘ is held, at most three shortcuts that apply to the screen slide in on the right (`↩ open  E edit  ⌘↩ next column` on the board; `E edit  esc board  ⌘⇧R review` in the Reader on Todo; `⌘S save  esc leave` in the Editor). While the NewIssueModal is open they are its keys: `↩` add, `⌘↩` add & edit, `esc` close. The subscription rings stay where they are; the hints slide in to their left.
+
+## Board spend
+
+On the board only, the right side starts with what the project spent. A group board sums its projects.
+
+- **The figure** is the usage log's finished metered spend for today plus what the sessions running now have cost so far: `$0.42`. While an agent works it names the build: `Building · $0.54`. The live cost comes from a light feed polling `/api/session` every 30 s while the board shows, not the runs' 700 ms poller, so the figure lives with no agent running.
+- **Only metered dollars count.** A subscription run's API-equivalent is never added, so a board whose runs all came out of a subscription shows `$0.00`.
+- **The colour** is `ink` once anything was spent, `ink-muted` at `$0.00`.
+- **The tooltip** holds the week and the last finished session: `This week · $3.10` then `Last session · $0.42`.
 
 ## Subscription meters
 

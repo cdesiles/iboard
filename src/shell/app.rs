@@ -396,6 +396,13 @@ struct Session {
     agent_log: Option<agent_log::LogView>,
     /// The project stats panel, from Tools › Project Stats….
     stats: Option<stats::StatsPanel>,
+    /// The light spend feed's poll, while the board shows.
+    spend_feed: Option<Job<agent::spend::Live>>,
+    /// When the spend feed last asked the service.
+    spend_read: Option<Instant>,
+    /// What the sessions running in the board's projects cost, as the feed
+    /// last read it. A test sets it to show a run.
+    live_spend: agent::spend::Live,
 }
 
 impl Default for Session {
@@ -445,6 +452,9 @@ impl Default for Session {
             agents: 1,
             agent_log: None,
             stats: None,
+            spend_feed: None,
+            spend_read: None,
+            live_spend: agent::spend::Live::default(),
         }
     }
 }

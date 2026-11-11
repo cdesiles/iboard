@@ -47,6 +47,9 @@ impl IboardApp {
                 if let Some(path) = editing {
                     self.save_pill(ui, path);
                 }
+                if matches!(screen, Screen::Board) {
+                    self.board_spend(ui);
+                }
                 self.meter_rings(ui);
                 if keys {
                     widgets::sliding_hints(ui, |ui| {
@@ -58,6 +61,30 @@ impl IboardApp {
                 }
             });
         });
+    }
+
+    /// On the board, what its projects spent: the log's finished runs today
+    /// plus what a running session cost so far, from the light spend feed. Its
+    /// tooltip holds the week and the last finished session.
+    fn board_spend(&mut self, ui: &mut egui::Ui) {
+        let now = Utc::now();
+        let spend = usage_log::Spend::of(&self.usage_entries, &self.board_projects(), now);
+        let live = self.session.live_spend;
+        let today = spend.today + live.cost;
+        let figure = format!("${today:.2}");
+        let text = if live.running() {
+            format!("Building · {figure}")
+        } else {
+            figure
+        };
+        let p = theme::palette(ui);
+        let color = if today > 0.0 { p.ink } else { p.ink_muted };
+        let mut tooltip = format!("This week · ${:.2}", spend.week);
+        if let Some(last) = spend.last {
+            tooltip.push_str(&format!("\nLast session · ${last:.2}"));
+        }
+        ui.label(RichText::new(text).font(theme::meta()).color(color))
+            .on_hover_text(tooltip);
     }
 
     /// One ring per subscription plan, and the popover they share: a row per

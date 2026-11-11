@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::domains::agent::runtime::{
-    Billing, Cap, Plan, Plans, Provider, Tokens, Usage, provider_key, provider_name, status_of,
+    Billing, Cap, Plan, Plans, Provider, Tokens, Usage, Window, provider_key, provider_name,
+    status_of,
 };
 use crate::platform::files;
 
@@ -150,6 +151,52 @@ pub fn subscription_meters(plans: &Plans, entries: &[Entry], now: DateTime<Utc>)
             })
         })
         .collect()
+}
+
+/// What a board's projects spent, as the log has it: today's and this week's
+/// metered dollars, and the last finished session's.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Spend {
+    /// What today's finished runs were charged.
+    pub today: f64,
+    /// What this week's finished runs were charged.
+    pub week: f64,
+    /// The last finished session's metered dollars, when there is one.
+    pub last: Option<f64>,
+}
+
+impl Spend {
+    /// `projects`' finished sessions in `entries`, as `now`'s day and week
+    /// see them. A subscription's notional dollars are never money spent.
+    pub fn of(entries: &[Entry], projects: &[PathBuf], now: DateTime<Utc>) -> Self {
+        let projects: Vec<PathBuf> = projects.iter().map(|project| canonical(project)).collect();
+        let (day, week) = (Window::Day.start(now), Window::Week.start(now));
+        let mut spend = Spend::default();
+        let mut last: Option<DateTime<Utc>> = None;
+        for entry in entries {
+            if !projects.contains(&entry.project) {
+                continue;
+            }
+            let Some(ended) = instant(&entry.ended) else {
+                continue;
+            };
+            let cost = match entry.billing {
+                Billing::Metered => entry.cost.unwrap_or(0.0),
+                Billing::Subscription => 0.0,
+            };
+            if ended >= day {
+                spend.today += cost;
+            }
+            if ended >= week {
+                spend.week += cost;
+            }
+            if last.is_none_or(|seen| ended >= seen) {
+                last = Some(ended);
+                spend.last = Some(cost);
+            }
+        }
+        spend
+    }
 }
 
 /// The log file, when the user has a data folder.
@@ -703,5 +750,62 @@ mod tests {
         let entries = read_at(&log);
         let ids: Vec<&str> = entries.iter().map(|entry| entry.session.as_str()).collect();
         assert_eq!(ids, ["ses_recent", "ses_fresh"]);
+    }
+
+    fn noon() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2026-11-11T15:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    #[test]
+    fn spend_sums_this_day_and_weeks_metered_runs() {
+        let now = noon();
+        let entries = [
+            used("ses_today", "deepseek", 0.25, now),
+            used("ses_week", "deepseek", 0.5, now - Duration::days(1)),
+            used("ses_old", "deepseek", 1.0, now - Duration::days(30)),
+        ];
+        let spend = Spend::of(&entries, &[PathBuf::from("/p")], now);
+        assert_eq!(spend.today, 0.25);
+        assert_eq!(spend.week, 0.75);
+        assert_eq!(spend.last, Some(0.25), "the newest run is the last one");
+    }
+
+    #[test]
+    fn a_subscription_adds_no_spend() {
+        let now = noon();
+        let mut sub = used("ses_sub", "github-copilot", 3.0, now);
+        sub.billing = Billing::Subscription;
+        let spend = Spend::of(&[sub], &[PathBuf::from("/p")], now);
+        assert_eq!(spend.today, 0.0);
+        assert_eq!(spend.week, 0.0);
+        assert_eq!(spend.last, Some(0.0), "notional dollars are not spend");
+    }
+
+    #[test]
+    fn spend_of_another_project_is_left_out() {
+        let now = noon();
+        let mut elsewhere = used("ses_elsewhere", "deepseek", 2.0, now);
+        elsewhere.project = PathBuf::from("/other");
+        let entries = [used("ses_here", "deepseek", 0.25, now), elsewhere];
+        let spend = Spend::of(&entries, &[PathBuf::from("/p")], now);
+        assert_eq!(spend.today, 0.25);
+        assert_eq!(spend.last, Some(0.25));
+    }
+
+    #[test]
+    fn a_group_sums_its_projects() {
+        let now = noon();
+        let mut site = used("ses_site", "deepseek", 0.4, now);
+        site.project = PathBuf::from("/site");
+        let entries = [used("ses_app", "deepseek", 0.25, now), site];
+        let spend = Spend::of(
+            &entries,
+            &[PathBuf::from("/p"), PathBuf::from("/site")],
+            now,
+        );
+        assert_eq!(spend.today, 0.65);
+        assert_eq!(spend.week, 0.65);
     }
 }

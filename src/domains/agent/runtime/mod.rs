@@ -910,6 +910,7 @@ mod poller;
 pub(crate) use poller::status_of;
 mod reply;
 pub mod service;
+pub mod spend;
 mod stream;
 mod tools;
 mod transcript;
