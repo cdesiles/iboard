@@ -2,7 +2,7 @@
 
 The *AI review* tab of the Settings dialog: which agent runs the AI review, and with which model. It opens from `⌘,` or from the menu on the Review button, and saves to `~/.config/iboard/iboard.toml`. The other tabs are *General* (GeneralSettings), *AI build*, *Titles* (TitleSettings) and *Labels*.
 
-The *AI build* tab has the same Tool, Command, Worktree and Model fields, a Timeout and the number of build agents, for the agent that implements Ready issues (Ready's play, see Column). It is saved as `[build]`; until it is, the build uses the AI review's agent. A custom command runs from the project folder and may edit it; Claude Code runs with `--permission-mode acceptEdits`.
+The *AI build* tab has the same Tool, Command, Worktree and Model fields, a Timeout and the number of build agents, for the agent that implements Ready issues (Ready's play, see Column). It is saved as `[build]`; until it is, the build uses the AI review's agent. A custom command runs from the project folder and may edit it. A build runs in its tool's background service, so it outlives the window: opencode runs the turn, and Claude Code is started with `claude --bg`, the model and `--permission-mode acceptEdits`, then watched with `claude agents --json` and stopped with `claude stop`. A Claude Code without `--bg` builds as a child process.
 
 ## Layout
 
@@ -26,8 +26,8 @@ A select with three options, always in this order:
 ## Worktree
 
 - OpenCode only, under Tool: a checkbox **Start each scripted run in a new worktree**, on by default.
-- It passes `--worktree` to `opencode run`, so a scripted run works in a worktree of its own and the project's checkout stays untouched. A run that continues a session keeps the worktree it started in; a project that is not a git checkout runs in place. A build keeps running in the checkout: it goes through opencode's service, not `opencode run`.
-- Claude Code and a custom command do not offer it: neither has the flag.
+- It passes `--worktree` to `opencode run`, so a scripted run works in a worktree of its own and the project's checkout stays untouched. A run that continues a session keeps the worktree it started in; a project that is not a git checkout runs in place. A build keeps running in the checkout: it goes through the tool's background service, not a scripted run.
+- Claude Code and a custom command do not offer it: neither has the flag. A Claude background build may still move into its own worktree on its own.
 
 ## Model
 

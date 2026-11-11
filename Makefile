@@ -49,7 +49,7 @@ list: ## Print the board to stdout, e.g. make list ARGS="~/code/moon-cull"
 check: toolchain lint test ## Everything a ticket needs before it is done: formatting, lints and tests
 
 test: ## Run every test that needs no third-party service
-	IBOARD_OPENCODE= cargo test
+	IBOARD_OPENCODE= IBOARD_CLAUDE= cargo test
 
 third-party: ## Run the tests that need the real opencode service (before a release)
 	@test -n "$(OPENCODE)" || { echo 'opencode is not installed' >&2; exit 2; }

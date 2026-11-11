@@ -20,7 +20,8 @@
 //!
 //! `default` is the tool's first favorite model, so it follows the tool's own
 //! settings. [`start`] runs the tool non-interactively against the issue text
-//! and hands the answer back over a channel; the GUI polls it. The agent only
+//! and hands the answer back over a channel; the GUI polls it. A build runs in
+//! its tool's background service, so it outlives the window. The agent only
 //! ever returns text: writing the file stays the user's decision.
 
 use std::path::{Path, PathBuf};
@@ -85,12 +86,13 @@ impl Tool {
         }
     }
 
-    /// The background service this tool builds in; `None` for Claude and a
-    /// custom command, which keep the child process.
+    /// The background service this tool builds in; `None` for a custom
+    /// command, which keeps the child process.
     pub fn service(self) -> Option<&'static dyn service::Service> {
         match self {
             Tool::OpenCode => Some(opencode::service()),
-            Tool::Claude | Tool::Custom => None,
+            Tool::Claude => Some(claude::service()),
+            Tool::Custom => None,
         }
     }
 
@@ -867,6 +869,18 @@ fn start_logged(
             log: Some(&log),
         };
         let steps = Some(&steps);
+        let child = |purpose| match chat::run_with(
+            &config,
+            &prompt,
+            &issue,
+            cancel,
+            purpose,
+            steps,
+            Some(&workspace),
+        ) {
+            Ok(chat) => (Ok(chat.answer), chat.usage),
+            Err(error) => (Err(error), None),
+        };
         let (result, usage) = match purpose {
             // A build runs in the service, so it outlives the window.
             Purpose::Build(_) if mine.service().is_some() => {
@@ -880,21 +894,13 @@ fn start_logged(
                 };
                 match service::start(&build, cancel, steps, &mine) {
                     Ok(finished) => (Ok(finished.answer), finished.usage),
+                    Err(error) if config.tool == Tool::Claude && claude::unsupported(&error) => {
+                        child(purpose)
+                    }
                     Err(error) => (Err(error), None),
                 }
             }
-            purpose => match chat::run_with(
-                &config,
-                &prompt,
-                &issue,
-                cancel,
-                purpose,
-                steps,
-                Some(&workspace),
-            ) {
-                Ok(chat) => (Ok(chat.answer), chat.usage),
-                Err(error) => (Err(error), None),
-            },
+            purpose => child(purpose),
         };
         let _ = build_log::append(
             &log,
@@ -916,6 +922,7 @@ fn model_of(config: &AgentConfig) -> String {
 mod answer;
 pub mod build;
 mod chat;
+mod claude;
 mod command;
 use command::command;
 mod direnv;

@@ -1,7 +1,7 @@
 //! The background builds' shared loop: the service a tool runs them in, the
 //! session a run lives in, the questions it waits on, and the builds a restart
 //! finds again. What a service itself does lives in [`opencode`](super::opencode)
-//! when the tool has one; Claude and a custom command keep their child process.
+//! and [`claude`](super::claude); a custom command keeps its child process.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -62,8 +62,15 @@ pub trait Service: Send + Sync {
     /// The engine's name, as the usage log keeps it.
     fn key(&self) -> &'static str;
 
-    /// Starts a session for `issue` in `project`, titled after it.
-    fn start(&self, issue: &Path, project: &Path, model: &str) -> Result<String, String>;
+    /// Starts a session for `issue` in `project`, titled after it, and hands
+    /// it `prompt`.
+    fn start(
+        &self,
+        issue: &Path,
+        project: &Path,
+        model: &str,
+        prompt: &str,
+    ) -> Result<String, String>;
 
     /// The sessions `project` has, running or finished.
     fn sessions(&self, project: &Path) -> Result<Vec<Session>, String>;
@@ -430,12 +437,11 @@ pub(super) fn start_with(
     let service = handle
         .service()
         .ok_or_else(|| "no background service runs this build".to_string())?;
-    let session = service.start(build.issue, build.project, build.model)?;
+    let session = service.start(build.issue, build.project, build.model, build.prompt)?;
     remember(handle, &session);
     if cancel.is_cancelled() {
         return Err("the agent was not started".to_string());
     }
-    service.say(build.project, &session, build.prompt)?;
     await_answer(
         service,
         build.project,

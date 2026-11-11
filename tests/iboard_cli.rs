@@ -21,6 +21,10 @@ fn finished(command: &mut Command) -> Output {
             "IBOARD_OPENCODE",
             concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fakes/opencode"),
         )
+        .env(
+            "IBOARD_CLAUDE",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fakes/claude"),
+        )
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

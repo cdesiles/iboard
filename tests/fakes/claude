@@ -1,1 +1,78 @@
-opencode
+#!/bin/sh
+# A fake Claude Code for the tests: it plays the background commands, and each
+# one-shot run answers with its arguments, one per line. It refuses --bg when
+# IBOARD_CLAUDE_NO_BG is set or the prompt says NO-BG, and plan mode when the
+# prompt says NO-PLAN.
+
+if [ "$1" = "--bg" ]; then
+	shift
+	prompt="$1"
+	shift
+	name=iboard-smoke
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--name)
+			name="$2"
+			shift 2
+			;;
+		*)
+			shift
+			;;
+		esac
+	done
+	if [ -n "$IBOARD_CLAUDE_NO_BG" ]; then
+		echo "error: unknown option '--bg'" >&2
+		exit 1
+	fi
+	case "$prompt" in
+	*NO-BG*)
+		echo "error: unknown option '--bg'" >&2
+		exit 1
+		;;
+	esac
+	id="${IBOARD_CLAUDE_ID:-bg000001}"
+	printf 'Starting background service…\nbackgrounded · %s · %s\n' "$id" "$name"
+	exit 0
+fi
+
+if [ "$1" = "agents" ]; then
+	cwd=.
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--cwd)
+			cwd="$2"
+			shift 2
+			;;
+		*)
+			shift
+			;;
+		esac
+	done
+	id="${IBOARD_CLAUDE_ID:-bg000001}"
+	name="${IBOARD_CLAUDE_NAME:-iboard-smoke}"
+	state="${IBOARD_CLAUDE_STATE:-done}"
+	session="${id}-0000-0000-0000-000000000000"
+	started="$(date +%s)000"
+	if [ "$state" = "working" ] || [ "$state" = "blocked" ]; then
+		status=busy
+	else
+		status=idle
+	fi
+	printf '[{"id":"%s","cwd":"%s","kind":"background","startedAt":%s,"sessionId":"%s","name":"%s","status":"%s","state":"%s"}]\n' \
+		"$id" "$cwd" "$started" "$session" "$name" "$status" "$state"
+	exit 0
+fi
+
+if [ "$1" = "stop" ]; then
+	printf 'stopped %s\n' "$2"
+	exit 0
+fi
+
+if [ "$1" = "logs" ]; then
+	printf '%s\n' "${IBOARD_CLAUDE_ANSWER:-Done.}"
+	exit 0
+fi
+
+for arg; do [ "$arg" = plan ] && planned=1; done
+case "$*" in *NO-PLAN*) [ -n "$planned" ] && { echo 'error: unknown option' >&2; exit 1; } ;; esac
+printf '%s\n' "$@"

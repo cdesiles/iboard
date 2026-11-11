@@ -42,14 +42,22 @@ impl Service for OpenCode {
         "opencode"
     }
 
-    fn start(&self, issue: &Path, project: &Path, model: &str) -> Result<String, String> {
+    fn start(
+        &self,
+        issue: &Path,
+        project: &Path,
+        model: &str,
+        prompt: &str,
+    ) -> Result<String, String> {
         let body = create_body(issue, project, model);
         let reply = call(project, &["post", "/api/session"], Some(&body.to_string()))?;
         let value = parse(&reply)?;
-        value["data"]["id"]
+        let session = value["data"]["id"]
             .as_str()
             .map(str::to_string)
-            .ok_or_else(|| "opencode made no session".to_string())
+            .ok_or_else(|| "opencode made no session".to_string())?;
+        queue(project, &session, prompt)?;
+        Ok(session)
     }
 
     fn sessions(&self, project: &Path) -> Result<Vec<Session>, String> {
@@ -71,7 +79,7 @@ impl Service for OpenCode {
     }
 
     fn say(&self, project: &Path, session: &str, text: &str) -> Result<(), String> {
-        prompt(project, session, text)
+        queue(project, session, text)
     }
 
     fn interrupt(&self, project: &Path, session: &str) {
@@ -261,7 +269,7 @@ fn model_ref(model: &str) -> Option<Value> {
 
 /// Hands `text` to `session`; the service runs it whether or not anyone
 /// watches.
-fn prompt(project: &Path, session: &str, text: &str) -> Result<(), String> {
+fn queue(project: &Path, session: &str, text: &str) -> Result<(), String> {
     let path = format!("/api/session/{session}/prompt");
     let body = json!({ "text": text, "delivery": "queue" }).to_string();
     call(project, &["post", &path], Some(&body)).map(|_| ())

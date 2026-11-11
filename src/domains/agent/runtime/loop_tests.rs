@@ -86,9 +86,16 @@ impl Service for Fake {
         self.key
     }
 
-    fn start(&self, issue: &Path, _project: &Path, model: &str) -> Result<String, String> {
+    fn start(
+        &self,
+        issue: &Path,
+        _project: &Path,
+        model: &str,
+        prompt: &str,
+    ) -> Result<String, String> {
         let mut state = self.lock();
         state.started.push(format!("{} · {model}", issue.display()));
+        state.said.push(prompt.to_string());
         Ok(state.session.clone())
     }
 
@@ -416,7 +423,10 @@ fn a_cancel_stops_watching_and_leaves_the_session_running() {
         let stopped = cancel.clone();
         let watching =
             scope.spawn(move || start(fake, &case, &stopped, Some(Duration::from_secs(30))));
-        assert!(eventually(|| fake.said().len() == 1), "the build started");
+        assert!(
+            eventually(|| fake.said().len() == 1 && fake.running()),
+            "the build started"
+        );
         cancel.cancel();
         let error = watching.join().unwrap().expect_err("the watching stopped");
         assert_eq!(error, "stopped watching the agent");
