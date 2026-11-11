@@ -21,10 +21,6 @@ use crate::platform::process;
 /// How long one call to the service may take.
 const CALL: Duration = Duration::from_secs(20);
 
-/// How long the board waits for the service when it opens: short enough to
-/// notice, because this one runs on the UI thread.
-const LIST: Duration = Duration::from_secs(4);
-
 /// How many of a session's newest messages its step and answer are read from.
 const PAGE: usize = 20;
 
@@ -628,7 +624,7 @@ pub fn watch(project: PathBuf, session: String, log: PathBuf) -> Job<Result<Stri
 /// The builds the service is still running for `project`, as a restart finds
 /// them.
 pub fn running(project: &Path) -> Result<Vec<Found>, String> {
-    let reply = call_with(project, &["get", "/api/session"], None, LIST)?;
+    let reply = call(project, &["get", "/api/session"], None)?;
     let value = parse(&reply)?;
     let sessions = value["data"].as_array().cloned().unwrap_or_default();
     let wanted = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());

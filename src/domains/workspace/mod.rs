@@ -107,6 +107,18 @@ pub fn virtual_root(group: &str) -> PathBuf {
         .join(file_stem(group))
 }
 
+/// A group's board before it is read: its name and the folder its columns
+/// will merge under, with no project in it yet.
+pub fn empty(group: &Group) -> Board {
+    let root = virtual_root(&group.name);
+    Board::new(
+        &root,
+        &root,
+        Some(group.name.clone()),
+        discovery::reader_sections(None),
+    )
+}
+
 /// A group's name as a file name: `Client side` is `client-side`.
 pub fn file_stem(group: &str) -> String {
     match files::slugify(group) {

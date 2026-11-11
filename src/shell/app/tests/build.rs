@@ -692,6 +692,35 @@ pub(super) fn permission_question() -> Question {
     }
 }
 
+/// Adoption asks the service about every project of a group's board, not
+/// only the one the window had open before the switch.
+#[test]
+fn adoption_asks_every_project_of_a_group_board() {
+    let parent = scratch_dir("build-adopt-projects");
+    let project = |name: &str| {
+        let dir = parent.join(name);
+        std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+        dir
+    };
+    let (one, two) = (project("one"), project("two"));
+    let mut app = IboardApp::from_located(discovery::locate(&one).unwrap());
+    app.workspace = Some(crate::workspace::Workspace {
+        groups: vec![crate::workspace::Group {
+            name: "Both".into(),
+            repos: vec![one.clone(), two.clone()],
+        }],
+    });
+    app.open_group("Both");
+    settled(&mut app);
+    let mut asked = app.build_projects();
+    asked.sort();
+    assert_eq!(asked, [recents::canonical(&one), recents::canonical(&two)]);
+
+    app.open_project(one.clone());
+    settled(&mut app);
+    assert_eq!(app.build_projects(), [recents::canonical(&one)]);
+}
+
 #[test]
 fn a_build_question_shows_on_its_card_and_opens_in_the_ticket() {
     let (_dir, mut app) = board("build-question", "sleep 30 # {prompt}");

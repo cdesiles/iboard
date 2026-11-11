@@ -36,6 +36,7 @@ fn two_projects(tag: &str) -> (Scratch, PathBuf, PathBuf, IboardApp) {
         ],
     });
     app.open_group("Clients");
+    settled(&mut app);
     (parent, app_dir, site_dir, app)
 }
 
@@ -246,9 +247,11 @@ fn ctrl_tab_switches_to_the_next_project() {
 fn each_group_is_its_own_board() {
     let (_scratch, _app_dir, _site_dir, mut app) = two_projects("all-groups");
     app.open_group("Solo");
-    assert_eq!(app.board.name(), "Solo");
+    assert_eq!(app.board.name(), "Solo", "the board switches at once");
+    settled(&mut app);
     assert_eq!(ready_titles(&app), ["A"], "site is not in Solo");
     app.open_group("Clients");
+    settled(&mut app);
     assert_eq!(ready_titles(&app), ["A", "B"]);
     app.open_group("Nowhere");
     assert_eq!(

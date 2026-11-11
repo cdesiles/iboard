@@ -61,7 +61,7 @@ impl IboardApp {
         self.group = Some(name.to_string());
         self.pending_title = Some(name.to_string());
         self.leave_project();
-        self.refresh();
+        self.reopen();
     }
 
     /// The board on screen, as `⌃⇥` and the project menu name it.

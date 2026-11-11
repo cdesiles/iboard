@@ -71,6 +71,11 @@ fn until(mut done: impl FnMut() -> bool) -> bool {
     false
 }
 
+/// Waits for the board a switch reads in the background.
+fn settled(app: &mut IboardApp) {
+    assert!(until(|| app.take_scan().is_none()), "the board never read");
+}
+
 /// A folder for one test, removed when it drops, even when the test
 /// fails. It reads as the folder's canonical `Path`.
 struct Scratch(tempfile::TempDir);
@@ -500,6 +505,7 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
     app.rescan(&ctx);
     assert!(until(|| {
         app.rescan(&ctx);
+        app.take_scan();
         app.session.scan.is_none()
     }));
     assert!(app.board.find(&todo.join("b.md")).is_some());
@@ -510,9 +516,38 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
     let newer = app.board_generation;
     assert!(until(|| {
         app.rescan(&ctx);
+        app.take_scan();
         app.session.scan.is_none()
     }));
     assert_eq!(app.board_generation, newer, "the older scan was dropped");
+}
+
+/// Opening another project draws its board at once and reads its cards in
+/// the background, so the switch never waits on the disk.
+#[test]
+fn opening_a_project_reads_its_board_in_the_background() {
+    let alpha = scratch_dir("open-alpha");
+    let beta = scratch_dir("open-beta");
+    std::fs::create_dir_all(alpha.join("issues/todo")).unwrap();
+    std::fs::create_dir_all(beta.join("issues/ready")).unwrap();
+    let b = beta.join("issues/ready/b.md");
+    std::fs::write(&b, "# Beta\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&alpha).unwrap());
+
+    app.open_project(beta.to_path_buf());
+    assert_eq!(
+        recents::canonical(&app.board.root),
+        recents::canonical(&beta.join("issues")),
+        "the new board is on screen at once"
+    );
+    assert!(
+        app.board.find(&b).is_none(),
+        "its cards are still being read"
+    );
+    assert!(app.session.scan.is_some());
+
+    settled(&mut app);
+    assert!(app.board.find(&b).is_some());
 }
 
 /// Two fingers swiping right go back one level, as in a browser: the reader

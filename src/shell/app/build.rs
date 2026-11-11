@@ -6,14 +6,13 @@ use std::collections::HashSet;
 
 use super::card::CardBuild;
 use super::{
-    Column, Duration, IboardApp, Instant, Issue, Path, PathBuf, agent, discovery, file_name, job,
-    prompts, settings, settings_ui,
+    AdoptedBuilds, Column, Duration, IboardApp, Instant, Issue, Path, PathBuf, agent, discovery,
+    file_name, job, prompts, settings, settings_ui,
 };
 use crate::agent::build::{self as queue, Run};
 pub(super) use crate::agent::build::{Build, MAX_AGENTS, Watch};
 use crate::build_log;
 use crate::domains::board::lifecycle;
-#[cfg(test)]
 use crate::job::Job;
 use crate::reviews;
 
@@ -95,20 +94,49 @@ impl IboardApp {
             .count()
     }
 
-    /// Adopts the builds the service is still running for this project, once
-    /// per board opened: they outlived the window closing, and the cards keep
-    /// their bar and their clock.
-    pub(super) fn adopt_builds(&mut self) {
-        if std::mem::replace(&mut self.session.adopted, true) {
-            return;
+    /// Finds the builds the service is still running for this board, once
+    /// per board opened, off the UI thread: they outlived the window closing,
+    /// and the cards keep their bar and their clock. A group's board asks
+    /// each of its projects.
+    pub(super) fn adopt_builds(&mut self) -> Option<Duration> {
+        if self.session.adopted {
+            return None;
         }
-        let project = self.located.project_dir.clone();
-        let Ok(found) = agent::service::running(&project) else {
-            return;
+        if self.session.scan.is_some() {
+            return Some(job::POLL_EVERY);
+        }
+        if self.session.adoption.is_none() {
+            let projects = self.build_projects();
+            let look = Job::spawn(move |cancel| {
+                let mut found: AdoptedBuilds = Vec::new();
+                for project in projects {
+                    if cancel.is_cancelled() {
+                        break;
+                    }
+                    if let Ok(hits) = agent::service::running(&project) {
+                        found.extend(hits.into_iter().map(|hit| (project.clone(), hit)));
+                    }
+                }
+                Ok::<_, String>(found)
+            });
+            self.session.adoption = Some(look);
+        }
+        let Some(answer) = self
+            .session
+            .adoption
+            .as_ref()
+            .and_then(|look| look.answer())
+        else {
+            return Some(job::POLL_EVERY);
+        };
+        self.session.adoption = None;
+        self.session.adopted = true;
+        let Ok(found) = answer else {
+            return None;
         };
         let mut runs: Vec<Run> = Vec::new();
-        for hit in found {
-            let Some(issue) = self.issue_with_slug(&hit.slug) else {
+        for (project, hit) in found {
+            let Some(issue) = self.issue_with_slug(&project, &hit.slug) else {
                 continue;
             };
             let log = build_log::path(self.board.root_of(&issue), &issue);
@@ -118,27 +146,38 @@ impl IboardApp {
             runs.push(Run {
                 issue,
                 answer,
-                project: project.clone(),
+                project,
                 session,
                 started: agent::service::started(hit.elapsed),
                 at: runs.len() + 1,
             });
         }
         if runs.is_empty() {
-            return;
+            return None;
         }
         self.session.agents = self.session.agents.max(runs.len());
         self.session.build = Some(Build::adopted(runs));
+        None
     }
 
-    /// The issue whose file has `slug`, wherever it stands on the board.
-    fn issue_with_slug(&self, slug: &str) -> Option<PathBuf> {
+    /// The projects adoption asks the service about: each of a group board's,
+    /// or the open project's.
+    pub(super) fn build_projects(&self) -> Vec<PathBuf> {
+        match self.board.repos.as_slice() {
+            [] => vec![self.located.project_dir.clone()],
+            repos => repos.iter().map(|repo| repo.project_dir.clone()).collect(),
+        }
+    }
+
+    /// The issue whose file has `slug` in `project`, wherever it stands on
+    /// the board.
+    fn issue_with_slug(&self, project: &Path, slug: &str) -> Option<PathBuf> {
         self.board
             .columns
             .iter()
             .flat_map(|column| &column.issues)
             .map(|issue| issue.path.clone())
-            .find(|path| reviews::slug(path) == slug)
+            .find(|path| self.board.project_of(path) == project && reviews::slug(path) == slug)
     }
 
     /// While Play is pressed, queues the issues that arrived in Ready since
@@ -442,9 +481,11 @@ impl IboardApp {
     /// frame.
     pub(super) fn poll_build(&mut self) -> Option<Duration> {
         self.watch_ready();
-        self.adopt_builds();
+        let adopting = self.adopt_builds();
         self.follow_build_questions();
-        let build = self.session.build.as_mut()?;
+        let Some(build) = self.session.build.as_mut() else {
+            return adopting;
+        };
         let mut finished = Vec::new();
         build.runs.retain(|run| match run.answer.answer() {
             Some(result) => {

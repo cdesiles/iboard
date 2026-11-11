@@ -3,10 +3,7 @@
 
 use super::editor::EditorState;
 use super::release::ReleaseChoice;
-use super::{
-    Confirm, IboardApp, Instant, Job, Key, RESCAN_EVERY, Vec2, job, quitting, scan, settings_ui,
-    widgets,
-};
+use super::{Confirm, IboardApp, Instant, Key, RESCAN_EVERY, Vec2, quitting, settings_ui, widgets};
 
 /// How far two fingers swipe right, in points, to go back.
 const SWIPE_BACK: f32 = 120.0;
@@ -44,6 +41,7 @@ impl IboardApp {
     /// the soonest.
     fn poll_jobs(&mut self, ctx: &egui::Context) {
         let wake = [
+            self.take_scan(),
             self.poll_review(),
             self.poll_refinement(),
             self.poll_split(),
@@ -271,23 +269,9 @@ impl IboardApp {
         if self.prefs.auto || self.watching_ready() {
             if self.session.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
                 self.last_refresh = Instant::now();
-                let source = self.source();
-                let rescan = Job::spawn(move |_| scan(&source));
-                self.session.scan = Some((rescan, self.board_generation));
+                self.start_scan();
             }
             ctx.request_repaint_after(RESCAN_EVERY);
-        }
-        if let Some((rescan, generation)) = &self.session.scan {
-            match rescan.answer() {
-                Some(scanned) => {
-                    let current = *generation == self.board_generation;
-                    self.session.scan = None;
-                    if current {
-                        self.adopt(scanned);
-                    }
-                }
-                None => ctx.request_repaint_after(job::POLL_EVERY),
-            }
         }
     }
 }

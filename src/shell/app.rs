@@ -361,6 +361,8 @@ struct Session {
     answer: Option<question::AnswerDraft>,
     /// The builds the service was still running were looked for, once.
     adopted: bool,
+    /// That look, while it runs off the UI thread.
+    adoption: Option<Job<Result<AdoptedBuilds, String>>>,
     /// Ready, watched for new issues from Play until Stop.
     watch: Option<build::Watch>,
     /// How many build agents may work at once, set on Doing's header.
@@ -412,6 +414,7 @@ impl Default for Session {
             feeds: HashMap::new(),
             answer: None,
             adopted: false,
+            adoption: None,
             watch: None,
             agents: 1,
             agent_log: None,
@@ -603,7 +606,7 @@ impl IboardApp {
                 // Remember the project root discovery settled on, not the
                 // folder the user happened to pick inside it.
                 self.remember(&project_dir);
-                self.refresh();
+                self.reopen();
             }
             Err(err) => {
                 self.uninitialised = Some((project, err.clone()));
@@ -638,6 +641,42 @@ impl IboardApp {
     /// before it goes on.
     fn refresh(&mut self) {
         self.adopt(scan(&self.source()));
+    }
+
+    /// Puts the board of what just opened on screen at once, empty until the
+    /// background scan fills it: a switch must not wait on the disk.
+    fn reopen(&mut self) {
+        self.board = match self.shown_group() {
+            Some(group) => workspace::empty(group),
+            None => Board::empty(&self.located),
+        };
+        self.facts = CardFacts::default();
+        self.scan_error = None;
+        self.reconcile_editor();
+        self.start_scan();
+    }
+
+    /// Reads the board on a thread of its own; the next frames take it when
+    /// it lands.
+    fn start_scan(&mut self) {
+        let source = self.source();
+        let scan = Job::spawn(move |_| scan(&source));
+        self.session.scan = Some((scan, self.board_generation));
+    }
+
+    /// Takes the board's background scan once it lands, unless a newer board
+    /// replaced it. Says how soon to look again while it runs.
+    fn take_scan(&mut self) -> Option<Duration> {
+        let (scan, generation) = self.session.scan.as_ref()?;
+        let Some(scanned) = scan.answer() else {
+            return Some(job::POLL_EVERY);
+        };
+        let current = *generation == self.board_generation;
+        self.session.scan = None;
+        if current {
+            self.adopt(scanned);
+        }
+        None
     }
 
     /// Takes a fresh scan of the board, or why it could not be read.
@@ -763,6 +802,9 @@ impl IboardApp {
 /// A board, the facts its cards show, and the last review of each of its
 /// issues that has one.
 type Scanned = (Board, CardFacts, HashMap<PathBuf, PastReview>);
+
+/// The builds the service still runs, each with the project it belongs to.
+type AdoptedBuilds = Vec<(PathBuf, agent::service::Found)>;
 
 /// Reads the board of `source` and its reviews, or says why it could not.
 /// Each project's reviews are read from its own issues folder: names are only
