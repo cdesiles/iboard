@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use super::Usage;
-use super::service::{Feed, POLL, backoff, call, parse, pending};
+use super::reply::{call, parse};
+use super::service::{Feed, POLL, backoff, pending};
 use crate::domains::agent::artifacts::usage_log;
 
 /// The live pollers, so every run in a project shares one.
