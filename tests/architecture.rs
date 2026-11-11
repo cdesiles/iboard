@@ -1,7 +1,7 @@
 //! Holds the layering the refactoring builds: shell → domains → kernel →
 //! platform, the domain edges `docs/domains.md` allows, and the `gui` gate that
 //! keeps egui in the shell alone. `make check` proves the gate with `cargo
-//! check --lib --no-default-features`.
+//! clippy --lib --no-default-features`.
 //!
 //! The shell sits under `src/shell/`; `main.rs`, the binaries and the panels
 //! still at the crate root are shell by the same rule. A domain owns its folder
