@@ -35,6 +35,8 @@ pub(in crate::shell::app) enum Part {
     Files,
     Agenda,
     Releases,
+    /// What the agents cost over the trends' days, from the usage log.
+    Cost,
 }
 
 impl Part {
@@ -49,6 +51,7 @@ impl Part {
             Part::Files => &[Need::Files],
             Part::Agenda => &[Need::Agenda],
             Part::Releases => &[Need::Commits, Need::Releases],
+            Part::Cost => &[Need::Cost],
         }
     }
 
@@ -61,6 +64,7 @@ impl Part {
             Part::Watch => "refactor signals",
             Part::Files => "biggest files",
             Part::Releases => "release tags",
+            Part::Cost => "the usage log",
         }
     }
 }

@@ -13,9 +13,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Blobs, Cycles, FileStat, PAGE, Progress, Releases, STOPPED, Snapshot, Stats, cycle, files_at,
-    release,
+    Blobs, Cost, Cycles, FileStat, PAGE, Progress, Releases, STOPPED, Snapshot, Stats, cost, cycle,
+    files_at, release,
 };
+use crate::domains::agent::artifacts::usage_log;
 use crate::domains::insights::agenda::{self, AgendaDays, Repo};
 use crate::platform::files;
 use crate::platform::git::{self, Batch};
@@ -36,6 +37,8 @@ pub enum Need {
     Files,
     Agenda,
     Releases,
+    /// The project's usage log, over the days the page covers.
+    Cost,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -152,6 +155,8 @@ pub struct Source {
     measures: Arc<Measures>,
     /// The projects the Agenda reads, the open one first.
     supervised: Vec<Repo>,
+    /// Where the project's usage log is, when the user has a data folder.
+    usage_log: Option<PathBuf>,
     /// How far the measuring got, for the UI.
     pub progress: Progress,
     listing: Memo<Listing>,
@@ -160,6 +165,7 @@ pub struct Source {
     files: Memo<Vec<FileStat>>,
     agenda: Memo<AgendaDays>,
     releases: Memo<Releases>,
+    cost: Memo<Cost>,
 }
 
 impl Source {
@@ -173,6 +179,7 @@ impl Source {
             release_tags: release::ReleasePrefs::default().tags,
             measures,
             supervised: vec![Repo::new(dir)],
+            usage_log: None,
             progress: Progress::default(),
             listing: Memo::default(),
             snapshots: Memo::default(),
@@ -180,12 +187,19 @@ impl Source {
             files: Memo::default(),
             agenda: Memo::default(),
             releases: Memo::default(),
+            cost: Memo::default(),
         }
     }
 
     /// The same source, reading the tags matching `pattern` as releases.
     pub fn with_release_tags(mut self, pattern: &str) -> Self {
         self.release_tags = pattern.to_string();
+        self
+    }
+
+    /// The same source, reading `path` as the project's usage log.
+    pub fn with_usage_log(mut self, path: Option<PathBuf>) -> Self {
+        self.usage_log = path;
         self
     }
 
@@ -216,6 +230,7 @@ impl Source {
         Self::new(&self.dir, &self.root, page, Arc::clone(&self.measures))
             .with_release_tags(&self.release_tags)
             .with_supervised(self.supervised.clone())
+            .with_usage_log(self.usage_log.clone())
     }
 
     /// The [`Stats`] with what `needs` asks for filled in and the rest empty.
@@ -242,6 +257,7 @@ impl Source {
                     stats.agenda.clone_from(&*agenda);
                 }
                 Need::Releases => stats.releases.clone_from(&*self.releases(cancel)?),
+                Need::Cost => stats.cost.clone_from(&*self.cost(cancel)?),
             }
         }
         Ok(stats)
@@ -292,6 +308,20 @@ impl Source {
             files_at(&self.dir, listing.newest(), cancel)
         })
     }
+
+    fn cost(&self, cancel: &Cancel) -> Result<Arc<Cost>, String> {
+        self.cost.get(cancel, || {
+            let listing = self.listing(cancel)?;
+            let Some((first, last)) = listing.range() else {
+                return Ok(Cost::default());
+            };
+            let Some(path) = &self.usage_log else {
+                return Ok(cost::collect(&[], first, last));
+            };
+            let entries = usage_log::read_for_at(path, &self.dir)?;
+            Ok(cost::collect(&entries, first, last))
+        })
+    }
 }
 
 /// The commits of a page, newest first, never empty.
@@ -304,6 +334,13 @@ struct Listing {
 impl Listing {
     fn newest(&self) -> &str {
         self.commits.first().map_or("HEAD", |c| &c.hash)
+    }
+
+    /// The days the page covers, from its oldest commit to its newest.
+    fn range(&self) -> Option<(chrono::NaiveDate, chrono::NaiveDate)> {
+        let first = cost::day_of(&self.commits.last()?.date)?;
+        let last = cost::day_of(&self.commits.first()?.date)?;
+        Some((first, last))
     }
 }
 

@@ -17,6 +17,7 @@ use super::{
 };
 
 pub(super) mod blocks;
+mod cost;
 mod files;
 mod releases;
 mod tiles;
@@ -24,6 +25,7 @@ mod trends;
 mod watch;
 
 use blocks::{Blocks, Part, Phase};
+use cost::cost_block;
 use files::{FileHistory, files_table, history_window};
 use tiles::tile;
 use trends::trends;
@@ -174,7 +176,8 @@ impl IboardApp {
             let projects = supervised(dir, &self.recents);
             let source = Source::new(dir, &self.located.root, 0, measures)
                 .with_release_tags(&releases.tags)
-                .with_supervised(projects);
+                .with_supervised(projects)
+                .with_usage_log(self.usage_log_file.clone());
             self.session.stats = Some(StatsPanel::new(
                 source,
                 0,
@@ -413,6 +416,7 @@ fn stats_body(ui: &mut egui::Ui, panel: &mut StatsPanel) -> Option<StatsAsk> {
         panel.hovered = hovered;
         ui.ctx().request_repaint();
     }
+    cost_block(ui, &mut panel.blocks);
     if let Some(path) = files_table(ui, &mut panel.blocks, &mut panel.sort, &mut panel.all_files) {
         panel.history = Some(FileHistory::open(panel.blocks.source().dir(), path));
     }

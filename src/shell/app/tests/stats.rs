@@ -5,6 +5,8 @@ use crate::stats::Stats;
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use super::*;
+use crate::agent::{Billing, Tokens};
+use crate::domains::agent::artifacts::usage_log::Entry;
 use crate::job::Job;
 use crate::scratch_git::git;
 use crate::shell::app::stats::Measure;
@@ -696,4 +698,162 @@ fn the_watch_indents_its_details_under_plain_headed_panels() {
     let detail = harness.get_by_label("too few issues closed to tell").rect();
     assert_eq!(detail.left(), headline.left());
     assert!(headline.left() >= title.left() + 24.0, "{headline:?}");
+}
+
+/// The local day of `dir`'s newest commit, as the stats read it.
+fn commit_day(dir: &Path) -> String {
+    git(dir, &["log", "-1", "--format=%cI"])
+        .trim()
+        .chars()
+        .take(10)
+        .collect()
+}
+
+fn logged(
+    session: &str,
+    project: &Path,
+    provider: &str,
+    billing: Billing,
+    cost: f64,
+    tokens: u64,
+    day: &str,
+) -> Entry {
+    let at = format!("{day}T10:30:00.000Z");
+    Entry {
+        session: session.to_string(),
+        project: project.to_path_buf(),
+        engine: "opencode".to_string(),
+        provider: Some(provider.to_string()),
+        model: None,
+        billing,
+        cost: Some(cost),
+        tokens: Tokens {
+            input: tokens,
+            ..Tokens::default()
+        },
+        started: at.clone(),
+        ended: at,
+    }
+}
+
+fn write_log(path: &Path, entries: &[Entry]) {
+    let text: String = entries
+        .iter()
+        .map(|entry| serde_json::to_string(entry).unwrap() + "\n")
+        .collect();
+    std::fs::write(path, text).unwrap();
+}
+
+/// The cost block totals the log's metered dollars and names its providers,
+/// with a subscription's dollars kept out of the spend.
+#[test]
+fn the_cost_block_totals_the_log_and_names_each_provider() {
+    let (dir, located) = project("stats-cost");
+    let day = commit_day(&dir);
+    let project = std::fs::canonicalize(&dir).unwrap();
+    let log = dir.join("usage.jsonl");
+    write_log(
+        &log,
+        &[
+            logged(
+                "ses_1",
+                &project,
+                "deepseek",
+                Billing::Metered,
+                0.25,
+                1_000,
+                &day,
+            ),
+            logged(
+                "ses_2",
+                &project,
+                "github-copilot",
+                Billing::Subscription,
+                1.5,
+                500,
+                &day,
+            ),
+        ],
+    );
+    let mut app = IboardApp::from_located(located);
+    app.usage_log_file = Some(log);
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(2);
+
+    harness.get_by_label("Cost");
+    let total = harness
+        .get_all_by_label("$0.25")
+        .min_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the cost total");
+    harness.get_by_label("spent");
+    harness.get_by_label("· 1.5k tokens");
+    harness.get_by_label("· $1.50 API-equivalent");
+    harness.get_by_label_contains("DeepSeek · $0.25 paid");
+    harness.get_by_label_contains("Copilot · 500 tokens");
+
+    total.hover();
+    harness.run_steps(4);
+    assert!(
+        harness
+            .query_all_by_label_contains("API-equivalent · $1.50, never charged")
+            .count()
+            > 0
+    );
+}
+
+/// With no run in the trends' days, the block says so instead of drawing a
+/// zero bar.
+#[test]
+fn a_range_without_a_run_shows_the_empty_state() {
+    let (dir, located) = project("stats-cost-empty");
+    let mut app = IboardApp::from_located(located);
+    app.usage_log_file = Some(dir.join("usage.jsonl"));
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    harness.run_steps(1);
+    harness.get_by_label("No agent run in this range.");
+    harness.get_by_label_contains("no run");
+    assert!(harness.query_by_label("spent").is_none());
+}
+
+/// A failed cost read says why, keeps the other blocks, and Retry reads the
+/// log again on its own.
+#[test]
+fn a_failed_cost_block_retries_alone() {
+    let (dir, located) = project("stats-cost-failed");
+    let day = commit_day(&dir);
+    let project = std::fs::canonicalize(&dir).unwrap();
+    let log = dir.join("usage.jsonl");
+    write_log(
+        &log,
+        &[logged(
+            "ses_1",
+            &project,
+            "deepseek",
+            Billing::Metered,
+            0.25,
+            1_000,
+            &day,
+        )],
+    );
+    let mut app = IboardApp::from_located(located);
+    app.usage_log_file = Some(log);
+    app.open_stats();
+    let mut harness = tall(app);
+    assert!(settled(&mut harness));
+    let panel = harness.state_mut().1.session.stats.as_mut().unwrap();
+    panel
+        .blocks
+        .reading(Part::Cost, Job::done(Err("boom".to_string())));
+    harness.run_steps(2);
+    harness.get_by_label("Couldn't read the usage log: boom");
+    harness.get_by_label("No refactor needed now");
+
+    kit::press(&mut harness, "Retry");
+    assert!(settled(&mut harness));
+    harness.run_steps(1);
+    harness.get_by_label_contains("DeepSeek · $0.25 paid");
 }

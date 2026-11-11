@@ -209,6 +209,25 @@ pub fn read() -> Vec<Entry> {
     path().map_or_else(Vec::new, |path| read_at(&path))
 }
 
+/// Every entry in `path`, oldest first. A missing log is empty; one that
+/// cannot be read is an error the caller can report and retry.
+pub fn read_result(path: &Path) -> Result<Vec<Entry>, String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(parse(&text)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(err) => Err(format!("Couldn't read {}: {err}", path.display())),
+    }
+}
+
+/// Every entry in `path` of `project`, oldest first.
+pub fn read_for_at(path: &Path, project: &Path) -> Result<Vec<Entry>, String> {
+    let project = canonical(project);
+    Ok(read_result(path)?
+        .into_iter()
+        .filter(|entry| entry.project == project)
+        .collect())
+}
+
 /// Every entry in `path`, oldest first: the log of a real run, or a test's.
 pub fn read_from(path: &Path) -> Vec<Entry> {
     read_at(path)
@@ -309,7 +328,10 @@ fn retained(entry: &Entry, cutoff: DateTime<Utc>) -> bool {
 }
 
 fn read_at(path: &Path) -> Vec<Entry> {
-    let text = std::fs::read_to_string(path).unwrap_or_default();
+    read_result(path).unwrap_or_default()
+}
+
+fn parse(text: &str) -> Vec<Entry> {
     let mut entries: HashMap<String, Entry> = HashMap::new();
     for line in text.lines() {
         let Ok(entry) = serde_json::from_str::<Entry>(line) else {
@@ -494,6 +516,44 @@ mod tests {
         let entries = read_at(&log);
         let ids: Vec<&str> = entries.iter().map(|entry| entry.session.as_str()).collect();
         assert_eq!(ids, ["ses_old", "ses_new"]);
+    }
+
+    #[test]
+    fn a_missing_log_reads_as_empty_and_an_unreadable_one_fails() {
+        let scratch = tempfile::tempdir().unwrap();
+        let missing = scratch.path().join("usage.jsonl");
+        assert!(read_result(&missing).unwrap().is_empty());
+        let err = read_result(scratch.path()).unwrap_err();
+        assert!(err.contains("Couldn't read"), "{err}");
+    }
+
+    #[test]
+    fn a_projects_entries_are_read_from_a_log_at_a_known_path() {
+        let scratch = tempfile::tempdir().unwrap();
+        let project = project(scratch.path());
+        let other = PathBuf::from("/other");
+        let log = scratch.path().join("usage.jsonl");
+        let mut here = entry("ses_here", &project, stamp(2_000));
+        let mut there = entry("ses_there", &other, stamp(3_000));
+        here.project = project.clone();
+        there.project = other;
+        std::fs::write(
+            &log,
+            format!(
+                "{}\n{}\n",
+                serde_json::to_string(&there).unwrap(),
+                serde_json::to_string(&here).unwrap()
+            ),
+        )
+        .unwrap();
+        let entries = read_for_at(&log, scratch.path()).unwrap();
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.session.as_str())
+                .collect::<Vec<_>>(),
+            ["ses_here"]
+        );
     }
 
     fn used(id: &str, provider: &str, cost: f64, at: DateTime<Utc>) -> Entry {

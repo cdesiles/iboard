@@ -10,8 +10,9 @@ Top to bottom, on `bg`, with a 16pt gutter:
 2. **Four stat tiles**: Median cycle time, Complexity, Test coverage and Lines of code. Each shows the value, the change against the previous 12 weeks, and what it measures in `meta`.
 3. **Trends** (3 of 4 columns): four small multiples on one shared time axis. Each has its own y-scale, never two scales on one chart.
 4. **Refactor watch** (1 of 4 columns): the verdict and the four signals behind it.
-5. **Biggest files**: a table of the files, sortable.
-6. **Agenda**: commits per day (see Agenda).
+5. **Cost**: what the agents cost over the trends' days, a bar per day and a row per provider.
+6. **Biggest files**: a table of the files, sortable.
+7. **Agenda**: commits per day (see Agenda).
 
 ## Metrics
 
@@ -57,6 +58,17 @@ Four signals, each with its numbers and its limit, marked with an icon and a wor
 - With 0 or 1 signals on, the verdict reads "No refactor needed now" on `surface-sunken`, with no button.
 - With 2 or more on, it reads "**Time to plan a refactor.** 3 of 4 signals are on, mostly from 3 files." and offers **Draft a refactor issue**. That opens the NewIssueModal, its notes prefilled with the signals and the hotspot files, labelled `refactor`. Nothing is written until you confirm.
 
+## Cost
+
+Under the trends, what the agents cost over the days the trends cover: the range's total, a bar per day stacked by provider, and a row per provider.
+
+- **Range**: the trends'. Until the trends' `12w` `26w` `1y` `All` control lands, that is the page's days, from its oldest commit to its newest, and Newer and Older move both. The caption names the span and the runs: `14 Sep – 11 Nov · 6 runs`.
+- **The total** is the money metered runs were charged: `$4.20` in 18pt, then `spent` and the range's tokens in `meta`. A subscription's API-equivalent never joins it. Hovering the total separates the two: `Paid · $4.20` then `API-equivalent · $9.80, never charged`.
+- **The chart** is tokens per day, stacked by provider: every run reports tokens, while a subscription's dollars are often zero. Each provider keeps one label-palette colour across the days, matched by the swatch in its row, and its segments use `radius-sm` rounded only at the top of the bar. A day without a run is a gap, never a zero bar. Hovering a bar names the day, its tokens by provider, and its paid and API-equivalent dollars.
+- **A row per provider**: its swatch and name, then its tokens. A metered provider's dollars are the rightmost figure: `DeepSeek · $3.10 · 1.2M tokens`. A subscription shows its tokens alone, `Copilot · 2.3M tokens`, and its API-equivalent stays in the tooltip, never in the spend: `Copilot · 2.3M tokens · 4 runs · $1.50 API-equivalent, never spend`.
+- **Empty**: no run in the range reads `No agent run in this range.` and `A finished run's cost lands here.`, with no chart and no zero bar.
+- **Data**: `~/.local/share/iboard/usage.jsonl`, read on the block's own job. There is no cost per ticket: the log is keyed by session, and nothing joins it to an issue.
+
 ## Biggest files
 
 Columns: File (directory in `ink-faint`, name in `ink`), Lines (number plus a bar scaled to the largest file), Complexity, Coverage (`status-doing` under the floor), Changes in 12 weeks, Hotspot (flame icon plus "hotspot" in `status-doing`, else "–"). Sort with the segmented control or a column head: Lines (default), Complexity, Changes. It shows the top 8, with "Show all 64". Clicking a row opens the file's history.
@@ -69,17 +81,20 @@ Columns: File (directory in `ink-faint`, name in `ink`), Lines (number plus a ba
 | Stats | Refresh, or the repo changes | MetricsScanned | Same screen; tiles, trends and watch update in place |
 | Stats | Hover a trend | (none) | Shared crosshair; row values show that week |
 | Stats | Pick a range | StatsRangeChanged | Trends redrawn for that range |
+| Stats | Newer, Older | StatsPageChanged | The trends and the Cost block read the page's days |
+| Stats | Hover a cost bar | (none) | Its day's tokens, paid and API-equivalent |
 | Stats | Toggle Releases | ReleaseMarkersToggled | Trends redrawn with or without the release lines |
 | Any | A new tag matching `release_tags` | TagsScanned | Its line appears on the next scan |
 | Stats | Sort the files | FilesSortChanged | Table reordered |
 | Stats | Draft a refactor issue | RefactorIssueDrafted → NewIssueOpened | NewIssueModal, notes prefilled |
 | Stats | A tool is missing (no lcov, no complexity tool) | MetricUnavailable | That tile and row say what is missing and how to add it; the rest still shows |
 
-Read model: `WeeklyMetrics` holds one row per week with loc, by_language, complexity, coverage (optional) and cycle median/p85, plus `FileMetrics` for the current commit. Both are fed by `MetricsScanned`. `Releases` holds (tag, date, is_patch) from `TagsScanned`, read with `git for-each-ref refs/tags`.
+Read model: `WeeklyMetrics` holds one row per week with loc, by_language, complexity, coverage (optional) and cycle median/p85, plus `FileMetrics` for the current commit. Both are fed by `MetricsScanned`. `Releases` holds (tag, date, is_patch) from `TagsScanned`, read with `git for-each-ref refs/tags`. `Cost` holds one day per day of the page, each with a part per provider (tokens, paid, API-equivalent), and a row per provider; it is read from the usage log by the canonical project path.
 
 ## States
 
 - **Loading**: Skeleton rules. Tiles and charts keep their labels and axes, with pulsing placeholders. Each block loads on its own, started once it is on screen, with a 60s timeout; a block that fails says why and offers Retry (ghost), and the others still show.
 - **A metric without data**: its tile says "No coverage report found" and names the file it looks for (`lcov.info`). Its row in Trends shows the same message instead of a chart.
+- **No cost in range**: the Cost block keeps its place and says it has no run; the other blocks still show.
 
 In egui, the trends are hand-painted, each row on its own `Painter`: `Shape::line` for a series, `Shape::dashed_line` for limits in `p.status_doing` and for p85, and a `Mesh` of per-segment quads for the area, since epaint fills only convex polygons. Releases are `Shape::dashed_line` with a 1pt dash and 3pt gap in `p.ink_faint` (half alpha for patches); the lane is one more `Painter` row above the first chart, sharing its x transform. The screen keeps the hovered commit and every row draws its crosshair from it.

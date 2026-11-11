@@ -10,6 +10,7 @@
 //! through one `git cat-file --batch`; files unchanged between commits are
 //! measured once per run.
 
+mod cost;
 mod cycle;
 mod measure;
 mod release;
@@ -25,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use super::agenda::AgendaDays;
 use crate::platform::git::{self, Batch};
 use crate::platform::job::Cancel;
+pub use cost::{Cost, CostDay, CostPart, CostProvider};
 pub use cycle::{Cycle, Cycles, span};
 pub use measure::{FileMetrics, Language, language_of, measure};
 pub use release::{Release, ReleasePrefs, ReleasePrefsSection, Releases};
@@ -140,6 +142,8 @@ pub struct Stats {
     pub cycles: Cycles,
     /// The release tags the page shows.
     pub releases: Releases,
+    /// What the agents cost over the days the page covers.
+    pub cost: Cost,
     /// Where the measures are kept.
     pub cache: Option<PathBuf>,
 }
@@ -280,7 +284,10 @@ fn files_at(dir: &Path, newest: &str, cancel: &Cancel) -> Result<Vec<FileStat>, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domains::agent::artifacts::usage_log::Entry;
+    use crate::domains::agent::runtime::{Billing, Tokens};
     use crate::scratch_git::{git, git_env, git_stdin};
+    use chrono::{SecondsFormat, Utc};
     use std::sync::Arc;
 
     const ALL: [Need; 5] = [
@@ -535,5 +542,91 @@ mod tests {
             log.lines().collect::<Vec<_>>(),
             "oldest first, as measured ones are"
         );
+    }
+
+    fn logged(
+        session: &str,
+        project: &Path,
+        provider: &str,
+        billing: Billing,
+        cost: f64,
+        tokens: u64,
+    ) -> Entry {
+        let at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        Entry {
+            session: session.to_string(),
+            project: project.to_path_buf(),
+            engine: "opencode".to_string(),
+            provider: Some(provider.to_string()),
+            model: None,
+            billing,
+            cost: Some(cost),
+            tokens: Tokens {
+                input: tokens,
+                ..Tokens::default()
+            },
+            started: at.clone(),
+            ended: at,
+        }
+    }
+
+    /// The cost block reads the project's usage log over the page's days, and
+    /// leaves another project's runs out.
+    #[test]
+    fn the_log_is_read_over_the_pages_days_for_this_project_only() {
+        let dir = repo();
+        commit(dir.path(), "a.rs", "fn a() {}\n", "one");
+        let project = std::fs::canonicalize(dir.path()).unwrap();
+        let log = dir.path().join("usage.jsonl");
+        let entries = [
+            logged("ses_1", &project, "deepseek", Billing::Metered, 0.42, 100),
+            logged(
+                "ses_2",
+                &project,
+                "github-copilot",
+                Billing::Subscription,
+                1.5,
+                200,
+            ),
+            logged(
+                "ses_3",
+                Path::new("/other"),
+                "deepseek",
+                Billing::Metered,
+                9.0,
+                999,
+            ),
+        ];
+        let text: String = entries
+            .iter()
+            .map(|entry| serde_json::to_string(entry).unwrap() + "\n")
+            .collect();
+        std::fs::write(&log, text).unwrap();
+
+        let page = source(dir.path(), dir.path(), 0).with_usage_log(Some(log));
+        let stats = page.read(&[Need::Cost], &Cancel::default()).unwrap();
+        assert_eq!(stats.cost.runs, 2);
+        assert_eq!(stats.cost.spent, 0.42);
+        assert_eq!(stats.cost.equivalent, 1.5);
+        assert_eq!(stats.cost.tokens, 300);
+        assert_eq!(stats.cost.days.len(), 1, "the page covers one day");
+        assert_eq!(
+            stats.cost.days[0]
+                .parts
+                .iter()
+                .map(|part| part.provider.as_str())
+                .collect::<Vec<_>>(),
+            ["deepseek", "copilot"]
+        );
+    }
+
+    #[test]
+    fn a_log_that_cannot_be_read_fails_the_cost_alone() {
+        let dir = repo();
+        commit(dir.path(), "a.rs", "fn a() {}\n", "one");
+        let page = source(dir.path(), dir.path(), 0).with_usage_log(Some(dir.path().to_path_buf()));
+        let err = page.read(&[Need::Cost], &Cancel::default()).unwrap_err();
+        assert!(err.contains("Couldn't read"), "{err}");
+        assert!(page.read(&[Need::Commits], &Cancel::default()).is_ok());
     }
 }
