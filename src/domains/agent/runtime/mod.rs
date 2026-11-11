@@ -640,6 +640,7 @@ pub fn run(
         None,
         workspace.as_ref(),
     )
+    .map(|chat| chat.answer)
 }
 
 /// Where an agent runs: the project it reads or edits, and for a build the
@@ -733,7 +734,10 @@ fn review(
             steps,
             workspace.as_ref(),
         )
-        .map(|answer| Reviewed { answer, plan })
+        .map(|chat| Reviewed {
+            answer: chat.answer,
+            plan,
+        })
     };
     if config.tool.plan_args().is_empty() {
         return run(false);
@@ -849,7 +853,7 @@ fn start_logged(
             log: Some(&log),
         };
         let steps = Some(&steps);
-        let result = match purpose {
+        let (result, usage) = match purpose {
             // A build runs in the service, so it outlives the window.
             Purpose::Build(_) if config.tool == Tool::OpenCode => {
                 let build = service::Build {
@@ -860,9 +864,12 @@ fn start_logged(
                     log: &log,
                     timeout: purpose.timeout(),
                 };
-                service::start(&build, cancel, steps, &mine)
+                match service::start(&build, cancel, steps, &mine) {
+                    Ok(finished) => (Ok(finished.answer), finished.usage),
+                    Err(error) => (Err(error), None),
+                }
             }
-            purpose => chat::run_with(
+            purpose => match chat::run_with(
                 &config,
                 &prompt,
                 &issue,
@@ -870,9 +877,15 @@ fn start_logged(
                 purpose,
                 steps,
                 Some(&workspace),
-            ),
+            ) {
+                Ok(chat) => (Ok(chat.answer), chat.usage),
+                Err(error) => (Err(error), None),
+            },
         };
-        let _ = build_log::append(&log, &build_log::outcome(&result, started.elapsed()));
+        let _ = build_log::append(
+            &log,
+            &build_log::outcome(&result, started.elapsed(), usage.as_ref()),
+        );
         result
     });
     (job, progress, handle)
@@ -897,6 +910,7 @@ mod poller;
 pub mod service;
 mod stream;
 mod tools;
+mod usage;
 
 pub(crate) use stream::{describe_tool, session_of, step_of};
 use stream::{final_answer, stream_error};
@@ -910,6 +924,7 @@ pub use answer::{
 pub use draft::{DraftText, draft_so_far, start_draft};
 pub use tools::{Detected, Model, Models, detect, list_models};
 use tools::{default_model, find_binary, search_path};
+pub use usage::{Billing, Tokens, Usage};
 
 #[cfg(test)]
 mod tests;

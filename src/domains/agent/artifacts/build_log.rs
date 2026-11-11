@@ -56,10 +56,22 @@ pub fn heading(at: &str, agent: &str) -> String {
     format!("── {at} · {agent}")
 }
 
-/// The line a run ends on, with how long a finished one `took`.
-pub fn outcome(result: &Result<String, String>, took: Duration) -> String {
+/// The line a run ends on, with how long a finished one `took` and what it
+/// spent when its engine said.
+pub fn outcome(
+    result: &Result<String, String>,
+    took: Duration,
+    usage: Option<&agent::Usage>,
+) -> String {
     match result {
-        Ok(_) => format!("{FINISHED}{}", format::stopwatch(took)),
+        Ok(_) => {
+            let mut line = format!("{FINISHED}{}", format::stopwatch(took));
+            if let Some(cost) = usage.and_then(agent::Usage::cost_label) {
+                line.push_str(" · ");
+                line.push_str(&cost);
+            }
+            line
+        }
         Err(err) => format!("✗ {err}"),
     }
 }
@@ -543,9 +555,35 @@ mod tests {
         assert_eq!(load(&log), None);
         append(&log, "one").unwrap();
         let took = Duration::from_secs(125);
-        append(&log, &outcome(&Err("stopped".into()), took)).unwrap();
-        append(&log, &outcome(&Ok(String::new()), took)).unwrap();
+        append(&log, &outcome(&Err("stopped".into()), took, None)).unwrap();
+        append(&log, &outcome(&Ok(String::new()), took, None)).unwrap();
         assert_eq!(load(&log).unwrap(), "one\n✗ stopped\n✓ Finished in 02:05\n");
+    }
+
+    #[test]
+    fn a_finished_run_says_what_it_cost() {
+        let usage = agent::Usage {
+            cost: Some(0.42),
+            ..agent::Usage::default()
+        };
+        let ok = Ok(String::new());
+        assert_eq!(
+            outcome(&ok, Duration::from_secs(221), Some(&usage)),
+            "✓ Finished in 03:41 · $0.42"
+        );
+        assert_eq!(
+            outcome(&Ok(String::new()), Duration::from_secs(221), None),
+            "✓ Finished in 03:41"
+        );
+        assert_eq!(
+            outcome(
+                &Err("stopped".into()),
+                Duration::from_secs(221),
+                Some(&usage)
+            ),
+            "✗ stopped",
+            "a failure has nothing to bill"
+        );
     }
 
     #[test]

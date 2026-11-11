@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use super::service::{Feed, POLL, Status, backoff, call, parse, pending, status_of};
+use super::Usage;
+use super::service::{Feed, POLL, backoff, call, parse, pending};
 
 /// The live pollers, so every run in a project shares one.
 static POLLERS: LazyLock<Mutex<HashMap<PathBuf, Weak<Poller>>>> =
@@ -16,6 +17,33 @@ static POLLERS: LazyLock<Mutex<HashMap<PathBuf, Weak<Poller>>>> =
 
 /// The longest the shared poller waits before trying a struggling service again.
 const WAIT_MAX: Duration = Duration::from_secs(5);
+
+/// How a session stands, as the service keeps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Status {
+    pub(super) running: bool,
+    /// Wall-clock milliseconds, as the service counts them.
+    pub(super) created: u64,
+    pub(super) updated: u64,
+}
+
+/// What one poll found for a session: how it stands, and what it spent.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Polled {
+    pub(super) status: Status,
+    pub(super) usage: Option<Usage>,
+}
+
+/// The state of one service session.
+pub(super) fn status_of(session: &Value) -> Status {
+    let millis = |key: &str| session["time"][key].as_u64().unwrap_or(0);
+    let (busy, idle) = (millis("busy"), millis("idle"));
+    Status {
+        running: busy > 0 && idle < busy,
+        created: millis("created"),
+        updated: millis("updated").max(busy),
+    }
+}
 
 /// The watchers of one project's runs and questions.
 pub(super) struct Poller {
@@ -26,7 +54,7 @@ pub(super) struct Poller {
 struct Inner {
     sessions: usize,
     questions: usize,
-    statuses: HashMap<String, Status>,
+    statuses: HashMap<String, Polled>,
     observed: Option<Instant>,
     feed: Feed,
     running: bool,
@@ -86,7 +114,7 @@ impl Poller {
         }
     }
 
-    pub(super) fn status(&self, session: &str, since: Instant) -> Option<(Status, Instant)> {
+    pub(super) fn status(&self, session: &str, since: Instant) -> Option<(Polled, Instant)> {
         let inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         let observed = inner.observed?;
         if observed < since {
@@ -95,8 +123,8 @@ impl Poller {
         inner
             .statuses
             .get(session)
-            .copied()
-            .map(|status| (status, observed))
+            .cloned()
+            .map(|polled| (polled, observed))
     }
 
     pub(super) fn feed(&self) -> Feed {
@@ -215,28 +243,54 @@ fn waiting(poller: &Weak<Poller>, wait: Duration) -> bool {
 }
 
 /// How every session of `project` stands, from one request.
-fn statuses(project: &Path) -> Result<HashMap<String, Status>, String> {
+fn statuses(project: &Path) -> Result<HashMap<String, Polled>, String> {
     let reply = call(project, &["get", "/api/session"], None)?;
     let value = parse(&reply)?;
     Ok(statuses_from(&value, project))
 }
 
 /// The sessions of `project` in a session list.
-fn statuses_from(value: &Value, project: &Path) -> HashMap<String, Status> {
+fn statuses_from(value: &Value, project: &Path) -> HashMap<String, Polled> {
     let sessions = value["data"].as_array().cloned().unwrap_or_default();
     sessions
         .iter()
         .filter_map(|session| {
             let id = session["id"].as_str()?;
             let directory = session["location"]["directory"].as_str()?;
-            (Path::new(directory) == project).then_some((id.to_string(), status_of(session)))
+            (Path::new(directory) == project).then(|| {
+                (
+                    id.to_string(),
+                    Polled {
+                        status: status_of(session),
+                        usage: Usage::from_session(session),
+                    },
+                )
+            })
         })
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::Billing;
     use super::*;
+
+    #[test]
+    fn a_polled_session_keeps_what_it_spent() {
+        let value = serde_json::json!({"data": [{
+            "id": "ses_copilot", "location": {"directory": "/code/app"},
+            "model": {"id": "claude-opus-4.6", "providerID": "github-copilot"},
+            "cost": 0,
+            "tokens": {"input": 159, "output": 14001, "reasoning": 0,
+                       "cache": {"read": 1902598, "write": 383223}},
+            "time": {"busy": 2, "idle": 1},
+        }]});
+        let polled = statuses_from(&value, Path::new("/code/app"));
+        let usage = polled["ses_copilot"].usage.as_ref().expect("usage");
+        assert_eq!(usage.cost, Some(0.0));
+        assert_eq!(usage.billing, Billing::Subscription);
+        assert_eq!(usage.tokens.cache_read, 1_902_598);
+    }
 
     #[test]
     fn only_this_projects_sessions_are_polled() {

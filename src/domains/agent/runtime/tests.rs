@@ -106,6 +106,27 @@ fn a_custom_command_reads_the_prompt_file_and_answers() {
 }
 
 #[test]
+fn a_plain_custom_build_logs_its_time_without_a_cost() {
+    let scratch = tempfile::tempdir().unwrap();
+    let log = scratch.path().join("build.log");
+    let (job, _, _) = start_build(
+        &custom("printf 'done' # {prompt}"),
+        "PROMPT",
+        Path::new("a.md"),
+        scratch.path(),
+        &log,
+        BuildTimeout::default(),
+    );
+    assert_eq!(job.wait().unwrap(), Ok("done".to_string()));
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert!(
+        text.lines().any(|line| line.starts_with("✓ Finished in ")),
+        "{text}"
+    );
+    assert!(!text.contains('$'), "{text}");
+}
+
+#[test]
 fn a_failing_command_reports_its_error_instead_of_panicking() {
     let config = custom("echo nope >&2; exit 3 # {prompt}");
     let error = run(

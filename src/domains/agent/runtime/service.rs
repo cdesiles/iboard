@@ -12,8 +12,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
-use super::poller::project_poller;
-use super::{Progress, describe_tool};
+use super::poller::{project_poller, status_of};
+use super::{Progress, Usage, describe_tool};
 use crate::domains::agent::artifacts::{build_log, reviews};
 use crate::platform::job::{Cancel, Job};
 use crate::platform::process;
@@ -379,6 +379,13 @@ pub struct Found {
     pub elapsed: Duration,
 }
 
+/// A run the service finished: its answer, and what its session spent.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Finished {
+    pub answer: String,
+    pub usage: Option<Usage>,
+}
+
 /// One build to run in the service, and where its log goes.
 pub struct Build<'a> {
     pub model: &'a str,
@@ -395,7 +402,7 @@ pub fn start(
     cancel: &Cancel,
     progress: Option<&Progress>,
     handle: &Handle,
-) -> Result<String, String> {
+) -> Result<Finished, String> {
     let session = create(build.project, build.issue, build.model)?;
     remember(handle, &session);
     if cancel.is_cancelled() {
@@ -460,26 +467,6 @@ pub fn interrupt(project: &Path, session: &str) {
     let _ = call(project, &["post", &path], None);
 }
 
-/// How a session stands, as the service keeps it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Status {
-    running: bool,
-    /// Wall-clock milliseconds, as the service counts them.
-    created: u64,
-    updated: u64,
-}
-
-/// The state of one service session.
-pub(super) fn status_of(session: &Value) -> Status {
-    let millis = |key: &str| session["time"][key].as_u64().unwrap_or(0);
-    let (busy, idle) = (millis("busy"), millis("idle"));
-    Status {
-        running: busy > 0 && idle < busy,
-        created: millis("created"),
-        updated: millis("updated").max(busy),
-    }
-}
-
 /// The last step `session` took, and the answer of its last message. Only its
 /// newest messages: a transcript grows without bound, and the service's reply
 /// loses its tail once large enough (see [`call_with`]).
@@ -528,7 +515,7 @@ fn await_answer(
     timeout: Option<Duration>,
     progress: Option<&Progress>,
     log: Option<&Path>,
-) -> Result<String, String> {
+) -> Result<Finished, String> {
     let started = Instant::now();
     let poller = project_poller(project);
     let _subscription = poller.subscribe(false);
@@ -549,7 +536,7 @@ fn await_answer(
                 minutes(timeout)
             ));
         }
-        let (status, at) = match poller.status(session, started) {
+        let (polled, at) = match poller.status(session, started) {
             Some(pair) => {
                 misses = 0;
                 pair
@@ -562,9 +549,10 @@ fn await_answer(
                 continue;
             }
         };
+        let (status, usage) = (polled.status, polled.usage);
         if !status.running {
             match read(project, session) {
-                Ok((_, Some(answer))) => return Ok(answer),
+                Ok((_, Some(answer))) => return Ok(Finished { answer, usage }),
                 Ok((_, None)) => {
                     if observed == Some(at) {
                         rest(cancel, POLL);
@@ -615,8 +603,15 @@ fn await_answer(
 /// restart: nothing to start, only an answer to wait for.
 pub fn watch(project: PathBuf, session: String, log: PathBuf) -> Job<Result<String, String>> {
     Job::spawn(move |cancel| {
-        let result = await_answer(&project, &session, cancel, None, None, Some(&log));
-        let _ = build_log::append(&log, &build_log::outcome(&result, Duration::ZERO));
+        let (result, usage) = match await_answer(&project, &session, cancel, None, None, Some(&log))
+        {
+            Ok(finished) => (Ok(finished.answer), finished.usage),
+            Err(error) => (Err(error), None),
+        };
+        let _ = build_log::append(
+            &log,
+            &build_log::outcome(&result, Duration::ZERO, usage.as_ref()),
+        );
         result
     })
 }

@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use super::{
-    AgentConfig, Cancel, DIRENV, Progress, Purpose, Tool, Workspace, build_log, command,
+    AgentConfig, Cancel, DIRENV, Progress, Purpose, Tool, Usage, Workspace, build_log, command,
     default_model, direnv, files, final_answer, find_binary, process, prompt_file, rejects_plan,
     session_of, step_of, stream_error,
 };
@@ -21,10 +21,11 @@ pub(super) struct Watched<'a> {
     pub(super) session: Option<&'a SessionSlot>,
 }
 
-/// A tool's answer and the session it gave it in, when it named one.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A tool's answer, what it spent, and the session it gave it in.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Chat {
     pub answer: String,
+    pub usage: Option<Usage>,
     pub session: Option<String>,
 }
 
@@ -38,12 +39,12 @@ pub(super) fn run_with(
     purpose: Purpose,
     progress: Option<&Progress>,
     workspace: Option<&Workspace>,
-) -> Result<String, String> {
+) -> Result<Chat, String> {
     let watched = Watched {
         progress,
         session: None,
     };
-    exchange(config, prompt, issue, cancel, purpose, watched, workspace).map(|chat| chat.answer)
+    exchange(config, prompt, issue, cancel, purpose, watched, workspace)
 }
 
 /// Runs one exchange with the agent, keeping the session id it reports.
@@ -117,6 +118,7 @@ fn exchange(
     drop(prompt_file);
     let output = output?;
     let failure = stream_error(&output.stdout);
+    let usage = Usage::from_stream(&output.stdout);
     let answer = output
         .into_result("the agent")
         .map_err(|err| failure.clone().unwrap_or(err))?;
@@ -133,7 +135,11 @@ fn exchange(
     let session = watched
         .session
         .and_then(|slot| slot.lock().unwrap_or_else(PoisonError::into_inner).clone());
-    Ok(Chat { answer, session })
+    Ok(Chat {
+        answer,
+        usage,
+        session,
+    })
 }
 
 /// One turn of a plan in `project`, continuing `session` when the tool can.
