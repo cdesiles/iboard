@@ -119,6 +119,20 @@ impl Window {
         };
         DateTime::from_naive_utc_and_offset(first.and_time(NaiveTime::MIN), Utc)
     }
+
+    /// When the window holding `at` ends and its next one begins, in UTC.
+    pub fn reset(self, at: DateTime<Utc>) -> DateTime<Utc> {
+        let start = self.start(at);
+        let date = start.date_naive();
+        let next = match self {
+            Window::Day => date + chrono::Duration::days(1),
+            Window::Week => date + chrono::Duration::days(7),
+            Window::Month => date
+                .checked_add_months(chrono::Months::new(1))
+                .unwrap_or(date),
+        };
+        DateTime::from_naive_utc_and_offset(next.and_time(NaiveTime::MIN), Utc)
+    }
 }
 
 /// A cap a plan declares: money, or tokens. A plan has at most one.
@@ -188,6 +202,16 @@ impl Provider {
         }
     }
 
+    /// The name Settings and the meters show.
+    pub fn name(self) -> &'static str {
+        match self {
+            Provider::Anthropic => "Anthropic API",
+            Provider::DeepSeek => "DeepSeek",
+            Provider::Claude => "Claude.ai",
+            Provider::Copilot => "Copilot",
+        }
+    }
+
     fn from_key(key: &str) -> Option<Self> {
         match provider_key(key).as_str() {
             "anthropic" => Some(Provider::Anthropic),
@@ -224,6 +248,14 @@ pub fn provider_key(provider: &str) -> String {
         "github-copilot" | "github_copilot" => "copilot".to_string(),
         "claude-ai" | "claude.ai" | "claudeai" => "claude".to_string(),
         key => key.to_string(),
+    }
+}
+
+/// The name a provider is shown with: a known provider's, or its key.
+pub fn provider_name(provider: &str) -> String {
+    match Provider::from_key(provider) {
+        Some(provider) => provider.name().to_string(),
+        None => provider_key(provider),
     }
 }
 
@@ -722,6 +754,30 @@ mod tests {
         let (again, problems) = toml::from_str::<UsageSection>(&written).unwrap().plans();
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(again, plans);
+    }
+
+    #[test]
+    fn a_window_resets_when_its_next_one_begins() {
+        let at = DateTime::parse_from_rfc3339("2026-11-11T15:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let expected = |stamp: &str| {
+            DateTime::parse_from_rfc3339(stamp)
+                .unwrap()
+                .with_timezone(&Utc)
+        };
+        assert_eq!(Window::Day.reset(at), expected("2026-11-12T00:00:00Z"));
+        assert_eq!(
+            Window::Week.reset(at),
+            expected("2026-11-16T00:00:00Z"),
+            "Monday follows"
+        );
+        assert_eq!(Window::Month.reset(at), expected("2026-12-01T00:00:00Z"));
+        assert_eq!(
+            Window::Month.reset(expected("2026-12-31T23:00:00Z")),
+            expected("2027-01-01T00:00:00Z"),
+            "the year turns"
+        );
     }
 
     #[test]

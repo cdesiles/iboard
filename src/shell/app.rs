@@ -20,6 +20,7 @@ use crate::build_log;
 use crate::commits;
 use crate::design::{self, DesignSystem};
 use crate::discovery::{self, Board, Column, Located};
+use crate::domains::agent::artifacts::usage_log;
 use crate::domains::preferences::labels::Labels;
 use crate::files::{self, atomic_write, file_name, normalize_file_name, unique_name};
 use crate::filter::{self, Filter};
@@ -112,6 +113,9 @@ files right next to your code.\n\nReport issues at https://github.com/cdesiles/i
 
 /// How often Auto reads the board again.
 const RESCAN_EVERY: Duration = Duration::from_secs(2);
+
+/// How often the subscription meters read the usage log again.
+const METERS_EVERY: Duration = Duration::from_secs(30);
 
 /// On macOS the header bar doubles as the window's title bar (the native
 /// title is hidden and the content runs under the traffic lights).
@@ -245,6 +249,12 @@ pub struct IboardApp {
     /// The cache folder plans are kept in; `None` in tests, for the same
     /// reason.
     plan_dir: Option<PathBuf>,
+    /// The usage log the subscription meters read; `None` in tests, so they
+    /// never read the user's spend.
+    usage_log_file: Option<PathBuf>,
+    /// The usage log's entries, as last read, and when that was.
+    usage_entries: Vec<usage_log::Entry>,
+    usage_read: Option<Instant>,
     /// A window title to apply on the next frame, after a project switch.
     pending_title: Option<String>,
     /// The frame's context, so background work can wake it when it lands;
@@ -503,6 +513,8 @@ impl IboardApp {
             app.recents = recents::read(file);
         }
         app.plan_dir = files::cache_dir();
+        app.usage_log_file = usage_log::path();
+        app.refresh_usage();
         app.trash = Trash::System;
         // Likewise for the user configuration.
         app.config_file = settings::config_file();
@@ -543,6 +555,22 @@ impl IboardApp {
         self.apply_agents(self.prefs.agents);
     }
 
+    /// Reads the usage log again every [`METERS_EVERY`], for the subscription
+    /// rings. A test has no log, so it never reads the user's spend.
+    fn refresh_usage(&mut self) {
+        let Some(path) = self.usage_log_file.clone() else {
+            return;
+        };
+        if self
+            .usage_read
+            .is_some_and(|read| read.elapsed() < METERS_EVERY)
+        {
+            return;
+        }
+        self.usage_entries = usage_log::read_from(&path);
+        self.usage_read = Some(Instant::now());
+    }
+
     fn from_located(located: Located) -> Self {
         let source = Source::Project(located.clone());
         let stamps = scan_stamps(&source);
@@ -580,6 +608,9 @@ impl IboardApp {
             recents: Vec::new(),
             recents_file: None,
             plan_dir: None,
+            usage_log_file: None,
+            usage_entries: Vec::new(),
+            usage_read: None,
             pending_title: None,
             ctx: None,
             handovers: None,

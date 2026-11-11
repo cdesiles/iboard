@@ -11,7 +11,9 @@ use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::domains::agent::runtime::{Billing, Cap, Plan, Tokens, Usage, provider_key, status_of};
+use crate::domains::agent::runtime::{
+    Billing, Cap, Plan, Plans, Provider, Tokens, Usage, provider_key, provider_name, status_of,
+};
 use crate::platform::files;
 
 /// How long a session stays in the log.
@@ -83,6 +85,15 @@ impl Consumption {
         used
     }
 
+    /// The dollars this plan's window has used: money spent, or a
+    /// subscription's API-equivalent.
+    pub fn dollars(&self, plan: &Plan) -> f64 {
+        match plan.billing {
+            Billing::Metered => self.spent,
+            Billing::Subscription => self.equivalent,
+        }
+    }
+
     /// The dollars this plan's window has used, labelled by what they are.
     pub fn money_label(&self, plan: &Plan) -> String {
         match plan.billing {
@@ -90,6 +101,55 @@ impl Consumption {
             Billing::Subscription => format!("${:.2} API-equivalent", self.equivalent),
         }
     }
+}
+
+/// One subscription plan's window: what it used, against the cap it knows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Meter {
+    /// The normalized provider ID the log and `[usage]` share.
+    pub provider: String,
+    /// The provider's name, as the status bar shows it.
+    pub name: String,
+    pub plan: Plan,
+    pub consumed: Consumption,
+    /// When the plan's window ends, in UTC.
+    pub reset: DateTime<Utc>,
+}
+
+impl Meter {
+    /// The share of the cap the window used, or `None` with no known cap.
+    pub fn share(&self) -> Option<f32> {
+        match self.plan.cap? {
+            Cap::Money(cap) if cap > 0.0 => Some((self.consumed.dollars(&self.plan) / cap) as f32),
+            Cap::Tokens(cap) if cap > 0 => Some(self.consumed.tokens as f32 / cap as f32),
+            _ => None,
+        }
+    }
+}
+
+/// Every subscription plan, known or declared, with its window's use.
+pub fn subscription_meters(plans: &Plans, entries: &[Entry], now: DateTime<Utc>) -> Vec<Meter> {
+    let mut keys: Vec<String> = Provider::ALL
+        .iter()
+        .map(|provider| provider.key().to_string())
+        .collect();
+    for key in plans.overrides().keys() {
+        if !keys.contains(key) {
+            keys.push(key.clone());
+        }
+    }
+    keys.into_iter()
+        .filter_map(|key| {
+            let plan = plans.plan(&key);
+            (plan.billing == Billing::Subscription).then(|| Meter {
+                name: provider_name(&key),
+                consumed: Consumption::of(entries, &key, &plan, now),
+                reset: plan.window.reset(now),
+                provider: key,
+                plan,
+            })
+        })
+        .collect()
 }
 
 /// The log file, when the user has a data folder.
@@ -100,6 +160,11 @@ pub fn path() -> Option<PathBuf> {
 /// Every entry, oldest first, with a truncated last line left out.
 pub fn read() -> Vec<Entry> {
     path().map_or_else(Vec::new, |path| read_at(&path))
+}
+
+/// Every entry in `path`, oldest first: the log of a real run, or a test's.
+pub fn read_from(path: &Path) -> Vec<Entry> {
+    read_at(path)
 }
 
 /// The entries of `project`, oldest first.
@@ -482,6 +547,131 @@ mod tests {
         };
         let consumed = Consumption::of(&entries, "deepseek", &plan, now);
         assert_eq!(consumed.cap, Some(Cap::Money(5.0)));
+    }
+
+    fn with_tokens(entry: &mut Entry, total: u64) {
+        entry.tokens = Tokens {
+            input: total,
+            ..Tokens::default()
+        };
+    }
+
+    fn meter_of<'a>(meters: &'a [Meter], provider: &str) -> &'a Meter {
+        meters
+            .iter()
+            .find(|meter| meter.provider == provider)
+            .unwrap_or_else(|| panic!("no meter for {provider}"))
+    }
+
+    #[test]
+    fn a_subscriptions_money_cap_fills_its_ring_with_api_equivalent_dollars() {
+        let now = DateTime::parse_from_rfc3339("2026-11-11T15:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let mut plans = Plans::default();
+        plans.set(
+            "claude",
+            Plan {
+                billing: Billing::Subscription,
+                window: Window::Week,
+                price: None,
+                cap: Some(Cap::Money(10.0)),
+            },
+        );
+        let entries = [used("ses_1", "claude", 4.2, now)];
+        let meters = subscription_meters(&plans, &entries, now);
+        let claude = meter_of(&meters, "claude");
+        assert_eq!(claude.name, "Claude.ai");
+        assert_eq!(claude.share(), Some(0.42));
+        assert_eq!(claude.reset, Window::Week.reset(now));
+        assert_eq!(
+            claude.consumed.money_label(&claude.plan),
+            "$4.20 API-equivalent"
+        );
+        assert_eq!(
+            meters
+                .iter()
+                .map(|meter| meter.provider.as_str())
+                .collect::<Vec<_>>(),
+            ["claude", "copilot"],
+            "only subscription plans have a meter"
+        );
+    }
+
+    #[test]
+    fn a_subscriptions_token_cap_reads_its_tokens() {
+        let now = Utc::now();
+        let mut plans = Plans::default();
+        plans.set(
+            "claude",
+            Plan {
+                billing: Billing::Subscription,
+                window: Window::Day,
+                price: None,
+                cap: Some(Cap::Tokens(50)),
+            },
+        );
+        let mut entry = used("ses_1", "claude", 1.0, now);
+        with_tokens(&mut entry, 21);
+        let meters = subscription_meters(&plans, &[entry], now);
+        assert_eq!(meter_of(&meters, "claude").share(), Some(0.42));
+    }
+
+    #[test]
+    fn a_subscription_with_no_cap_has_no_share_but_keeps_its_tokens() {
+        let now = Utc::now();
+        let mut entry = used("ses_1", "github-copilot", 3.0, now);
+        with_tokens(&mut entry, 1_234);
+        let meters = subscription_meters(&Plans::default(), &[entry], now);
+        let copilot = meter_of(&meters, "copilot");
+        assert_eq!(copilot.name, "Copilot");
+        assert_eq!(copilot.share(), None, "no cap, no made-up percentage");
+        assert_eq!(copilot.consumed.tokens, 1_234);
+        assert_eq!(copilot.consumed.dollars(&copilot.plan), 3.0);
+    }
+
+    #[test]
+    fn a_metered_plan_keeps_its_dollars_and_gets_no_ring() {
+        let now = Utc::now();
+        let mut plans = Plans::default();
+        plans.set(
+            "deepseek",
+            Plan {
+                billing: Billing::Metered,
+                window: Window::Day,
+                price: None,
+                cap: Some(Cap::Money(5.0)),
+            },
+        );
+        let meters = subscription_meters(&plans, &[used("ses_1", "deepseek", 1.0, now)], now);
+        assert_eq!(
+            meters
+                .iter()
+                .map(|meter| meter.provider.as_str())
+                .collect::<Vec<_>>(),
+            ["claude", "copilot"]
+        );
+    }
+
+    #[test]
+    fn a_provider_declared_a_subscription_gets_a_meter_too() {
+        let now = Utc::now();
+        let mut plans = Plans::default();
+        plans.set(
+            "acme",
+            Plan {
+                billing: Billing::Subscription,
+                window: Window::Month,
+                price: Some(5.0),
+                cap: Some(Cap::Tokens(100)),
+            },
+        );
+        let mut entry = used("ses_1", "acme", 0.0, now);
+        with_tokens(&mut entry, 25);
+        let meters = subscription_meters(&plans, &[entry], now);
+        let acme = meter_of(&meters, "acme");
+        assert_eq!(acme.name, "acme");
+        assert_eq!(acme.share(), Some(0.25));
     }
 
     #[test]

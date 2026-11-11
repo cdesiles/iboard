@@ -457,6 +457,80 @@ pub fn ghost_section(ui: &mut Ui, heading: &str, hint: Option<&str>) -> Response
     response
 }
 
+/// The diameter of a subscription meter's ring, in the status bar and in its
+/// popover.
+pub const RING: f32 = 14.0;
+/// The ring's stroke.
+const RING_STROKE: f32 = 1.5;
+
+/// A subscription meter's ring: `share` of it in `accent`, the rest the
+/// track. `None` leaves it empty; it never makes a share up.
+pub fn ring(ui: &mut Ui, share: Option<f32>) -> Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(RING), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        paint_ring(ui, rect, share);
+    }
+    response
+}
+
+/// A status bar meter: a [`ring`] and its plan's name, one clickable label.
+/// `detail` is what the pointer and VoiceOver read.
+pub fn meter_ring(ui: &mut Ui, share: Option<f32>, name: &str, detail: &str) -> Response {
+    let p = theme::palette(ui);
+    let text = galley(ui, name, theme::meta(), p.ink_muted);
+    let gap = theme::SPACE_2;
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(RING + gap + text.size().x, theme::CONTROL_H),
+        Sense::click(),
+    );
+    let response = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(detail);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), detail));
+    if ui.is_rect_visible(rect) {
+        let ring = Rect::from_min_size(
+            Pos2::new(rect.min.x, rect.center().y - RING / 2.0),
+            Vec2::splat(RING),
+        );
+        paint_ring(ui, ring, share);
+        ui.painter().galley(
+            Pos2::new(ring.max.x + gap, rect.center().y - text.size().y / 2.0),
+            text,
+            p.ink_muted,
+        );
+    }
+    focus_ring(ui, &response, theme::RADIUS_SM);
+    response
+}
+
+/// Draws a ring's track and, when known, the share that fills it from the
+/// top, clockwise.
+fn paint_ring(ui: &Ui, rect: Rect, share: Option<f32>) {
+    let p = theme::palette(ui);
+    let radius = rect.width() / 2.0 - RING_STROKE / 2.0;
+    let center = rect.center();
+    let track = Stroke::new(RING_STROKE, p.line_strong);
+    ui.painter().circle_stroke(center, radius, track);
+    let Some(share) = share else {
+        return;
+    };
+    let share = share.clamp(0.0, 1.0);
+    let stroke = Stroke::new(RING_STROKE, p.accent);
+    if share >= 1.0 {
+        ui.painter().circle_stroke(center, radius, stroke);
+    } else if share > 0.0 {
+        let start = -std::f32::consts::FRAC_PI_2;
+        let steps = 32;
+        let points: Vec<Pos2> = (0..=steps)
+            .map(|step| {
+                let angle = start + std::f32::consts::TAU * share * step as f32 / steps as f32;
+                center + Vec2::angled(angle) * radius
+            })
+            .collect();
+        ui.painter().add(egui::Shape::line(points, stroke));
+    }
+}
+
 /// A 48pt `status-done` meter on a `surface-sunken` track, `done` of `total`.
 pub fn meter(ui: &mut Ui, done: usize, total: usize) {
     let p = theme::palette(ui);

@@ -1,8 +1,12 @@
 //! The header and status bars: what they name, and their keys, out of sight
 //! until ⌘ is held.
 
-use super::*;
+use chrono::{SecondsFormat, Utc};
 use egui_kittest::kittest::Queryable;
+
+use super::*;
+use crate::agent::{Billing, Cap, Plan, Tokens, Window};
+use crate::domains::agent::artifacts::usage_log::Entry;
 
 type Board = egui_kittest::Harness<'static, (bool, IboardApp)>;
 
@@ -286,4 +290,153 @@ fn refresh_shows_its_key_where_it_has_it() {
     let app = &harness.state().1;
     assert_eq!(app.refresh_key(&todo), "", "⌘R refines here");
     assert_eq!(app.refresh_key(&ready), "⌘R");
+}
+
+/// One entry of `provider` in the app's usage log, as if it just finished.
+fn log_run(app: &mut IboardApp, provider: &str, tokens: u64, cost: f64) {
+    let at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    app.usage_entries = vec![Entry {
+        session: format!("ses_{provider}"),
+        project: app.located.project_dir.clone(),
+        engine: "opencode".to_string(),
+        provider: Some(provider.to_string()),
+        model: None,
+        billing: Billing::Subscription,
+        cost: Some(cost),
+        tokens: Tokens {
+            input: tokens,
+            ..Tokens::default()
+        },
+        started: at.clone(),
+        ended: at,
+    }];
+}
+
+/// A subscription with a token cap fills its ring, names its share, its reset
+/// and its tokens, and opens the popover with the link to Settings.
+#[test]
+fn a_subscription_ring_reads_its_cap_and_opens_the_meters() {
+    let dir = scratch_dir("subscription-ring");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    app.prefs.usage.set(
+        "claude",
+        Plan {
+            billing: Billing::Subscription,
+            window: Window::Day,
+            price: None,
+            cap: Some(Cap::Tokens(1_000)),
+        },
+    );
+    log_run(app, "claude", 210, 0.42);
+    harness.run_steps(2);
+
+    harness.get_by_label_contains("Claude.ai · 21% of the day used");
+    harness.get_by_label_contains("210 of 1,000 tokens");
+    assert!(
+        harness
+            .query_all_by_label_contains("DeepSeek · ")
+            .next()
+            .is_none(),
+        "a metered provider has no ring"
+    );
+
+    harness
+        .get_all_by_label_contains("Claude.ai · 21% of the day used")
+        .next()
+        .unwrap()
+        .click();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_all_by_label("Subscription usage")
+            .next()
+            .is_some(),
+        "the popover is up"
+    );
+    harness.get_by_label("21% of the day used");
+    harness.get_by_label("210 of 1,000 tokens");
+    press(&mut harness, "Settings › AI");
+    let dialog = harness.state().1.settings.as_ref().expect("Settings opens");
+    assert_eq!(dialog.tab, settings_ui::Tab::Review);
+}
+
+/// No cap is no percentage: the ring stays empty, the row says unknown and
+/// still gives the tokens it burnt.
+#[test]
+fn a_subscription_with_no_cap_reads_unknown_and_its_tokens() {
+    let dir = scratch_dir("subscription-unknown");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    app.prefs.usage.set(
+        "claude",
+        Plan {
+            billing: Billing::Metered,
+            ..Plan::default()
+        },
+    );
+    log_run(app, "github-copilot", 1_234, 3.0);
+    harness.run_steps(2);
+
+    harness.get_by_label_contains("Copilot · unknown");
+    assert!(
+        harness
+            .query_by_label_contains("Copilot · unknown · resets")
+            .is_some(),
+        "the ring names its reset"
+    );
+    assert!(
+        harness
+            .query_all_by_label_contains("% of the month used")
+            .next()
+            .is_none(),
+        "no made-up percentage"
+    );
+    harness
+        .get_all_by_label_contains("Copilot · unknown")
+        .next()
+        .unwrap()
+        .click();
+    harness.run_steps(2);
+    harness.get_by_label("unknown");
+    harness.get_by_label("1,234 tokens burnt");
+}
+
+/// A board with no subscription plan shows no ring, and a metered plan keeps
+/// its dollars out of the meters.
+#[test]
+fn meters_are_only_for_subscriptions() {
+    let dir = scratch_dir("subscription-metered");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    for provider in ["anthropic", "deepseek", "claude", "copilot"] {
+        app.prefs.usage.set(
+            provider,
+            Plan {
+                billing: Billing::Metered,
+                cap: Some(Cap::Money(10.0)),
+                ..Plan::default()
+            },
+        );
+    }
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_all_by_label_contains("% of the")
+            .next()
+            .is_none(),
+        "no ring fills from a metered cap"
+    );
+    assert!(
+        harness
+            .query_all_by_label_contains("tokens burnt")
+            .next()
+            .is_none()
+    );
 }

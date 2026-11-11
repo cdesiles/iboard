@@ -929,7 +929,7 @@ pub use tools::{Detected, Model, Models, detect, list_models};
 use tools::{default_model, find_binary, search_path};
 pub use usage::{
     Billing, Cap, Plan, Plans, Provider, Tokens, Usage, UsageSection, Window, provider_key,
-    usage_section,
+    provider_name, usage_section,
 };
 
 #[cfg(test)]

@@ -23,6 +23,7 @@ impl IboardApp {
         }
         self.forget_undo_on_action(ctx);
         self.poll_jobs(ctx);
+        self.refresh_usage();
         self.window_requests(ctx);
         self.note_stray_press(ctx);
         let confirming = self.confirm_keys(ctx);

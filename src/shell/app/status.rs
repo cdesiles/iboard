@@ -1,18 +1,32 @@
 //! The status bar, and the strip naming what failed.
 
+use chrono::{DateTime, Utc};
+
 use super::compose::DISCARD_UNDO;
 use super::dock::IssueDrag;
 use super::{
-    Align, ButtonKind, Frame, IboardApp, Issue, Layout, NOTICE_FOR, Path, RichText, Screen, Undo,
-    display_path, file_name, relative_time, sheet, theme, widgets,
+    Align, ButtonKind, Frame, IboardApp, Issue, Layout, NOTICE_FOR, Path, Rect, RichText, Screen,
+    Undo, display_path, file_name, relative_time, settings_ui, sheet, theme, widgets,
 };
+use crate::agent::Cap;
+use crate::domains::agent::artifacts::usage_log::{self, Meter};
+use crate::format::thousands;
 
 /// Between a status bar item and the `·` that parts it from the next.
 const STATUS_GAP: f32 = 6.0;
 
+/// The subscription popover's width.
+const METERS_W: f32 = 360.0;
+
+/// The one popover every subscription ring opens.
+fn meters_popup_id() -> egui::Id {
+    egui::Id::unique("subscription-meters")
+}
+
 impl IboardApp {
     /// The 24pt bottom strip: where you are on the left and on the right the
-    /// Editor's save state and, while ⌘ is held, what you can press.
+    /// Editor's save state, the subscription meters and, while ⌘ is held,
+    /// what you can press.
     pub(super) fn status_bar(&mut self, ui: &mut egui::Ui) {
         ui.style_mut().interaction.selectable_labels = false;
         ui.horizontal_centered(|ui| {
@@ -28,14 +42,12 @@ impl IboardApp {
                 _ => None,
             };
             let keys = widgets::key_hints_shown(ui.ctx());
-            if editing.is_none() && !keys {
-                return;
-            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_4;
                 if let Some(path) = editing {
                     self.save_pill(ui, path);
                 }
+                self.meter_rings(ui);
                 if keys {
                     widgets::sliding_hints(ui, |ui| {
                         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
@@ -46,6 +58,49 @@ impl IboardApp {
                 }
             });
         });
+    }
+
+    /// One ring per subscription plan, and the popover they share: a row per
+    /// plan with its share, reset and tokens, then Settings › AI.
+    fn meter_rings(&mut self, ui: &mut egui::Ui) {
+        let now = Utc::now();
+        let meters = usage_log::subscription_meters(&self.prefs.usage, &self.usage_entries, now);
+        if meters.is_empty() {
+            egui::Popup::close_id(ui.ctx(), meters_popup_id());
+            return;
+        }
+        let mut clicked = false;
+        let mut anchor: Option<Rect> = None;
+        for meter in &meters {
+            let detail = meter_detail(meter, now);
+            let response = widgets::meter_ring(ui, meter.share(), &meter.name, &detail);
+            clicked |= response.clicked();
+            anchor = Some(anchor.map_or(response.rect, |rect| rect.union(response.rect)));
+        }
+        let id = meters_popup_id();
+        if clicked {
+            egui::Popup::toggle_id(ui.ctx(), id);
+        }
+        let Some(anchor) = anchor else {
+            return;
+        };
+        if !egui::Popup::is_id_open(ui.ctx(), id) {
+            return;
+        }
+        let mut settings = false;
+        egui::Popup::new(id, ui.ctx().clone(), anchor, ui.layer_id())
+            .open_memory(None)
+            .width(METERS_W)
+            .gap(theme::SPACE_2)
+            .align(egui::RectAlign::TOP_END)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .frame(widgets::popover_frame(ui).inner_margin(0.0))
+            .accessible_name("Subscription usage")
+            .show(|ui| settings = meters_body(ui, &meters, now));
+        if settings {
+            egui::Popup::close_id(ui.ctx(), id);
+            self.open_settings(settings_ui::Tab::Review);
+        }
     }
 
     /// The board's status: where it reads from or what just happened, its
@@ -252,6 +307,131 @@ fn reader_facts(ui: &mut egui::Ui, issue: &Issue) {
         let words = sheet::word_count(&text);
         let unit = if words == 1 { "word" } else { "words" };
         ui.label(status_meta(ui, format!("{words} {unit}")));
+    }
+}
+
+/// The subscription popover: one row per plan, then the Settings link.
+fn meters_body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> bool {
+    let p = theme::palette(ui);
+    ui.set_width(METERS_W);
+    ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+    ui.allocate_ui_with_layout(
+        egui::Vec2::new(METERS_W, theme::BAR_H - 1.0),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.add_space(theme::SPACE_4);
+            ui.label(
+                RichText::new("Subscription usage")
+                    .font(theme::ui_title())
+                    .color(p.ink),
+            );
+        },
+    );
+    widgets::rule(ui);
+    Frame::new()
+        .inner_margin(egui::Vec2::new(theme::SPACE_4, theme::SPACE_3))
+        .show(ui, |ui| {
+            for (at, meter) in meters.iter().enumerate() {
+                if at > 0 {
+                    ui.add_space(theme::SPACE_2);
+                }
+                meter_row(ui, meter, now);
+            }
+        });
+    widgets::rule(ui);
+    let mut settings = false;
+    Frame::new()
+        .inner_margin(egui::Vec2::new(theme::SPACE_4, theme::SPACE_2))
+        .show(ui, |ui| {
+            let link = RichText::new("Settings › AI").font(theme::meta());
+            if ui.link(link).clicked() {
+                settings = true;
+            }
+        });
+    settings
+}
+
+/// One subscription plan's row: its ring and name, then its share, reset and
+/// tokens against the cap.
+fn meter_row(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) {
+    let p = theme::palette(ui);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+        widgets::ring(ui, meter.share());
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_1;
+            ui.label(
+                RichText::new(&meter.name)
+                    .font(theme::ui_strong())
+                    .color(p.ink),
+            );
+            ui.label(
+                RichText::new(share_text(meter))
+                    .font(theme::meta())
+                    .color(p.ink_muted),
+            );
+            ui.label(
+                RichText::new(reset_text(meter, now))
+                    .font(theme::meta())
+                    .color(p.ink_muted),
+            );
+            ui.label(
+                RichText::new(usage_text(meter))
+                    .font(theme::meta())
+                    .color(p.ink_muted),
+            );
+        });
+    });
+}
+
+/// What VoiceOver and the pointer read on a ring: every fact of its row.
+fn meter_detail(meter: &Meter, now: DateTime<Utc>) -> String {
+    format!(
+        "{} · {} · {} · {}",
+        meter.name,
+        share_text(meter),
+        reset_text(meter, now),
+        usage_text(meter)
+    )
+}
+
+/// "42% of the week used", or "unknown" when no cap is known.
+fn share_text(meter: &Meter) -> String {
+    match meter.share() {
+        Some(share) => format!(
+            "{:.0}% of the {} used",
+            share * 100.0,
+            meter.plan.window.name().to_lowercase()
+        ),
+        None => "unknown".to_string(),
+    }
+}
+
+/// When the plan's window resets, from `now`.
+fn reset_text(meter: &Meter, now: DateTime<Utc>) -> String {
+    let secs = (meter.reset - now).num_seconds().max(0);
+    let left = match secs {
+        0..=59 => "now".to_string(),
+        60..=3_599 => format!("in {}m", secs / 60),
+        3_600..=86_399 => format!("in {}h", secs / 3_600),
+        _ => format!("in {}d", secs / 86_400),
+    };
+    match left.as_str() {
+        "now" => "resets now".to_string(),
+        left => format!("resets {left}"),
+    }
+}
+
+/// The tokens the window burnt, against the cap when it is a token cap.
+fn usage_text(meter: &Meter) -> String {
+    let tokens = thousands(meter.consumed.tokens as usize);
+    match meter.plan.cap {
+        Some(Cap::Tokens(cap)) => format!("{tokens} of {} tokens", thousands(cap as usize)),
+        Some(Cap::Money(cap)) => format!(
+            "{} of ${cap:.2} · {tokens} tokens burnt",
+            meter.consumed.money_label(&meter.plan)
+        ),
+        None => format!("{tokens} tokens burnt"),
     }
 }
 
