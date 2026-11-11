@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::domains::board::discovery::{self, Board, Column, Located, Repo};
-use crate::domains::board::{labels, priority};
+use crate::domains::board::{history, labels, priority};
 use crate::files;
 use crate::kernel::issue::Issue;
 use crate::settings;
@@ -233,8 +233,14 @@ fn sort(column: &mut Column, repos: &[Repo]) {
             (priority.unwrap_or(u32::MAX), rank(issue))
         });
     } else if discovery::is_doing_column(&column.dir) || discovery::is_done_column(&column.dir) {
+        let paths: Vec<&Path> = column
+            .issues
+            .iter()
+            .map(|issue| issue.path.as_path())
+            .collect();
+        let dates = history::dates_for(&paths);
         column.issues.sort_by(|a, b| {
-            let done = b.done_at.cmp(&a.done_at);
+            let done = dates.get(&b.path).cmp(&dates.get(&a.path));
             done.then_with(|| b.modified.cmp(&a.modified))
         });
     }

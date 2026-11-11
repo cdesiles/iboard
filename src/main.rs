@@ -5,7 +5,7 @@
 // the CLI and the window's lifecycle.
 use iboard::shell::instance::Request;
 use iboard::shell::{app, instance, recents};
-use iboard::{discovery, settings, workspace};
+use iboard::{discovery, history, settings, workspace};
 
 use std::path::PathBuf;
 
@@ -245,12 +245,20 @@ fn print_columns(board: &discovery::Board) {
             println!("  (empty)");
             continue;
         }
+        let dates = discovery::is_done_column(&column.dir).then(|| {
+            let paths: Vec<&std::path::Path> = column
+                .issues
+                .iter()
+                .map(|issue| issue.path.as_path())
+                .collect();
+            history::dates_for(&paths)
+        });
         for issue in &column.issues {
             let title = match board.repo_of(&issue.path) {
                 Some(repo) => format!("[{}] {}", repo.name, issue.title),
                 None => issue.title.clone(),
             };
-            match issue.done_at {
+            match dates.as_ref().and_then(|dates| dates.get(&issue.path)) {
                 Some(date) => println!("  • {title}  {}", date.format("%Y-%m-%d")),
                 None => println!("  • {title}"),
             }

@@ -33,6 +33,7 @@ use crate::prompts;
 use crate::reviews;
 use crate::settings::{self, UserConfig};
 use crate::settings_ui::{self, Catalog};
+use crate::shell::card_facts::CardFacts;
 use crate::shell::instance::{self, Request};
 use crate::shell::label_picker::{self, LabelPicker};
 use crate::shell::recents;
@@ -195,6 +196,9 @@ pub struct IboardApp {
     /// keeps none (a board built in tests).
     order_dir: Option<PathBuf>,
     board: Board,
+    /// What the board's cards show beyond their files: done dates and build
+    /// times, read with the board.
+    facts: CardFacts,
     /// The reader's markdown cache, and where its text was drawn.
     reader: Reader,
     /// The filter field in the header, and the filter it holds.
@@ -518,10 +522,14 @@ impl IboardApp {
     }
 
     fn from_located(located: Located) -> Self {
-        let ((board, past_reviews), scan_error) = match scan(&Source::Project(located.clone())) {
-            Ok(scanned) => (scanned, None),
-            Err(err) => ((Board::empty(&located), HashMap::new()), Some(err)),
-        };
+        let ((board, facts, past_reviews), scan_error) =
+            match scan(&Source::Project(located.clone())) {
+                Ok(scanned) => (scanned, None),
+                Err(err) => (
+                    (Board::empty(&located), CardFacts::default(), HashMap::new()),
+                    Some(err),
+                ),
+            };
         let trash = Trash::Folder(located.project_dir.join("Trash"));
         Self {
             located,
@@ -530,6 +538,7 @@ impl IboardApp {
             order_dir: None,
             session: Session::default(),
             board,
+            facts,
             reader: Reader::default(),
             filter_bar: FilterBar::default(),
             settings_tab: settings_ui::Tab::General,
@@ -636,9 +645,10 @@ impl IboardApp {
     fn adopt(&mut self, scanned: Result<Scanned, String>) {
         self.board_generation += 1;
         match scanned {
-            Ok((board, reviews)) => {
+            Ok((board, facts, reviews)) => {
                 self.past_reviews = reviews;
                 self.board = board;
+                self.facts = facts;
                 self.scan_error = None;
             }
             Err(err) => self.scan_error = Some(err),
@@ -751,8 +761,9 @@ impl IboardApp {
     }
 }
 
-/// A board and the last review of each of its issues that has one.
-type Scanned = (Board, HashMap<PathBuf, PastReview>);
+/// A board, the facts its cards show, and the last review of each of its
+/// issues that has one.
+type Scanned = (Board, CardFacts, HashMap<PathBuf, PastReview>);
 
 /// Reads the board of `source` and its reviews, or says why it could not.
 /// Each project's reviews are read from its own issues folder: names are only
@@ -769,11 +780,12 @@ fn scan(source: &Source) -> Result<Scanned, String> {
         [] => vec![board.root.clone()],
         repos => repos.iter().map(|repo| repo.root.clone()).collect(),
     };
+    let facts = CardFacts::read(&board);
     let mut reviews = HashMap::new();
     for root in roots {
         reviews.extend(past_reviews(&board, &root, &reviews::load_all(&root)));
     }
-    Ok((board, reviews))
+    Ok((board, facts, reviews))
 }
 
 /// The last review of every issue of `board` under `root` that has one.

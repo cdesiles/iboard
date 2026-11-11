@@ -115,10 +115,7 @@ impl IboardApp {
     fn key_context(&self, ctx: &egui::Context) -> KeyContext {
         let place = match &self.session.screen {
             Screen::Board => Place::Board(self.selected_issue().map(|path| {
-                let done = self
-                    .board
-                    .find(&path)
-                    .is_some_and(|issue| issue.done_at.is_some());
+                let done = self.is_done_issue(&path);
                 (path, done)
             })),
             Screen::Detail(path, mode) if self.board.find(path).is_some() => {

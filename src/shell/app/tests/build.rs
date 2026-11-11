@@ -542,8 +542,7 @@ fn a_done_card_shows_how_long_its_agent_took_until_hovered() {
     std::fs::create_dir_all(log.parent().unwrap()).unwrap();
     std::fs::write(&log, "── a · custom\n✓ Finished in 02:05\n").unwrap();
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    let issue = app.board.find(&done).unwrap();
-    assert_eq!(issue.built_in, Some(Duration::from_secs(125)));
+    assert_eq!(app.facts.built_in(&done), Some(Duration::from_secs(125)));
 
     let ctx = themed_ctx();
     draw(&ctx, &mut app, vec![]);

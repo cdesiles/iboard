@@ -107,7 +107,6 @@ criteria are the source of truth for the fix.
 
 | Leak | Where | Fixed by |
 | --- | --- | --- |
-| Board enriches `Issue` with the Agent's build log (`built_in`) and git's done date (`done_at`) | `domains/board/discovery.rs`, `kernel/issue.rs` | 018 |
 | Workspace edits the user configuration itself (`settings::edit`) | `src/domains/workspace/config.rs` | 016, where Workspace hands its `[[workspace.group]]` section to Preferences |
 | Preferences holds the XDG path helpers (`home`, `cache_dir`, `dir_from_env`) that Agent, Board, Design and Workspace call | `src/settings.rs` | 016, which keeps only config I/O in Preferences and moves the helpers to platform (`files`) |
 

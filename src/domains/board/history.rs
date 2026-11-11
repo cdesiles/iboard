@@ -32,6 +32,24 @@ pub fn done_dates(dir: &Path, files: &[PathBuf]) -> Dates {
         .collect()
 }
 
+/// The done date of each issue in `issues`, read from the history of the
+/// folder holding it: a merged column gathers several projects' folders.
+pub fn dates_for(issues: &[&Path]) -> Dates {
+    let mut dirs: Vec<&Path> = issues.iter().filter_map(|path| path.parent()).collect();
+    dirs.sort();
+    dirs.dedup();
+    let mut dates = Dates::new();
+    for dir in dirs {
+        let files: Vec<PathBuf> = issues
+            .iter()
+            .filter(|path| path.parent() == Some(dir))
+            .map(|path| path.to_path_buf())
+            .collect();
+        dates.extend(done_dates(dir, &files));
+    }
+    dates
+}
+
 /// The date of the last commit touching each file directly inside `dir`.
 /// Empty outside a git repository, or when git is missing.
 fn committed_dates(dir: &Path) -> Dates {

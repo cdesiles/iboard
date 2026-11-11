@@ -205,8 +205,11 @@ fn a_done_card_says_its_date_once() {
     let (dir, app) = project("done-date", &[("done/d.md", "# Done\n\nSummary.\n")]);
     let path = dir.join("issues/done/d.md");
     let mut harness = kittest(app);
-    let date = harness.state().1.board.columns[3].issues[0]
-        .done_at
+    let date = harness
+        .state()
+        .1
+        .facts
+        .done_at(&path)
         .expect("a Done issue has a date")
         .format("%Y-%m-%d")
         .to_string();

@@ -7,9 +7,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
-
-use chrono::{DateTime, Local};
+use std::time::SystemTime;
 
 use crate::files;
 use crate::kernel::labels;
@@ -31,10 +29,6 @@ pub struct Issue {
     /// Full raw markdown, rendered in the detail view.
     pub markdown: String,
     pub modified: Option<SystemTime>,
-    /// When the issue was done; only set in the Done column.
-    pub done_at: Option<DateTime<Local>>,
-    /// How long the build agent took on it; only set in the Done column.
-    pub built_in: Option<Duration>,
 }
 
 impl Issue {
@@ -58,8 +52,6 @@ impl Issue {
             summary,
             markdown,
             modified,
-            done_at: None,
-            built_in: None,
         })
     }
 

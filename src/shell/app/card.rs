@@ -84,6 +84,10 @@ pub(super) struct CardExtras<'a> {
     pub(super) active_labels: &'a [String],
     /// Its title is still to land.
     pub(super) naming: bool,
+    /// When git, or the file's own times, says it was done, and how long its
+    /// last build took: facts from [`CardFacts`], not the issue file.
+    pub(super) done_at: Option<chrono::DateTime<chrono::Local>>,
+    pub(super) built_in: Option<std::time::Duration>,
 }
 
 /// How a card stands out from the others.
@@ -170,7 +174,7 @@ pub(super) fn issue_card(
     // a drop on the DropZones dock archives or deletes it.
     response.dnd_set_drag_payload(IssueDrag {
         path: issue.path.clone(),
-        archivable: issue.done_at.is_some(),
+        archivable: extras.done_at.is_some(),
     });
 
     // The action icons are their own click targets: while the pointer is over
@@ -186,7 +190,7 @@ pub(super) fn issue_card(
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
 
         if let Some(delta) = response.total_drag_delta() {
-            drag_ghost(ui, issue, width, labels, response.rect.min + delta);
+            drag_ghost(ui, issue, width, labels, extras, response.rect.min + delta);
         }
     } else if response.hovered() && drag.is_none() && !over_action {
         // Grab cursor: this card can be clicked or picked up, but an action
@@ -227,7 +231,7 @@ fn focus_within(ctx: &egui::Context, issue: &Issue, card: egui::Id, extras: &Car
     };
     focused == card
         || focused == egui::Id::unique(("card_expand", &issue.path))
-        || card_buttons(issue.done_at.is_some(), extras)
+        || card_buttons(extras.done_at.is_some(), extras)
             .iter()
             .any(|button| focused == egui::Id::unique((button.id, &issue.path)))
 }
@@ -283,10 +287,10 @@ fn card_strip(
     ui.spacing_mut().item_spacing.x = theme::SPACE_3;
     if let Some(CardBuild::Running(since)) = extras.build {
         build_timer(&mut ui, issue, since);
-    } else if let Some(took) = issue.built_in {
+    } else if let Some(took) = extras.built_in {
         ui.label(meta_text(clock(took), p.ink_muted));
     }
-    if let Some(done_at) = issue.done_at {
+    if let Some(done_at) = extras.done_at {
         ui.label(meta_text(done_date(done_at), p.ink_muted))
             .on_hover_text(done_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false));
     }
@@ -446,7 +450,14 @@ fn card_edge(ui: &egui::Ui, response: &egui::Response, look: CardLook) {
 /// for the whole move instead of only at its ends. Anchored to the card's
 /// position plus the total drag delta, the pointer keeps the spot on the card
 /// where it was grabbed.
-fn drag_ghost(ui: &egui::Ui, issue: &Issue, width: f32, labels: &Labels, at: Pos2) {
+fn drag_ghost(
+    ui: &egui::Ui,
+    issue: &Issue,
+    width: f32,
+    labels: &Labels,
+    extras: CardExtras,
+    at: Pos2,
+) {
     let p = theme::palette(ui);
     let ghost = egui::Area::new(egui::Id::unique(("issue_ghost", &issue.path)))
         .order(egui::Order::Tooltip)
@@ -468,7 +479,11 @@ fn drag_ghost(ui: &egui::Ui, issue: &Issue, width: f32, labels: &Labels, at: Pos
                         CardLook::Plain,
                         false,
                         labels,
-                        CardExtras::default(),
+                        CardExtras {
+                            done_at: extras.done_at,
+                            built_in: extras.built_in,
+                            ..CardExtras::default()
+                        },
                     )
                 });
             ui.painter().rect_stroke(
@@ -537,7 +552,7 @@ fn card_body(
                     action = Some(CardAction::Answer);
                 }
             }
-            card_tail(ui, issue, inner, strip, extras.naming);
+            card_tail(ui, issue, inner, strip, extras);
             if let Some(review) = review {
                 action_rects.push(review.rect);
                 if review.clicked() {
@@ -561,19 +576,19 @@ fn card_body(
 
 /// What follows the summary: Done's date and "Naming…". With neither, nor a
 /// summary, the card keeps the strip's room under its title.
-fn card_tail(ui: &mut egui::Ui, issue: &Issue, inner: f32, strip: bool, naming: bool) {
+fn card_tail(ui: &mut egui::Ui, issue: &Issue, inner: f32, strip: bool, extras: CardExtras) {
     let p = theme::palette(ui);
-    if let Some(done_at) = issue.done_at {
+    if let Some(done_at) = extras.done_at {
         if strip {
             ui.allocate_exact_size(Vec2::new(inner, META_LINE), Sense::hover());
         } else {
             ui.label(meta_text(done_date(done_at), p.ink_muted));
         }
     }
-    if naming {
+    if extras.naming {
         ui.label(meta_text("Naming…".to_owned(), p.ink_muted));
     }
-    if issue.summary.is_empty() && issue.done_at.is_none() && !naming {
+    if issue.summary.is_empty() && extras.done_at.is_none() && !extras.naming {
         ui.add_space(STRIP_H - CARD_PADDING.y - theme::SPACE_3);
     }
 }
@@ -719,7 +734,7 @@ fn card_actions(
     rects: &mut Vec<Rect>,
 ) {
     let picking = label_picker_open(ui.ctx()).as_deref() == Some(&issue.path);
-    for button in card_buttons(issue.done_at.is_some(), extras) {
+    for button in card_buttons(extras.done_at.is_some(), extras) {
         let add_label = button.action == CardAction::AddLabel;
         let tone = if add_label && picking {
             widgets::Tone::Open

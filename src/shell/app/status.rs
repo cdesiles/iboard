@@ -146,10 +146,7 @@ impl IboardApp {
         let Some(selected) = self.selected_issue() else {
             return idle;
         };
-        let done = self
-            .board
-            .find(&selected)
-            .is_some_and(|issue| issue.done_at.is_some());
+        let done = self.is_done_issue(&selected);
         if self.can_edit(&selected) {
             vec![("↩", "open"), ("E", "edit"), ("⌘↩", "next column")]
         } else if done {

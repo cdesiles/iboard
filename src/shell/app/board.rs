@@ -6,9 +6,9 @@ use super::dock::{DOCK_H, IssueDrag};
 use super::intent::Intent;
 use super::naming::{Naming, is_naming};
 use super::{
-    ARCHIVE_DIR, Align, Board, Color32, Column, CornerRadius, Duration, Filter, Frame, IboardApp,
-    Icon, Issue, Labels, Layout, LayoutJob, MarginF32, Palette, Path, PathBuf, Pos2, Rect,
-    RichText, Sense, Stroke, StrokeKind, Vec2, discovery, review, theme, widgets,
+    ARCHIVE_DIR, Align, Board, CardFacts, Color32, Column, CornerRadius, Duration, Filter, Frame,
+    IboardApp, Icon, Issue, Labels, Layout, LayoutJob, MarginF32, Palette, Path, PathBuf, Pos2,
+    Rect, RichText, Sense, Stroke, StrokeKind, Vec2, discovery, review, theme, widgets,
 };
 use crate::release;
 
@@ -173,6 +173,8 @@ struct ColumnView<'a> {
     root: &'a Path,
     /// The board, which knows each card's project.
     board: &'a Board,
+    /// What each card shows beyond its file.
+    facts: &'a CardFacts,
     /// NewIssueModal holds parked notes: Todo's `+` shows a dot.
     parked: bool,
     /// The label colours, for the chip on each card.
@@ -211,6 +213,7 @@ impl<'a> ColumnView<'a> {
             picked: &app.session.picked,
             root: &app.board.root,
             board: &app.board,
+            facts: &app.facts,
             parked: pass.parked && column.accepts_new_issues(),
             labels: &app.prefs.labels,
             release_tags: &app.prefs.releases.tags,
@@ -701,6 +704,8 @@ fn board_card(ui: &mut egui::Ui, view: &ColumnView, issue: &Issue) -> (Option<Ca
         labelling: discovery::is_editable_column(&view.column.dir),
         active_labels: &view.filter.tokens,
         naming: is_naming(view.namings, &issue.path),
+        done_at: view.facts.done_at(&issue.path),
+        built_in: view.facts.built_in(&issue.path),
     };
     issue_card(ui, issue, view.width, look, view.labels, extras)
 }

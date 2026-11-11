@@ -44,8 +44,6 @@ mod tests {
             summary: String::new(),
             markdown: String::new(),
             modified: None,
-            done_at: None,
-            built_in: None,
         }
     }
 

@@ -7,7 +7,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::build_log;
 use crate::config::Config;
 use crate::files;
 use crate::history;
@@ -167,7 +166,7 @@ pub fn build(located: &Located) -> Result<Board, String> {
     let mut columns = Vec::new();
     columns.extend(root_column(root, config, &dirs, &mut warnings));
     for dir in &dirs {
-        columns.push(folder_column(root, dir, &mut warnings));
+        columns.push(folder_column(dir, &mut warnings));
     }
     Ok(Board {
         columns,
@@ -251,20 +250,12 @@ fn root_column(
 }
 
 /// The column of the sub-directory `dir`.
-fn folder_column(root: &Path, dir: &Path, warnings: &mut Vec<String>) -> Column {
+fn folder_column(dir: &Path, warnings: &mut Vec<String>) -> Column {
     let files = collect_markdown(dir, warnings);
     let mut issues = load_issues(files, warnings);
     let kind = ColumnKind::of(dir);
-    match kind {
-        Some(ColumnKind::Done) => {
-            sort_recent_first(dir, &mut issues, true);
-            for issue in &mut issues {
-                let log = build_log::load(&build_log::path(root, &issue.path));
-                issue.built_in = log.as_deref().and_then(build_log::took);
-            }
-        }
-        Some(ColumnKind::Doing) => sort_recent_first(dir, &mut issues, false),
-        _ => {}
+    if matches!(kind, Some(ColumnKind::Done | ColumnKind::Doing)) {
+        sort_recent_first(dir, &mut issues);
     }
     Column {
         name: display_name(dir),
@@ -287,20 +278,14 @@ pub(crate) fn reader_sections(config: Option<&Config>) -> Vec<String> {
         })
 }
 
-/// Puts the most recently edited issues first (Doing and Done), and with
-/// `show_date` keeps the date on each card. Issues with the same date (one
-/// commit) go in reverse file-name order, so numbered issues stay newest
-/// first too.
-fn sort_recent_first(dir: &Path, issues: &mut [Issue], show_date: bool) {
+/// Puts the most recently edited issues first (Doing and Done). Issues with
+/// the same date (one commit) go in reverse file-name order, so numbered
+/// issues stay newest first too.
+fn sort_recent_first(dir: &Path, issues: &mut [Issue]) {
     let paths: Vec<PathBuf> = issues.iter().map(|t| t.path.clone()).collect();
     let dates = history::done_dates(dir, &paths);
     issues.reverse();
     issues.sort_by_key(|t| std::cmp::Reverse(dates.get(&t.path).copied()));
-    if show_date {
-        for issue in issues.iter_mut() {
-            issue.done_at = dates.get(&issue.path).copied();
-        }
-    }
 }
 
 fn load_issues(files: Vec<PathBuf>, warnings: &mut Vec<String>) -> Vec<Issue> {
@@ -537,9 +522,9 @@ mod tests {
         assert_eq!(names, ["Todo", "Ready", "Doing", "Done"]);
     }
 
-    /// Doing is ordered by last edit too, but its cards carry no date.
+    /// Doing is ordered by last edit too.
     #[test]
-    fn doing_issues_are_most_recent_first_without_a_date() {
+    fn doing_issues_are_most_recent_first() {
         let scratch = tempfile::tempdir().unwrap();
         let dir = scratch.path();
         let doing = dir.join("issues/doing");
@@ -559,12 +544,11 @@ mod tests {
         let column = board.columns.iter().find(|c| c.name == "Doing").unwrap();
         let names: Vec<String> = column.issues.iter().map(|t| t.file_name()).collect();
         assert_eq!(names, ["a.md", "b.md"]);
-        assert!(column.issues.iter().all(|t| t.done_at.is_none()));
     }
 
     /// Outside git, done issues are dated by their file times.
     #[test]
-    fn done_issues_are_dated_and_most_recent_first() {
+    fn done_issues_are_most_recent_first() {
         let scratch = tempfile::tempdir().unwrap();
         let dir = scratch.path();
         let done = dir.join("issues/done");
@@ -592,11 +576,6 @@ mod tests {
             .map(|t| t.file_name())
             .collect();
         assert_eq!(names, ["01-old.md", "03-new.md", "02-mid.md"]);
-        assert!(column("Done").issues.iter().all(|t| t.done_at.is_some()));
-        assert!(
-            column("Todo").issues[0].done_at.is_none(),
-            "only Done is dated"
-        );
     }
 
     #[test]
