@@ -10,6 +10,7 @@
 //! model = "default"        # or a model ID from the tool's list
 //! command = ""             # custom only, e.g. "llm -m {model} < {prompt}"
 //! scope = "ticket"         # "ticket" (the issue alone) | "project" (reads the repo)
+//! worktree = true          # run opencode in a git worktree, on by default
 //! ```
 //!
 //! A `[build]` section, of the same shape, names the agent that implements
@@ -23,7 +24,6 @@
 //! ever returns text: writing the file stays the user's decision.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
@@ -145,6 +145,8 @@ pub struct AgentConfig {
     pub configured: bool,
     /// How far a review goes unless asked otherwise. Only `[ai]` stores it.
     pub scope: ReviewMode,
+    /// Whether `opencode run` starts in a new git worktree. `None` is on.
+    pub worktree: Option<bool>,
 }
 
 impl AgentConfig {
@@ -194,6 +196,8 @@ pub struct AiSection {
     command: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     scope: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    worktree: Option<bool>,
 }
 
 impl AiSection {
@@ -206,6 +210,7 @@ impl AiSection {
             &self.model,
             &self.command,
             &self.scope,
+            self.worktree,
             "ai",
             &mut problems,
         )
@@ -229,6 +234,8 @@ pub struct BuildSection {
     timeout: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agents: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    worktree: Option<bool>,
 }
 
 /// What `[build]` holds: its agent, when it names one, its timeout and its
@@ -250,6 +257,7 @@ impl BuildSection {
             &self.model,
             &self.command,
             &self.scope,
+            self.worktree,
             "build",
             &mut problems,
         );
@@ -288,6 +296,7 @@ fn parse_agent(
     model: &str,
     command: &str,
     scope: &str,
+    worktree: Option<bool>,
     name: &str,
     problems: &mut Vec<String>,
 ) -> Option<AgentConfig> {
@@ -312,6 +321,7 @@ fn parse_agent(
         command: command.to_string(),
         configured: true,
         scope: ReviewMode::from_scope_key(scope),
+        worktree,
     })
 }
 
@@ -339,6 +349,7 @@ pub fn ai_section(config: &AgentConfig) -> AiSection {
         model: model_key(&config.model),
         command: command_key(config),
         scope: config.scope.scope_key().to_string(),
+        worktree: config.worktree,
     }
 }
 
@@ -351,6 +362,7 @@ pub fn build_section(config: &AgentConfig, timeout: BuildTimeout) -> BuildSectio
         scope: String::new(),
         timeout: Some(timeout.key().to_string()),
         agents: None,
+        worktree: config.worktree,
     }
 }
 
@@ -602,114 +614,6 @@ pub fn step(progress: &Progress) -> Option<String> {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone()
-}
-
-/// Builds the command for `config`, ready to spawn. `model` is the resolved
-/// one (empty for the tool's own choice); `prompt_file` holds `prompt` for a
-/// custom command. Factored out so the argument shape per tool is testable
-/// without running anything.
-fn command(
-    config: &AgentConfig,
-    model: &str,
-    prompt: &str,
-    prompt_file: &Path,
-    issue: &Path,
-    purpose: Purpose,
-    session: Option<&str>,
-) -> Command {
-    let mut command = match config.tool {
-        Tool::Custom => {
-            let mut command = Command::new("sh");
-            command
-                .arg("-c")
-                .arg(shell_script(&config.command))
-                .env("IBOARD_PROMPT", prompt_file)
-                .env("IBOARD_MODEL", model)
-                .env("IBOARD_ISSUE", issue)
-                .env("IBOARD_MODE", purpose.key())
-                .env("IBOARD_SESSION", session.unwrap_or_default());
-            command
-        }
-        tool => {
-            let mut command = Command::new(tool.program());
-            // `opencode run "…"` and `claude -p "…"` answer once and exit.
-            command.arg(if tool == Tool::OpenCode { "run" } else { "-p" });
-            // A review, a build or a plan streams its steps as JSON events, so
-            // iboard can say what the agent is doing; a quick review gets no
-            // built-in tools, a build may edit files.
-            match (tool, purpose) {
-                (_, Purpose::Answer(_)) => {}
-                (Tool::OpenCode, _) => {
-                    command.args(["--format", "json"]);
-                }
-                (_, _) => {
-                    command.args(["--output-format", "stream-json", "--verbose"]);
-                    match purpose {
-                        Purpose::Draft => {
-                            command.args(["--include-partial-messages", "--tools", ""]);
-                        }
-                        Purpose::Review {
-                            mode: ReviewMode::Quick,
-                            ..
-                        } => {
-                            command.args(["--tools", ""]);
-                        }
-                        Purpose::Build(_) | Purpose::Ask(Leash { edits: true, .. }, _) => {
-                            command.args(["--permission-mode", "acceptEdits"]);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            if let Purpose::Review { plan: true, .. }
-            | Purpose::Ask(Leash { edits: false, .. }, _)
-            | Purpose::Plan {
-                plan_mode: true, ..
-            } = purpose
-            {
-                command.args(tool.plan_args());
-            }
-            if let (Tool::Claude, Purpose::Ask(leash, _)) = (tool, purpose) {
-                let denied = leash.denied();
-                if !denied.is_empty() {
-                    command.arg("--disallowedTools").arg(denied.join(","));
-                }
-            }
-            if let Some(session) = session.filter(|_| matches!(purpose, Purpose::Plan { .. })) {
-                match tool {
-                    Tool::OpenCode => {
-                        command.arg("--session").arg(session);
-                    }
-                    Tool::Claude => {
-                        command.arg("--resume").arg(session);
-                    }
-                    Tool::Custom => {}
-                }
-            }
-            if !model.is_empty() {
-                command.arg("--model").arg(model);
-            }
-            command.arg(prompt);
-            command
-        }
-    };
-    command.env("PATH", search_path());
-    command
-}
-
-/// A custom command with its placeholders turned into quoted shell variables,
-/// so no file name or model is ever read as code. A placeholder the command
-/// already wrapped in quotes keeps one pair of them.
-fn shell_script(command: &str) -> String {
-    let mut script = command.to_string();
-    for (placeholder, variable) in PLACEHOLDERS {
-        let quoted = format!("\"${variable}\"");
-        for wrapped in [format!("\"{placeholder}\""), format!("'{placeholder}'")] {
-            script = script.replace(&wrapped, &quoted);
-        }
-        script = script.replace(placeholder, &quoted);
-    }
-    script
 }
 
 /// Runs the agent on `prompt` and waits for its answer, on this thread. The
@@ -985,6 +889,8 @@ fn model_of(config: &AgentConfig) -> String {
 mod answer;
 pub mod build;
 mod chat;
+mod command;
+use command::command;
 mod direnv;
 mod draft;
 mod poller;

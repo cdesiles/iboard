@@ -151,6 +151,10 @@ impl Dialog {
             ui.add_space(theme::SPACE_5);
             self.command_field(ui);
         }
+        if self.form.tool == Tool::OpenCode {
+            ui.add_space(theme::SPACE_5);
+            self.worktree_field(ui);
+        }
         ui.add_space(theme::SPACE_5);
         self.model_field(ui, catalog);
         ui.add_space(theme::SPACE_5);
@@ -247,6 +251,29 @@ impl Dialog {
                 help(ui, &text, p.status_done);
             }
         }
+    }
+
+    fn worktree_field(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette(ui);
+        field_label(ui, "Worktree");
+        let mut worktree = self.form.worktree.unwrap_or(true);
+        if widgets::checkbox(
+            ui,
+            &mut worktree,
+            "Start each scripted run in a new worktree",
+        )
+        .changed()
+        {
+            self.form.worktree = (!worktree).then_some(false);
+        }
+        ui.add_space(theme::SPACE_2);
+        let text = if worktree {
+            "Reviews, asks, plans and drafts work in a worktree of their own, so the project's \
+             checkout stays untouched. Builds stay in the checkout."
+        } else {
+            "Scripted runs work directly in the project's checkout."
+        };
+        help(ui, text, p.ink_muted);
     }
 
     fn scope_field(&mut self, ui: &mut egui::Ui) {

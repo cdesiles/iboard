@@ -2,7 +2,7 @@
 
 The *AI review* tab of the Settings dialog: which agent runs the AI review, and with which model. It opens from `⌘,` or from the menu on the Review button, and saves to `~/.config/iboard/iboard.toml`. The other tabs are *General* (GeneralSettings), *AI build*, *Titles* (TitleSettings) and *Labels*.
 
-The *AI build* tab has the same Tool, Command and Model fields, a Timeout and the number of build agents, for the agent that implements Ready issues (Ready's play, see Column). It is saved as `[build]`; until it is, the build uses the AI review's agent. A custom command runs from the project folder and may edit it; Claude Code runs with `--permission-mode acceptEdits`.
+The *AI build* tab has the same Tool, Command, Worktree and Model fields, a Timeout and the number of build agents, for the agent that implements Ready issues (Ready's play, see Column). It is saved as `[build]`; until it is, the build uses the AI review's agent. A custom command runs from the project folder and may edit it; Claude Code runs with `--permission-mode acceptEdits`.
 
 ## Layout
 
@@ -22,6 +22,12 @@ A select with three options, always in this order:
 - Each option shows the detected version in `meta` on the right (`v0.14.2`), or "not found" in `ink-muted` when the binary is not on `PATH`. A missing tool stays selectable, but its help line then says so in `status-doing`: "opencode is not on your PATH. Install it or pick another tool."
 - Under the select, the help line confirms what will run: "Found /opt/homebrew/bin/opencode · v0.14.2" in `status-done`.
 - Choosing Custom command reveals a **Command** field in mono, with the placeholders iboard fills in: `{prompt}` (a temp file holding the issue and the review instructions), `{model}` and `{issue}` (the issue path). The review is read from stdout.
+
+## Worktree
+
+- OpenCode only, under Tool: a checkbox **Start each scripted run in a new worktree**, on by default.
+- It passes `--worktree` to `opencode run`, so a scripted run works in a worktree of its own and the project's checkout stays untouched. A run that continues a session keeps the worktree it started in; a project that is not a git checkout runs in place. A build keeps running in the checkout: it goes through opencode's service, not `opencode run`.
+- Claude Code and a custom command do not offer it: neither has the flag.
 
 ## Model
 
@@ -69,12 +75,14 @@ tool = "opencode"        # "opencode" | "claude" | "custom"
 model = "default"        # or a model ID from the tool's list
 command = ""             # custom only, e.g. "llm -m {model} < {prompt}"
 scope = "ticket"         # "ticket" | "project"; absent means "ticket"
+worktree = true          # OpenCode only; absent means true
 
 [build]
 tool = "opencode"        # the same keys, without scope
 model = "default"
 timeout = "30m"          # "5m" | "10m" | "20m" | "30m" | "60m" | "180m" | "none"; absent means "30m"
 agents = 4               # 0 to 16; absent means 1
+worktree = true          # OpenCode only; absent means true
 ```
 
 The key names are a suggestion; keep whatever the app already writes.

@@ -1,3 +1,5 @@
+use std::process::Command;
+
 use super::answer::proposal_of;
 use super::tools::{parse_claude_model, parse_model_list, parse_opencode_favorites, parse_version};
 use super::*;
@@ -205,7 +207,10 @@ fn each_tool_gets_its_one_shot_arguments() {
         Purpose::Answer(REVIEW_TIMEOUT),
         None,
     );
-    assert_eq!(args(&built), ["run", "--model", "vendor/model", "PROMPT"]);
+    assert_eq!(
+        args(&built),
+        ["run", "--worktree", "--model", "vendor/model", "PROMPT"]
+    );
     let built = command(
         &opencode,
         "",
@@ -218,7 +223,10 @@ fn each_tool_gets_its_one_shot_arguments() {
         },
         None,
     );
-    assert_eq!(args(&built), ["run", "--format", "json", "PROMPT"]);
+    assert_eq!(
+        args(&built),
+        ["run", "--worktree", "--format", "json", "PROMPT"]
+    );
 
     let claude = AgentConfig {
         tool: Tool::Claude,
@@ -306,6 +314,7 @@ fn a_plan_turn_continues_its_session_and_keeps_the_plan_read_only() {
     let issue = Path::new("");
     let opencode = AgentConfig {
         tool: Tool::OpenCode,
+        worktree: Some(false),
         ..AgentConfig::default()
     };
     let plan = Purpose::Plan {
@@ -885,6 +894,7 @@ fn the_configuration_round_trips_through_a_file() {
         command: String::new(),
         configured: true,
         scope: ReviewMode::Deep,
+        worktree: Some(false),
     };
     settings::save(
         &file,

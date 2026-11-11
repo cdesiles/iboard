@@ -72,8 +72,12 @@ fn exchange(
     let session = watched
         .session
         .and_then(|slot| slot.lock().unwrap_or_else(PoisonError::into_inner).clone());
+    let mut config = config.clone();
+    if !in_worktree(&config, session.as_deref(), workspace) {
+        config.worktree = Some(false);
+    }
     let mut command = command(
-        config,
+        &config,
         &model,
         prompt,
         prompt_path,
@@ -183,4 +187,71 @@ pub fn start_plan(
         }
     });
     (job, progress)
+}
+
+/// Whether this run asks opencode for a worktree: the setting is on, the
+/// project is a git checkout, and the run starts its session there rather
+/// than continuing one, which already has its worktree.
+fn in_worktree(config: &AgentConfig, session: Option<&str>, workspace: Option<&Workspace>) -> bool {
+    config.tool == Tool::OpenCode
+        && config.worktree.unwrap_or(true)
+        && session.is_none()
+        && workspace.is_some_and(|workspace| git_checkout(workspace.dir))
+}
+
+fn git_checkout(dir: &Path) -> bool {
+    crate::platform::git::output(dir, &["rev-parse", "--is-inside-work-tree"])
+        .is_ok_and(|answer| answer.trim() == "true")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scratch_git::git;
+
+    fn config(tool: Tool, worktree: Option<bool>) -> AgentConfig {
+        AgentConfig {
+            tool,
+            worktree,
+            ..AgentConfig::default()
+        }
+    }
+
+    #[test]
+    fn a_worktree_needs_the_switch_a_git_checkout_and_a_new_session() {
+        let scratch = tempfile::tempdir().unwrap();
+        let repo = scratch.path().join("repo");
+        std::fs::create_dir(&repo).unwrap();
+        git(&repo, &["init"]);
+        let project = Workspace::of(&repo);
+        let opencode = config(Tool::OpenCode, None);
+        assert!(
+            in_worktree(&opencode, None, Some(&project)),
+            "on by default"
+        );
+        assert!(in_worktree(
+            &config(Tool::OpenCode, Some(true)),
+            None,
+            Some(&project)
+        ));
+        assert!(!in_worktree(
+            &config(Tool::OpenCode, Some(false)),
+            None,
+            Some(&project)
+        ));
+        assert!(
+            !in_worktree(&opencode, Some("ses_1"), Some(&project)),
+            "a session already has its worktree"
+        );
+        assert!(
+            !in_worktree(&opencode, None, Some(&Workspace::of(scratch.path()))),
+            "a folder that is not a git checkout has no worktree"
+        );
+        assert!(!in_worktree(&opencode, None, None), "nothing to work in");
+        assert!(!in_worktree(
+            &config(Tool::Claude, None),
+            None,
+            Some(&project)
+        ));
+    }
 }

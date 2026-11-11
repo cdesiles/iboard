@@ -142,6 +142,40 @@ fn the_agent_log_switch_is_saved_with_the_notifications_section() {
     );
 }
 
+/// Settings › AI review: OpenCode runs in a worktree unless the switch is
+/// turned off, which is saved as `worktree` in `[ai]`.
+#[test]
+fn the_worktree_switch_is_on_and_saved_with_the_review_agent() {
+    use egui_kittest::kittest::Queryable;
+    let (dir, _file, mut app) = open_issue_with_review("worktree-save");
+    let config = dir.join("iboard.toml");
+    app.config_file = Some(config.clone());
+    app.prefs.agent = AgentConfig {
+        tool: agent::Tool::OpenCode,
+        configured: true,
+        ..AgentConfig::default()
+    };
+    app.open_settings(settings_ui::Tab::Review);
+    let mut harness = kittest(app);
+
+    harness
+        .get_by_label("Start each scripted run in a new worktree")
+        .click();
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().1.settings.as_ref().unwrap().form.worktree,
+        Some(false)
+    );
+    harness.get_by_label("Save").click();
+    harness.run_steps(2);
+    assert_eq!(harness.state().1.prefs.agent.worktree, Some(false));
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert!(
+        text.contains("[ai]") && text.contains("worktree = false"),
+        "{text}"
+    );
+}
+
 /// The same flow through egui_kittest: widgets found by their label, as a
 /// screen reader sees them.
 #[test]
