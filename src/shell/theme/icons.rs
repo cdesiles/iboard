@@ -64,6 +64,8 @@ pub enum Icon {
     Bell,
     /// A flag on a pole: cut a release.
     Release,
+    /// A folder with a plus: set up the board folders a project lacks.
+    FolderPlus,
 }
 
 pub const ICON_SIZE: f32 = 14.0;
@@ -95,7 +97,12 @@ pub fn paint_icon_stroked(painter: &Painter, icon: Icon, rect: Rect, color: Colo
         | Icon::ChevronDown
         | Icon::Expand
         | Icon::Bell => basic_icon(&grid, icon),
-        Icon::Edit | Icon::Trash | Icon::Archive | Icon::TagPlus | Icon::Commit => {
+        Icon::Edit
+        | Icon::Trash
+        | Icon::Archive
+        | Icon::TagPlus
+        | Icon::Commit
+        | Icon::FolderPlus => {
             document_icon(&grid, icon);
         }
         Icon::Play | Icon::Stop | Icon::Thinking | Icon::Log | Icon::Agents | Icon::Review => {
@@ -329,6 +336,19 @@ fn document_icon(g: &Grid, icon: Icon) {
             g.segment((12.0, 2.5), (12.0, 8.5));
             g.segment((12.0, 15.5), (12.0, 21.5));
             g.circle((12.0, 12.0), 3.5);
+        }
+        Icon::FolderPlus => {
+            g.line(&[
+                (3.0, 7.0),
+                (3.0, 19.5),
+                (21.0, 19.5),
+                (21.0, 9.0),
+                (11.5, 9.0),
+                (9.5, 7.0),
+                (3.0, 7.0),
+            ]);
+            g.segment((13.5, 11.5), (13.5, 17.5));
+            g.segment((10.5, 14.5), (16.5, 14.5));
         }
         _ => {}
     }

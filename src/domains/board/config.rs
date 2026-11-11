@@ -17,6 +17,8 @@
 use serde::Deserialize;
 use std::path::Path;
 
+use crate::platform::files;
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -39,6 +41,25 @@ pub struct ReaderConfig {
     /// The `##` sections the reader offers to add when an issue lacks them.
     /// Defaults to Context, Acceptance criteria, Out of scope, Open questions.
     pub sections: Option<Vec<String>>,
+}
+
+/// Writes `root` to the project's `iboard.toml`, keeping every other key and
+/// creating the file when there is none.
+pub fn write_root(project_dir: &Path, name: &str) -> Result<(), String> {
+    let file = project_dir.join("iboard.toml");
+    let text = match std::fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(format!("Couldn't read {}: {err}", file.display())),
+    };
+    let mut document: toml_edit::DocumentMut = text
+        .parse()
+        .map_err(|err| format!("Couldn't edit {}: {err}", file.display()))?;
+    document["root"] = toml_edit::value(name);
+    files::write_creating(&file, document.to_string()).map_err(|err| match err {
+        files::WriteError::Folder(dir, err) => format!("Couldn't create {}: {err}", dir.display()),
+        files::WriteError::File(err) => format!("Couldn't write {}: {err}", file.display()),
+    })
 }
 
 /// The `iboard.toml` in `dir`, when there is one and it parses.
@@ -82,5 +103,29 @@ mod tests {
 
         std::fs::write(dir.join("iboard.toml"), "titel = \"a typo\"\n").unwrap();
         assert!(load(dir).is_none());
+    }
+
+    #[test]
+    fn writing_the_root_keeps_every_other_key() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        std::fs::write(
+            dir.join("iboard.toml"),
+            "# mine\nroot = \"issues\"\ntitle = \"Moon\"\n\n[reader]\nsections = []\n",
+        )
+        .unwrap();
+        write_root(dir, "tickets").unwrap();
+        let text = std::fs::read_to_string(dir.join("iboard.toml")).unwrap();
+        assert!(text.starts_with("# mine\n"), "{text}");
+        assert!(text.contains("title = \"Moon\""), "{text}");
+        assert!(text.contains("[reader]\nsections = []"), "{text}");
+        assert_eq!(load(dir).unwrap().root.as_deref(), Some("tickets"));
+
+        std::fs::remove_file(dir.join("iboard.toml")).unwrap();
+        write_root(dir, "notes").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("iboard.toml")).unwrap(),
+            "root = \"notes\"\n"
+        );
     }
 }

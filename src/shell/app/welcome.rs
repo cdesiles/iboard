@@ -64,7 +64,9 @@ impl IboardApp {
         ui.add_space(theme::SPACE_3);
         let create = "Create issues in a folder…";
         if widgets::button(ui, ButtonKind::Secondary, None, create, None)
-            .on_hover_text("Creates issues/ with todo, ready, doing and done, then opens the board")
+            .on_hover_text(
+                "Creates the board folder with todo, ready, doing and done, then opens the board",
+            )
             .clicked()
         {
             for project in (self.folder_picker)().into_iter().rev() {

@@ -42,6 +42,8 @@ pub struct Entries {
     pub projects: Vec<ProjectRow>,
     pub current_group: Option<String>,
     pub current_project: Option<PathBuf>,
+    /// The project on the board lacks a standard folder.
+    pub set_up_folders: bool,
 }
 
 pub enum Pick {
@@ -54,6 +56,7 @@ pub enum Action {
     Stats,
     Add,
     EditGroups,
+    SetUpFolders,
     SaveOrder(Vec<PathBuf>),
     Close,
 }
@@ -234,10 +237,11 @@ impl Menu {
                         self.reorder_footer(ui, &mut action);
                     } else {
                         list_h = self.body(ui, entries, list_max, &mut action);
-                        match footer(ui) {
+                        match footer(ui, entries.set_up_folders) {
                             Some(Footer::Stats) => action = Some(Action::Stats),
                             Some(Footer::Add) => action = Some(Action::Add),
                             Some(Footer::EditGroups) => action = Some(Action::EditGroups),
+                            Some(Footer::SetUpFolders) => action = Some(Action::SetUpFolders),
                             Some(Footer::Reorder) => self.start_reorder(entries),
                             None => {}
                         }
@@ -644,11 +648,13 @@ enum Footer {
     Stats,
     Add,
     EditGroups,
+    SetUpFolders,
     Reorder,
 }
 
-/// The Stats row over the three actions, on the window ground.
-fn footer(ui: &mut egui::Ui) -> Option<Footer> {
+/// The Stats row over the three actions, on the window ground, then the
+/// folder row while the project on the board lacks a standard folder.
+fn footer(ui: &mut egui::Ui, set_up_folders: bool) -> Option<Footer> {
     let mut picked = None;
     widgets::rule(ui);
     footer_frame(ui).show(ui, |ui| {
@@ -695,6 +701,20 @@ fn footer(ui: &mut egui::Ui) -> Option<Footer> {
                 picked = Some(Footer::Reorder);
             }
         });
+        if set_up_folders {
+            ui.add_space(FOOTER_GAP);
+            let folders = widgets::wide_button(
+                ui,
+                ButtonKind::Secondary,
+                Some(Icon::FolderPlus),
+                "Set up folders…",
+                None,
+            )
+            .on_hover_text("Create the standard folders this project lacks");
+            if folders.clicked() {
+                picked = Some(Footer::SetUpFolders);
+            }
+        }
     });
     picked
 }

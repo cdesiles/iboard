@@ -263,7 +263,7 @@ A build that needs a person stops on a **Question** card at the top of its agent
 - A `preview.html` is a **fragment**: it carries no stylesheet link, because the design tool and `idesign` splice `tokens.css` and `bundle.css` into it. A bare fragment opened in a browser is unstyled, and that is not a bug to fix in the file.
 - **`make preview C=FoldersDialog`** composes one through `idesign` and prints two paths: `/tmp/iboard-previews/<Name>.html`, the fragment with the system inlined, and its rendered PNG. Double-click the HTML to look at it, scroll it, and resize it; that is the same page the catalog renders.
 - **`ARGS` go through**: `make preview C=FoldersDialog ARGS="--theme dark"` renders the dark system, `ARGS="--height 1600"` a tall page whole instead of cut at the renderer's default.
-- Both font faces fall back to the system's in this snapshot: the bundle's `@import` is dropped because neither a file snapshot nor the catalog may reach the network. Kerning will differ from the app; measure nothing from it.
+- Both font faces fall back to the system's in this snapshot: the bundle's font import is dropped because neither a file snapshot nor the catalog may reach the network. Kerning will differ from the app; measure nothing from it.
 - `design/.verify/` holds test renders and is ignored by git.
 
 ## Using the tokens from Rust

@@ -60,6 +60,8 @@ pub struct WorkspaceSection {
     group: Vec<RawGroup>,
     #[serde(default)]
     projects: Vec<String>,
+    #[serde(default)]
+    quiet_folders: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -88,6 +90,12 @@ impl WorkspaceSection {
     /// written.
     pub fn projects(&self) -> Vec<PathBuf> {
         self.projects.iter().map(|path| expand(path)).collect()
+    }
+
+    /// `workspace.quiet_folders`: the projects whose folder prompt was
+    /// dismissed, as written.
+    pub fn quiet_folders(&self) -> Vec<PathBuf> {
+        self.quiet_folders.iter().map(|path| expand(path)).collect()
     }
 }
 

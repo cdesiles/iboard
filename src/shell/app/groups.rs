@@ -94,6 +94,7 @@ impl IboardApp {
         let groups = section.workspace().map(|w| w.groups).unwrap_or_default();
         if user.problems.is_empty() {
             self.reload_project_order(&section.projects());
+            self.folders_quiet = section.quiet_folders();
             let same: Vec<(String, String)> = groups
                 .iter()
                 .map(|group| (group.name.clone(), group.name.clone()))

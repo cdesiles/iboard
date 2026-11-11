@@ -212,11 +212,12 @@ impl IboardApp {
                         self.uninitialised = None;
                         self.scan_error = None;
                     }
-                    if let Some(project) = uninitialised
-                        && widgets::button(ui, ButtonKind::Primary, None, "Create issues/", None)
-                            .clicked()
-                    {
-                        self.initialise(project);
+                    if let Some(project) = uninitialised {
+                        let root = crate::domains::onboarding::folders::root_name(&project);
+                        let create = format!("Create {}/", root.trim_end_matches('/'));
+                        if widgets::button(ui, ButtonKind::Primary, None, &create, None).clicked() {
+                            self.initialise(project);
+                        }
                     }
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         let text = RichText::new(error).color(p.danger);

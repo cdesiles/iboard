@@ -63,6 +63,7 @@ mod dock;
 mod editor;
 mod enrich;
 mod filter_bar;
+mod folders;
 mod frame;
 mod groups;
 mod handover;
@@ -264,6 +265,12 @@ pub struct IboardApp {
     settings: Option<settings_ui::Dialog>,
     /// The groups dialog, while it is up.
     groups_dialog: Option<crate::shell::groups_ui::Dialog>,
+    /// The folders dialog, while it is up.
+    folders_dialog: Option<crate::shell::folders_ui::Dialog>,
+    /// The projects this launch already offered folders to, answered or not.
+    folders_offered: HashSet<PathBuf>,
+    /// The projects that answered Not now, remembered across launches.
+    folders_quiet: Vec<PathBuf>,
     /// The user's own order of their projects, `workspace.projects`.
     projects: Vec<PathBuf>,
     /// The ProjectMenu, while it is open.
@@ -506,6 +513,9 @@ impl IboardApp {
         });
         let mut config = UserConfig::load(app.config_file.as_deref());
         app.load_preferences(&mut config);
+        app.folders_quiet = config
+            .section::<workspace::WorkspaceSection>("workspace")
+            .quiet_folders();
         app.restore_splits(&cc.egui_ctx);
         agent::set_direnv(app.prefs.direnv);
         theme::apply(&cc.egui_ctx, app.prefs.appearance);
@@ -522,6 +532,7 @@ impl IboardApp {
             app.remember(&project);
         }
         app.report_config_problems(&config.problems, groups::DEFAULTS_UNTIL_FIXED);
+        app.offer_folders();
         app
     }
 
@@ -580,6 +591,9 @@ impl IboardApp {
             config_problem: None,
             settings: None,
             groups_dialog: None,
+            folders_dialog: None,
+            folders_offered: HashSet::new(),
+            folders_quiet: Vec::new(),
             projects: Vec::new(),
             project_menu: None,
             folder_picker: crate::shell::dialog::pick_folders,
@@ -620,6 +634,7 @@ impl IboardApp {
                 // folder the user happened to pick inside it.
                 self.remember(&project_dir);
                 self.reopen();
+                self.offer_folders();
             }
             Err(err) => {
                 self.uninitialised = Some((project, err.clone()));
@@ -648,6 +663,7 @@ impl IboardApp {
         self.error = None;
         self.uninitialised = None;
         self.scan_error = None;
+        self.folders_dialog = None;
     }
 
     /// Reads the board again, now: what an action that changed files needs
@@ -820,6 +836,7 @@ impl IboardApp {
         }
         self.config_window(ui);
         self.groups_window(ui);
+        self.folders_window(ui);
         self.design_window(ui);
         self.plan_window(ui);
         self.enrichment_window(ui);

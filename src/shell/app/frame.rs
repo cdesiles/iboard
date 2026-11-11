@@ -90,7 +90,10 @@ impl IboardApp {
             }
             return true;
         }
-        if self.groups_dialog.is_some() || self.session.commits.is_some() {
+        if self.groups_dialog.is_some()
+            || self.folders_dialog.is_some()
+            || self.session.commits.is_some()
+        {
             return true;
         }
         if self.project_menu.is_some() {
@@ -233,6 +236,7 @@ impl IboardApp {
         self.session.confirm.is_some()
             || self.settings.is_some()
             || self.groups_dialog.is_some()
+            || self.folders_dialog.is_some()
             || self.session.commits.is_some()
             || self.session.release.is_some()
             || self.session.ask_draft.is_some()

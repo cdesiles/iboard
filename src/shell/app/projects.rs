@@ -96,6 +96,7 @@ impl IboardApp {
             projects,
             current_group,
             current_project,
+            set_up_folders: self.missing_standard_folders(),
         }
     }
 
@@ -176,6 +177,7 @@ impl IboardApp {
             Action::Open(Pick::Project(path)) => self.open_project(path),
             Action::Stats => self.open_stats(),
             Action::EditGroups => self.open_groups(false),
+            Action::SetUpFolders => self.set_up_folders(),
             Action::Add => {
                 if !self.add_picked_projects() {
                     return;

@@ -2,11 +2,11 @@
 //! folder layout a board lives in, where the project's `iboard.toml` says it
 //! is, and never touches what is already there.
 
-use std::fs;
 use std::path::Path;
 
 use crate::domains::board::discovery::{self, Located};
-use crate::kernel::board::INIT_COLUMNS;
+
+pub mod folders;
 
 /// Creates the board folder and its standard columns for `start`, and returns
 /// the resolved project, ready to open. It resolves the project the way the
@@ -31,27 +31,8 @@ pub fn init(start: &Path) -> Result<Located, String> {
         root: start.join("issues"),
         config: None,
     });
-    create_columns(&located.root)?;
+    folders::create_all(&located.root)?;
     Ok(located)
-}
-
-/// Creates the board folder and one directory per standard column. Each column
-/// gets a `.gitkeep`, because git does not track empty directories and the
-/// layout is meant to survive a clone.
-fn create_columns(root: &Path) -> Result<(), String> {
-    fs::create_dir_all(root)
-        .map_err(|err| format!("cannot create issues directory {}: {err}", root.display()))?;
-    for name in INIT_COLUMNS {
-        let dir = root.join(name);
-        fs::create_dir_all(&dir)
-            .map_err(|err| format!("cannot create column {}: {err}", dir.display()))?;
-        let keep = dir.join(".gitkeep");
-        if !keep.exists() {
-            fs::File::create(&keep)
-                .map_err(|err| format!("cannot create {}: {err}", keep.display()))?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -60,6 +41,8 @@ mod tests {
 
     use super::*;
     use crate::domains::board::discovery::build;
+    use crate::kernel::board::INIT_COLUMNS;
+    use std::fs;
 
     #[test]
     fn init_creates_the_standard_columns_and_is_idempotent() {

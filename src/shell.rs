@@ -7,6 +7,7 @@ pub mod app;
 pub mod assets;
 pub mod card_facts;
 pub mod dialog;
+pub mod folders_ui;
 pub mod groups_ui;
 pub mod instance;
 pub mod label_picker;

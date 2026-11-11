@@ -58,6 +58,29 @@ pub fn save_projects(
     })
 }
 
+/// Replaces `workspace.quiet_folders`, the projects whose folder prompt was
+/// dismissed.
+pub fn save_quiet_folders(
+    file: &Path,
+    projects: &[PathBuf],
+    home: Option<&Path>,
+) -> Result<(), SaveError> {
+    edit(file, None, |document| {
+        let Some(workspace) = workspace_table(document) else {
+            return;
+        };
+        if projects.is_empty() {
+            workspace.remove("quiet_folders");
+            return;
+        }
+        let mut list = Array::new();
+        for project in projects {
+            list.push(contract(project, home));
+        }
+        workspace.insert("quiet_folders", value(list));
+    })
+}
+
 /// Edits `file` as [`settings::edit`] does, unless it no longer has the
 /// fingerprint `expected`, and drops a `[workspace]` left empty.
 fn edit(
@@ -126,6 +149,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+    use crate::platform::files;
 
     fn group(name: &str, repos: &[&str]) -> Group {
         Group {
@@ -262,5 +286,27 @@ mod tests {
         let expanded = workspace(&std::fs::read_to_string(&file).unwrap()).projects();
         assert_eq!(expanded.len(), 2, "saving the groups keeps the order");
         assert_eq!(expanded[1], PathBuf::from("/a"));
+    }
+
+    #[test]
+    fn quiet_folders_are_written_beside_the_groups_and_the_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("iboard.toml");
+        let Some(home) = files::home() else {
+            return;
+        };
+        let projects = [home.join("shop")];
+        save_quiet_folders(&file, &projects, Some(&home)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "[workspace]\nquiet_folders = [\"~/shop\"]\n"
+        );
+        assert_eq!(
+            workspace(&std::fs::read_to_string(&file).unwrap()).quiet_folders(),
+            projects
+        );
+
+        save_quiet_folders(&file, &[], None).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
     }
 }
