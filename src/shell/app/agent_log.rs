@@ -162,7 +162,15 @@ impl IboardApp {
         let path = log.path.clone();
         let question = self.question_for(&path);
         let running = self.building_since(&path);
-        let replyable = running.is_none() || self.build_service_run(&path).is_some();
+        let replyable = match running {
+            None => true,
+            Some(_) => self
+                .build_service_run(&path)
+                .is_some_and(|(_, service, _)| service.takes_reply()),
+        };
+        let waits_here = question
+            .as_ref()
+            .is_some_and(|question| question.answerable());
         let state = if running.is_some() {
             Composer::Running
         } else {
@@ -210,7 +218,7 @@ impl IboardApp {
             widgets::rule(ui);
             inset(ui, theme::SPACE_3, theme::SPACE_3, |ui| {
                 ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-                if question.is_some() {
+                if waits_here {
                     ui.label(
                         RichText::new("Answer the question above to continue.")
                             .font(theme::meta())
@@ -248,6 +256,11 @@ impl IboardApp {
                 ));
                 return;
             };
+            if !service.takes_reply() {
+                self.session.notice =
+                    Some(("This build cannot take a reply".to_string(), Instant::now()));
+                return;
+            }
             match service.say(&project, &session, &text) {
                 Ok(()) => {
                     let log = build_log::path(self.board.root_of(&path), &path);

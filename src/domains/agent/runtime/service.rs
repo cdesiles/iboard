@@ -81,6 +81,12 @@ pub trait Service: Send + Sync {
     /// Queues `text` after the turn `session` runs now.
     fn say(&self, project: &Path, session: &str, text: &str) -> Result<(), String>;
 
+    /// Whether a build in this service takes an instruction from the board
+    /// while it runs. A tool that only reads one at its own terminal says no.
+    fn takes_reply(&self) -> bool {
+        true
+    }
+
     /// Stops `session`'s turn.
     fn interrupt(&self, project: &Path, session: &str);
 
@@ -115,6 +121,12 @@ impl fmt::Debug for dyn Service {
 #[cfg(test)]
 pub fn test_service() -> &'static dyn Service {
     super::opencode::service()
+}
+
+/// The service of a build that only answers in its own terminal, for tests.
+#[cfg(test)]
+pub fn test_claude_service() -> &'static dyn Service {
+    super::claude::service()
 }
 
 /// How a session stands, as its service keeps it.
@@ -248,12 +260,22 @@ impl Question {
         self.service
             .answer(project, &self.session, &self.id, &answer)
     }
+
+    /// Whether the board can answer it, rather than only show it.
+    pub fn answerable(&self) -> bool {
+        !matches!(self.kind, QuestionKind::Waiting { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuestionKind {
     Form(Vec<Field>),
     Permission(Permission),
+    /// A question its tool only takes from its own terminal: iboard shows it
+    /// and gives `command` to run.
+    Waiting {
+        command: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

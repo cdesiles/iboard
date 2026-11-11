@@ -662,16 +662,21 @@ fn question_note(ui: &mut egui::Ui, issue: &Issue, question: &Question) -> egui:
         egui::Id::unique(("card_question", &issue.path)),
         Sense::click(),
     );
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(
-            egui::Role::Button,
-            true,
+    let (label, hint) = if question.answerable() {
+        (
             format!("Answer: {}", question.title),
+            "Open the ticket to answer",
         )
-    });
+    } else {
+        (
+            format!("Waiting: {}", question.title),
+            "Open the ticket to see how to answer",
+        )
+    };
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text("Open the ticket to answer")
+        .on_hover_text(hint)
 }
 
 /// The review running or ready, or the last verdict: a click opens the

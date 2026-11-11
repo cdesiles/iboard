@@ -694,6 +694,20 @@ pub(super) fn permission_question() -> Question {
     )
 }
 
+/// A Claude background build's question: the board can show it, and only
+/// `claude attach` answers it.
+pub(super) fn waiting_question() -> Question {
+    Question::new(
+        crate::agent::service::test_claude_service(),
+        "0d643c37",
+        "0d643c37:approve Write",
+        "approve Write: /code/app/proof.txt",
+        QuestionKind::Waiting {
+            command: "claude attach 0d643c37".into(),
+        },
+    )
+}
+
 /// Adoption asks the service about every project of a group's board, not
 /// only the one the window had open before the switch.
 #[test]

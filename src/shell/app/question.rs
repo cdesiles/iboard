@@ -76,7 +76,7 @@ impl AnswerDraft {
                     .map(|field| (field.key.clone(), default_value(&field.kind)))
                     .collect()
             }
-            QuestionKind::Permission(_) => BTreeMap::new(),
+            QuestionKind::Permission(_) | QuestionKind::Waiting { .. } => BTreeMap::new(),
         };
         Self {
             path,
@@ -273,9 +273,10 @@ impl IboardApp {
     /// above the agent log, in the ticket, not in a dialog over it.
     pub(super) fn open_answer(&mut self, path: PathBuf) {
         self.open_issue(path.clone());
-        if let Some(question) = self.question_for(&path) {
-            self.session.answer = Some(AnswerDraft::new(path, question));
-        }
+        let Some(question) = self.question_for(&path).filter(Question::answerable) else {
+            return;
+        };
+        self.session.answer = Some(AnswerDraft::new(path, question));
     }
 
     /// The question the build on `path` waits on, drawn above the log it
@@ -287,6 +288,11 @@ impl IboardApp {
         question: &Question,
         max_height: f32,
     ) {
+        let since = self.building_since(path);
+        if matches!(&question.kind, QuestionKind::Waiting { .. }) {
+            card::waiting_card(ui, question, max_height, since);
+            return;
+        }
         if self
             .session
             .answer
@@ -295,7 +301,6 @@ impl IboardApp {
         {
             self.session.answer = Some(AnswerDraft::new(path.to_path_buf(), question.clone()));
         }
-        let since = self.building_since(path);
         let project = self.question_project(question);
         let Some(draft) = self.session.answer.as_mut() else {
             return;
@@ -418,6 +423,7 @@ impl IboardApp {
                 }
             },
             QuestionKind::Permission(_) => None,
+            QuestionKind::Waiting { .. } => return,
         };
         if matches!(&question.kind, QuestionKind::Permission(_)) && permission.is_none() {
             return;
@@ -509,6 +515,14 @@ fn question_heading(question: &Question) -> String {
                 action
             };
             format!("Allow {action}?")
+        }
+        QuestionKind::Waiting { .. } => {
+            let title = question.title.trim();
+            if title.is_empty() {
+                "Waiting on you".to_string()
+            } else {
+                title.to_string()
+            }
         }
         QuestionKind::Form(fields) => {
             if !question.title.trim().is_empty() {

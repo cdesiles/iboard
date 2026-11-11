@@ -9,7 +9,7 @@ It replaces the first in-ticket card, where a `surface-sunken` block with an edg
 - First block in the agent panel body, above the Timeline/Raw switch and the timeline's scroll area. The panel head stays: "Agent log of `<file>`" with the state, now "waiting on you"; the run heading below keeps the agent and start time.
 - The question never lives in a modal, a tray or a toast. The bell and the card's pin only take you to this spot in the ticket.
 - The card is bounded: at most 55% of the panel body. Its fields scroll inside; the foot with Send is pinned. The conversation keeps its own scroll below.
-- While a question waits, the composer under the timeline is not drawn. A single quiet line takes its place: "Answer the question above to continue." No second textarea and no second Send.
+- While an answerable question waits, the composer under the timeline is not drawn. A single quiet line takes its place: "Answer the question above to continue." No second textarea and no second Send. A question only another terminal answers keeps the composer, disabled, saying the build cannot take a reply.
 - Closing the panel is allowed, and the X never refuses with a notice. The question stays in the ticket; the card pin and the bell both reopen the ticket on it.
 
 ## Anatomy
@@ -61,6 +61,15 @@ The builder is meant to run with its project folder as its scope, so a tool it c
 - When a resource is outside the project, **Always allow is not offered**: an always-grant outside the folder would undo the scope. Reject and Allow once remain, under the band.
 - The tool's own message, when it sent one, is one `ui-small` `ink-muted` line above the foot. No paragraph explaining what the buttons mean.
 
+## Waiting in another terminal
+
+Some tools keep their question where only their own terminal answers it: a Claude background build stopped at a permission prompt takes no answer from the board, only `claude attach <id>`. The card keeps its shape, with no field and no Send.
+
+- The head still reads "The agent asks"; the title is the tool's own words, for example `approve Write: src/app.rs` or `confirm: which database?`.
+- The body says the build waits in Claude Code and that answering it there resumes the build here. It wraps in `ui-small` `ink-muted`.
+- The foot holds the command to run, `claude attach <id>`, in `edit-body` on `surface-sunken`. It is the only thing in the card to act on.
+- Nothing posts an answer, and there is no Dismiss: the card leaves when the tool's question does. The composer below stays, disabled, saying the build cannot take a reply.
+
 ## States
 
 | State | What shows |
@@ -71,6 +80,7 @@ The builder is meant to run with its project folder as its scope, so a tool it c
 | Sending | Send reads "Sending…", fields inert; no spinner under 2s |
 | Failed | The `danger` line and Retry above the rule; every answer kept |
 | Stale | The `surface-sunken` note and Dismiss |
+| Waiting in a terminal | The `claude attach <id>` card and the disabled composer; it leaves when the tool's question does |
 | Answered | The card leaves in one frame; the panel says "Answered `<title>`" in the status bar |
 
 ## Keyboard and accessibility
@@ -86,6 +96,8 @@ The builder is meant to run with its project folder as its scope, so a tool it c
 
 ## In egui
 
-`question_panel` draws `answer_card` from this spec. The card is one `Frame` (`surface`, `line-soft`, `RADIUS_MD`) whose body sits in an `egui::ScrollArea` capped by the host and whose foot is outside it, so Send cannot scroll away. Option rows are one custom widget that reports `Role::RadioButton` or `Role::CheckBox` with its title and description in `widget_info`, and stands 36pt tall. Send uses `ButtonKind::Send`, not `Primary`. The locked composer is removed from `reply_box` while `question_for(path).is_some()`; the panel body draws the quiet line instead. `toggle_agent_log` stops refusing to close and no longer raises "Answer the build's question first".
+`question_panel` draws `answer_card` from this spec. The card is one `Frame` (`surface`, `line-soft`, `RADIUS_MD`) whose body sits in an `egui::ScrollArea` capped by the host and whose foot is outside it, so Send cannot scroll away. Option rows are one custom widget that reports `Role::RadioButton` or `Role::CheckBox` with its title and description in `widget_info`, and stands 36pt tall. Send uses `ButtonKind::Send`, not `Primary`. The locked composer is removed from `reply_box` while an answerable question waits; the panel body draws the quiet line instead. `toggle_agent_log` stops refusing to close and no longer raises "Answer the build's question first".
+
+A question whose tool only takes it at its terminal draws `waiting_card` instead: `QuestionKind::Waiting { command }`, no `AnswerDraft`, no Send, the command in the foot, and the composer below stays with "This build cannot take a reply."
 
 Emits AnswerSent, AnswerFailed, AnswerDismissed.

@@ -35,6 +35,7 @@ pub(super) fn answer_body(
             }
         }
         QuestionKind::Permission(permission) => permission_body(ui, permission, project, outside),
+        QuestionKind::Waiting { .. } => {}
     }
     *focus = None;
 }

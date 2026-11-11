@@ -17,7 +17,7 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 
 - The side panel beside the Reader, 360pt wide by default and resizable, as today. One `surface` card with the `review-soft` head. The panel is the agent talking, so its head is violet; the transcript inside is mostly ink.
 - Top to bottom: **head** · **Timeline/Raw switch** · **Now** (while running) · scrolling **timeline** · **composer**. Only the timeline scrolls.
-- A waiting **Question** card sits above the switch, first in the body, as specified in Question. The head then reads "waiting on you", the Now strip is absent, and the composer is replaced by the quiet line "Answer the question above to continue." Closing the panel is always allowed.
+- A waiting **Question** card sits above the switch, first in the body, as specified in Question. The head then reads "waiting on you", and the Now strip is absent. An answerable question replaces the composer with the quiet line "Answer the question above to continue."; a question only another terminal answers keeps the disabled composer instead. Closing the panel is always allowed.
 - There is no Stop in the panel: stopping belongs to the Doing card and column header, where the build as a whole is run.
 
 ## Head
@@ -101,7 +101,9 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 | Finished | "Ask for another pass…" | Enabled with text |
 | Stopped | "Ask it to fix what failed…" | Enabled with text |
 | Waiting on a question | The composer is gone; "Answer the question above to continue." | — |
-| Child process that cannot take a reply | "This build cannot take a reply." above the field, field disabled | Disabled |
+| A build that cannot take a reply (a child process, or a Claude background build) | "This build cannot take a reply." above the field, field disabled | Disabled |
+
+- A Claude background build takes no instruction while it runs: no command sends one into a live session. Its question names `claude attach <id>`, and the composer under it stays disabled with the line above.
 
 - `⌘↩` sends from anywhere in the field. The text clears on send and the instruction appears in the timeline at once, right-aligned; the timeline follows it. No toast: the status bar already says "Told the agent on `<file>`".
 - The composer never takes focus when the panel opens. It takes focus after a question is answered, so a follow-up is one keystroke away.

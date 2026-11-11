@@ -60,6 +60,83 @@ pub(super) fn answer_card(
     action
 }
 
+/// A question the board cannot answer: the tool waits in its own terminal,
+/// and the card gives the command that reaches it. No field, no Send.
+pub(super) fn waiting_card(
+    ui: &mut egui::Ui,
+    question: &Question,
+    max_height: f32,
+    since: Option<Instant>,
+) {
+    let p = theme::palette(ui);
+    let width = ui.available_width();
+    let heading = question_heading(question);
+    Frame::new()
+        .fill(p.surface)
+        .stroke(Stroke::new(1.0, p.line_soft))
+        .corner_radius(CornerRadius::same(theme::RADIUS_MD))
+        .show(ui, |ui| {
+            ui.set_width(width);
+            let head = Frame::new()
+                .inner_margin(Vec2::new(theme::SPACE_4, theme::SPACE_4))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    answer_head(ui, &heading, since);
+                })
+                .response
+                .rect
+                .height();
+            let foot = theme::CONTROL_H + 2.0 * theme::SPACE_3 + 1.0;
+            let body_max = (max_height - head - foot - theme::SPACE_4).max(48.0);
+            Frame::new()
+                .inner_margin(Vec2::new(theme::SPACE_4, 0.0))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    egui::ScrollArea::vertical()
+                        .id_salt(("waiting_body", question.id.as_str()))
+                        .max_height(body_max)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            widgets::help(
+                                ui,
+                                "This build waits on you in Claude Code. Answer it there; \
+                                 the board picks the build up again.",
+                                p.ink_muted,
+                            );
+                        });
+                    ui.add_space(theme::SPACE_4);
+                });
+            card_rule(ui);
+            waiting_foot(ui, question);
+        });
+}
+
+fn waiting_foot(ui: &mut egui::Ui, question: &Question) {
+    let QuestionKind::Waiting { command } = &question.kind else {
+        return;
+    };
+    let p = theme::palette(ui);
+    Frame::new()
+        .inner_margin(Vec2::new(theme::SPACE_4, theme::SPACE_3))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            Frame::new()
+                .fill(p.surface_sunken)
+                .corner_radius(CornerRadius::same(theme::RADIUS_SM))
+                .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_2))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(command).font(theme::edit_body()).color(p.ink),
+                        )
+                        .wrap(),
+                    );
+                });
+        });
+}
+
 fn answer_head(ui: &mut egui::Ui, heading: &str, since: Option<Instant>) {
     let p = theme::palette(ui);
     ui.horizontal(|ui| {
@@ -162,6 +239,7 @@ fn answer_foot(
                             }
                         });
                     }
+                    QuestionKind::Waiting { .. } => {}
                 });
             },
         );

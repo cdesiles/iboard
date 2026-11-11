@@ -2,9 +2,41 @@
 
 use egui_kittest::kittest::Queryable;
 
-use super::build::{board, form_question, permission_question, ready};
+use super::build::{board, form_question, permission_question, ready, waiting_question};
 use super::*;
 use crate::agent::service::QuestionKind;
+
+#[test]
+fn a_claude_question_says_how_to_answer_it_elsewhere() {
+    let (_dir, mut app) = board("build-claude-waiting", "sleep 30 # {prompt}");
+    let path = ready(&app)[0].clone();
+    app.seed_question(path.clone(), waiting_question());
+    let mut harness = kittest(app);
+    harness
+        .get_by_label("Waiting: approve Write: /code/app/proof.txt")
+        .click();
+    harness.run_steps(2);
+    assert!(
+        harness.state().1.agent_log_open(&path),
+        "the ticket opens beside its log"
+    );
+    harness.get_by_label("claude attach 0d643c37");
+    harness.get_by_label("This build cannot take a reply.");
+    assert!(
+        harness.query_by_label("Send answer").is_none(),
+        "there is nothing to send from the board"
+    );
+    assert!(
+        harness
+            .query_by_label("Answer the question above to continue.")
+            .is_none(),
+        "the question is answered in Claude Code, not above"
+    );
+    assert!(
+        harness.state().1.session.answer.is_none(),
+        "no draft waits for an answer here"
+    );
+}
 
 #[test]
 fn a_permission_outside_the_project_offers_no_always_allow() {

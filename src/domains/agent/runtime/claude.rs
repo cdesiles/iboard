@@ -10,7 +10,9 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use super::service::{Answer, Message, Part, Question, Service, Session, Status, now};
+use super::service::{
+    Answer, Message, Part, Question, QuestionKind, Service, Session, Status, now,
+};
 use super::{Billing, Tokens, Usage, usage};
 use crate::domains::agent::artifacts::reviews;
 use crate::platform::job::Cancel;
@@ -54,15 +56,7 @@ impl Service for Claude {
     }
 
     fn sessions(&self, project: &Path) -> Result<Vec<Session>, String> {
-        let project = canonical(project);
-        let cwd = project.to_string_lossy().into_owned();
-        let stdout = call(
-            &project,
-            "claude agents",
-            &["agents", "--json", "--all", "--cwd", &cwd],
-        )?;
-        let listed: Vec<Value> =
-            serde_json::from_str(&stdout).map_err(|err| format!("claude agents: {err}"))?;
+        let (project, listed) = listing(project)?;
         Ok(sessions_of(&listed, &project, config_dir().as_deref()))
     }
 
@@ -83,27 +77,65 @@ impl Service for Claude {
         logs(project, session)
     }
 
-    fn say(&self, _project: &Path, _session: &str, _text: &str) -> Result<(), String> {
-        Err("A Claude build cannot take a reply while it runs in the background".to_string())
+    fn say(&self, project: &Path, session: &str, text: &str) -> Result<(), String> {
+        let (project, listed) = listing(project)?;
+        let found = listed
+            .iter()
+            .find(|value| value["id"].as_str() == Some(session))
+            .ok_or_else(|| format!("Claude has no session {session}"))?;
+        if is_running(found) {
+            return Err(format!(
+                "A Claude build cannot take a reply while it runs in the background: \
+                 run `claude attach {session}` to answer it"
+            ));
+        }
+        let opened = found["sessionId"].as_str().unwrap_or(session);
+        let binary = binary().ok_or_else(|| "claude is not installed".to_string())?;
+        let command = resume_command(&binary, &project, opened, text);
+        process::run(command, "claude --bg --resume", &Cancel::default(), CALL)?
+            .into_result("claude --bg --resume")?;
+        Ok(())
+    }
+
+    fn takes_reply(&self) -> bool {
+        // The board asks what a running build takes: only `attach` answers it.
+        false
     }
 
     fn interrupt(&self, project: &Path, session: &str) {
         let _ = call(project, "claude stop", &["stop", session]);
     }
 
-    fn questions(&self, _project: &Path) -> Result<Vec<Question>, String> {
-        Ok(Vec::new())
+    fn questions(&self, project: &Path) -> Result<Vec<Question>, String> {
+        let (project, listed) = listing(project)?;
+        Ok(questions_of(&listed, &project, config_dir().as_deref()))
     }
 
     fn answer(
         &self,
         _project: &Path,
-        _session: &str,
+        session: &str,
         _id: &str,
         _answer: &Answer,
     ) -> Result<(), String> {
-        Err("A Claude build is answered in `claude attach`, not from the board".to_string())
+        Err(format!(
+            "A Claude build is answered in `claude attach {session}`, not from the board"
+        ))
     }
+}
+
+/// Every background session Claude lists for `project`, and the canonical
+/// project they were listed from.
+fn listing(project: &Path) -> Result<(PathBuf, Vec<Value>), String> {
+    let project = canonical(project);
+    let cwd = project.to_string_lossy().into_owned();
+    let stdout = call(
+        &project,
+        "claude agents",
+        &["agents", "--json", "--all", "--cwd", &cwd],
+    )?;
+    let listed = serde_json::from_str(&stdout).map_err(|err| format!("claude agents: {err}"))?;
+    Ok((project, listed))
 }
 
 /// The command that starts `issue`'s build in the background.
@@ -126,6 +158,18 @@ fn start_command(
         command.args(["--model", model]);
     }
     command.env("PATH", super::search_path());
+    command
+}
+
+/// The command that hands `text` back to a stopped session and reopens it.
+fn resume_command(binary: &Path, project: &Path, session: &str, text: &str) -> Command {
+    let mut command = Command::new(binary);
+    command
+        .current_dir(project)
+        .arg("--bg")
+        .args(["--resume", session])
+        .arg(text)
+        .env("PATH", super::search_path());
     command
 }
 
@@ -183,6 +227,19 @@ fn sessions_of(listed: &[Value], project: &Path, config: Option<&Path>) -> Vec<S
 
 /// One background session of `project`, if that is what `session` is.
 fn session_of(session: &Value, project: &Path) -> Option<Session> {
+    let (id, slug) = ours(session, project)?;
+    let status = status_of(session);
+    Some(Session {
+        id: id.to_string(),
+        slug: Some(slug.to_string()),
+        status,
+        ended: status.updated,
+        usage: None,
+    })
+}
+
+/// The id and issue's slug of one iboard background session of `project`.
+fn ours<'a>(session: &'a Value, project: &Path) -> Option<(&'a str, &'a str)> {
     if session["kind"].as_str() != Some("background") {
         return None;
     }
@@ -194,27 +251,81 @@ fn session_of(session: &Value, project: &Path) -> Option<Session> {
     if !Path::new(cwd).starts_with(project) {
         return None;
     }
-    let status = status_of(session);
-    Some(Session {
-        id: session["id"].as_str()?.to_string(),
-        slug: Some(slug.to_string()),
-        status,
-        ended: status.updated,
-        usage: None,
-    })
+    Some((session["id"].as_str()?, slug))
+}
+
+/// Whether `session` is still at work.
+fn is_running(session: &Value) -> bool {
+    session["state"]
+        .as_str()
+        .is_some_and(|state| RUNNING.contains(&state))
 }
 
 /// How a background session stands, as `agents --json` keeps it.
 fn status_of(session: &Value) -> Status {
     let created = session["startedAt"].as_u64().unwrap_or(0);
-    let running = session["state"]
-        .as_str()
-        .is_some_and(|state| RUNNING.contains(&state));
+    let running = is_running(session);
     let updated = if running { now().max(created) } else { created };
     Status {
         running,
         created,
         updated,
+    }
+}
+
+/// The questions the blocked iboard sessions of `project` wait on. Only
+/// `claude attach` answers them, so each carries the command to run.
+fn questions_of(listed: &[Value], project: &Path, config: Option<&Path>) -> Vec<Question> {
+    listed
+        .iter()
+        .filter_map(|session| question_of(session, project, config))
+        .collect()
+}
+
+fn question_of(session: &Value, project: &Path, config: Option<&Path>) -> Option<Question> {
+    let (id, _) = ours(session, project)?;
+    if session["state"].as_str() != Some("blocked") {
+        return None;
+    }
+    let title = question_title(session, config);
+    Some(Question::new(
+        service(),
+        id,
+        format!("{id}:{title}"),
+        title,
+        QuestionKind::Waiting {
+            command: format!("claude attach {id}"),
+        },
+    ))
+}
+
+/// What a blocked session asks: its job's `needs`, else what Claude says it
+/// waits for, else the job's detail.
+fn question_title(session: &Value, config: Option<&Path>) -> String {
+    let id = session["id"].as_str().unwrap_or_default();
+    let state =
+        config.and_then(|config| read_json(&config.join("jobs").join(id).join("state.json")));
+    let said = |value: &Value| {
+        value
+            .as_str()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string)
+    };
+    state
+        .as_ref()
+        .and_then(|state| said(&state["needs"]))
+        .or_else(|| said(&session["waitingFor"]).map(capitalize))
+        .or_else(|| state.as_ref().and_then(|state| said(&state["detail"])))
+        .unwrap_or_else(|| "Waiting on you".to_string())
+}
+
+/// `text` with its first letter in upper case.
+fn capitalize(text: String) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => text,
     }
 }
 
@@ -645,6 +756,118 @@ mod tests {
     }
 
     #[test]
+    fn a_blocked_session_asks_what_only_attach_answers() {
+        let config = tempfile::tempdir().unwrap();
+        let job = config.path().join("jobs/0d643c37");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(
+            job.join("state.json"),
+            json!({ "needs": "approve Write: /code/app/proof.txt" }).to_string(),
+        )
+        .unwrap();
+        let blocked = json!({
+            "id": "0d643c37", "cwd": "/code/app", "kind": "background",
+            "startedAt": 1_000, "sessionId": "0d643c37-0000",
+            "name": "iboard-build", "status": "waiting",
+            "waitingFor": "permission prompt", "state": "blocked"
+        });
+        let questions = questions_of(&[blocked], Path::new("/code/app"), Some(config.path()));
+        assert_eq!(questions.len(), 1);
+        let question = &questions[0];
+        assert_eq!(question.session, "0d643c37");
+        assert_eq!(question.title, "approve Write: /code/app/proof.txt");
+        assert!(!question.answerable(), "only attach answers it");
+        assert_eq!(
+            question.kind,
+            QuestionKind::Waiting {
+                command: "claude attach 0d643c37".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_session_that_is_not_blocked_asks_nothing() {
+        for state in ["working", "done", "failed", "stopped"] {
+            let session = json!({
+                "id": "0d643c37", "cwd": "/code/app", "kind": "background",
+                "startedAt": 1_000, "name": "iboard-build", "state": state
+            });
+            assert!(
+                questions_of(&[session], Path::new("/code/app"), None).is_empty(),
+                "{state}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_question_with_no_job_names_what_claude_waits_for() {
+        let blocked = json!({
+            "id": "0d643c37", "cwd": "/code/app", "kind": "background",
+            "startedAt": 1_000, "name": "iboard-build",
+            "waitingFor": "input needed", "state": "blocked"
+        });
+        let questions = questions_of(&[blocked], Path::new("/code/app"), None);
+        assert_eq!(questions[0].title, "Input needed");
+    }
+
+    #[test]
+    fn a_stopped_background_session_reopens_for_the_text() {
+        let command = resume_command(
+            Path::new("/bin/claude"),
+            Path::new("/code/app"),
+            "0d643c37-0000-0000-0000-000000000000",
+            "Add a test.",
+        );
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "--bg",
+                "--resume",
+                "0d643c37-0000-0000-0000-000000000000",
+                "Add a test."
+            ]
+        );
+        assert_eq!(command.get_current_dir(), Some(Path::new("/code/app")));
+    }
+
+    fn write_agents(project: &Path, sessions: impl IntoIterator<Item = Value>) {
+        let listed: Vec<Value> = sessions.into_iter().collect();
+        std::fs::write(
+            project.join(".iboard-claude-agents.json"),
+            serde_json::to_string(&listed).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_waiting_build_refuses_a_reply_and_a_finished_one_takes_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = std::fs::canonicalize(dir.path()).unwrap();
+        let cwd = project.display().to_string();
+        let session = |state: &str| {
+            json!({
+                "id": "bg000001", "cwd": &cwd, "kind": "background",
+                "startedAt": 1_000, "sessionId": "bg000001-0000-0000",
+                "name": "iboard-build", "status": "waiting", "state": state
+            })
+        };
+        write_agents(&project, [session("blocked")]);
+        let error = service()
+            .say(&project, "bg000001", "Add a test.")
+            .expect_err("a blocked build takes no reply");
+        assert!(error.contains("claude attach bg000001"), "{error}");
+
+        write_agents(&project, [session("done")]);
+        service()
+            .say(&project, "bg000001", "Add a test.")
+            .expect("a finished build reopens with the text");
+    }
+
+    #[test]
     fn a_jobs_timeline_gives_its_answer() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("timeline.jsonl");
@@ -697,6 +920,26 @@ mod tests {
         assert_eq!(sessions[0].id, session);
         assert_eq!(sessions[0].slug.as_deref(), Some("smoke"));
         assert!(!sessions[0].status.running, "the fake finished");
+    }
+
+    #[test]
+    fn the_fake_shows_a_blocked_build_as_a_question() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = std::fs::canonicalize(dir.path()).unwrap();
+        let cwd = project.display().to_string();
+        write_agents(
+            &project,
+            [json!({
+                "id": "bg000001", "cwd": cwd, "kind": "background",
+                "startedAt": 1_000, "sessionId": "bg000001-0000-0000",
+                "name": "iboard-smoke", "status": "waiting",
+                "waitingFor": "permission prompt", "state": "blocked"
+            })],
+        );
+        let questions = service().questions(&project).expect("the fake lists");
+        assert_eq!(questions.len(), 1);
+        assert_eq!(questions[0].session, "bg000001");
+        assert!(!questions[0].answerable());
     }
 
     #[test]

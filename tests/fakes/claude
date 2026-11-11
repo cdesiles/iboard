@@ -1,8 +1,14 @@
 #!/bin/sh
 # A fake Claude Code for the tests: it plays the background commands, and each
-# one-shot run answers with its arguments, one per line. It refuses --bg when
-# IBOARD_CLAUDE_NO_BG is set or the prompt says NO-BG, and plan mode when the
-# prompt says NO-PLAN.
+# one-shot run answers with its arguments, one per line. `agents` reads
+# .iboard-claude-agents.json from the listed folder when there is one. It
+# refuses --bg when IBOARD_CLAUDE_NO_BG is set or the prompt says NO-BG, and
+# plan mode when the prompt says NO-PLAN.
+
+if [ "$1" = "--bg" ] && [ "$2" = "--resume" ]; then
+	printf 'note: woke session %s\n' "$3"
+	exit 0
+fi
 
 if [ "$1" = "--bg" ]; then
 	shift
@@ -48,6 +54,10 @@ if [ "$1" = "agents" ]; then
 			;;
 		esac
 	done
+	if [ -n "$cwd" ] && [ -f "$cwd/.iboard-claude-agents.json" ]; then
+		cat "$cwd/.iboard-claude-agents.json"
+		exit 0
+	fi
 	id="${IBOARD_CLAUDE_ID:-bg000001}"
 	name="${IBOARD_CLAUDE_NAME:-iboard-smoke}"
 	state="${IBOARD_CLAUDE_STATE:-done}"
