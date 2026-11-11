@@ -15,11 +15,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::discovery::{self, Board, Column, Located, Repo};
+use crate::domains::board::discovery::{self, Board, Column, Located, Repo};
+use crate::domains::board::{labels, priority};
 use crate::files;
-use crate::issue::Issue;
-use crate::labels;
-use crate::priority;
+use crate::kernel::issue::Issue;
 use crate::settings;
 
 pub mod config;

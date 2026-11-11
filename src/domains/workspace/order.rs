@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::discovery::{self, Board};
+use crate::domains::board::discovery::{self, Board};
+use crate::domains::board::priority;
 use crate::files::{self, WriteError};
-use crate::priority;
 use crate::settings;
 
 const DIR: &str = "group-order";

@@ -35,7 +35,6 @@ pub mod stats;
 pub mod theme;
 #[cfg(feature = "gui")]
 pub mod widgets;
-pub mod workspace;
 
 pub use domains::agent::{
     artifacts::{build_log, reviews},
@@ -44,5 +43,6 @@ pub use domains::agent::{
 };
 pub use domains::authoring::{diff, prose, sheet};
 pub use domains::board::{commits, config, discovery, filter, history, labels, priority, trash};
+pub use domains::workspace;
 pub use kernel::issue;
 pub use platform::{files, format, git, job, markdown, process};

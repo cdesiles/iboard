@@ -74,7 +74,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | **board** | `Board`, `Column`, `ColumnKind`, `Repo`, discovery and `Located`, priority, trash, filter, commits, history, the project `iboard.toml` | `src/domains/board/` (done) |
 | **agent** | `Agent`, `AgentConfig`, `ReviewMode`, `Verdict`, `Report`, `Leash`, `Challenge`, `Refinement`, the build queue, Ask, `Plan`, `Draft`, `Engine`, prompts, `BuildLog`, review sidecars | `src/domains/agent/{runtime,workflows,artifacts}` (done) |
 | **authoring** | `Sheet`, `Section`, checklist progress, word count, `Prose`/`Block`, `Diff`/`File`/`Hunk`/`Line`; the draft and parked notes of `new_issue` | `src/domains/authoring/` (done); `new_issue` is still at the root |
-| **workspace** | `Workspace`, `Group`, `WorkspaceSection`, `Order`, the group draft, a project's repo paths | `workspace/` → `src/domains/workspace/` (012) |
+| **workspace** | `Workspace`, `Group`, `WorkspaceSection`, `Order`, the group draft, a project's repo paths | `src/domains/workspace/` (done) |
 | **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, the tag, the changelog note and the push | `release` → `src/domains/delivery/` (013) |
 | **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `stats/`, `agenda` → `src/domains/insights/` (014) |
 | **design** | `DesignSystem`, `Token`, `Theme`, the `Catalog` and its pages, components, assets, CSS, Rust tokens, scaffold and validation | `design/` → `src/domains/design/` (015); `design_ui` stays shell; `design/` on disk stays the shared format |
@@ -110,7 +110,7 @@ criteria are the source of truth for the fix.
 | Board enriches `Issue` with the Agent's build log (`built_in`) and git's done date (`done_at`) | `domains/board/discovery.rs`, `kernel/issue.rs` | 018 |
 | Insights starts a cycle from the Agent's `.builds/` log and `.reviews/` sidecars | `src/stats/cycle.rs` | 014, which keys cycles on Board history and git alone |
 | Design generates the `label-*` tokens from Preferences' `Hue` | `src/design/rust_tokens.rs` | 015; the palette order is shared vocabulary, so it moves to the kernel |
-| Workspace edits the user configuration itself (`settings::edit`) | `src/workspace/config.rs` | 016, where Workspace hands its `[[workspace.group]]` section to Preferences |
+| Workspace edits the user configuration itself (`settings::edit`) | `src/domains/workspace/config.rs` | 016, where Workspace hands its `[[workspace.group]]` section to Preferences |
 | Preferences holds the XDG path helpers (`home`, `cache_dir`, `dir_from_env`) that Agent, Board, Design and Workspace call | `src/settings.rs` | 016, which keeps only config I/O in Preferences and moves the helpers to platform (`files`) |
 
 `new_issue.rs` is not a leak: nothing above the kernel names it, but it is
