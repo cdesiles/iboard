@@ -54,7 +54,7 @@ fn releasing_writes_a_note_commits_tags_and_pushes() {
     );
     flow.body = "- Alpha\n- Beta\n".to_string();
 
-    app.release_choice(ReleaseChoice::Confirm);
+    confirm_and_wait(&mut app);
     let note = std::fs::read_to_string(dir.join("CHANGELOG.md")).unwrap();
     assert!(note.starts_with("# Changelog\n\n## v0.2.0 — "), "{note}");
     assert!(note.contains("- Alpha\n- Beta\n"), "{note}");
@@ -83,7 +83,7 @@ fn tag_only_leaves_the_note_alone_and_keep_local_leaves_the_push_out() {
     let flow = app.session.release.as_mut().unwrap();
     flow.note = false;
     flow.push = false;
-    app.release_choice(ReleaseChoice::Confirm);
+    confirm_and_wait(&mut app);
 
     assert!(!dir.join("CHANGELOG.md").exists(), "no note was written");
     assert_eq!(
@@ -105,7 +105,7 @@ fn a_written_note_goes_to_the_file_the_user_chose() {
     let (dir, _remote, mut app) = release_project("v0.1.0");
     app.open_release();
     app.session.release.as_mut().unwrap().file = "release-notes.md".to_string();
-    app.release_choice(ReleaseChoice::Confirm);
+    confirm_and_wait(&mut app);
 
     assert!(!dir.join("CHANGELOG.md").exists());
     let note = std::fs::read_to_string(dir.join("release-notes.md")).unwrap();
@@ -132,7 +132,7 @@ fn a_tag_git_would_refuse_stays_on_the_panel() {
     let (dir, _remote, mut app) = release_project("v0.1.0");
     app.open_release();
     app.session.release.as_mut().unwrap().tag = "two words".to_string();
-    app.release_choice(ReleaseChoice::Confirm);
+    confirm_and_wait(&mut app);
 
     let flow = app.session.release.as_ref().unwrap();
     assert!(flow.error.is_some(), "the dialog says what is wrong");
@@ -145,7 +145,7 @@ fn a_note_file_outside_the_project_is_refused() {
     let (dir, _remote, mut app) = release_project("v0.1.0");
     app.open_release();
     app.session.release.as_mut().unwrap().file = "../NOTES.md".to_string();
-    app.release_choice(ReleaseChoice::Confirm);
+    confirm_and_wait(&mut app);
 
     let flow = app.session.release.as_ref().unwrap();
     assert!(flow.error.is_some());
@@ -317,6 +317,11 @@ fn the_panel_makes_the_whole_release_in_one_confirmation() {
     let mut harness = kittest(app);
 
     press(&mut harness, "Update release note, version and push");
+    let started = Instant::now();
+    while harness.state().1.session.release.is_some() {
+        assert!(started.elapsed().as_secs() < 30, "the release never ended");
+        harness.run_steps(1);
+    }
     assert!(dir.join("CHANGELOG.md").is_file());
     assert_eq!(git(&dir, &["tag", "--list", "v0.2.0"]), "v0.2.0");
     assert_eq!(git(&remote, &["tag", "--list", "v0.2.0"]), "v0.2.0");
@@ -405,6 +410,21 @@ fn a_long_note_scrolls_so_the_buttons_stay_on_screen() {
         confirm.rect().bottom() <= window().bottom(),
         "the note scrolls, its buttons stay put: {:?}",
         confirm.rect()
+    );
+}
+
+/// Confirms the panel and waits for the release its thread makes.
+fn confirm_and_wait(app: &mut IboardApp) {
+    app.release_choice(ReleaseChoice::Confirm);
+    assert!(
+        until(|| {
+            app.poll_release();
+            app.session
+                .release
+                .as_ref()
+                .is_none_or(|flow| !flow.running())
+        }),
+        "the release never ended"
     );
 }
 
@@ -513,4 +533,29 @@ fn the_opening_is_written_only_when_its_box_is_ticked() {
         "{}",
         flow.section()
     );
+}
+
+#[test]
+fn reopening_with_the_box_ticked_writes_the_opening_again() {
+    let (_dir, mut app) = labelled_project(
+        "release-preamble-reopen",
+        None,
+        &["[feat] [board] Add a flag"],
+    );
+    app.prefs.agent = fake_agent("printf 'A flag arrives.\\n' # {prompt}");
+    app.prefs.release.preamble = true;
+    app.open_release();
+
+    let mut harness = kittest(app);
+    let started = Instant::now();
+    loop {
+        let flow = harness.state().1.session.release.as_ref().unwrap();
+        if !flow.lead.is_empty() {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 30, "the opening never landed");
+        harness.run_steps(1);
+    }
+    let flow = harness.state().1.session.release.as_ref().unwrap();
+    assert_eq!(flow.lead, "A flag arrives.", "an open panel writes it too");
 }

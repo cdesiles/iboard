@@ -8,6 +8,9 @@ use super::{
     RichText, Vec2, agent, job, settings, theme, widgets,
 };
 
+/// How far the release thread got, and why it stopped when it did.
+type Released = Result<(release::ReleaseProgress, Option<String>), String>;
+
 /// What the user chose on the release panel.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum ReleaseChoice {
@@ -59,6 +62,9 @@ pub(super) struct ReleaseFlow {
     features: usize,
     /// The newest tag the note follows, if any: the release window.
     since: Option<String>,
+    /// The release being made on its own thread: the progress it reached and
+    /// why it stopped, when it did.
+    release: Option<Job<Released>>,
     progress: release::ReleaseProgress,
     pub(super) error: Option<String>,
 }
@@ -91,7 +97,7 @@ impl ReleaseFlow {
             can_write,
             lead: String::new(),
             writer: None,
-            ask_preamble: false,
+            ask_preamble: choices.preamble && can_write,
             preamble_error: None,
             technical: false,
             file: choices.file,
@@ -101,6 +107,7 @@ impl ReleaseFlow {
             technical_count: note.technical,
             features: note.features,
             since,
+            release: None,
             progress: release::ReleaseProgress::default(),
             error: None,
         }
@@ -190,20 +197,46 @@ impl ReleaseFlow {
         std::mem::take(&mut self.ask_preamble)
     }
 
-    /// Makes the release in order: the note and its commit, the tag, the
-    /// push. An error stays on screen and the flow can be confirmed again.
-    fn confirm(&mut self) -> Result<(), String> {
-        release::confirm(
-            &self.project,
-            &self.tag,
-            &self.section(),
-            &self.file,
-            self.note,
-            self.push,
-            &mut self.progress,
-        )?;
+    /// Starts the release on its own thread: the note and its commit, the tag,
+    /// the push. Its error stays on screen and the flow can be confirmed again.
+    fn start(&mut self) {
+        if self.running() {
+            return;
+        }
+        let progress = self.progress;
+        let (project, tag, section) = (self.project.clone(), self.tag.clone(), self.section());
+        let (file, note, push) = (self.file.clone(), self.note, self.push);
         self.error = None;
-        Ok(())
+        self.release = Some(Job::spawn(move |_cancel| {
+            let mut progress = progress;
+            let error =
+                release::confirm(&project, &tag, &section, &file, note, push, &mut progress).err();
+            Ok((progress, error))
+        }));
+    }
+
+    /// Whether the release is still being made.
+    pub(super) fn running(&self) -> bool {
+        self.release.is_some()
+    }
+
+    /// Takes the release's outcome once its thread answers; true while it runs.
+    fn adopt_release(&mut self) -> bool {
+        let Some(release) = &self.release else {
+            return false;
+        };
+        let Some(answer) = release.answer() else {
+            return true;
+        };
+        self.release = None;
+        match answer {
+            Ok((progress, error)) => {
+                self.progress = progress;
+                self.error = error;
+            }
+            Err(lost) => self.error = Some(lost),
+        }
+        false
     }
 
     /// Whether the release is made, its push included when one was asked.
@@ -229,7 +262,12 @@ impl ReleaseFlow {
                 ui.set_width(width - 2.0 * pad);
                 ui.style_mut().interaction.selectable_labels = false;
                 ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+                widgets::mark_busy(ui, self.running());
                 self.head(ui, p);
+                if self.running() {
+                    self.releasing_ui(ui, p);
+                }
+                let editable = !self.running();
                 theme::scroll_area(
                     ui,
                     egui::ScrollArea::vertical()
@@ -238,12 +276,14 @@ impl ReleaseFlow {
                         .auto_shrink([false, true])
                         .content_margin(theme::scroll_margin(0.0, 0.0)),
                     |ui| {
-                        self.version_ui(ui, p);
-                        self.note_choice_ui(ui, p);
-                        if self.note {
-                            self.note_ui(ui, p);
-                        }
-                        self.push_ui(ui, p);
+                        ui.add_enabled_ui(editable, |ui| {
+                            self.version_ui(ui, p);
+                            self.note_choice_ui(ui, p);
+                            if self.note {
+                                self.note_ui(ui, p);
+                            }
+                            self.push_ui(ui, p);
+                        });
                         if let Some(error) = &self.error {
                             ui.label(RichText::new(error).font(theme::ui_small()).color(p.danger));
                         }
@@ -254,6 +294,29 @@ impl ReleaseFlow {
             });
         let close = choice.is_none() && modal.should_close();
         (choice, close)
+    }
+
+    /// The Thinking mark and the time spent while the release is being made.
+    fn releasing_ui(&self, ui: &mut egui::Ui, p: &theme::Palette) {
+        let elapsed = self
+            .release
+            .as_ref()
+            .map_or_default(|release| release.elapsed());
+        widgets::announce_thinking(ui, "Making the release", elapsed);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_2;
+            widgets::thinking(ui, 14.0);
+            ui.label(
+                RichText::new("Making the release…")
+                    .font(theme::ui_button())
+                    .color(p.ink),
+            );
+            ui.label(
+                RichText::new(crate::format::clock(elapsed))
+                    .font(theme::meta())
+                    .color(p.ink_muted),
+            );
+        });
     }
 
     fn head(&self, ui: &mut egui::Ui, p: &theme::Palette) {
@@ -457,13 +520,17 @@ impl ReleaseFlow {
         let mut choice = None;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-            let confirm = widgets::button(
-                ui,
-                ButtonKind::Primary,
-                Some(Icon::Release),
-                self.action(),
-                Some("⌘↩"),
-            );
+            let confirm = ui
+                .add_enabled_ui(!self.running(), |ui| {
+                    widgets::button(
+                        ui,
+                        ButtonKind::Primary,
+                        Some(Icon::Release),
+                        self.action(),
+                        Some("⌘↩"),
+                    )
+                })
+                .inner;
             if confirm.clicked() {
                 choice = Some(ReleaseChoice::Confirm);
             }
@@ -500,35 +567,37 @@ impl IboardApp {
         self.session.release = Some(flow);
     }
 
-    /// Confirms or cancels the release on screen. A finished flow closes and
-    /// says so in the status bar.
+    /// Confirms or cancels the release on screen. A confirmed release is made
+    /// on its own thread; the panel closes once it is done.
     pub(super) fn release_choice(&mut self, choice: ReleaseChoice) {
         let Some(flow) = self.session.release.as_mut() else {
             return;
         };
         match choice {
             ReleaseChoice::Cancel => {
-                self.session.release = None;
-                return;
-            }
-            ReleaseChoice::Confirm => {
-                if let Err(error) = flow.confirm() {
-                    flow.error = Some(error);
-                    return;
+                if !flow.running() {
+                    self.session.release = None;
                 }
             }
-        }
-        if flow.finished() {
-            let tag = flow.tag.trim().to_string();
-            self.session.release = None;
-            self.session.notice = Some((format!("Released {tag}"), Instant::now()));
+            ReleaseChoice::Confirm => flow.start(),
         }
     }
 
-    /// The opening the agent is writing, or `None` while it stays quiet.
-    fn poll_release(&mut self) -> Option<Duration> {
+    /// Follows the flow's two threads: the opening and the release itself.
+    /// Asks to draw again while either runs, and closes a made release.
+    pub(super) fn poll_release(&mut self) -> Option<Duration> {
         let flow = self.session.release.as_mut()?;
-        flow.adopt_preamble().then_some(job::POLL_EVERY)
+        let waiting = flow.adopt_preamble() | flow.adopt_release();
+        if waiting {
+            return Some(job::POLL_EVERY);
+        }
+        if !flow.finished() {
+            return None;
+        }
+        let tag = flow.tag.trim().to_string();
+        self.session.release = None;
+        self.session.notice = Some((format!("Released {tag}"), Instant::now()));
+        None
     }
 
     /// Starts the agent the panel just asked for, from the note it will open.

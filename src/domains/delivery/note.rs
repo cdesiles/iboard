@@ -125,10 +125,12 @@ pub(super) fn has_feature(subjects: &[String]) -> bool {
 /// from the note's own lines and nothing else.
 pub fn preamble_prompt(body: &str) -> String {
     format!(
-        "You write the opening of a software release note, from the note's own lines below. Say \
-         what the release brings in one or two sentences, at most forty words, naming the changes \
-         that matter most. Use only what the lines say and invent nothing: no version number, no \
-         date, no promise. Answer with the sentences alone, no heading, no list, no markdown.\n\
+        "Write the opening of a software release note, from the note's own lines below. One or \
+         two sentences, at most thirty words, in the past tense, naming the two or three changes \
+         a user would notice first. Never open with \"This release\" or the project's name; never \
+         use words like seamless, powerful, improved or various; invent no number, no feature and \
+         no claim the lines do not make. Answer with the sentences alone, no heading, no list, no \
+         markdown.\n\
          \n\
          ---\n\
          {}",
