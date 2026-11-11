@@ -907,6 +907,7 @@ use command::command;
 mod direnv;
 mod draft;
 mod poller;
+pub(crate) use poller::status_of;
 pub mod service;
 mod stream;
 mod tools;

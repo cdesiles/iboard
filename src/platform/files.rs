@@ -27,6 +27,12 @@ pub fn cache_dir() -> Option<PathBuf> {
     dir_from_env("XDG_CACHE_HOME", ".cache").map(|base| base.join("iboard"))
 }
 
+/// iboard's data folder: `$XDG_DATA_HOME/iboard`, or `~/.local/share/iboard`.
+/// Unlike the config and the cache, this is user data a clean must keep.
+pub fn data_dir() -> Option<PathBuf> {
+    dir_from_env("XDG_DATA_HOME", ".local/share").map(|base| base.join("iboard"))
+}
+
 /// The folder `$var` names, else `fallback` under the home folder. An empty
 /// variable counts as unset.
 pub fn dir_from_env(var: &str, fallback: &str) -> Option<PathBuf> {

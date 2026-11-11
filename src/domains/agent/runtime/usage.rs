@@ -4,10 +4,11 @@
 //! OpenCode reports it on every session; Claude Code on the `result` event of
 //! its stream.
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// The five token counts an engine reports.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tokens {
     pub input: u64,
     pub output: u64,
@@ -17,7 +18,8 @@ pub struct Tokens {
 }
 
 /// Whether a run's dollars were taken, or are a subscription's API-equivalent.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Billing {
     #[default]
     Metered,
@@ -41,7 +43,7 @@ impl Usage {
     }
 
     /// A session from OpenCode's session list.
-    pub(super) fn from_session(session: &Value) -> Option<Self> {
+    pub(crate) fn from_session(session: &Value) -> Option<Self> {
         let cost = session["cost"].as_f64();
         let tokens = &session["tokens"];
         let provider = text(&session["model"]["providerID"]);

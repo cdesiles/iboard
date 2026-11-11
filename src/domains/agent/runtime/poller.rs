@@ -1,7 +1,7 @@
 //! One poller per project: it asks the service once for every session's state
 //! and for the project's questions, and the runs read what it last saw.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::Usage;
 use super::service::{Feed, POLL, backoff, call, parse, pending};
+use crate::domains::agent::artifacts::usage_log;
 
 /// The live pollers, so every run in a project shares one.
 static POLLERS: LazyLock<Mutex<HashMap<PathBuf, Weak<Poller>>>> =
@@ -20,11 +21,11 @@ const WAIT_MAX: Duration = Duration::from_secs(5);
 
 /// How a session stands, as the service keeps it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Status {
-    pub(super) running: bool,
+pub(crate) struct Status {
+    pub(crate) running: bool,
     /// Wall-clock milliseconds, as the service counts them.
-    pub(super) created: u64,
-    pub(super) updated: u64,
+    pub(crate) created: u64,
+    pub(crate) updated: u64,
 }
 
 /// What one poll found for a session: how it stands, and what it spent.
@@ -35,7 +36,7 @@ pub(super) struct Polled {
 }
 
 /// The state of one service session.
-pub(super) fn status_of(session: &Value) -> Status {
+pub(crate) fn status_of(session: &Value) -> Status {
     let millis = |key: &str| session["time"][key].as_u64().unwrap_or(0);
     let (busy, idle) = (millis("busy"), millis("idle"));
     Status {
@@ -55,6 +56,7 @@ struct Inner {
     sessions: usize,
     questions: usize,
     statuses: HashMap<String, Polled>,
+    logged: HashSet<String>,
     observed: Option<Instant>,
     feed: Feed,
     running: bool,
@@ -88,6 +90,7 @@ impl Poller {
                 sessions: 0,
                 questions: 0,
                 statuses: HashMap::new(),
+                logged: HashSet::new(),
                 observed: None,
                 feed: Feed::default(),
                 running: false,
@@ -153,7 +156,8 @@ impl Poller {
         let mut ok = true;
         if sessions {
             match statuses(&self.project) {
-                Ok(statuses) => {
+                Ok((statuses, listed)) => {
+                    self.log_finished(&listed);
                     let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
                     inner.statuses = statuses;
                     inner.observed = Some(Instant::now());
@@ -173,6 +177,25 @@ impl Poller {
             }
         }
         ok
+    }
+
+    /// Adds the finished sessions this poller has not seen finish yet.
+    fn log_finished(&self, sessions: &[Value]) {
+        let finished = usage_log::finished(sessions, &self.project);
+        let new: Vec<_> = {
+            let inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+            finished
+                .into_iter()
+                .filter(|entry| !inner.logged.contains(&entry.session))
+                .collect()
+        };
+        if new.is_empty() || usage_log::append(&new).is_err() {
+            return;
+        }
+        let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        inner
+            .logged
+            .extend(new.into_iter().map(|entry| entry.session));
     }
 
     fn start(self: &Arc<Self>) {
@@ -242,11 +265,13 @@ fn waiting(poller: &Weak<Poller>, wait: Duration) -> bool {
     }
 }
 
-/// How every session of `project` stands, from one request.
-fn statuses(project: &Path) -> Result<HashMap<String, Polled>, String> {
+/// How every session of `project` stands, from one request, with the sessions
+/// themselves for the usage log.
+fn statuses(project: &Path) -> Result<(HashMap<String, Polled>, Vec<Value>), String> {
     let reply = call(project, &["get", "/api/session"], None)?;
     let value = parse(&reply)?;
-    Ok(statuses_from(&value, project))
+    let sessions = value["data"].as_array().cloned().unwrap_or_default();
+    Ok((statuses_from(&value, project), sessions))
 }
 
 /// The sessions of `project` in a session list.

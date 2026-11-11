@@ -120,6 +120,7 @@ const EDGES: &[(&str, &str)] = &[
     ("agent", "design"),
     ("delivery", "board"),
     ("insights", "board"),
+    ("insights", "agent"),
 ];
 
 const EGUI: &[&str] = &["egui::", "egui_", "eframe::", "use egui", "use eframe"];

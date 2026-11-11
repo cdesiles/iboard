@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 
 use super::poller::{project_poller, status_of};
 use super::{Progress, Usage, describe_tool};
-use crate::domains::agent::artifacts::{build_log, reviews};
+use crate::domains::agent::artifacts::{build_log, reviews, usage_log};
 use crate::platform::job::{Cancel, Job};
 use crate::platform::process;
 
@@ -616,12 +616,18 @@ pub fn watch(project: PathBuf, session: String, log: PathBuf) -> Job<Result<Stri
     })
 }
 
-/// The builds the service is still running for `project`, as a restart finds
-/// them.
-pub fn running(project: &Path) -> Result<Vec<Found>, String> {
+/// The sessions the service lists for `project`, running or finished.
+pub(crate) fn listed(project: &Path) -> Result<Vec<Value>, String> {
     let reply = call(project, &["get", "/api/session"], None)?;
     let value = parse(&reply)?;
-    let sessions = value["data"].as_array().cloned().unwrap_or_default();
+    Ok(value["data"].as_array().cloned().unwrap_or_default())
+}
+
+/// The builds the service is still running for `project`, as a restart finds
+/// them. The finished sessions in the same list go to the project's usage log.
+pub fn running(project: &Path) -> Result<Vec<Found>, String> {
+    let sessions = listed(project)?;
+    let _ = usage_log::record(&sessions, project);
     let wanted = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
     Ok(sessions
         .iter()

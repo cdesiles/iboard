@@ -95,6 +95,7 @@ composition or a read of a lower domain, never a callback upward.
 | agent → design | prompts embed the project's design system |
 | delivery → board | `commits` is a Board read model: it says what closed an issue, not how to release |
 | insights → board | stats and the agenda read columns, issues and the dates in git |
+| insights → agent | the stats cost block reads the project's usage log to report the agents' spend |
 
 Every domain may also name the kernel and platform, as the rule says;
 authoring and design have no domain edge of their own. Any other edge is a
