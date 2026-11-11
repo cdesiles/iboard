@@ -11,7 +11,7 @@ use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::domains::agent::runtime::{Billing, Tokens, Usage, status_of};
+use crate::domains::agent::runtime::{Billing, Cap, Plan, Tokens, Usage, provider_key, status_of};
 use crate::platform::files;
 
 /// How long a session stays in the log.
@@ -35,6 +35,61 @@ pub struct Entry {
     /// RFC 3339 in UTC, as the engine's own session times say.
     pub started: String,
     pub ended: String,
+}
+
+/// What a plan's window has used, read from the raw log.
+///
+/// The log keeps each run's own cost and token counts, so a plan is applied
+/// when the history is read: editing it never rewrites a line.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Consumption {
+    /// Money metered runs were charged.
+    pub spent: f64,
+    /// A subscription's API-equivalent dollars, never money taken.
+    pub equivalent: f64,
+    /// Every token the window's runs used.
+    pub tokens: u64,
+    /// How many runs the window holds.
+    pub runs: usize,
+    /// The plan's cap, when it declares one.
+    pub cap: Option<Cap>,
+}
+
+impl Consumption {
+    /// `entries`' runs of `provider` inside `plan`'s window, ending at or
+    /// after `now`'s window start.
+    pub fn of(entries: &[Entry], provider: &str, plan: &Plan, now: DateTime<Utc>) -> Self {
+        let key = provider_key(provider);
+        let start = plan.window.start(now);
+        let mut used = Consumption {
+            cap: plan.cap,
+            ..Consumption::default()
+        };
+        for entry in entries {
+            if entry.provider.as_deref().map(provider_key).as_deref() != Some(key.as_str()) {
+                continue;
+            }
+            if instant(&entry.ended).is_none_or(|ended| ended < start) {
+                continue;
+            }
+            used.runs += 1;
+            let cost = entry.cost.unwrap_or(0.0);
+            match plan.billing {
+                Billing::Metered => used.spent += cost,
+                Billing::Subscription => used.equivalent += cost,
+            }
+            used.tokens += entry.tokens.total();
+        }
+        used
+    }
+
+    /// The dollars this plan's window has used, labelled by what they are.
+    pub fn money_label(&self, plan: &Plan) -> String {
+        match plan.billing {
+            Billing::Metered => format!("${:.2}", self.spent),
+            Billing::Subscription => format!("${:.2} API-equivalent", self.equivalent),
+        }
+    }
 }
 
 /// The log file, when the user has a data folder.
@@ -189,6 +244,7 @@ fn sorted(entries: HashMap<String, Entry>) -> Vec<Entry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domains::agent::runtime::{Plans, Window};
     use serde_json::json;
 
     fn project(dir: &Path) -> PathBuf {
@@ -326,6 +382,106 @@ mod tests {
         let entries = read_at(&log);
         let ids: Vec<&str> = entries.iter().map(|entry| entry.session.as_str()).collect();
         assert_eq!(ids, ["ses_old", "ses_new"]);
+    }
+
+    fn used(id: &str, provider: &str, cost: f64, at: DateTime<Utc>) -> Entry {
+        Entry {
+            session: id.to_string(),
+            project: PathBuf::from("/p"),
+            engine: ENGINE.to_string(),
+            provider: Some(provider.to_string()),
+            model: None,
+            billing: Billing::Metered,
+            cost: Some(cost),
+            tokens: Tokens {
+                input: 10,
+                output: 5,
+                reasoning: 1,
+                cache_read: 2,
+                cache_write: 3,
+            },
+            started: stamp(at.timestamp_millis() as u64),
+            ended: stamp(at.timestamp_millis() as u64),
+        }
+    }
+
+    #[test]
+    fn a_metered_plan_reads_the_logs_dollars_as_spend() {
+        let now = Utc::now();
+        let entries = [
+            used("ses_1", "deepseek", 0.25, now),
+            used("ses_2", "deepseek", 0.5, now - Duration::hours(1)),
+            used("ses_3", "github-copilot", 1.0, now),
+        ];
+        let plan = Plan::default();
+        let consumed = Consumption::of(&entries, "deepseek", &plan, now);
+        assert_eq!(consumed.spent, 0.75);
+        assert_eq!(consumed.equivalent, 0.0);
+        assert_eq!(consumed.tokens, 2 * 21);
+        assert_eq!(
+            consumed.runs, 2,
+            "another provider's run is not this plan's"
+        );
+        assert_eq!(consumed.money_label(&plan), "$0.75");
+    }
+
+    #[test]
+    fn a_subscriptions_dollars_are_api_equivalent_never_spend() {
+        let now = Utc::now();
+        let entries = [used("ses_1", "github-copilot", 1.0, now)];
+        let plan = Plans::default().plan("copilot");
+        let consumed = Consumption::of(&entries, "github-copilot", &plan, now);
+        assert_eq!(consumed.spent, 0.0);
+        assert_eq!(consumed.equivalent, 1.0);
+        assert_eq!(consumed.money_label(&plan), "$1.00 API-equivalent");
+        assert_eq!(consumed.cap, None, "a cap iboard cannot know stays unknown");
+    }
+
+    #[test]
+    fn editing_a_plan_rereads_the_same_history() {
+        let now = Utc::now();
+        let entries = [used("ses_1", "deepseek", 0.25, now)];
+        let before = entries.clone();
+        let metered = Plan::default();
+        let subscription = Plan {
+            billing: Billing::Subscription,
+            ..Plan::default()
+        };
+        let spent = Consumption::of(&entries, "deepseek", &metered, now);
+        let equivalent = Consumption::of(&entries, "deepseek", &subscription, now);
+        assert_eq!(spent.spent, 0.25);
+        assert_eq!(spent.equivalent, 0.0);
+        assert_eq!(equivalent.spent, 0.0);
+        assert_eq!(equivalent.equivalent, 0.25);
+        assert_eq!(entries, before, "reading a plan never rewrites the log");
+    }
+
+    #[test]
+    fn a_window_counts_only_the_runs_since_it_began() {
+        let now = Utc::now();
+        let entries = [
+            used("ses_old", "deepseek", 1.0, now - Duration::days(2)),
+            used("ses_new", "deepseek", 0.25, now),
+        ];
+        let plan = Plan {
+            window: Window::Day,
+            ..Plan::default()
+        };
+        let consumed = Consumption::of(&entries, "deepseek", &plan, now);
+        assert_eq!(consumed.runs, 1);
+        assert_eq!(consumed.spent, 0.25);
+    }
+
+    #[test]
+    fn a_plans_cap_travels_with_its_consumption() {
+        let now = Utc::now();
+        let entries = [used("ses_1", "deepseek", 1.0, now)];
+        let plan = Plan {
+            cap: Some(Cap::Money(5.0)),
+            ..Plan::default()
+        };
+        let consumed = Consumption::of(&entries, "deepseek", &plan, now);
+        assert_eq!(consumed.cap, Some(Cap::Money(5.0)));
     }
 
     #[test]

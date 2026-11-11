@@ -44,6 +44,14 @@ A select with three options, always in this order:
 - Ticket + project context lets the agent also read the repository and its design system to check what the issue claims.
 - "Review this issue" (`⌘⇧R`) and the card's Review run in this scope; the Review button's menu offers the other one as a one-off (*Deep review* or *Quick review*).
 
+## Usage plans
+
+- AI review only, under Review scope: one block per known provider, **Anthropic API**, **DeepSeek**, **Claude.ai** and **Copilot**, then the rule for one iboard hasn't seen.
+- Each block starts with **Metered** or **Subscription**. Metered means the log's dollars are money spent; a subscription means they are API-equivalent and never counted as spend.
+- A subscription also has a **Window** (**Day**, **Week** or **Month**), a **Price** per window, and a **Cap** of **No cap**, **Money** or **Tokens**. A cap shows its amount; without one the share stays unknown.
+- The defaults are the four known providers: both APIs metered, Claude.ai weekly, Copilot monthly. Price and cap stay empty until you fill them, because iboard has no provider API that reports them.
+- A provider iboard has not seen is metered with no cap. Editing a plan rereads the usage log; it never rewrites it.
+
 ## Timeout
 
 - AI build only, under Model: a select with **5**, **10**, **20**, **30**, **60** and **180 minutes**, then **No limit** with `∞` in `meta`. The default is 30 minutes.
@@ -83,6 +91,12 @@ model = "default"
 timeout = "30m"          # "5m" | "10m" | "20m" | "30m" | "60m" | "180m" | "none"; absent means "30m"
 agents = 4               # 0 to 16; absent means 1
 worktree = true          # OpenCode only; absent means true
+
+[usage.claude]           # one block per provider; the four known ones have defaults
+kind = "subscription"    # "metered" | "subscription"
+window = "week"          # "day" | "week" | "month"
+price = 20.0             # what the plan costs over its window, when known
+token_cap = 1000000      # or money_cap = 20.0; never both
 ```
 
 The key names are a suggestion; keep whatever the app already writes.

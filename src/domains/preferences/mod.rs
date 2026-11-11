@@ -15,7 +15,9 @@ use std::path::PathBuf;
 use self::general::Appearance;
 use self::labels::Labels;
 use self::settings::{Section, UserConfig};
-use crate::domains::agent::runtime::{self as agent, AgentConfig, BuildTimeout};
+use crate::domains::agent::runtime::{
+    self as agent, AgentConfig, BuildTimeout, Plans, UsageSection, usage_section,
+};
 use crate::domains::agent::workflows::titles::{self, Engine};
 use crate::domains::board::filter;
 use crate::domains::delivery::{ReleaseChoices, ReleaseSection};
@@ -31,7 +33,7 @@ pub fn splits_section(splits: &BTreeMap<String, u32>) -> Result<Section, String>
 }
 
 /// The preferences the user configuration sets, each from its own section.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Preferences {
     /// `[ai]`: the agent that reviews issues.
     pub agent: AgentConfig,
@@ -41,6 +43,8 @@ pub struct Preferences {
     pub build_timeout: BuildTimeout,
     /// `[build]`: how many build agents may work at once.
     pub agents: usize,
+    /// `[usage]`: what each provider bills, and the cap its window has.
+    pub usage: Plans,
     /// `[filter]`: the labels the filter suggests; `None` suggests the
     /// board's most used.
     pub suggestions: Option<Vec<String>>,
@@ -102,6 +106,8 @@ impl Preferences {
         let (build, problems) = config.section::<agent::BuildSection>("build").settings();
         config.report(problems);
         let build_agent = build.agent.unwrap_or_else(|| agent.clone());
+        let (usage, problems) = config.section::<UsageSection>("usage").plans();
+        config.report(problems);
         let suggestions = config
             .section::<filter::FilterSection>("filter")
             .suggestions();
@@ -140,6 +146,7 @@ impl Preferences {
             build_agent,
             build_timeout: build.timeout,
             agents: build.agents,
+            usage,
             suggestions,
             title_engine,
             confirm_delete,
@@ -186,6 +193,12 @@ impl Preferences {
                 &agent::agents_section(self.agents),
             )?);
         }
+        if self.usage != before.usage {
+            sections.push(match self.usage.is_empty() {
+                true => Section::removed("usage"),
+                false => Section::new("usage", &usage_section(&self.usage))?,
+            });
+        }
         if self.title_engine != before.title_engine {
             sections.push(Section::new("titles", &titles::section(self.title_engine))?);
         }
@@ -231,7 +244,7 @@ impl Preferences {
 mod tests {
     use super::settings;
     use super::*;
-    use crate::domains::agent::runtime::{ReviewMode, Tool};
+    use crate::domains::agent::runtime::{Billing, Cap, Plan, ReviewMode, Tool, Window};
     use crate::domains::workspace::Group;
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -260,6 +273,7 @@ mod tests {
             build_agent: AgentConfig::default(),
             build_timeout: BuildTimeout::default(),
             agents: agent::DEFAULT_AGENTS,
+            usage: Plans::default(),
             suggestions: None,
             title_engine: Engine::Apple,
             confirm_delete: true,
@@ -288,6 +302,7 @@ mod tests {
         let mut config = parse(
             "[ai]\ntool = \"claude\"\nmodel = \"opus\"\n\
              [build]\ntool = \"opencode\"\ntimeout = \"none\"\nagents = 4\n\
+             [usage.anthropic]\nkind = \"subscription\"\nwindow = \"month\"\nprice = 12.0\nmoney_cap = 100.0\n\
              [filter]\nsuggestions = [\"Bug\"]\n\
              [titles]\nengine = \"manual\"\n\
              [delete]\nconfirm = false\n\
@@ -307,6 +322,16 @@ mod tests {
         );
         let preferences = Preferences::load(&mut config);
         assert!(config.problems.is_empty(), "{:?}", config.problems);
+        let mut usage = Plans::default();
+        usage.set(
+            "anthropic",
+            Plan {
+                billing: Billing::Subscription,
+                window: Window::Month,
+                price: Some(12.0),
+                cap: Some(Cap::Money(100.0)),
+            },
+        );
         assert_eq!(
             preferences,
             Preferences {
@@ -314,6 +339,7 @@ mod tests {
                 build_agent: configured(Tool::OpenCode, ""),
                 build_timeout: BuildTimeout::NONE,
                 agents: 4,
+                usage,
                 suggestions: Some(vec!["bug".to_string()]),
                 title_engine: Engine::Off,
                 confirm_delete: false,
@@ -360,6 +386,7 @@ mod tests {
              [delete]\nconfirm = \"no\"\n\
              [titles]\nengine = \"nope\"\n\
              [filter]\nsuggestions = \"bug\"\n\
+             [usage.claude]\nkind = \"trial\"\n\
              [build]\ntool = \"codex\"\n\
              [ai]\ntool = \"codex\"\n",
         );
@@ -374,6 +401,7 @@ mod tests {
             [
                 "[ai]",
                 "[build]",
+                "[usage.claude]",
                 "[filter]",
                 "[titles]",
                 "[delete]",
@@ -437,6 +465,14 @@ mod tests {
 
         let mut stand_out = before.labels.stand_outs().clone();
         stand_out.insert("spike".to_string());
+        let mut usage = Plans::default();
+        usage.set(
+            "deepseek",
+            Plan {
+                cap: Some(Cap::Money(5.0)),
+                ..Plan::default()
+            },
+        );
         let after = Preferences {
             agent: AgentConfig {
                 scope: ReviewMode::Deep,
@@ -444,6 +480,7 @@ mod tests {
             },
             build_agent: configured(Tool::OpenCode, ""),
             build_timeout: BuildTimeout::ALL[0],
+            usage,
             title_engine: Engine::Agent,
             confirm_delete: false,
             appearance: Appearance::Dark,
@@ -459,6 +496,7 @@ mod tests {
                 "{mine}\n\
                  [ai]\ntool = \"claude\"\nmodel = \"opus\"\nscope = \"project\"\n\n\
                  [build]\ntool = \"opencode\"\nmodel = \"default\"\ntimeout = \"5m\"\n\n\
+                 [usage]\n[usage.deepseek]\nkind = \"metered\"\nwindow = \"day\"\nmoney_cap = 5.0\n\n\
                  [titles]\nengine = \"agent\"\n\n\
                  [delete]\nconfirm = false\n\n\
                  [appearance]\ntheme = \"dark\"\n\n\

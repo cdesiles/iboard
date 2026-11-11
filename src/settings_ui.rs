@@ -15,12 +15,13 @@ mod labels;
 mod review;
 mod select_menu;
 mod titles;
+mod usage;
 
 use std::collections::{BTreeSet, HashMap};
 
 use egui::{Key, Modifiers, Vec2};
 
-use crate::agent::{AgentConfig, BuildTimeout};
+use crate::agent::{AgentConfig, BuildTimeout, Plans};
 use crate::domains::preferences::labels::{self as label_config, LabelColor, Labels};
 use crate::general::Appearance;
 use crate::job;
@@ -57,6 +58,7 @@ struct Edits {
     build_form: AgentConfig,
     build_timeout: BuildTimeout,
     agents: usize,
+    usage: Plans,
     engine: Engine,
     confirm_delete: bool,
     appearance: Appearance,
@@ -83,6 +85,8 @@ pub struct Dialog {
     pub build_timeout: BuildTimeout,
     /// Settings › AI build: how many build agents may work at once.
     pub agents: usize,
+    /// Settings › AI: what each provider bills, and its cap.
+    pub usage: Plans,
     /// The title engine being chosen.
     pub engine: Engine,
     /// Settings › General: deleting an issue asks first.
@@ -144,6 +148,7 @@ impl Dialog {
             build_form: prefs.build_agent.clone(),
             build_timeout: prefs.build_timeout,
             agents: prefs.agents,
+            usage: prefs.usage.clone(),
             engine: prefs.title_engine,
             confirm_delete: prefs.confirm_delete,
             appearance: prefs.appearance,
@@ -205,6 +210,7 @@ impl Dialog {
             build_form: self.build_form.clone(),
             build_timeout: self.build_timeout,
             agents: self.agents,
+            usage: self.usage.clone(),
             engine: self.engine,
             confirm_delete: self.confirm_delete,
             appearance: self.appearance,

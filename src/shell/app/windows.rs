@@ -244,6 +244,7 @@ impl IboardApp {
                     appearance: dialog.appearance,
                     auto: dialog.auto,
                     agents: dialog.agents,
+                    usage: dialog.usage.clone(),
                     notifications: dialog.notifications,
                     ..self.prefs.clone()
                 };

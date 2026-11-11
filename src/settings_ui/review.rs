@@ -160,6 +160,7 @@ impl Dialog {
         ui.add_space(theme::SPACE_5);
         if self.tab == super::Tab::Review {
             self.scope_field(ui);
+            self.usage_body(ui);
         } else {
             self.timeout_field(ui);
             ui.add_space(theme::SPACE_5);
