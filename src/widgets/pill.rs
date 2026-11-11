@@ -232,7 +232,8 @@ fn tag_with(ui: &mut Ui, text: &str, fills: [Color32; 2], edge: Color32, ink: Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domains::preferences::labels::{Hue, LabelColor, Rgb};
+    use crate::domains::preferences::labels::{LabelColor, Rgb};
+    use crate::kernel::labels::Hue;
 
     const RED: Option<LabelColor> = Some(LabelColor::Preset(Hue::Red));
 

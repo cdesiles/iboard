@@ -24,8 +24,9 @@ pub use tokens::*;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::domains::preferences::labels::{Hue, LabelColor, Rgb};
+use crate::domains::preferences::labels::{LabelColor, Rgb};
 use crate::general::Appearance;
+use crate::kernel::labels::Hue;
 
 use egui::{
     Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Rect, Stroke, TextStyle,

@@ -11,7 +11,6 @@
 //! design system, in a terminal or in its own window.
 
 pub mod assets;
-pub mod design;
 #[cfg(feature = "gui")]
 pub mod design_ui;
 pub mod domains;
@@ -41,6 +40,7 @@ pub use domains::agent::{
 pub use domains::authoring::{diff, prose, sheet};
 pub use domains::board::{commits, config, discovery, filter, history, labels, priority, trash};
 pub use domains::delivery as release;
+pub use domains::design;
 pub use domains::insights::{agenda, stats};
 pub use domains::workspace;
 pub use kernel::issue;

@@ -4,7 +4,7 @@
 //! (`macos/titles.swift`), and the two WebKit helpers run as subprocesses, the
 //! preview renderer (`macos/render.swift`) and the live catalog window
 //! (`macos/catalog.swift`). The binaries embed the helpers, see
-//! `src/design/helpers.rs`.
+//! `src/domains/design/helpers.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

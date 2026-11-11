@@ -5,8 +5,8 @@ use std::collections::{BTreeSet, HashMap};
 use egui::{CornerRadius, FontId, Frame, Stroke, Vec2};
 
 use super::Dialog;
-use crate::domains::preferences::labels::{self, Hue, LabelColor, LabelStyle, Rgb};
-use crate::kernel::labels::{MAX_LABEL_CHARS, normalize};
+use crate::domains::preferences::labels::{self, LabelColor, LabelStyle, Rgb};
+use crate::kernel::labels::{Hue, MAX_LABEL_CHARS, normalize};
 use crate::theme::{self, Icon};
 use crate::widgets::{self, ButtonKind, field_label, help};
 

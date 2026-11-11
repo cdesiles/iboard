@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::kernel::labels::normalize;
+use crate::kernel::labels::{Hue, normalize};
 
 const PRESETS: [(&str, Hue); 5] = [
     ("discovery", Hue::Teal),
@@ -23,44 +23,6 @@ const PRESETS: [(&str, Hue); 5] = [
 
 /// What stands out with no `[label_style]`.
 const STAND_OUT: [&str; 1] = ["bug"];
-
-/// A preset's place in the theme's `label-*` palette, which has a light and a
-/// dark value for each.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Hue {
-    Red,
-    Orange,
-    Ochre,
-    Green,
-    Teal,
-    Pink,
-    Grey,
-}
-
-impl Hue {
-    /// Every hue, in token order.
-    pub const ALL: [Self; 7] = [
-        Self::Red,
-        Self::Orange,
-        Self::Ochre,
-        Self::Green,
-        Self::Teal,
-        Self::Pink,
-        Self::Grey,
-    ];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Red => "red",
-            Self::Orange => "orange",
-            Self::Ochre => "ochre",
-            Self::Green => "green",
-            Self::Teal => "teal",
-            Self::Pink => "pink",
-            Self::Grey => "grey",
-        }
-    }
-}
 
 /// A label colour, independent of any drawing toolkit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

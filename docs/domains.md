@@ -39,7 +39,7 @@ egui-free and names no domain.
 | --- | --- | --- |
 | `Issue` | `src/kernel/issue.rs` | an issue file: path, title, labels, summary, markdown, modified |
 | board types | `src/kernel/board.rs` | `Board`, `Column`, `ColumnKind`, `Repo`, `display_name`, `project_name` and the `is_*_column` predicates |
-| label names | `src/kernel/labels.rs` | `normalize`, `split_leading_labels`, `display_title`, `front_matter_labels`, `most_used`, the origin labels |
+| label names | `src/kernel/labels.rs` | `normalize`, `split_leading_labels`, `display_title`, `front_matter_labels`, `most_used`, the origin labels, `Hue` and its palette order |
 | config sections | the two `iboard.toml` files | the section names and their owner, below |
 
 `Issue` carries the file projection only. `built_in` and `done_at` leave it in
@@ -77,7 +77,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | **workspace** | `Workspace`, `Group`, `WorkspaceSection`, `Order`, the group draft, a project's repo paths | `src/domains/workspace/` (done) |
 | **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, the tag, the changelog note and the push | `src/domains/delivery/` (done) |
 | **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `src/domains/insights/` (done) |
-| **design** | `DesignSystem`, `Token`, `Theme`, the `Catalog` and its pages, components, assets, CSS, Rust tokens, scaffold and validation | `design/` → `src/domains/design/` (015); `design_ui` stays shell; `design/` on disk stays the shared format |
+| **design** | `DesignSystem`, `Token`, `Theme`, the `Catalog` and its pages, components, assets, CSS, Rust tokens, scaffold and validation | `src/domains/design/` (done); `design_ui` stays shell; `design/` on disk stays the shared format |
 | **preferences** | `Preferences`, `UserConfig`, `Section`, appearance, delete confirmation, notifications, label colours and presets, splits, filter suggestions, the idesign switch | `settings`, `preferences`, `general`, `notifications`, `domains/preferences/labels` → `src/domains/preferences/` (016) |
 | **shell** | `App`, screen, frame, dialog and widget vocabulary, `Theme`, `Intent`, `Action`, the keymap, `CardFacts` and the other view models | `app/*`, `theme`, `widgets`, `menu`, `instance`, `recents`, `project_menu`, `groups_ui`, `label_picker`, `dialog`, `assets` → `src/shell/` (017); `settings_ui`, `design_ui` and `pasteboard` are shell by the same rule |
 | **platform** | `Job`/`Cancel`, `Process`, `Git`/`Batch`, `File` and atomic writes, the markdown structure, paths/times/numbers formatting | `src/platform/` (done) |
@@ -108,7 +108,6 @@ criteria are the source of truth for the fix.
 | Leak | Where | Fixed by |
 | --- | --- | --- |
 | Board enriches `Issue` with the Agent's build log (`built_in`) and git's done date (`done_at`) | `domains/board/discovery.rs`, `kernel/issue.rs` | 018 |
-| Design generates the `label-*` tokens from Preferences' `Hue` | `src/design/rust_tokens.rs` | 015; the palette order is shared vocabulary, so it moves to the kernel |
 | Workspace edits the user configuration itself (`settings::edit`) | `src/domains/workspace/config.rs` | 016, where Workspace hands its `[[workspace.group]]` section to Preferences |
 | Preferences holds the XDG path helpers (`home`, `cache_dir`, `dir_from_env`) that Agent, Board, Design and Workspace call | `src/settings.rs` | 016, which keeps only config I/O in Preferences and moves the helpers to platform (`files`) |
 

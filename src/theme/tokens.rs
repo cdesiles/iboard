@@ -4,7 +4,7 @@ use egui::epaint::Shadow;
 use egui::{Color32, FontId};
 
 use super::{MONO_MEDIUM, SANS_MEDIUM, SANS_SEMIBOLD, family, hex};
-use crate::domains::preferences::labels::Hue;
+use crate::kernel::labels::Hue;
 
 /// One theme's color tokens.
 pub struct Palette {

@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn the_shipped_inter_files_name_their_family_and_weight() {
-        let bytes = include_bytes!("../../assets/fonts/Inter-SemiBold.ttf");
+        let bytes = include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf");
         let (family, style, weight, italic) = sfnt_names(bytes).expect("name table");
         assert_eq!(family, "Inter");
         assert_eq!(style, "SemiBold");

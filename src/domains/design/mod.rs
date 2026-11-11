@@ -1,4 +1,5 @@
-//! A project's design system, read from the Claude Design shape in `design/`.
+//! The Design domain: a project's design system, read from the Claude Design
+//! shape in `design/`.
 //!
 //! The on-disk layout is the source of truth (see `design/README.md`):
 //!

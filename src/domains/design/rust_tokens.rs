@@ -9,7 +9,7 @@ use std::path::Path;
 
 use super::css::resolved_value;
 use super::{DesignSystem, Token};
-use crate::domains::preferences::labels::Hue;
+use crate::kernel::labels::Hue;
 
 const PREFACE: &str = "\
 //! Generated from `design/tokens.json`; run `make tokens`, don't edit by hand.
@@ -18,7 +18,7 @@ use egui::epaint::Shadow;
 use egui::{Color32, FontId};
 
 use super::{MONO_MEDIUM, SANS_MEDIUM, SANS_SEMIBOLD, family, hex};
-use crate::domains::preferences::labels::Hue;
+use crate::kernel::labels::Hue;
 ";
 
 /// The whole of `src/theme/tokens.rs`, ready to write.
