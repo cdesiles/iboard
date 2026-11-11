@@ -12,19 +12,29 @@ use crate::build_log::{self, Entry, RunLog, Segment};
 use crate::diff::{FileDiff, FileStatus};
 use crate::format::clock;
 
+/// Where the live run's newest step or edit sits in `entries`: none before
+/// the run's heading or an outcome counts.
+fn live_at(entries: &[Entry<'_>]) -> Option<usize> {
+    let run = entries
+        .iter()
+        .rposition(|entry| matches!(entry, Entry::Run(_) | Entry::Outcome { .. }))
+        .map_or(0, |at| at + 1);
+    entries[run..]
+        .iter()
+        .rposition(|entry| matches!(entry, Entry::Step(_) | Entry::Edit(_)))
+        .map(|at| run + at)
+}
+
 /// The step the live run is on, as the Now strip reads it: an edit's verb and
-/// file, or a tool's own verb and object.
-pub(super) fn live(text: &str) -> Option<(String, String)> {
-    let entry = build_log::parse(text)
-        .into_iter()
-        .rev()
-        .find(|entry| matches!(entry, Entry::Step(_) | Entry::Edit(_)))?;
-    let (verb, object) = match entry {
-        Entry::Edit(path) => ("Editing", path),
-        Entry::Step(step) => build_log::step_parts(step),
-        _ => return None,
+/// file, a tool's own verb and object, or the issue before the first step.
+pub(super) fn live(text: &str) -> (String, String) {
+    let entries = build_log::parse(text);
+    let (verb, object) = match live_at(&entries).map(|at| &entries[at]) {
+        Some(Entry::Edit(path)) => ("Editing", *path),
+        Some(Entry::Step(step)) => build_log::step_parts(step),
+        _ => ("Reading", "the issue"),
     };
-    Some((verb.to_string(), object.to_string()))
+    (verb.to_string(), object.to_string())
 }
 
 /// The Now strip: the Thinking mark, the live step, and its clock.
@@ -127,15 +137,14 @@ fn rule(ui: &mut egui::Ui) {
     );
 }
 
-/// The entries a timeline shows: while a run is live, its last step belongs
-/// to the Now strip, not the fold. An edit is not drawn either way, and it
-/// still counts toward the run's changes.
+/// The entries a timeline shows: while a run is live, the step the Now strip
+/// shows leaves the fold. An edit is not drawn either way, and it still
+/// counts toward the run's changes.
 fn entries(text: &str, running: bool) -> Vec<Entry<'_>> {
     let mut entries = build_log::parse(text);
     if running
-        && let Some(at) = entries
-            .iter()
-            .rposition(|entry| matches!(entry, Entry::Step(_)))
+        && let Some(at) = live_at(&entries)
+        && matches!(entries[at], Entry::Step(_))
     {
         entries.remove(at);
     }

@@ -14,8 +14,21 @@ Let me look around.
 → Reading src/b.rs…
 → Searching todo…
 → Using edit src/a.rs…
+That is the fix.
 → Reading src/c.rs…
 ✓ Finished in 03:12
+";
+
+/// A service build's log as it was once written: no arrows, and each call
+/// said twice, bare then with its target.
+const UNMARKED: &str = "\
+── 2026-11-07 14:02 · opencode
+Running…
+Running git status…
+Using edit…
+Using edit src/a.rs…
+Running…
+Running cargo test…
 ";
 
 /// A project with one Doing issue, a dirty `src/a.rs`, and the log above.
@@ -40,8 +53,28 @@ fn logged(tag: &str) -> (Scratch, IboardApp, PathBuf) {
     (dir, app, issue)
 }
 
+/// Steps logged without their arrow fold into one row around the edit, which
+/// lands in the run's changes: no step reads as the agent's prose.
+#[test]
+fn an_unmarked_log_folds_like_a_marked_one() {
+    let (_dir, mut app, issue) = logged("agent-log-unmarked");
+    std::fs::write(build_log::path(&app.board.root, &issue), UNMARKED).unwrap();
+    app.apply(vec![Intent::AgentLog(issue)]);
+    let mut harness = kittest(app);
+    harness.run_steps(2);
+
+    harness.get_by_label("ran 2 commands, collapsed");
+    assert!(harness.query_by_label_contains("Running").is_none());
+    assert!(until(|| {
+        harness.run_steps(1);
+        harness
+            .query_by_label("1 file changed, +1 −1, collapsed")
+            .is_some()
+    }));
+}
+
 /// A run reads as a head, one folded activity row, a lone step past the
-/// edit, its changes, and its outcome; the changes open the Diff screen.
+/// message, its changes, and its outcome; the changes open the Diff screen.
 #[test]
 fn a_run_reads_as_a_timeline_with_its_changes() {
     let (_dir, mut app, issue) = logged("agent-log-timeline");

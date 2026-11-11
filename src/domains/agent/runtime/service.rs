@@ -591,7 +591,7 @@ fn await_answer(
                     *progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(step.clone());
                 }
                 if let Some(log) = log.as_mut() {
-                    let _ = build_log::write_line(log, &step);
+                    let _ = build_log::write_line(log, &build_log::step(step));
                 }
             }
         }

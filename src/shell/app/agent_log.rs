@@ -194,7 +194,8 @@ impl IboardApp {
                 log.mode = mode;
             }
             ui.add_space(theme::SPACE_2);
-            if let (Some(since), Some((verb, object))) = (running, timeline::live(&log.text)) {
+            if let (Some(since), None) = (running, question.as_ref()) {
+                let (verb, object) = timeline::live(&log.text);
                 timeline::now(ui, since, &verb, &object);
             }
             let height = (ui.available_height() - 78.0).max(80.0);

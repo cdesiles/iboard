@@ -127,7 +127,8 @@ fn message(text: &serde_json::Value) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-fn step(step: String) -> String {
+/// The line a step adds to the log: marked, and cut to its first line.
+pub fn step(step: String) -> String {
     format!("→ {}", step.lines().next().unwrap_or_default().trim_end())
 }
 
@@ -176,6 +177,32 @@ fn edited(step: &str) -> Option<&str> {
         .filter(|path| !path.is_empty())
 }
 
+/// The verbs a step starts with, as the engines describe their tools.
+const VERBS: &[&str] = &["Reading", "Searching", "Running", "Looking up", "Using"];
+
+/// A step logged without its arrow, as service builds once wrote theirs: a
+/// line that is a verb, its target, and the ellipsis.
+fn unmarked(line: &str) -> Option<&str> {
+    let step = line.trim_end();
+    let body = step.strip_suffix('…')?;
+    let rest = VERBS.iter().find_map(|verb| body.strip_prefix(verb))?;
+    (rest.is_empty() || rest.starts_with(' ')).then_some(step)
+}
+
+/// Whether `step` is the call `bare` named before its target was known: the
+/// service is polled, and shows a call first without its input.
+fn refines(bare: &str, step: &str) -> bool {
+    let bare = bare.strip_suffix('…').unwrap_or(bare);
+    let named = match bare.strip_prefix("Using ") {
+        Some(tool) => !tool.contains(' '),
+        None => VERBS.contains(&bare),
+    };
+    named
+        && step
+            .strip_prefix(bare)
+            .is_some_and(|rest| rest.starts_with(' '))
+}
+
 /// The log's `text` cut into its runs, steps, outcomes and messages; the
 /// lines between two marked ones make one message.
 pub fn parse(text: &str) -> Vec<Entry<'_>> {
@@ -189,11 +216,14 @@ pub fn parse(text: &str) -> Vec<Entry<'_>> {
         message.clear();
     };
     for line in text.lines() {
-        let marked = if let Some(rest) = line.strip_prefix("── ") {
-            Some(Entry::Run(rest.trim()))
-        } else if let Some(rest) = line.strip_prefix("→ ") {
-            let step = rest.trim();
+        let step = line
+            .strip_prefix("→ ")
+            .map(str::trim)
+            .or_else(|| unmarked(line));
+        let marked = if let Some(step) = step {
             Some(edited(step).map_or(Entry::Step(step), Entry::Edit))
+        } else if let Some(rest) = line.strip_prefix("── ") {
+            Some(Entry::Run(rest.trim()))
         } else if let Some(rest) = line.strip_prefix("✓ ") {
             Some(Entry::Outcome {
                 ok: true,
@@ -210,6 +240,11 @@ pub fn parse(text: &str) -> Vec<Entry<'_>> {
         match marked {
             Some(entry) => {
                 flush(&mut message, &mut entries);
+                if let (Some(step), Some(Entry::Step(bare))) = (step, entries.last())
+                    && refines(bare, step)
+                {
+                    entries.pop();
+                }
                 entries.push(entry);
             }
             None => message.push(line),
@@ -330,7 +365,7 @@ pub enum Segment<'a> {
 
 /// The log's entries folded for the timeline: consecutive steps become one
 /// [`Segment::Activity`], a lone one stays a [`Segment::Step`], and an edit
-/// leaves the burst it sits in.
+/// leaves the burst it sits in without cutting it.
 pub fn segments(entries: Vec<Entry<'_>>) -> Vec<Segment<'_>> {
     fn flush<'a>(burst: &mut Vec<&'a str>, out: &mut Vec<Segment<'a>>) {
         match burst.len() {
@@ -345,10 +380,7 @@ pub fn segments(entries: Vec<Entry<'_>>) -> Vec<Segment<'_>> {
     for entry in entries {
         match entry {
             Entry::Step(step) => burst.push(step),
-            Entry::Edit(edit) => {
-                flush(&mut burst, &mut out);
-                out.push(Segment::Edit(edit));
-            }
+            Entry::Edit(edit) => out.push(Segment::Edit(edit)),
             Entry::Message(message) => {
                 flush(&mut burst, &mut out);
                 out.push(Segment::Message(message));
@@ -500,14 +532,61 @@ mod tests {
         let runs = timeline(log);
         assert_eq!(
             runs[0].body,
-            [
-                Segment::Activity(vec!["Reading a.rs…", "Reading b.rs…"]),
-                Segment::Step("Reading c.rs…"),
-            ],
-            "the edit does not join either burst"
+            [Segment::Activity(vec![
+                "Reading a.rs…",
+                "Reading b.rs…",
+                "Reading c.rs…"
+            ])],
+            "the edit neither joins the burst nor cuts it"
         );
         assert_eq!(runs[0].edits, ["a.rs"]);
         assert_eq!(runs[0].outcome, Some((true, "Finished")));
+    }
+
+    #[test]
+    fn a_step_without_its_arrow_is_still_a_step() {
+        let log = "── t · opencode\nRunning git status…\nUsing edit src/a.rs…\nReading…\nRunning the tests… then the lints.\n  Running indented…\n";
+        assert_eq!(
+            parse(log),
+            [
+                Entry::Run("t · opencode"),
+                Entry::Step("Running git status…"),
+                Entry::Edit("src/a.rs"),
+                Entry::Step("Reading…"),
+                Entry::Message("Running the tests… then the lints.\n  Running indented…".into()),
+            ]
+        );
+        assert_eq!(
+            parse(&step("Running make…".into())),
+            [Entry::Step("Running make…")]
+        );
+    }
+
+    #[test]
+    fn a_call_said_bare_then_with_its_target_is_one_step() {
+        let log = "→ Running…\n→ Running cargo test…\n→ Using edit…\n→ Using edit src/a.rs…\n→ Looking up…\n→ Looking up docs.rs/egui…\n";
+        assert_eq!(
+            parse(log),
+            [
+                Entry::Step("Running cargo test…"),
+                Entry::Edit("src/a.rs"),
+                Entry::Step("Looking up docs.rs/egui…"),
+            ]
+        );
+        let kept = "→ Running…\n→ Reading a.rs…\n→ Running cargo test…\n→ Running cargo test --lib…\n→ Running…\nhi\n→ Running make…\n";
+        assert_eq!(
+            parse(kept),
+            [
+                Entry::Step("Running…"),
+                Entry::Step("Reading a.rs…"),
+                Entry::Step("Running cargo test…"),
+                Entry::Step("Running cargo test --lib…"),
+                Entry::Step("Running…"),
+                Entry::Message("hi".into()),
+                Entry::Step("Running make…"),
+            ],
+            "another tool, a longer command and a message between are other calls"
+        );
     }
 
     #[test]
