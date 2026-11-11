@@ -26,7 +26,6 @@ pub mod notifications;
 pub mod pasteboard;
 pub mod platform;
 pub mod preferences;
-pub mod release;
 #[cfg(test)]
 mod scratch_git;
 pub mod settings;
@@ -43,6 +42,7 @@ pub use domains::agent::{
 };
 pub use domains::authoring::{diff, prose, sheet};
 pub use domains::board::{commits, config, discovery, filter, history, labels, priority, trash};
+pub use domains::delivery as release;
 pub use domains::workspace;
 pub use kernel::issue;
 pub use platform::{files, format, git, job, markdown, process};
