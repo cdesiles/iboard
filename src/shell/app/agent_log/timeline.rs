@@ -37,10 +37,11 @@ pub(super) fn live(text: &str) -> (String, String) {
     (verb.to_string(), object.to_string())
 }
 
-/// The Now strip: the Thinking mark, the live step, and its clock.
+/// The Now strip: a `surface-sunken` band with the Thinking mark, the live
+/// step, and its clock.
 pub(super) fn now(ui: &mut egui::Ui, since: Instant, verb: &str, object: &str) {
     let p = theme::palette(ui);
-    let (rect, response) =
+    let (band, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::hover());
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{verb} {object}"))
@@ -48,6 +49,9 @@ pub(super) fn now(ui: &mut egui::Ui, since: Instant, verb: &str, object: &str) {
     ui.ctx().accesskit_node_builder(response.id, |node| {
         node.set_live(egui::accesskit::Live::Polite);
     });
+    ui.painter()
+        .rect_filled(band, CornerRadius::same(theme::RADIUS_SM), p.surface_sunken);
+    let rect = band.shrink2(Vec2::new(theme::SPACE_3, 0.0));
     let mark = egui::Rect::from_center_size(
         egui::Pos2::new(rect.left() + 7.0, rect.center().y),
         Vec2::splat(14.0),
@@ -69,7 +73,7 @@ pub(super) fn now(ui: &mut egui::Ui, since: Instant, verb: &str, object: &str) {
         p.ink_muted,
     );
 
-    let mut x = rect.left() + 20.0;
+    let mut x = rect.left() + 14.0 + theme::SPACE_2;
     let verb_galley = ui
         .painter()
         .layout_no_wrap(verb.to_string(), theme::meta(), p.ink_muted);

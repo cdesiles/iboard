@@ -165,3 +165,30 @@ fn the_live_step_moves_from_now_to_the_timeline() {
         "the step returns to the timeline"
     );
 }
+
+/// The switch and the foot keep the panel's `space-4` sides, the reply is as
+/// wide as the foot, and Send stays inside the window.
+#[test]
+fn the_switch_and_the_composer_sit_inside_the_panel() {
+    let (_dir, mut app, issue) = logged("agent-log-chrome");
+    app.apply(vec![Intent::AgentLog(issue)]);
+    let mut harness = kittest(app);
+    harness.run_steps(3);
+
+    let title = harness.get_by_label("Agent log of fix.md").rect();
+    let switch = harness.get_by_label("Timeline").rect();
+    let reply = harness
+        .get_by_role(egui::accesskit::Role::MultilineTextInput)
+        .rect();
+    let hint = harness.get_by_label("⌘↩ sends").rect();
+    let send = harness.get_by_label("Send").rect();
+    let screen = harness.ctx.content_rect();
+    let near = |left: f32, right: f32| (left - right).abs() < 0.5;
+
+    assert!(near(switch.left() - 2.0, title.left()), "{switch:?}");
+    assert!(near(reply.left(), title.left()), "{reply:?}");
+    assert!(near(hint.left(), title.left()), "{hint:?}");
+    assert!(near(reply.right(), send.right()), "{reply:?} {send:?}");
+    assert!(reply.height() >= 56.0, "{reply:?}");
+    assert!(send.bottom() < screen.bottom(), "{send:?}");
+}

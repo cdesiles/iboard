@@ -3,8 +3,8 @@
 
 use super::side_panel::side_panel;
 use super::{
-    ButtonKind, CommonMarkCache, IboardApp, Instant, Key, Path, PathBuf, RichText, file_name, job,
-    theme, widgets,
+    ButtonKind, CommonMarkCache, Frame, IboardApp, Instant, Key, MarginF32, Path, PathBuf,
+    RichText, file_name, job, theme, widgets,
 };
 use crate::build_log;
 use crate::diff::{self, FileDiff};
@@ -186,57 +186,42 @@ impl IboardApp {
         let mut open_diff = None;
         side_panel(ui, &title, detail, |ui| {
             self.question_card(ui, &path, question.as_ref());
-            if let Some(mode) = widgets::segmented(
-                ui,
-                log.mode,
-                &[(LogMode::Timeline, "Timeline"), (LogMode::Raw, "Raw")],
-            ) {
-                log.mode = mode;
-            }
-            ui.add_space(theme::SPACE_2);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            inset(ui, theme::SPACE_3, 0.0, |ui| {
+                if let Some(mode) = widgets::segmented(
+                    ui,
+                    log.mode,
+                    &[(LogMode::Timeline, "Timeline"), (LogMode::Raw, "Raw")],
+                ) {
+                    log.mode = mode;
+                }
+            });
             if let (Some(since), None) = (running, question.as_ref()) {
                 let (verb, object) = timeline::live(&log.text);
-                timeline::now(ui, since, &verb, &object);
+                inset(ui, theme::SPACE_3, 0.0, |ui| {
+                    timeline::now(ui, since, &verb, &object);
+                });
             }
-            let height = (ui.available_height() - 78.0).max(80.0);
-            theme::scroll_area(
-                ui,
-                egui::ScrollArea::vertical()
-                    .id_salt("agent_log")
-                    .max_height(height)
-                    .content_margin(theme::scroll_margin(theme::SPACE_4, theme::SPACE_4))
-                    .stick_to_bottom(true)
-                    .auto_shrink(false),
-                |ui| {
-                    if log.text.is_empty() {
-                        ui.label(
-                            RichText::new("The agent has not said anything yet.")
-                                .color(theme::palette(ui).ink_muted),
-                        );
-                    }
-                    match log.mode {
-                        LogMode::Timeline => timeline::timeline(
-                            ui,
-                            &log.text,
-                            &mut log.cache,
-                            &log.files,
-                            running.is_some(),
-                            &mut open_diff,
-                        ),
-                        LogMode::Raw => timeline::raw(ui, &log.text),
-                    }
-                },
-            );
-            ui.add_space(theme::SPACE_2);
-            if question.is_some() {
-                ui.label(
-                    RichText::new("Answer the question above to continue.")
-                        .font(theme::ui_small())
-                        .color(theme::palette(ui).ink_muted),
-                );
-            } else {
-                send = reply_box(ui, &mut log.reply, state, replyable);
-            }
+            let foot = egui::Id::unique("agent_log_foot");
+            let foot_height = ui.data(|d| d.get_temp::<f32>(foot)).unwrap_or(FOOT_H);
+            let height = (ui.available_height() - foot_height).max(80.0);
+            log_body(ui, &mut log, running.is_some(), height, &mut open_diff);
+            let top = ui.cursor().top();
+            widgets::rule(ui);
+            inset(ui, theme::SPACE_3, theme::SPACE_3, |ui| {
+                ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+                if question.is_some() {
+                    ui.label(
+                        RichText::new("Answer the question above to continue.")
+                            .font(theme::meta())
+                            .color(theme::palette(ui).ink_faint),
+                    );
+                } else {
+                    send = reply_box(ui, &mut log.reply, state, replyable);
+                }
+            });
+            let used = ui.cursor().top() - top;
+            ui.data_mut(|d| d.insert_temp(foot, used));
         });
         if let Some(text) = send {
             log.reply.clear();
@@ -287,6 +272,66 @@ impl IboardApp {
     }
 }
 
+/// The foot's height before it was ever drawn: the rule, a two-row field and
+/// the Send row between their margins.
+const FOOT_H: f32 = 101.0;
+
+/// The reply field's least height: two rows of `ui-body` in their padding.
+const REPLY_MIN_H: f32 = 56.0;
+
+/// A row of the panel between its `space-4` sides.
+fn inset(ui: &mut egui::Ui, top: f32, bottom: f32, add: impl FnOnce(&mut egui::Ui)) {
+    Frame::new()
+        .inner_margin(MarginF32 {
+            left: theme::SPACE_4,
+            right: theme::SPACE_4,
+            top,
+            bottom,
+        })
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui);
+        });
+}
+
+/// The one part that scrolls, `height` tall: the timeline or the raw log.
+fn log_body(
+    ui: &mut egui::Ui,
+    log: &mut LogView,
+    running: bool,
+    height: f32,
+    open_diff: &mut Option<timeline::OpenDiff>,
+) {
+    theme::scroll_area(
+        ui,
+        egui::ScrollArea::vertical()
+            .id_salt("agent_log")
+            .max_height(height)
+            .content_margin(theme::scroll_margin(theme::SPACE_4, theme::SPACE_4))
+            .stick_to_bottom(true)
+            .auto_shrink(false),
+        |ui| {
+            if log.text.is_empty() {
+                ui.label(
+                    RichText::new("The agent has not said anything yet.")
+                        .color(theme::palette(ui).ink_muted),
+                );
+            }
+            match log.mode {
+                LogMode::Timeline => timeline::timeline(
+                    ui,
+                    &log.text,
+                    &mut log.cache,
+                    &log.files,
+                    running,
+                    open_diff,
+                ),
+                LogMode::Raw => timeline::raw(ui, &log.text),
+            }
+        },
+    );
+}
+
 /// What the composer says it will do, from the run's state.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Composer {
@@ -318,8 +363,12 @@ fn reply_box(
     let field = widgets::text_entry(
         ui,
         egui::TextEdit::multiline(text)
-            .hint_text(hint)
+            .hint_text(RichText::new(hint).color(p.ink_faint))
+            .font(theme::ui_body())
+            .margin(egui::Vec2::new(theme::SPACE_3, theme::SPACE_2))
             .desired_rows(2)
+            .desired_width(f32::INFINITY)
+            .min_size(egui::Vec2::new(0.0, REPLY_MIN_H))
             .interactive(replyable),
     );
     let ready = replyable && !text.trim().is_empty();
