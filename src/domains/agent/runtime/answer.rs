@@ -8,17 +8,17 @@ pub struct Draft {
     pub body: String,
 }
 
-/// The tickets of a split answer, each after a [`crate::prompts::SPLIT_MARK`]
+/// The tickets of a split answer, each after a [`crate::domains::agent::workflows::prompts::SPLIT_MARK`]
 /// line. `None` unless there are at least two, each with a title.
 pub fn parse_split(text: &str) -> Option<Vec<Draft>> {
     let drafts = text
-        .split(crate::prompts::SPLIT_MARK)
+        .split(crate::domains::agent::workflows::prompts::SPLIT_MARK)
         .skip(1)
         .map(|chunk| {
             let lines: Vec<&str> = chunk.lines().collect();
-            let at = crate::markdown::title_line(&lines)?;
+            let at = crate::platform::markdown::title_line(&lines)?;
             Some(Draft {
-                title: crate::markdown::heading_text(lines[at]).to_string(),
+                title: crate::platform::markdown::heading_text(lines[at]).to_string(),
                 body: lines[at + 1..].join("\n").trim().to_string(),
             })
         })
@@ -251,7 +251,7 @@ pub fn choice_parts(option: &str) -> (String, Option<&str>) {
 /// A list line without its bullet or number: `- Yes` and `2. Yes` give `Yes`.
 fn list_item(line: &str) -> &str {
     let line = line.trim();
-    crate::markdown::list_marker(line).map_or(line, |(_, rest)| rest.trim_start())
+    crate::platform::markdown::list_marker(line).map_or(line, |(_, rest)| rest.trim_start())
 }
 
 /// The first line of `lines` keyed by one of `keys`, and what follows its key.

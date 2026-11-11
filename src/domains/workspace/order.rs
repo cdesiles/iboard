@@ -15,8 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domains::board::discovery::{self, Board};
 use crate::domains::board::priority;
-use crate::files::{self, WriteError};
-use crate::settings;
+use crate::platform::files::{self, WriteError};
 
 const DIR: &str = "group-order";
 
@@ -30,7 +29,7 @@ pub struct Order {
 
 /// Where the groups' orders live: beside the user configuration.
 pub fn dir() -> Option<PathBuf> {
-    settings::config_file().and_then(|config| Some(config.parent()?.join(DIR)))
+    Some(files::config_dir()?.join(DIR))
 }
 
 /// The order file of `group` in `dir`.

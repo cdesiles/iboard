@@ -13,7 +13,7 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Local};
 
-use crate::git;
+use crate::platform::git;
 
 type Dates = HashMap<PathBuf, DateTime<Local>>;
 

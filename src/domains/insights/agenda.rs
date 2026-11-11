@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 use chrono::{Datelike, Duration as Days, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
-use crate::files;
-use crate::git;
-use crate::job::Cancel;
+use crate::platform::files;
+use crate::platform::git;
+use crate::platform::job::Cancel;
 
 /// How many days the agenda reads, up to today: as many as its widest range
 /// shows.

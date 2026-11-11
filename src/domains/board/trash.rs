@@ -61,7 +61,7 @@ fn system(path: &Path) -> std::io::Result<Option<PathBuf>> {
 /// The freedesktop Trash: `$XDG_DATA_HOME/Trash`, or `~/.local/share/Trash`.
 #[cfg(not(target_os = "macos"))]
 fn system(path: &Path) -> std::io::Result<Option<PathBuf>> {
-    let data = crate::settings::dir_from_env("XDG_DATA_HOME", ".local/share")
+    let data = crate::platform::files::dir_from_env("XDG_DATA_HOME", ".local/share")
         .ok_or_else(|| std::io::Error::other("no home folder for the Trash"))?;
     into_folder(path, &data.join("Trash")).map(Some)
 }

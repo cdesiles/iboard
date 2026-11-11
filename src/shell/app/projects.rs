@@ -2,11 +2,11 @@
 //! them under the board header's project name.
 
 use super::{
-    IboardApp, Instant, Path, PathBuf, Rect, UserConfig, all, display_path, file_name, groups,
-    recents, settings, workspace,
+    IboardApp, Instant, Path, PathBuf, Rect, all, display_path, file_name, files, groups, recents,
 };
+use crate::preferences::workspace as user_config;
 use crate::shell::project_menu::{self, Action, Entries, GroupRow, Pick, ProjectRow};
-use crate::workspace::config;
+use crate::workspace::config::has_issues_dir;
 
 impl IboardApp {
     /// Every project the menu lists, in the user's order: the stored order,
@@ -48,7 +48,7 @@ impl IboardApp {
         let Some(file) = self.config_file.clone() else {
             return;
         };
-        match config::save_projects(&file, &self.projects, settings::home().as_deref()) {
+        match user_config::save_projects(&file, &self.projects, files::home().as_deref()) {
             Ok(()) => {
                 self.config_stamp = groups::modified(&file);
                 if tell {
@@ -56,15 +56,13 @@ impl IboardApp {
                     self.session.notice = Some((notice, Instant::now()));
                 }
             }
-            Err(config::SaveError::Changed) => {}
-            Err(config::SaveError::Failed(error)) => self.error = Some(error),
+            Err(user_config::SaveError::Changed) => {}
+            Err(user_config::SaveError::Failed(error)) => self.error = Some(error),
         }
     }
 
-    pub(super) fn reload_project_order(&mut self, user: &mut UserConfig) {
-        self.projects = user
-            .section::<workspace::WorkspaceSection>("workspace")
-            .projects()
+    pub(super) fn reload_project_order(&mut self, projects: &[PathBuf]) {
+        self.projects = projects
             .iter()
             .map(|project| recents::canonical(project))
             .collect();
@@ -156,7 +154,7 @@ impl IboardApp {
     pub(super) fn add_picked_projects(&mut self) -> bool {
         let picked = (self.folder_picker)();
         for project in picked.iter().rev() {
-            if config::has_issues_dir(project) {
+            if has_issues_dir(project) {
                 self.add_to_order(project);
             }
         }

@@ -11,9 +11,9 @@ pub use crate::kernel::labels::{
     normalize, split_leading_labels,
 };
 
-use crate::files;
 use crate::kernel::labels::{inline_items, inline_list, item_name};
-use crate::markdown;
+use crate::platform::files;
+use crate::platform::markdown;
 
 /// Adds `label` (already normalized) to an issue's markdown, where its labels
 /// already live: the front matter's `labels:` list when it has one, else the

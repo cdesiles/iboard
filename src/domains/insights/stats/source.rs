@@ -17,9 +17,9 @@ use super::{
     release,
 };
 use crate::domains::insights::agenda::{self, AgendaDays, Repo};
-use crate::files;
-use crate::git::{self, Batch};
-use crate::job::Cancel;
+use crate::platform::files;
+use crate::platform::git::{self, Batch};
+use crate::platform::job::Cancel;
 
 /// Bumped whenever the measures change, so older caches are read again.
 const CACHE_VERSION: u32 = 1;

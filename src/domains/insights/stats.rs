@@ -23,8 +23,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use serde::{Deserialize, Serialize};
 
 use super::agenda::AgendaDays;
-use crate::git::{self, Batch};
-use crate::job::Cancel;
+use crate::platform::git::{self, Batch};
+use crate::platform::job::Cancel;
 pub use cycle::{Cycle, Cycles, span};
 pub use measure::{FileMetrics, Language, language_of, measure};
 pub use release::{Release, ReleasePrefs, ReleasePrefsSection, Releases};

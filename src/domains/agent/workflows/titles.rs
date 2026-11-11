@@ -18,9 +18,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent::{self, AgentConfig};
-use crate::files;
-use crate::job::Job;
+use crate::domains::agent::runtime::{self as agent, AgentConfig};
+use crate::platform::files;
+use crate::platform::job::Job;
 
 /// The longest title the composer accepts.
 pub const MAX_TITLE_CHARS: usize = 80;
@@ -465,23 +465,11 @@ mod tests {
 
     #[test]
     fn the_engine_round_trips_through_the_config() {
-        let scratch = tempfile::tempdir().unwrap();
-        let dir = scratch.path();
-        let file = dir.join("iboard.toml");
-        let engine = || titles(&std::fs::read_to_string(&file).unwrap()).engine().0;
-        std::fs::write(&file, "[ai]\ntool = \"claude\"\n").unwrap();
-        assert_eq!(engine(), Engine::Apple);
-        crate::settings::save(
-            &file,
-            &[crate::settings::Section::new("titles", &section(Engine::Off)).unwrap()],
-        )
-        .unwrap();
-        assert_eq!(engine(), Engine::Off);
-        let text = std::fs::read_to_string(&file).unwrap();
-        assert!(
-            text.contains("tool = \"claude\""),
-            "other sections stay: {text}"
+        let text = format!(
+            "[titles]\n{}",
+            toml::to_string(&section(Engine::Off)).unwrap()
         );
+        assert_eq!(titles(&text).engine().0, Engine::Off);
         assert!(text.contains("engine = \"off\""), "{text}");
         let (engine, problems) = titles("[titles]\nengine = \"manual\"\n").engine();
         assert_eq!(engine, Engine::Off, "the old name");

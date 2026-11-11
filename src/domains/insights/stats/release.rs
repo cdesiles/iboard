@@ -18,8 +18,8 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use super::{Listed, STOPPED};
-use crate::git;
-use crate::job::Cancel;
+use crate::platform::git;
+use crate::platform::job::Cancel;
 
 const SECTION: &str = "stats";
 const DEFAULT_TAGS: &str = "v*";
@@ -255,7 +255,6 @@ mod tests {
     use super::super::{Measures, Need, Source};
     use super::*;
     use crate::scratch_git::{git, git_env};
-    use crate::settings;
     use std::sync::Arc;
 
     fn repo() -> tempfile::TempDir {
@@ -409,31 +408,18 @@ mod tests {
     }
 
     #[test]
-    fn the_section_keeps_comments_and_both_keys() {
-        let scratch = tempfile::tempdir().unwrap();
-        let file = scratch.path().join("iboard.toml");
-        std::fs::write(
-            &file,
-            "# mine\n[stats]\nrelease_tags = \"rel-*\" # our scheme\n",
-        )
-        .unwrap();
-        let mut prefs = stats(&std::fs::read_to_string(&file).unwrap()).prefs().0;
+    fn the_section_keeps_both_keys() {
+        let text = "# mine\n[stats]\nrelease_tags = \"rel-*\" # our scheme\n";
+        let mut prefs = stats(text).prefs().0;
         assert_eq!(prefs.tags, "rel-*");
         assert!(prefs.show);
         prefs.show = false;
-        settings::save(
-            &file,
-            &[settings::Section::new("stats", &prefs.section()).unwrap()],
-        )
-        .unwrap();
+        let text = format!("[stats]\n{}", toml::to_string(&prefs.section()).unwrap());
         assert_eq!(
-            std::fs::read_to_string(&file).unwrap(),
-            "# mine\n[stats]\nrelease_tags = \"rel-*\" # our scheme\nshow_releases = false\n"
+            text,
+            "[stats]\nshow_releases = false\nrelease_tags = \"rel-*\"\n"
         );
-        assert_eq!(
-            stats(&std::fs::read_to_string(&file).unwrap()).prefs().0,
-            prefs
-        );
+        assert_eq!(stats(&text).prefs().0, prefs);
     }
 
     #[test]

@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::{files, settings};
+use crate::platform::files;
 
 /// The preview renderer, `macos/render.swift`.
 pub fn renderer() -> Option<PathBuf> {
@@ -45,7 +45,7 @@ fn locate(
     let bytes = embedded?;
     let path = path
         .get_or_init(|| {
-            let dir = settings::cache_dir()?.join("helpers");
+            let dir = files::cache_dir()?.join("helpers");
             Some(dir.join(format!("{name}-{:016x}", fnv1a(bytes))))
         })
         .clone()?;

@@ -17,9 +17,8 @@ use serde::Deserialize;
 
 use crate::domains::board::discovery::{self, Board, Column, Located, Repo};
 use crate::domains::board::{history, labels, priority};
-use crate::files;
 use crate::kernel::issue::Issue;
-use crate::settings;
+use crate::platform::files;
 
 pub mod config;
 pub mod draft;
@@ -73,12 +72,12 @@ struct RawGroup {
 impl WorkspaceSection {
     /// The `[[workspace.group]]` tables, in their order; `None` when there is
     /// none.
-    pub fn workspace(self) -> Option<Workspace> {
+    pub fn workspace(&self) -> Option<Workspace> {
         let groups: Vec<Group> = self
             .group
-            .into_iter()
+            .iter()
             .map(|group| Group {
-                name: group.name,
+                name: group.name.clone(),
                 repos: group.repos.iter().map(|repo| expand(repo)).collect(),
             })
             .collect();
@@ -87,13 +86,13 @@ impl WorkspaceSection {
 
     /// `workspace.projects`: the user's own order of their projects, as
     /// written.
-    pub fn projects(self) -> Vec<PathBuf> {
+    pub fn projects(&self) -> Vec<PathBuf> {
         self.projects.iter().map(|path| expand(path)).collect()
     }
 }
 
 fn expand(path: &str) -> PathBuf {
-    match (path.strip_prefix("~/"), settings::home()) {
+    match (path.strip_prefix("~/"), files::home()) {
         (Some(rest), Some(home)) => home.join(rest),
         _ => PathBuf::from(path),
     }
@@ -102,7 +101,7 @@ fn expand(path: &str) -> PathBuf {
 /// Where the merged columns of `group` pretend to live. Nothing is ever
 /// written there: a move resolves to the column of the card's own project.
 pub fn virtual_root(group: &str) -> PathBuf {
-    settings::cache_dir()
+    files::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("groups")
         .join(file_stem(group))

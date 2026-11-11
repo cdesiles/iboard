@@ -6,10 +6,10 @@
 //! token block is a binding contract. The design system is read-only here; only
 //! the agent's answer changes files.
 
-use crate::agent::{Leash, ReviewMode};
-use crate::design::{DesignSystem, css};
-use crate::markdown;
-use crate::plan::{Plan, Speaker};
+use crate::domains::agent::runtime::{Leash, ReviewMode};
+use crate::domains::agent::workflows::plan::{Plan, Speaker};
+use crate::domains::design::{DesignSystem, css};
+use crate::platform::markdown;
 
 /// The design context: the brief, the token contract and the component
 /// inventory, ready to splice into a prompt or to show as-is.
@@ -461,7 +461,7 @@ pub fn clean_html_reply(reply: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::Kind;
+    use crate::domains::agent::workflows::plan::Kind;
     use std::path::Path;
 
     const ISSUE: &str = "# Taller header\n\nThe header should be 48pt.\n";

@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent::{self, Report, ReviewMode, Reviewed, Verdict};
-use crate::files::{self, WriteError};
-use crate::priority;
+use crate::domains::agent::runtime::{self as agent, Report, ReviewMode, Reviewed, Verdict};
+use crate::domains::board::priority;
+use crate::platform::files::{self, WriteError};
 
 /// The folder under the issues root; discovery skips dot-folders.
 pub const DIR: &str = ".reviews";

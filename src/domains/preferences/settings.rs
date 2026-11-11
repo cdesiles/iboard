@@ -16,37 +16,14 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use toml_edit::{DocumentMut, Item, Table};
 
-use crate::files::{self, WriteError};
+use crate::platform::files::{self, WriteError};
 
-const DIR: &str = "iboard";
 const FILE: &str = "iboard.toml";
 
 /// Where the user configuration lives, or `None` when neither
 /// `XDG_CONFIG_HOME` nor `HOME` is set.
 pub fn config_file() -> Option<PathBuf> {
-    dir_from_env("XDG_CONFIG_HOME", ".config").map(|base| base.join(DIR).join(FILE))
-}
-
-/// iboard's cache folder: `$XDG_CACHE_HOME/iboard`, or `~/.cache/iboard`.
-pub fn cache_dir() -> Option<PathBuf> {
-    dir_from_env("XDG_CACHE_HOME", ".cache").map(|base| base.join(DIR))
-}
-
-/// The folder `$var` names, else `fallback` under the home folder. An empty
-/// variable counts as unset.
-pub fn dir_from_env(var: &str, fallback: &str) -> Option<PathBuf> {
-    env_dir(var).or_else(|| home().map(|home| home.join(fallback)))
-}
-
-/// The user's home folder, from `HOME`.
-pub fn home() -> Option<PathBuf> {
-    files::home()
-}
-
-fn env_dir(var: &str) -> Option<PathBuf> {
-    std::env::var_os(var)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
+    Some(files::config_dir()?.join(FILE))
 }
 
 /// The user configuration as read from disk.

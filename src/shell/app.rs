@@ -483,7 +483,7 @@ impl IboardApp {
         if let Some(file) = &app.recents_file {
             app.recents = recents::read(file);
         }
-        app.plan_dir = settings::cache_dir();
+        app.plan_dir = files::cache_dir();
         app.trash = Trash::System;
         // Likewise for the user configuration.
         app.config_file = settings::config_file();
@@ -497,10 +497,9 @@ impl IboardApp {
         app.restore_splits(&cc.egui_ctx);
         agent::set_direnv(app.prefs.direnv);
         theme::apply(&cc.egui_ctx, app.prefs.appearance);
-        app.workspace = config
-            .section::<workspace::WorkspaceSection>("workspace")
-            .workspace();
-        app.reload_project_order(&mut config);
+        app.workspace = app.prefs.workspace.clone();
+        let projects = app.prefs.projects.clone();
+        app.reload_project_order(&projects);
         app.order_dir = workspace::order::dir();
         app.catalog = Catalog::probing();
         let first = app.workspace.as_ref().and_then(|w| w.groups.first());

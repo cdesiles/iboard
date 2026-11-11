@@ -9,7 +9,7 @@ use super::{
     default_model, direnv, files, final_answer, find_binary, process, prompt_file, rejects_plan,
     session_of, step_of, stream_error,
 };
-use crate::job::Job;
+use crate::platform::job::Job;
 
 /// The session a plan turn lives in, filled as the tool names it.
 type SessionSlot = Arc<Mutex<Option<String>>>;

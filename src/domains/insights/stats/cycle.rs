@@ -13,7 +13,7 @@ use chrono::{DateTime, FixedOffset};
 
 use super::PAGE;
 use crate::domains::board::{discovery::ColumnKind, priority};
-use crate::git;
+use crate::platform::git;
 
 /// One issue closed on the page, and how long it took.
 #[derive(Debug, Clone, PartialEq, Eq)]

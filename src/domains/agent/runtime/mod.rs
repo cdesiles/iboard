@@ -30,10 +30,10 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::build_log;
-use crate::files;
-use crate::job::{Cancel, Job};
-use crate::process;
+use crate::domains::agent::artifacts::build_log;
+use crate::platform::files;
+use crate::platform::job::{Cancel, Job};
+use crate::platform::process;
 
 /// What a [`AgentConfig::model`] of "the tool's first favorite" is written as.
 const DEFAULT_MODEL: &str = "default";

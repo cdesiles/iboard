@@ -7,11 +7,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config::Config;
-use crate::files;
-use crate::history;
+use crate::domains::board::config::Config;
+use crate::domains::board::history;
 use crate::kernel::board::{display_name, project_name};
 use crate::kernel::issue::Issue;
+use crate::platform::files;
 
 pub use crate::kernel::board::{
     Board, Column, ColumnKind, INIT_COLUMNS, Repo, dir_in, is_doing_column, is_done_column,
@@ -68,7 +68,7 @@ pub fn locate(start: &Path) -> Result<Located, String> {
 /// is an `issues/` itself.
 fn find_project(start: &Path) -> Option<Located> {
     start.ancestors().find_map(|dir| {
-        if let Some(config) = crate::config::load(dir) {
+        if let Some(config) = crate::domains::board::config::load(dir) {
             let root = match config.root.as_deref() {
                 Some(relative) => dir.join(relative),
                 None => dir.join("issues"),

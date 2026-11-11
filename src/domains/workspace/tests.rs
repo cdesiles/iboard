@@ -74,7 +74,7 @@ fn groups_load_in_order_with_their_home_folders() {
     let workspace = section.workspace().unwrap();
     let names: Vec<&str> = workspace.groups.iter().map(|g| g.name.as_str()).collect();
     assert_eq!(names, ["B", "A"]);
-    let home = settings::home().unwrap();
+    let home = files::home().unwrap();
     assert_eq!(
         workspace.groups[0].repos,
         [home.join("b"), PathBuf::from("/abs/c")]

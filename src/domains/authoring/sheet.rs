@@ -2,7 +2,7 @@
 //! progress, word count, and which standard sections are still missing.
 
 use crate::kernel::labels;
-use crate::markdown;
+use crate::platform::markdown;
 
 /// `(ticked, total)` task-list items (`- [x]`, `* [ ]`, `1. [ ]`, `1) [ ]`), outside
 /// fenced code blocks.

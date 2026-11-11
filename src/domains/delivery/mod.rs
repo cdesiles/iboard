@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
-use crate::git;
+use crate::platform::git;
 
 /// The note file at the project root, newest release first.
 pub const NOTE_FILE: &str = "CHANGELOG.md";
@@ -376,7 +376,7 @@ pub fn write_note(project: &Path, file: &str, section: &str) -> Result<PathBuf, 
     let path = project.join(file.trim());
     let existing = std::fs::read_to_string(&path).ok();
     let text = with_section(existing.as_deref(), section);
-    crate::files::atomic_write(&path, text)
+    crate::platform::files::atomic_write(&path, text)
         .map_err(|err| format!("Couldn't write {}: {err}", path.display()))?;
     Ok(path)
 }

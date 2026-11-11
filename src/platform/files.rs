@@ -14,6 +14,29 @@ pub fn home() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// iboard's configuration folder: `$XDG_CONFIG_HOME/iboard`, or
+/// `~/.config/iboard`.
+pub fn config_dir() -> Option<PathBuf> {
+    dir_from_env("XDG_CONFIG_HOME", ".config").map(|base| base.join("iboard"))
+}
+
+/// iboard's cache folder: `$XDG_CACHE_HOME/iboard`, or `~/.cache/iboard`.
+pub fn cache_dir() -> Option<PathBuf> {
+    dir_from_env("XDG_CACHE_HOME", ".cache").map(|base| base.join("iboard"))
+}
+
+/// The folder `$var` names, else `fallback` under the home folder. An empty
+/// variable counts as unset.
+pub fn dir_from_env(var: &str, fallback: &str) -> Option<PathBuf> {
+    env_dir(var).or_else(|| home().map(|home| home.join(fallback)))
+}
+
+fn env_dir(var: &str) -> Option<PathBuf> {
+    std::env::var_os(var)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
 /// A fresh path in the temp folder, `iboard-<tag>-<pid>-<n>.<extension>`: the
 /// counter keeps two files made at the same instant apart.
 fn temp_path(tag: &str, extension: &str) -> PathBuf {

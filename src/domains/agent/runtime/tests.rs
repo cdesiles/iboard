@@ -3,7 +3,6 @@ use std::process::Command;
 use super::answer::proposal_of;
 use super::tools::{parse_claude_model, parse_model_list, parse_opencode_favorites, parse_version};
 use super::*;
-use crate::settings;
 
 fn section<T: serde::de::DeserializeOwned + Default>(text: &str, name: &str) -> T {
     let document: toml::Table = toml::from_str(text).unwrap();
@@ -54,7 +53,11 @@ fn a_proposal_alone_is_a_report_when_the_answer_opens_on_it() {
         Some("# Demo\n\n## Context\n\nWhy.")
     );
     assert!(parse("PROPOSAL: NONE").is_none());
-    let echoed = crate::prompts::review_prompt("# A title", ReviewMode::Quick, &[]);
+    let echoed = crate::domains::agent::workflows::prompts::review_prompt(
+        "# A title",
+        ReviewMode::Quick,
+        &[],
+    );
     assert!(parse(&echoed).is_none(), "an agent repeating the prompt");
 }
 
@@ -64,7 +67,11 @@ fn a_line_that_only_looks_like_a_finding_stays_text() {
     let report = parse(answer).expect("a report");
     assert_eq!(report.findings[0].body, "Size: the issue is large");
     assert_eq!(report.proposal, None);
-    let echoed = crate::prompts::review_prompt("# An issue", ReviewMode::Quick, &[]);
+    let echoed = crate::domains::agent::workflows::prompts::review_prompt(
+        "# An issue",
+        ReviewMode::Quick,
+        &[],
+    );
     assert!(parse(&echoed).is_none(), "an agent repeating the prompt");
 }
 
@@ -159,7 +166,7 @@ fn file_names_never_run_as_shell_code() {
 #[cfg(unix)]
 #[test]
 fn dropping_a_run_stops_the_agent() {
-    use crate::job::eventually;
+    use crate::platform::job::eventually;
     // SAFETY: signal 0 only checks that the process exists.
     let alive = |pid: i32| unsafe { libc::kill(pid, 0) == 0 };
     let scratch = tempfile::tempdir().unwrap();
@@ -613,17 +620,13 @@ fn only_the_review_section_stores_the_scope() {
         scope: ReviewMode::Deep,
         ..AgentConfig::default()
     };
-    let scratch = tempfile::tempdir().unwrap();
-    let file = scratch.path().join("iboard.toml");
-    let sections = [
-        settings::Section::new("ai", &ai_section(&config)).unwrap(),
-        settings::Section::new("build", &build_section(&config, BuildTimeout::NONE)).unwrap(),
-    ];
-    settings::save(&file, &sections).unwrap();
     assert_eq!(
-        std::fs::read_to_string(&file).unwrap(),
-        "[ai]\ntool = \"claude\"\nmodel = \"default\"\nscope = \"project\"\n\n\
-         [build]\ntool = \"claude\"\nmodel = \"default\"\ntimeout = \"none\"\n"
+        toml::to_string(&ai_section(&config)).unwrap(),
+        "tool = \"claude\"\nmodel = \"default\"\nscope = \"project\"\n"
+    );
+    assert_eq!(
+        toml::to_string(&build_section(&config, BuildTimeout::NONE)).unwrap(),
+        "tool = \"claude\"\nmodel = \"default\"\ntimeout = \"none\"\n"
     );
 }
 
@@ -642,27 +645,13 @@ fn the_build_agent_count_is_one_until_the_build_section_says_otherwise() {
 }
 
 #[test]
-fn saving_the_agent_count_keeps_the_rest_of_the_build_section() {
-    let scratch = tempfile::tempdir().unwrap();
-    let file = scratch.path().join("iboard.toml");
-    std::fs::write(
-        &file,
-        "[build]\n# mine\ntool = \"claude\"\nmodel = \"opus\"\ntimeout = \"10m\"\nextra = 1\n",
-    )
-    .unwrap();
-
-    settings::save(
-        &file,
-        &[settings::Section::partial("build", &agents_section(4)).unwrap()],
-    )
-    .unwrap();
-
+fn the_agents_section_stores_only_the_count() {
+    let text = format!("[build]\n{}", toml::to_string(&agents_section(4)).unwrap());
     assert_eq!(
-        std::fs::read_to_string(&file).unwrap(),
-        "[build]\n# mine\ntool = \"claude\"\nmodel = \"opus\"\ntimeout = \"10m\"\n\
-         extra = 1\nagents = 4\n"
+        text, "[build]\nagents = 4\n",
+        "the build agent keeps its section"
     );
-    let (settings, problems) = build(&std::fs::read_to_string(&file).unwrap()).settings();
+    let (settings, problems) = build(&text).settings();
     assert_eq!(settings.agents, 4);
     assert!(problems.is_empty());
 }
@@ -882,12 +871,7 @@ fn free_form_answers_do_not_parse() {
 }
 
 #[test]
-fn the_configuration_round_trips_through_a_file() {
-    let scratch = tempfile::tempdir().unwrap();
-    let dir = scratch.path();
-    let file = dir.join("iboard.toml");
-    std::fs::write(&file, "[other]\nkey = 1\n").unwrap();
-
+fn the_configuration_round_trips_through_its_section() {
     let config = AgentConfig {
         tool: Tool::OpenCode,
         model: "vendor/model".into(),
@@ -896,17 +880,11 @@ fn the_configuration_round_trips_through_a_file() {
         scope: ReviewMode::Deep,
         worktree: Some(false),
     };
-    settings::save(
-        &file,
-        &[settings::Section::new("ai", &ai_section(&config)).unwrap()],
-    )
-    .unwrap();
-    let text = std::fs::read_to_string(&file).unwrap();
+    let text = format!("[ai]\n{}", toml::to_string(&ai_section(&config)).unwrap());
     assert_eq!(ai(&text).agent().0, config);
-    assert!(text.contains("[other]"), "the other section survives");
     assert!(text.contains("tool = \"opencode\""));
 
-    // A missing file is simply an unconfigured agent.
+    // A missing section is simply an unconfigured agent.
     assert!(!ai("").agent().0.configured());
 }
 

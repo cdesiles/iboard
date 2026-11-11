@@ -4,10 +4,10 @@
 
 use super::{
     Duration, Group, IboardApp, Instant, Path, Preferences, UserConfig, Workspace, display_path,
-    labels, settings, workspace,
+    files, labels, workspace,
 };
+use crate::preferences::workspace::{self as user_config, SaveError};
 use crate::shell::groups_ui;
-use crate::workspace::config::{self, SaveError};
 
 /// How often the user configuration is looked at for an outside edit.
 const CONFIG_CHECK_EVERY: Duration = Duration::from_secs(1);
@@ -23,7 +23,10 @@ impl IboardApp {
     /// Opens the groups dialog on the configuration as it is now; with
     /// `new_group`, straight into a new group.
     pub(super) fn open_groups(&mut self, new_group: bool) {
-        let fingerprint = self.config_file.as_deref().map_or(0, config::fingerprint);
+        let fingerprint = self
+            .config_file
+            .as_deref()
+            .map_or(0, user_config::fingerprint);
         let dialog = groups_ui::Dialog::new(self.workspace.as_ref(), fingerprint, new_group)
             .with_picker(self.folder_picker)
             .with_projects(self.ordered_projects());
@@ -60,7 +63,7 @@ impl IboardApp {
             return;
         };
         let expected = (!overwrite).then_some(dialog.fingerprint);
-        match config::save(&file, &groups, settings::home().as_deref(), expected) {
+        match user_config::save_groups(&file, &groups, files::home().as_deref(), expected) {
             Ok(()) => {
                 let renames = dialog.draft.renames();
                 self.groups_dialog = None;
@@ -87,13 +90,10 @@ impl IboardApp {
     /// is read, so a problem that is still there stays reported.
     fn reload_groups(&mut self) {
         let mut user = UserConfig::load(self.config_file.as_deref());
-        let groups = user
-            .section::<workspace::WorkspaceSection>("workspace")
-            .workspace()
-            .map(|w| w.groups)
-            .unwrap_or_default();
+        let section = user.section::<workspace::WorkspaceSection>("workspace");
+        let groups = section.workspace().map(|w| w.groups).unwrap_or_default();
         if user.problems.is_empty() {
-            self.reload_project_order(&mut user);
+            self.reload_project_order(&section.projects());
             let same: Vec<(String, String)> = groups
                 .iter()
                 .map(|group| (group.name.clone(), group.name.clone()))

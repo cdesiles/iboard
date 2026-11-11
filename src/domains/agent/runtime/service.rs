@@ -14,8 +14,9 @@ use serde_json::{Value, json};
 
 use super::poller::project_poller;
 use super::{Progress, describe_tool};
-use crate::job::{Cancel, Job};
-use crate::{build_log, process, reviews};
+use crate::domains::agent::artifacts::{build_log, reviews};
+use crate::platform::job::{Cancel, Job};
+use crate::platform::process;
 
 /// How long one call to the service may take.
 const CALL: Duration = Duration::from_secs(20);
@@ -417,7 +418,7 @@ pub fn start(
 
 /// Creates a session for `issue` in `project`, titled after it.
 fn create(project: &Path, issue: &Path, model: &str) -> Result<String, String> {
-    let title = crate::files::file_name(issue);
+    let title = crate::platform::files::file_name(issue);
     let directory = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
     let mut body = json!({
         "title": title,
@@ -772,7 +773,7 @@ mod tests {
     #[test]
     fn a_session_is_titled_and_tagged_with_its_issue() {
         let body = json!({
-            "title": crate::files::file_name(Path::new("doing/002-build.md")),
+            "title": crate::platform::files::file_name(Path::new("doing/002-build.md")),
             "metadata": { "iboard": { "slug": reviews::slug(Path::new("doing/002-build.md")) } },
         });
         assert_eq!(body["title"], "002-build.md");

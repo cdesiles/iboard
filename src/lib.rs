@@ -14,17 +14,13 @@
 #[cfg(feature = "gui")]
 pub mod design_ui;
 pub mod domains;
-pub mod general;
 pub mod kernel;
 pub mod new_issue;
-pub mod notifications;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod pasteboard;
 pub mod platform;
-pub mod preferences;
 #[cfg(test)]
 mod scratch_git;
-pub mod settings;
 #[cfg(feature = "gui")]
 pub mod settings_ui;
 #[cfg(feature = "gui")]
@@ -40,6 +36,7 @@ pub use domains::board::{commits, config, discovery, filter, history, labels, pr
 pub use domains::delivery as release;
 pub use domains::design;
 pub use domains::insights::{agenda, stats};
+pub use domains::preferences::{self, general, notifications, settings};
 pub use domains::workspace;
 pub use kernel::issue;
 pub use platform::{files, format, git, job, markdown, process};

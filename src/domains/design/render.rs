@@ -11,8 +11,8 @@ use std::process::Command;
 use std::time::Duration;
 
 use super::DesignSystem;
-use crate::job::{Cancel, Job};
-use crate::process;
+use crate::platform::job::{Cancel, Job};
+use crate::platform::process;
 
 /// The default snapshot size when a component's card declares no height.
 const DEFAULT_WIDTH: u32 = 900;

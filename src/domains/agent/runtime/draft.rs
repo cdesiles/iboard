@@ -8,9 +8,9 @@ use super::{
     AgentConfig, Purpose, Tool, Workspace, command, default_model, final_answer, prompt_file,
     stream_error,
 };
-use crate::files;
-use crate::job::{Cancel, Job};
-use crate::process;
+use crate::platform::files;
+use crate::platform::job::{Cancel, Job};
+use crate::platform::process;
 
 /// The agent's text so far, shared with the modal that shows it.
 pub type DraftText = Arc<Mutex<String>>;

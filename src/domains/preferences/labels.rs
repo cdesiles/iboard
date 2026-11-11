@@ -222,6 +222,7 @@ pub fn parse_hex(value: &str) -> Option<Rgb> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domains::preferences::settings;
 
     #[test]
     fn hex_parses_with_or_without_the_hash() {
@@ -316,10 +317,10 @@ mod tests {
         let save = |names: &[&str]| {
             let names: BTreeSet<String> = names.iter().map(|name| name.to_string()).collect();
             let section = match style_section(&names) {
-                Some(style) => crate::settings::Section::new("label_style", &style).unwrap(),
-                None => crate::settings::Section::removed("label_style"),
+                Some(style) => settings::Section::new("label_style", &style).unwrap(),
+                None => settings::Section::removed("label_style"),
             };
-            crate::settings::save(&file, &[section]).unwrap();
+            settings::save(&file, &[section]).unwrap();
             let back = load(&std::fs::read_to_string(&file).unwrap()).0;
             assert_eq!(*back.stand_outs(), names);
             std::fs::read_to_string(&file).unwrap()
@@ -343,10 +344,10 @@ mod tests {
             ("question".to_string(), "nope".to_string()),
         ];
         let saved = match section(&table(&entries)) {
-            Some(table) => crate::settings::Section::new("labels", &table).unwrap(),
-            None => crate::settings::Section::removed("labels"),
+            Some(table) => settings::Section::new("labels", &table).unwrap(),
+            None => settings::Section::removed("labels"),
         };
-        crate::settings::save(&file, &[saved]).unwrap();
+        settings::save(&file, &[saved]).unwrap();
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(
             !text.contains("bug") && !text.contains("question"),

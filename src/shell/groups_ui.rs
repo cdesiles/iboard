@@ -123,7 +123,7 @@ impl Dialog {
             reveal_error: false,
             projects: Vec::new(),
             has_issues: HashMap::new(),
-            home: crate::settings::home(),
+            home: crate::files::home(),
             pick_folders: crate::shell::dialog::pick_folders,
         };
         if new_group {

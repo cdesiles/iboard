@@ -5,8 +5,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::discovery::is_ready_column;
-use crate::files::{self, unique_name};
+use crate::domains::board::discovery::is_ready_column;
+use crate::platform::files::{self, unique_name};
 
 /// Directory done issues are archived into, under the issues root. It starts
 /// with a dot, so discovery never reads it back.

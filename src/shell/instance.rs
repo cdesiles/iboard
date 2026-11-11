@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 
 use serde::{Deserialize, Serialize};
 
-use crate::settings;
+use crate::files;
 
 const SOCKET: &str = "iboard.sock";
 
@@ -34,7 +34,7 @@ pub enum Listener {}
 /// Where the running iboard answers, or `None` when neither `XDG_CACHE_HOME`
 /// nor `HOME` is set.
 pub fn socket() -> Option<PathBuf> {
-    settings::cache_dir().map(|dir| dir.join(SOCKET))
+    files::cache_dir().map(|dir| dir.join(SOCKET))
 }
 
 /// Hands `request` to the iboard answering on `socket`: true once it took it,

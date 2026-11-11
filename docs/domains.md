@@ -78,7 +78,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, the tag, the changelog note and the push | `src/domains/delivery/` (done) |
 | **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `src/domains/insights/` (done) |
 | **design** | `DesignSystem`, `Token`, `Theme`, the `Catalog` and its pages, components, assets, CSS, Rust tokens, scaffold and validation | `src/domains/design/` (done); `design_ui` stays shell; `design/` on disk stays the shared format |
-| **preferences** | `Preferences`, `UserConfig`, `Section`, appearance, delete confirmation, notifications, label colours and presets, splits, filter suggestions, the idesign switch | `settings`, `preferences`, `general`, `notifications`, `domains/preferences/labels` → `src/domains/preferences/` (016) |
+| **preferences** | `Preferences`, `UserConfig`, `Section`, appearance, delete confirmation, notifications, label colours and presets, splits, filter suggestions, the idesign switch | `src/domains/preferences/` (done); the bell stays shell |
 | **shell** | `App`, screen, frame, dialog and widget vocabulary, `Theme`, `Intent`, `Action`, the keymap, `CardFacts` and the other view models | `src/shell/` (done); `settings_ui`, `design_ui` and `pasteboard` stay at the crate root and are shell by the same rule |
 | **platform** | `Job`/`Cancel`, `Process`, `Git`/`Batch`, `File` and atomic writes, the markdown structure, paths/times/numbers formatting | `src/platform/` (done) |
 
@@ -104,11 +104,6 @@ leak. Add it here and file the ticket before writing the call.
 
 These are the leaks the extraction tickets cut. The ticket's own acceptance
 criteria are the source of truth for the fix.
-
-| Leak | Where | Fixed by |
-| --- | --- | --- |
-| Workspace edits the user configuration itself (`settings::edit`) | `src/domains/workspace/config.rs` | 016, where Workspace hands its `[[workspace.group]]` section to Preferences |
-| Preferences holds the XDG path helpers (`home`, `cache_dir`, `dir_from_env`) that Agent, Board, Design and Workspace call | `src/settings.rs` | 016, which keeps only config I/O in Preferences and moves the helpers to platform (`files`) |
 
 `new_issue.rs` is not a leak: nothing above the kernel names it, but it is
 Authoring vocabulary and no extraction ticket moves it yet.

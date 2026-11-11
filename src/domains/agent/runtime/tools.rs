@@ -7,9 +7,9 @@ use std::process::Command;
 use std::time::Duration;
 
 use super::Tool;
-use crate::job::Cancel;
-use crate::process;
-use crate::settings;
+use crate::platform::files;
+use crate::platform::job::Cancel;
+use crate::platform::process;
 
 /// Models Claude Code accepts for `--model`. It has no command that lists
 /// them, so the aliases come first, then the current full IDs.
@@ -37,7 +37,7 @@ fn search_dirs() -> Vec<PathBuf> {
         PathBuf::from("/opt/homebrew/bin"),
         PathBuf::from("/usr/local/bin"),
     ];
-    if let Some(home) = settings::home() {
+    if let Some(home) = files::home() {
         for dir in [
             ".local/bin",
             ".opencode/bin",
@@ -205,7 +205,7 @@ pub(super) fn parse_model_list(text: &str) -> Vec<String> {
 
 /// OpenCode keeps favorites in its state folder, in `model.json`.
 fn opencode_state_file() -> Option<PathBuf> {
-    settings::dir_from_env("XDG_STATE_HOME", ".local/state")
+    files::dir_from_env("XDG_STATE_HOME", ".local/state")
         .map(|state| state.join("opencode/model.json"))
 }
 
@@ -231,7 +231,7 @@ pub(super) fn parse_opencode_favorites(text: &str) -> Vec<String> {
 
 /// Claude Code's user settings, where `model` is its chosen default.
 fn claude_settings_file() -> Option<PathBuf> {
-    settings::dir_from_env("CLAUDE_CONFIG_DIR", ".claude").map(|dir| dir.join("settings.json"))
+    files::dir_from_env("CLAUDE_CONFIG_DIR", ".claude").map(|dir| dir.join("settings.json"))
 }
 
 pub(super) fn parse_claude_model(text: &str) -> Option<String> {

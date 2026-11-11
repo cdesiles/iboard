@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::agent::{self, Challenge};
-use crate::job::{self, Job};
+use crate::domains::agent::runtime::{self as agent, Challenge};
+use crate::platform::job::{self, Job};
 
 /// One turn of a refinement: the challenger's, or the author's answer.
 pub enum Turn {

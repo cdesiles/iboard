@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::git;
+use crate::platform::git;
 
 /// One commit whose message names an issue's file.
 #[derive(Debug, Clone, PartialEq, Eq)]

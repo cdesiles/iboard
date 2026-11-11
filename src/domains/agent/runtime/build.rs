@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use super::service;
-use crate::job::Job;
+use crate::platform::job::Job;
 
 /// The most agents an AI build runs at once.
 pub const MAX_AGENTS: usize = super::MAX_AGENTS;

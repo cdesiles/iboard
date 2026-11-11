@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{discovery, files, settings};
+use crate::{discovery, files};
 
 /// How many projects are kept; older ones fall off the end.
 const MAX_RECENT: usize = 10;
@@ -19,7 +19,7 @@ const CACHE_FILE: &str = "recent-projects";
 /// Where the list is stored, or `None` when neither `XDG_CACHE_HOME` nor
 /// `HOME` is set.
 pub fn cache_file() -> Option<PathBuf> {
-    settings::cache_dir().map(|dir| dir.join(CACHE_FILE))
+    files::cache_dir().map(|dir| dir.join(CACHE_FILE))
 }
 
 /// The remembered projects that still exist, most recent first.

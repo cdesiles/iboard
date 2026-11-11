@@ -4,8 +4,8 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::job::Cancel;
-use crate::{git, process};
+use crate::platform::job::Cancel;
+use crate::platform::{git, process};
 
 /// How long `git show` may take before it is given up.
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);

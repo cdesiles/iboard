@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{files, settings};
+use crate::platform::files;
 
 /// What the conversation is about, from its first topic or a chip.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -262,7 +262,7 @@ fn new_id() -> String {
 
 /// Where `project`'s plan is kept, or `None` without a cache folder.
 pub fn file(project: &Path) -> Option<PathBuf> {
-    settings::cache_dir().map(|dir| path_in(&dir, project))
+    files::cache_dir().map(|dir| path_in(&dir, project))
 }
 
 /// The plan file for `project` under `dir`, next to `iboard.sock`.

@@ -15,7 +15,7 @@ use std::process::Command;
 
 use super::fonts::{self, FontFace};
 use super::{Component, DesignSystem, Token, css};
-use crate::format;
+use crate::platform::format;
 
 /// The catalog's categories, in Claude Design's order: `(id, label, icon)`,
 /// the icon being the inner SVG of a 24-unit line pictogram.

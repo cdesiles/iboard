@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use pulldown_cmark::{Event, OffsetIter, Parser, Tag, TagEnd};
 
-use crate::markdown::OPTIONS;
+use crate::platform::markdown::OPTIONS;
 
 /// A run of inline text with one style.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -48,7 +48,7 @@ pub enum Prose {
     },
 }
 
-/// `block`, one of [`crate::markdown::blocks`], as prose; `None` when it holds
+/// `block`, one of [`crate::platform::markdown::blocks`], as prose; `None` when it holds
 /// something else.
 pub fn parse(block: &str) -> Option<Vec<Prose>> {
     let mut events = Parser::new_ext(block, OPTIONS)

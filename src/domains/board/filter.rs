@@ -11,8 +11,8 @@
 
 use serde::Deserialize;
 
-use crate::issue::Issue;
-use crate::labels;
+use crate::domains::board::labels;
+use crate::kernel::issue::Issue;
 
 /// How many labels the field suggests when nothing is pinned.
 const TOP_LABELS: usize = 3;

@@ -3,7 +3,7 @@
 //! they draft.
 
 use super::{Cycles, FileStat, HOTSPOT_CHANGES, HOTSPOT_COMPLEXITY, Stats, span};
-use crate::format::thousands;
+use crate::platform::format::thousands;
 
 /// How many signals on make a refactor due.
 const DUE_AT: usize = 2;

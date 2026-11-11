@@ -8,7 +8,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::{agent, files, format, reviews};
+use crate::domains::agent::artifacts::reviews;
+use crate::domains::agent::runtime as agent;
+use crate::platform::{files, format};
 
 /// The folder under the issues root; discovery skips dot-folders.
 pub const DIR: &str = ".builds";
