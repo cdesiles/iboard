@@ -12,7 +12,7 @@ use crate::domains::board::discovery::{self, Board};
 use crate::history;
 
 /// The facts a board reads outside its issue files, by issue path.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct CardFacts {
     done: HashMap<PathBuf, DateTime<Local>>,
     built: HashMap<PathBuf, Duration>,

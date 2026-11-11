@@ -1,16 +1,17 @@
 //! Work that runs off the UI thread, polled once per frame.
 //!
 //! A [`Job`] runs a closure on its own thread and hands back its result. The UI
-//! polls it every frame and wakes up every [`POLL_EVERY`] while it waits.
-//! Dropping a job tells its work to stop, so a closed window or a replaced run
-//! never leaves an agent working in the background.
+//! polls it every frame; a job given a [`Job::wake`] hook also says when its
+//! result lands, so the UI can sleep until then rather than wake up every
+//! [`POLL_EVERY`]. Dropping a job tells its work to stop, so a closed window or
+//! a replaced run never leaves an agent working in the background.
 
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::files::file_name;
@@ -40,6 +41,43 @@ pub struct Job<T> {
     result: Receiver<T>,
     cancel: Cancel,
     started: Instant,
+    /// Told when the result is in, once the UI asks to hear about it.
+    later: Arc<Later>,
+}
+
+/// When a job's result lands, and who to tell about it.
+#[derive(Default)]
+struct Later {
+    landed: AtomicBool,
+    wake: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+}
+
+impl Later {
+    /// Keeps `wake` as the hook, unless one is already kept, and calls it when
+    /// the result landed before it was installed.
+    fn install(&self, wake: impl Fn() + Send + Sync + 'static) {
+        let mut slot = self.wake.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.is_some() {
+            return;
+        }
+        *slot = Some(Arc::new(wake));
+        let hook = slot.clone();
+        drop(slot);
+        if self.landed.load(Ordering::Acquire)
+            && let Some(hook) = hook
+        {
+            hook();
+        }
+    }
+
+    /// Says the result is in, and wakes the UI when it asked to hear about it.
+    fn land(&self) {
+        self.landed.store(true, Ordering::Release);
+        let hook = self.wake.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
 }
 
 /// Where a job stands.
@@ -57,13 +95,17 @@ impl<T: Send + 'static> Job<T> {
         let (sender, result) = channel();
         let cancel = Cancel::default();
         let token = cancel.clone();
+        let later = Arc::new(Later::default());
+        let settling = Arc::clone(&later);
         std::thread::spawn(move || {
             let _ = sender.send(work(&token));
+            settling.land();
         });
         Self {
             result,
             cancel,
             started: Instant::now(),
+            later,
         }
     }
 }
@@ -73,11 +115,21 @@ impl<T> Job<T> {
     pub fn done(value: T) -> Self {
         let (sender, result) = channel();
         let _ = sender.send(value);
+        let later = Later::default();
+        later.land();
         Self {
             result,
             cancel: Cancel::default(),
             started: Instant::now(),
+            later: Arc::new(later),
         }
+    }
+
+    /// Wakes the UI when the result lands, so a poller need not wake up every
+    /// [`POLL_EVERY`] while it waits. The first hook wins; one installed after
+    /// the result landed runs at once.
+    pub fn wake(&self, wake: impl Fn() + Send + Sync + 'static) {
+        self.later.install(wake);
     }
 
     /// The result once it is in. Only the first poll after it lands gets it.
@@ -192,6 +244,32 @@ mod tests {
         assert!(matches!(job.poll(), Poll::Waiting));
         drop(job);
         assert!(eventually(|| stopped.load(Ordering::Relaxed)));
+    }
+
+    #[test]
+    fn a_woken_job_says_when_it_lands() {
+        let woke = Arc::new(AtomicBool::new(false));
+        let seen = Arc::clone(&woke);
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        let job = Job::spawn(move |_| {
+            let _ = wait.recv();
+            1
+        });
+        job.wake(move || seen.store(true, Ordering::Relaxed));
+        assert!(!woke.load(Ordering::Relaxed), "nothing has landed yet");
+        release.send(()).unwrap();
+        assert!(eventually(|| woke.load(Ordering::Relaxed)));
+        assert!(matches!(job.poll(), Poll::Ready(1)));
+    }
+
+    #[test]
+    fn a_hook_installed_after_the_result_landed_runs_at_once() {
+        let woke = Arc::new(AtomicBool::new(false));
+        let seen = Arc::clone(&woke);
+        let job = Job::spawn(|_| 1);
+        assert_eq!(job.wait(), Some(1));
+        job.wake(move || seen.store(true, Ordering::Relaxed));
+        assert!(woke.load(Ordering::Relaxed));
     }
 
     #[test]

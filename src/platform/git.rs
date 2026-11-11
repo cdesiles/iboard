@@ -2,8 +2,9 @@
 //! and each git starts through [`process::spawn`], so no other child inherits
 //! its pipes.
 
+use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::process;
@@ -55,6 +56,48 @@ fn subcommand<'a>(args: &[&'a str]) -> &'a str {
         }
     }
     ""
+}
+
+/// The files that move when the repository around `dir` gets a commit or
+/// changes branch: `HEAD` and the ref it names, or the packed refs when that
+/// ref is packed. Empty outside a repository. Statting them is far cheaper
+/// than asking git for `HEAD`.
+pub fn head_files(dir: &Path) -> Vec<PathBuf> {
+    let Some(git) = git_dir(dir) else {
+        return Vec::new();
+    };
+    // A worktree keeps its `HEAD` but shares the refs of the repository it
+    // was split from, under the folder its `commondir` names.
+    let refs = fs::read_to_string(git.join("commondir"))
+        .map(|common| git.join(common.trim()))
+        .unwrap_or_else(|_| git.clone());
+    let head = git.join("HEAD");
+    let reference = fs::read_to_string(&head).ok().and_then(|text| {
+        text.strip_prefix("ref: ")
+            .map(|name| refs.join(name.trim()))
+    });
+    match reference {
+        Some(ref file) if file.exists() => vec![head, file.clone()],
+        Some(_) => vec![head, refs.join("packed-refs")],
+        None => vec![head],
+    }
+}
+
+/// The git folder `dir` sits in, following a worktree's or a submodule's
+/// `.git` file, or `None` outside a repository.
+fn git_dir(dir: &Path) -> Option<PathBuf> {
+    for ancestor in dir.ancestors() {
+        let dot = ancestor.join(".git");
+        if dot.is_dir() {
+            return Some(dot);
+        }
+        if let Ok(text) = fs::read_to_string(&dot)
+            && let Some(path) = text.strip_prefix("gitdir:")
+        {
+            return Some(ancestor.join(path.trim()));
+        }
+    }
+    None
 }
 
 /// One `git cat-file --batch`, reading objects by name.
@@ -157,5 +200,44 @@ mod tests {
         let args = ["-c", "log.showSignature=false", "log", "--no-such-option"];
         let error = output(dir.path(), &args).unwrap_err();
         assert!(error.starts_with("git log: "), "{error}");
+    }
+
+    #[test]
+    fn head_files_name_head_and_the_branch_it_is_on() {
+        let dir = repo("one");
+        let files = head_files(dir.path());
+        assert_eq!(files.len(), 2, "{files:?}");
+        assert!(files[0].ends_with("HEAD"), "{files:?}");
+        assert!(
+            files[1].starts_with(dir.path().join(".git/refs/heads")),
+            "{files:?}"
+        );
+        assert!(files[1].exists(), "{files:?}");
+
+        let plain = tempfile::tempdir().unwrap();
+        assert!(head_files(plain.path()).is_empty());
+    }
+
+    #[test]
+    fn a_worktree_stamps_the_refs_it_commits_to() {
+        let dir = repo("main");
+        let scratch = tempfile::tempdir().unwrap();
+        let tree = scratch.path().join("tree");
+        git(
+            dir.path(),
+            &[
+                "worktree",
+                "add",
+                "-q",
+                tree.to_str().unwrap(),
+                "-b",
+                "side",
+            ],
+        );
+        let files = head_files(&tree);
+        assert_eq!(files.len(), 2, "{files:?}");
+        assert!(files[0].ends_with("HEAD"), "{files:?}");
+        assert!(files[1].exists(), "{files:?}");
+        assert!(files[1].ends_with("refs/heads/side"), "{files:?}");
     }
 }

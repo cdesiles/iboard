@@ -54,6 +54,7 @@ impl ColumnKind {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Column {
     pub name: String,
     /// The directory holding this column's issues. Dropping a card here moves
@@ -82,7 +83,7 @@ impl Column {
 }
 
 /// One project of a workspace board.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Repo {
     /// Its folder's name, the `repo:` label of its issues.
     pub name: String,
@@ -95,6 +96,7 @@ pub struct Repo {
     pub dirs: Vec<(String, PathBuf)>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Board {
     pub project_dir: PathBuf,
     pub root: PathBuf,

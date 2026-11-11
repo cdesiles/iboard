@@ -11,7 +11,7 @@ use crate::domains::board::config::Config;
 use crate::domains::board::history;
 use crate::kernel::board::{display_name, project_name};
 use crate::kernel::issue::Issue;
-use crate::platform::files;
+use crate::platform::{files, git};
 
 pub use crate::kernel::board::{
     Board, Column, ColumnKind, INIT_COLUMNS, Repo, dir_in, is_doing_column, is_done_column,
@@ -173,6 +173,29 @@ pub fn build(located: &Located) -> Result<Board, String> {
         warnings,
         ..Board::empty(located)
     })
+}
+
+/// What a scan of `located` reads, cheaply: its root, the folders under it,
+/// the files in them and the git files its done dates come from. Reading
+/// these costs a `stat` each; a scan only runs when they changed.
+pub fn stamps(located: &Located) -> files::Stamps {
+    let root = &located.root;
+    let mut folders: Vec<PathBuf> = fs::read_dir(root)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| path.is_dir() && !is_hidden(path))
+                .collect()
+        })
+        .unwrap_or_default();
+    folders.sort();
+    let mut stamps = files::Stamps::default();
+    for dir in std::iter::once(root).chain(&folders) {
+        stamps.add_folder(dir);
+        stamps.add_all(git::head_files(dir));
+    }
+    stamps
 }
 
 /// The ordered sub-directory columns: the configured ones, else the known
@@ -387,6 +410,7 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch_git::git;
 
     fn names(board: &Board) -> Vec<String> {
         board
@@ -508,6 +532,34 @@ mod tests {
         let mut names = vec!["10-b.md", "2-a.md", "1-c.md"];
         names.sort_by(|a, b| natural_cmp(a, b));
         assert_eq!(names, vec!["1-c.md", "2-a.md", "10-b.md"]);
+    }
+
+    #[test]
+    fn a_stamp_only_moves_when_a_scan_would_read_something_new() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        fs::create_dir_all(dir.join("issues/todo")).unwrap();
+        let located = locate(dir).unwrap();
+        let before = stamps(&located);
+        assert_eq!(stamps(&located), before, "nothing moved");
+
+        fs::write(dir.join("issues/todo/a.md"), "# A\n").unwrap();
+        assert_ne!(stamps(&located), before, "a new issue is a change");
+    }
+
+    #[test]
+    fn a_commit_is_a_change_the_done_dates_have_to_read() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        fs::create_dir_all(dir.join("issues/done")).unwrap();
+        fs::write(dir.join("issues/done/a.md"), "# A\n").unwrap();
+        let located = locate(dir).unwrap();
+        git(dir, &["init", "-q"]);
+        let before = stamps(&located);
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-q", "-m", "first"]);
+        assert_ne!(stamps(&located), before, "the commit moved HEAD");
+        assert_eq!(stamps(&located), stamps(&located), "then it stays put");
     }
 
     #[test]

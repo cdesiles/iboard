@@ -162,6 +162,33 @@ fn open(dir: &Path) -> Result<Board, String> {
     discovery::build(&locate(dir)?)
 }
 
+/// What a scan of `group` reads, cheaply: each project's folders and files,
+/// where its order across projects is kept, and the projects whose folders
+/// are gone.
+pub fn stamps(group: &Group, order: Option<&Path>) -> files::Stamps {
+    let mut stamps = files::Stamps::default();
+    for dir in &group.repos {
+        // A group reads its projects' configuration again on every scan.
+        stamps.add(&dir.join("iboard.toml"));
+        match locate(dir) {
+            Ok(project) => stamps.extend(discovery::stamps(&project)),
+            Err(_) => stamps.add(dir),
+        }
+    }
+    stamps.add_all(order.map(Path::to_path_buf));
+    stamps
+}
+
+/// The issues folders of `group`'s projects: those a scan reads.
+pub fn roots(group: &Group) -> Vec<PathBuf> {
+    group
+        .repos
+        .iter()
+        .filter_map(|dir| locate(dir).ok())
+        .map(|located| located.root)
+        .collect()
+}
+
 /// The project at `dir`, whose `issues/` must be its own: an `issues/` found
 /// further up belongs to another project.
 fn locate(dir: &Path) -> Result<Located, String> {

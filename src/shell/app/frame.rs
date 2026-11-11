@@ -3,7 +3,10 @@
 
 use super::editor::EditorState;
 use super::release::ReleaseChoice;
-use super::{Confirm, IboardApp, Instant, Key, RESCAN_EVERY, Vec2, quitting, settings_ui, widgets};
+use super::{
+    Confirm, IboardApp, Instant, Key, RESCAN_EVERY, Vec2, quitting, scan_stamps, settings_ui,
+    widgets,
+};
 
 /// How far two fingers swipe right, in points, to go back.
 const SWIPE_BACK: f32 = 120.0;
@@ -13,6 +16,7 @@ impl IboardApp {
     /// menu requests, keys and shortcuts, the autosave and the rescan. Tests
     /// drive it with no window.
     pub(super) fn frame_logic(&mut self, ctx: &egui::Context) {
+        self.ctx = Some(ctx.clone());
         // A project switch sets the title; apply it now that we have a context.
         if let Some(title) = self.pending_title.take() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
@@ -36,12 +40,17 @@ impl IboardApp {
         self.remember_splits(ctx);
     }
 
-    /// Adopts the background work's answers as soon as they land. Each poll
-    /// says how soon to look again while its work runs: the frame wakes up at
-    /// the soonest.
+    /// Adopts the background work's answers as soon as they land, and lets the
+    /// board's scan wake the frame rather than be polled. Each other poll says
+    /// how soon to look again while its work runs: the frame wakes up at the
+    /// soonest.
     fn poll_jobs(&mut self, ctx: &egui::Context) {
+        if let Some((scan, _)) = &self.session.scan {
+            let ctx = ctx.clone();
+            scan.wake(move || ctx.request_repaint());
+        }
+        self.take_scan();
         let wake = [
-            self.take_scan(),
             self.poll_review(),
             self.poll_refinement(),
             self.poll_split(),
@@ -264,12 +273,17 @@ impl IboardApp {
 
     /// Auto, or Play watching Ready, reads the board again every
     /// [`RESCAN_EVERY`], off the UI thread, and takes it unless the board
-    /// changed meanwhile.
+    /// changed meanwhile. The folders, files and git heads are only statted
+    /// first: a scan starts when one of them moved, and its job wakes the
+    /// frame when it lands.
     pub(super) fn rescan(&mut self, ctx: &egui::Context) {
         if self.prefs.auto || self.watching_ready() {
             if self.session.scan.is_none() && self.last_refresh.elapsed() >= RESCAN_EVERY {
                 self.last_refresh = Instant::now();
-                self.start_scan();
+                let source = self.source();
+                if self.session.scanned.as_ref() != Some(&scan_stamps(&source)) {
+                    self.start_scan();
+                }
             }
             ctx.request_repaint_after(RESCAN_EVERY);
         }

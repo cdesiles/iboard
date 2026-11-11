@@ -73,7 +73,13 @@ fn until(mut done: impl FnMut() -> bool) -> bool {
 
 /// Waits for the board a switch reads in the background.
 fn settled(app: &mut IboardApp) {
-    assert!(until(|| app.take_scan().is_none()), "the board never read");
+    assert!(
+        until(|| {
+            app.take_scan();
+            app.session.scan.is_none()
+        }),
+        "the board never read"
+    );
 }
 
 /// A folder for one test, removed when it drops, even when the test
@@ -510,16 +516,102 @@ fn auto_rescans_off_the_ui_thread_and_never_over_a_newer_board() {
     }));
     assert!(app.board.find(&todo.join("b.md")).is_some());
 
+    std::fs::write(todo.join("c.md"), "# C\n").unwrap();
     app.last_refresh = Instant::now() - RESCAN_EVERY;
     app.rescan(&ctx);
+    assert!(app.session.scan.is_some(), "the new file starts a scan");
     app.refresh();
     let newer = app.board_generation;
+    assert!(app.board.find(&todo.join("c.md")).is_some());
     assert!(until(|| {
         app.rescan(&ctx);
         app.take_scan();
         app.session.scan.is_none()
     }));
     assert_eq!(app.board_generation, newer, "the older scan was dropped");
+}
+
+#[test]
+fn an_idle_rescan_reads_nothing_while_the_board_is_unchanged() {
+    let dir = scratch_dir("idle-rescan");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::write(todo.join("a.md"), "# A\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.prefs.auto = true;
+    let ctx = egui::Context::default();
+
+    app.last_refresh = Instant::now() - RESCAN_EVERY;
+    app.rescan(&ctx);
+    assert!(app.session.scan.is_none(), "an idle tick reads nothing");
+
+    std::fs::write(todo.join("b.md"), "# B\n").unwrap();
+    app.last_refresh = Instant::now() - RESCAN_EVERY;
+    app.rescan(&ctx);
+    assert!(app.session.scan.is_some(), "a new file is read");
+}
+
+#[test]
+fn a_rescan_reads_an_issue_edited_outside_the_app() {
+    let dir = scratch_dir("edited-rescan");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let issue = todo.join("a.md");
+    std::fs::write(&issue, "# A\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.prefs.auto = true;
+    let ctx = egui::Context::default();
+
+    std::fs::write(&issue, "# A, renamed\n").unwrap();
+    app.last_refresh = Instant::now() - RESCAN_EVERY;
+    app.rescan(&ctx);
+    settled(&mut app);
+    assert_eq!(app.board.find(&issue).unwrap().title, "A, renamed");
+}
+
+#[test]
+fn a_scan_that_lands_wakes_the_frame_at_once() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let dir = scratch_dir("scan-wake");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::write(todo.join("a.md"), "# A\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.prefs.auto = true;
+    let ctx = egui::Context::default();
+    let woke = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&woke);
+    ctx.set_request_repaint_callback(move |info| {
+        if info.delay == Duration::ZERO {
+            seen.store(true, Ordering::Relaxed);
+        }
+    });
+    app.ctx = Some(ctx.clone());
+
+    std::fs::write(todo.join("b.md"), "# B\n").unwrap();
+    app.last_refresh = Instant::now() - RESCAN_EVERY;
+    app.rescan(&ctx);
+    assert!(app.session.scan.is_some(), "the new file starts a scan");
+    assert!(until(|| woke.load(Ordering::Relaxed)));
+}
+
+#[test]
+fn a_scan_that_finds_the_same_board_keeps_its_generation() {
+    let dir = scratch_dir("same-board");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    std::fs::write(todo.join("a.md"), "# A\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let before = app.board_generation;
+
+    app.refresh();
+    assert_eq!(app.board_generation, before, "nothing changed");
+
+    std::fs::write(todo.join("b.md"), "# B\n").unwrap();
+    app.refresh();
+    assert_eq!(app.board_generation, before + 1, "a new issue is read");
 }
 
 /// Opening another project draws its board at once and reads its cards in

@@ -72,7 +72,7 @@ impl StoredReview {
 
 /// An issue's last review, read from its sidecar, so its card pill can
 /// reopen it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PastReview {
     /// True when the agent read the editor draft rather than the saved file.
     pub draft: bool,

@@ -16,6 +16,7 @@ use egui::{
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 use crate::agent::{self, AgentConfig, ReviewMode};
+use crate::build_log;
 use crate::commits;
 use crate::design::{self, DesignSystem};
 use crate::discovery::{self, Board, Column, Located};
@@ -244,6 +245,9 @@ pub struct IboardApp {
     plan_dir: Option<PathBuf>,
     /// A window title to apply on the next frame, after a project switch.
     pending_title: Option<String>,
+    /// The frame's context, so background work can wake it when it lands;
+    /// `None` until the first frame.
+    ctx: Option<egui::Context>,
     /// What the iboards started later ask this window to show; `None` when no
     /// socket hands them over (a board built in tests).
     handovers: Option<Receiver<Request>>,
@@ -312,6 +316,9 @@ struct Session {
     /// The rescan Auto runs in the background, and the board generation it
     /// started from.
     scan: Option<(Job<Result<Scanned, String>>, u64)>,
+    /// What the last scan read, so an idle rescan can skip the work when the
+    /// folders, files and git heads it would read are unchanged.
+    scanned: Option<files::Stamps>,
     /// The newest commit naming the open issue's file, looked up off the UI
     /// thread.
     commit_hash: Option<CommitHash>,
@@ -404,6 +411,7 @@ impl Default for Session {
             design_draft: None,
             enrichment: None,
             scan: None,
+            scanned: None,
             commit_hash: None,
             review: None,
             review_runs: review::ReviewRuns::default(),
@@ -524,16 +532,17 @@ impl IboardApp {
     }
 
     fn from_located(located: Located) -> Self {
-        let ((board, facts, past_reviews), scan_error) =
-            match scan(&Source::Project(located.clone())) {
-                Ok(scanned) => (scanned, None),
-                Err(err) => (
-                    (Board::empty(&located), CardFacts::default(), HashMap::new()),
-                    Some(err),
-                ),
-            };
+        let source = Source::Project(located.clone());
+        let stamps = scan_stamps(&source);
+        let ((board, facts, past_reviews), scan_error) = match scan(&source) {
+            Ok(scanned) => (scanned, None),
+            Err(err) => (
+                (Board::empty(&located), CardFacts::default(), HashMap::new()),
+                Some(err),
+            ),
+        };
         let trash = Trash::Folder(located.project_dir.join("Trash"));
-        Self {
+        let mut app = Self {
             located,
             workspace: None,
             group: None,
@@ -560,6 +569,7 @@ impl IboardApp {
             recents_file: None,
             plan_dir: None,
             pending_title: None,
+            ctx: None,
             handovers: None,
             prefs: Preferences {
                 title_engine: Engine::Off,
@@ -576,7 +586,9 @@ impl IboardApp {
             config_checked: Instant::now(),
             catalog: Catalog::default(),
             clipboard: images::Clipboard::Held(None),
-        }
+        };
+        app.session.scanned = Some(stamps);
+        app
     }
 
     /// Moves a project to the front of the recent list and persists it, when
@@ -640,7 +652,9 @@ impl IboardApp {
     /// Reads the board again, now: what an action that changed files needs
     /// before it goes on.
     fn refresh(&mut self) {
-        self.adopt(scan(&self.source()));
+        let source = self.source();
+        self.session.scanned = Some(scan_stamps(&source));
+        self.adopt(scan(&source));
     }
 
     /// Puts the board of what just opened on screen at once, empty until the
@@ -657,39 +671,56 @@ impl IboardApp {
     }
 
     /// Reads the board on a thread of its own; the next frames take it when
-    /// it lands.
+    /// it lands, and its job wakes them.
     fn start_scan(&mut self) {
         let source = self.source();
+        self.session.scanned = Some(scan_stamps(&source));
         let scan = Job::spawn(move |_| scan(&source));
+        if let Some(ctx) = self.ctx.clone() {
+            scan.wake(move || ctx.request_repaint());
+        }
         self.session.scan = Some((scan, self.board_generation));
     }
 
     /// Takes the board's background scan once it lands, unless a newer board
-    /// replaced it. Says how soon to look again while it runs.
-    fn take_scan(&mut self) -> Option<Duration> {
-        let (scan, generation) = self.session.scan.as_ref()?;
+    /// replaced it. Its job wakes the frame when it does.
+    fn take_scan(&mut self) {
+        let Some((scan, generation)) = self.session.scan.as_ref() else {
+            return;
+        };
         let Some(scanned) = scan.answer() else {
-            return Some(job::POLL_EVERY);
+            return;
         };
         let current = *generation == self.board_generation;
         self.session.scan = None;
         if current {
             self.adopt(scanned);
         }
-        None
     }
 
-    /// Takes a fresh scan of the board, or why it could not be read.
+    /// Takes a fresh scan of the board, or why it could not be read. An answer
+    /// no different from the board on screen leaves it, and the generation
+    /// that the reader's images and the build panel follow, alone.
     fn adopt(&mut self, scanned: Result<Scanned, String>) {
-        self.board_generation += 1;
         match scanned {
             Ok((board, facts, reviews)) => {
-                self.past_reviews = reviews;
+                if self.scan_error.is_none()
+                    && board == self.board
+                    && facts == self.facts
+                    && reviews == self.past_reviews
+                {
+                    return;
+                }
+                self.board_generation += 1;
                 self.board = board;
                 self.facts = facts;
+                self.past_reviews = reviews;
                 self.scan_error = None;
             }
-            Err(err) => self.scan_error = Some(err),
+            Err(err) => {
+                self.board_generation += 1;
+                self.scan_error = Some(err);
+            }
         }
         self.reconcile_editor();
     }
@@ -827,6 +858,33 @@ fn scan(source: &Source) -> Result<Scanned, String> {
         reviews.extend(past_reviews(&board, &root, &reviews::load_all(&root)));
     }
     Ok((board, facts, reviews))
+}
+
+/// What a scan of `source` reads: the folders and files of its projects, the
+/// reviews and build logs beside their issues, and the git files their done
+/// dates come from. Cheap enough to check every couple of seconds.
+fn scan_stamps(source: &Source) -> files::Stamps {
+    match source {
+        Source::Project(located) => {
+            let mut stamps = discovery::stamps(located);
+            stamp_sidecars(&mut stamps, &located.root);
+            stamps
+        }
+        Source::Group(group, order) => {
+            let mut stamps = workspace::stamps(group, order.as_deref());
+            for root in workspace::roots(group) {
+                stamp_sidecars(&mut stamps, &root);
+            }
+            stamps
+        }
+    }
+}
+
+/// Adds the reviews and build logs a scan reads beside the issues in `root`.
+fn stamp_sidecars(stamps: &mut files::Stamps, root: &Path) {
+    for dir in [reviews::DIR, build_log::DIR] {
+        stamps.add_folder(&root.join(dir));
+    }
 }
 
 /// The last review of every issue of `board` under `root` that has one.

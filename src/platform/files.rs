@@ -2,10 +2,12 @@
 //! unique, and writing them so a crash or a full disk never leaves one
 //! half-written.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
+use std::time::SystemTime;
 
 /// The user's home folder, from `HOME`.
 pub fn home() -> Option<PathBuf> {
@@ -113,6 +115,57 @@ pub fn file_name(path: &Path) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or_default()
         .to_string()
+}
+
+/// What a scan read, as the folders and files it looked at with the time and
+/// size they had: equal stamps mean reading them again would find the same
+/// thing. Reading one costs a `stat` and no file contents, which makes it
+/// cheap enough to check every couple of seconds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Stamps(BTreeMap<PathBuf, (Option<SystemTime>, u64)>);
+
+impl Stamps {
+    /// The stamps of `paths`.
+    pub fn of(paths: impl IntoIterator<Item = PathBuf>) -> Self {
+        let mut stamps = Self::default();
+        stamps.add_all(paths);
+        stamps
+    }
+
+    /// Adds `path`, whether it exists or not: a file that appears or goes
+    /// changes its stamp.
+    pub fn add(&mut self, path: &Path) {
+        let meta = std::fs::metadata(path).ok();
+        let modified = meta.as_ref().and_then(|meta| meta.modified().ok());
+        let len = meta.map_or(0, |meta| meta.len());
+        self.0.insert(path.to_path_buf(), (modified, len));
+    }
+
+    pub fn add_all(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        for path in paths {
+            self.add(&path);
+        }
+    }
+
+    /// Adds the folder `dir` and the files directly inside it, when it has
+    /// any.
+    pub fn add_folder(&mut self, dir: &Path) {
+        self.add(dir);
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        self.add_all(
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| path.is_file()),
+        );
+    }
+
+    /// Adds what `other` read.
+    pub fn extend(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
 }
 
 /// Whether `path` ends in `.md` or `.markdown`, in any case: the files
@@ -398,5 +451,36 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "prompt");
         drop(file);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn stamps_notice_a_file_that_appears_changes_or_goes() {
+        let scratch = tempfile::tempdir().unwrap();
+        let issue = scratch.path().join("a.md");
+        let before = Stamps::of([issue.clone()]);
+
+        std::fs::write(&issue, "# A\n").unwrap();
+        let appeared = Stamps::of([issue.clone()]);
+        assert_ne!(appeared, before, "a new file is a change");
+
+        std::fs::write(&issue, "# A, longer\n").unwrap();
+        let edited = Stamps::of([issue.clone()]);
+        assert_ne!(edited, appeared, "an edit is a change");
+
+        std::fs::remove_file(&issue).unwrap();
+        assert_eq!(Stamps::of([issue.clone()]), before, "gone again");
+    }
+
+    #[test]
+    fn a_folder_stamp_covers_the_files_inside_it() {
+        let scratch = tempfile::tempdir().unwrap();
+        let folder = scratch.path().join("issues");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("a.md"), "# A\n").unwrap();
+
+        let mut stamps = Stamps::default();
+        stamps.add_folder(&folder);
+        assert!(stamps.0.contains_key(&folder));
+        assert!(stamps.0.contains_key(&folder.join("a.md")));
     }
 }

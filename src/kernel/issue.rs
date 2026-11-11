@@ -16,7 +16,7 @@ use crate::markdown;
 /// Maximum number of characters shown in a card summary (before the ellipsis).
 const SUMMARY_LIMIT: usize = 180;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Issue {
     pub path: PathBuf,
     /// The display title, without its leading `[label]` groups.

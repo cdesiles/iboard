@@ -2,8 +2,8 @@
 //! file's own times when git knows nothing about it.
 //!
 //! `git log` over a folder walks the whole history, so its answer is cached
-//! per folder and only recomputed when `HEAD` moves. The board refreshes every
-//! two seconds, and asking git for `HEAD` is cheap.
+//! per folder and only recomputed when the git files that move on a commit
+//! or a branch change do: `HEAD` and the ref it names.
 
 use std::collections::HashMap;
 use std::fs;
@@ -13,12 +13,13 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Local};
 
+use crate::platform::files::Stamps;
 use crate::platform::git;
 
 type Dates = HashMap<PathBuf, DateTime<Local>>;
 
-/// Per folder: the `HEAD` the dates were read at, and the dates.
-static CACHE: Mutex<Option<HashMap<PathBuf, (String, Dates)>>> = Mutex::new(None);
+/// Per folder: the git files the dates were read at, and the dates.
+static CACHE: Mutex<Option<HashMap<PathBuf, (Stamps, Dates)>>> = Mutex::new(None);
 
 /// The done date of each file in `files`, all directly inside `dir`.
 pub fn done_dates(dir: &Path, files: &[PathBuf]) -> Dates {
@@ -53,13 +54,15 @@ pub fn dates_for(issues: &[&Path]) -> Dates {
 /// The date of the last commit touching each file directly inside `dir`.
 /// Empty outside a git repository, or when git is missing.
 fn committed_dates(dir: &Path) -> Dates {
-    let Ok(head) = git::output(dir, &["rev-parse", "HEAD"]) else {
+    let head = git::head_files(dir);
+    if head.is_empty() {
         return Dates::new();
-    };
+    }
+    let stamps = Stamps::of(head);
     {
         let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((cached_head, dates)) = cache.as_ref().and_then(|cache| cache.get(dir))
-            && *cached_head == head
+        if let Some((cached, dates)) = cache.as_ref().and_then(|cache| cache.get(dir))
+            && *cached == stamps
         {
             return dates.clone();
         }
@@ -83,7 +86,7 @@ fn committed_dates(dir: &Path) -> Dates {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .get_or_insert_with(HashMap::new)
-        .insert(dir.to_path_buf(), (head, dates.clone()));
+        .insert(dir.to_path_buf(), (stamps, dates.clone()));
     dates
 }
 
@@ -127,6 +130,7 @@ fn file_time(path: &Path) -> Option<DateTime<Local>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch_git::git;
 
     #[test]
     fn the_newest_commit_wins_and_subfolders_are_skipped() {
@@ -144,5 +148,56 @@ mod tests {
         );
         assert!(!dates.contains_key(&dir.join("sub/c.md")));
         assert_eq!(dates.len(), 2);
+    }
+
+    #[test]
+    fn a_commit_moves_the_dates_a_folder_reports() {
+        let scratch = tempfile::tempdir().unwrap();
+        let project = scratch.path();
+        let done = project.join("issues/done");
+        fs::create_dir_all(&done).unwrap();
+        let issue = done.join("a.md");
+        fs::write(&issue, "# A\n").unwrap();
+        git(project, &["init", "-q"]);
+        let commit = |date: &str, text: &str| {
+            fs::write(&issue, text).unwrap();
+            git(project, &["add", "-A"]);
+            crate::scratch_git::git_env(
+                project,
+                &[("GIT_COMMITTER_DATE", date), ("GIT_AUTHOR_DATE", date)],
+                &["commit", "-q", "-m", date],
+            );
+        };
+        let date = |text: &str| {
+            DateTime::parse_from_rfc3339(text)
+                .unwrap()
+                .with_timezone(&Local)
+        };
+        let files = [issue.clone()];
+
+        commit("2026-01-01T10:00:00+00:00", "# A\n");
+        assert_eq!(
+            done_dates(&done, &files)[&issue],
+            date("2026-01-01T10:00:00+00:00")
+        );
+
+        commit("2026-02-01T10:00:00+00:00", "# A, twice\n");
+        assert_eq!(
+            done_dates(&done, &files)[&issue],
+            date("2026-02-01T10:00:00+00:00")
+        );
+    }
+
+    #[test]
+    fn a_folder_outside_a_repository_has_no_committed_dates() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        let issue = dir.join("a.md");
+        fs::write(&issue, "# A\n").unwrap();
+        assert!(committed_dates(dir).is_empty());
+        assert_eq!(
+            done_dates(dir, std::slice::from_ref(&issue))[&issue],
+            file_time(&issue).unwrap()
+        );
     }
 }
