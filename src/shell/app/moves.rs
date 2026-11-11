@@ -10,7 +10,7 @@ use crate::priority;
 impl IboardApp {
     /// Moves a dragged issue into another column's directory, keeping its file
     /// name apart from the Ready priority number (see
-    /// [`priority::moved_name`]). An existing file with the same name is never
+    /// `priority::moved_name`). An existing file with the same name is never
     /// overwritten. On a workspace board the issue stays in its own project.
     /// Returns the issue's new path on success.
     pub(super) fn move_issue(&mut self, path: &Path, target_dir: &Path) -> Option<PathBuf> {

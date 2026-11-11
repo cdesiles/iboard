@@ -38,7 +38,7 @@ pub fn slug(issue: &Path) -> String {
 /// The name an issue takes when moved from one folder into another: entering
 /// Ready numbers it after the last issue there, leaving Ready drops the
 /// number. Other moves keep the name.
-pub fn moved_name(name: &str, from_dir: &Path, to_dir: &Path) -> String {
+fn moved_name(name: &str, from_dir: &Path, to_dir: &Path) -> String {
     if is_ready_column(to_dir) {
         let last = fs::read_dir(to_dir)
             .into_iter()
@@ -61,7 +61,7 @@ pub fn moved_name(name: &str, from_dir: &Path, to_dir: &Path) -> String {
 }
 
 /// Where the issue at `path` lands when moved into `to_dir`, named by
-/// [`moved_name`]: `path` itself when it is already there. An existing file
+/// `moved_name`: `path` itself when it is already there. An existing file
 /// is never a target.
 pub fn plan_move(path: &Path, to_dir: &Path) -> Result<PathBuf, String> {
     let (Some(name), Some(from_dir)) = (path.file_name(), path.parent()) else {
@@ -118,7 +118,7 @@ pub(crate) fn priority(name: &str) -> Option<u32> {
 
 /// The `001-x.md` name for `name` at a one-based position, dropping any prefix
 /// it already has so renumbering is stable.
-pub fn numbered_name(position: usize, name: &str) -> String {
+fn numbered_name(position: usize, name: &str) -> String {
     format!(
         "{:0width$}-{}",
         position,

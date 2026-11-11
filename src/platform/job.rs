@@ -20,7 +20,7 @@ use crate::files::file_name;
 pub const POLL_EVERY: Duration = Duration::from_millis(100);
 
 /// The error of a job whose thread died without answering.
-pub const LOST: &str = "the background work stopped unexpectedly";
+const LOST: &str = "the background work stopped unexpectedly";
 
 /// Tells a job's work that its result is no longer wanted.
 #[derive(Debug, Clone, Default)]

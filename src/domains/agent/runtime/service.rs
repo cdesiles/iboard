@@ -521,7 +521,7 @@ fn scan(messages: &[Value]) -> (Option<String>, Option<String>) {
 /// Waits for `session` to finish, reporting its steps as they come. The job
 /// that runs this is dropped when the window closes; the service keeps
 /// working, so stopping only stops the watching.
-pub fn await_answer(
+fn await_answer(
     project: &Path,
     session: &str,
     cancel: &Cancel,

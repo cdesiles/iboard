@@ -58,7 +58,7 @@ impl Output {
 
 /// `text` without its terminal escape sequences (`\x1b[31m` colours and the
 /// like), which tools such as direnv put in their errors.
-pub fn without_escapes(text: &str) -> String {
+fn without_escapes(text: &str) -> String {
     let mut clean = String::with_capacity(text.len());
     let mut chars = text.chars();
     while let Some(c) = chars.next() {

@@ -14,13 +14,13 @@ use crate::platform::job::Cancel;
 
 /// How many days the agenda reads, up to today: as many as its widest range
 /// shows.
-pub const AGENDA_DAYS: i64 = Range::Y1.weeks() * 7;
+const AGENDA_DAYS: i64 = Range::Y1.weeks() * 7;
 
 /// The shortest run of empty weeks folded.
 const FOLD_WEEKS: usize = 4;
 
 /// The weeks the "By project" rows show, whatever the grid's range.
-pub const PROJECT_WEEKS: i64 = 12;
+const PROJECT_WEEKS: i64 = 12;
 
 /// One commit of a day, in the agenda.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,7 +71,7 @@ pub fn supervised(open: &Path, recents: &[PathBuf]) -> Vec<Repo> {
 /// What the Agenda read from every supervised project.
 #[derive(Debug, Clone, Default)]
 pub struct AgendaDays {
-    /// The commits of each local day, newest first, over the [`AGENDA_DAYS`]
+    /// The commits of each local day, newest first, over the `AGENDA_DAYS`
     /// up to today.
     pub days: BTreeMap<NaiveDate, Vec<DayCommit>>,
     /// The projects git could read, in the order they were scanned.
@@ -125,7 +125,7 @@ impl AgendaDays {
     }
 }
 
-/// The commits of each day over the [`AGENDA_DAYS`] up to today, by the
+/// The commits of each day over the `AGENDA_DAYS` up to today, by the
 /// author's local date, under `project`.
 pub fn collect(dir: &Path, project: &str) -> Result<BTreeMap<NaiveDate, Vec<DayCommit>>, String> {
     let start = Local::now() - Days::days(AGENDA_DAYS);

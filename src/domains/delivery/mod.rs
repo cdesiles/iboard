@@ -245,7 +245,7 @@ fn bumped(tag: &str, bump: Bump) -> Option<String> {
 }
 
 /// Whether `tag` already names a tag in the repository.
-pub fn tag_exists(project: &Path, tag: &str) -> bool {
+fn tag_exists(project: &Path, tag: &str) -> bool {
     git::output(project, &["tag", "--list", tag])
         .map(|out| out.lines().any(|line| line.trim() == tag))
         .unwrap_or(false)
@@ -267,7 +267,7 @@ impl ReleaseProgress {
 }
 
 /// Whether `tag` is a name git accepts.
-pub fn check_tag(tag: &str) -> Result<(), String> {
+fn check_tag(tag: &str) -> Result<(), String> {
     let tag = tag.trim();
     if tag.is_empty() {
         return Err("The tag can't be empty.".to_string());
@@ -279,7 +279,7 @@ pub fn check_tag(tag: &str) -> Result<(), String> {
 }
 
 /// Whether `file` stays inside the project.
-pub fn check_file(file: &str) -> Result<(), String> {
+fn check_file(file: &str) -> Result<(), String> {
     let file = file.trim();
     if file.is_empty() {
         return Err("The release note file can't be empty.".to_string());
@@ -361,7 +361,7 @@ pub fn section(tag: &str, day: &str, body: &str) -> String {
 }
 
 /// `section` put at the top of a changelog, under one `# Changelog` heading.
-pub fn with_section(existing: Option<&str>, section: &str) -> String {
+fn with_section(existing: Option<&str>, section: &str) -> String {
     let section = section.trim_end();
     let Some(existing) = existing.map(str::trim_end).filter(|text| !text.is_empty()) else {
         return format!("# Changelog\n\n{section}\n");
@@ -380,7 +380,7 @@ pub fn with_section(existing: Option<&str>, section: &str) -> String {
 
 /// Writes `section` to `file` in the project, newest first, and says where it
 /// went.
-pub fn write_note(project: &Path, file: &str, section: &str) -> Result<PathBuf, String> {
+fn write_note(project: &Path, file: &str, section: &str) -> Result<PathBuf, String> {
     let path = project.join(file.trim());
     let existing = std::fs::read_to_string(&path).ok();
     let text = with_section(existing.as_deref(), section);

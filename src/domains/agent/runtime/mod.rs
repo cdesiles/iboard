@@ -392,7 +392,7 @@ const DRAFT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 pub const DESIGN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// How long one plan turn may take.
-pub const PLAN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const PLAN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// How long a build or an ask may work: Settings › AI build's Timeout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

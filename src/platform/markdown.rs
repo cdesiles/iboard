@@ -70,7 +70,7 @@ pub fn title_line(lines: &[&str]) -> Option<usize> {
 }
 
 /// Whether `line` is a `# ` heading.
-pub fn is_title(line: &str) -> bool {
+fn is_title(line: &str) -> bool {
     line.trim_start().starts_with("# ")
 }
 

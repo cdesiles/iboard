@@ -132,7 +132,7 @@ pub struct Stats {
     /// Oldest first.
     pub snapshots: Vec<Snapshot>,
     /// The commits of each local day, newest first, over the
-    /// [`agenda::AGENDA_DAYS`] up to today, across the supervised projects.
+    /// `agenda::AGENDA_DAYS` up to today, across the supervised projects.
     pub agenda: AgendaDays,
     /// The source files at the page's newest commit, most code first.
     pub files: Vec<FileStat>,

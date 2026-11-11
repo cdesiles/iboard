@@ -32,11 +32,11 @@ pub use domains::agent::{
     workflows::{plan, prompts, refinement, titles},
 };
 pub use domains::authoring::{diff, prose, sheet};
-pub use domains::board::{commits, config, discovery, filter, history, labels, priority, trash};
+pub use domains::board::{commits, discovery, filter, history, labels, priority, trash};
 pub use domains::delivery as release;
 pub use domains::design;
 pub use domains::insights::{agenda, stats};
 pub use domains::preferences::{self, general, notifications, settings};
 pub use domains::workspace;
 pub use kernel::issue;
-pub use platform::{files, format, git, job, markdown, process};
+pub use platform::{files, format, job, markdown, process};

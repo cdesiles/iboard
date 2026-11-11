@@ -13,7 +13,7 @@ pub const MAX_AGENTS: usize = super::MAX_AGENTS;
 
 /// The label that keeps an issue away from the build agent: work that is not
 /// code, such as a quote or an email.
-pub const MANUAL: &str = "manual";
+const MANUAL: &str = "manual";
 
 /// Whether Play hands an issue with `labels` to the build agent.
 pub fn buildable(labels: &[String]) -> bool {

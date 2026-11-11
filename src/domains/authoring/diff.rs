@@ -185,7 +185,7 @@ fn untracked(dir: &Path, cancel: &Cancel) -> Result<Vec<FileDiff>, String> {
 }
 
 /// A `git show --format=%h%x09%s` output: its first line, then the patch.
-pub fn parse_show(output: &str) -> CommitDiff {
+fn parse_show(output: &str) -> CommitDiff {
     let (first, patch) = output.split_once('\n').unwrap_or((output, ""));
     let (hash, subject) = first.split_once('\t').unwrap_or((first, ""));
     CommitDiff {

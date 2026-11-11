@@ -245,7 +245,7 @@ fn whole_words(text: &str) -> String {
 }
 
 /// The text of the `# ` line: the labels in brackets, then the title.
-pub fn labelled_title(labels: &[String], title: &str) -> String {
+fn labelled_title(labels: &[String], title: &str) -> String {
     let mut line = String::new();
     for label in labels {
         line.push_str(&format!("[{label}] "));
@@ -310,7 +310,7 @@ const NOTES_MARK: &str = "<!-- iboard: notes -->";
 const DRAFT_MARK: &str = "<!-- iboard: draft -->";
 
 impl Parked {
-    pub fn to_text(&self) -> String {
+    fn to_text(&self) -> String {
         let mut out = format!("# {}\n\n{NOTES_MARK}\n{}\n", self.title.trim(), self.notes);
         if let Some(draft) = &self.draft {
             out.push_str(&format!(
@@ -321,7 +321,7 @@ impl Parked {
         out
     }
 
-    pub fn from_text(text: &str) -> Option<Self> {
+    fn from_text(text: &str) -> Option<Self> {
         let (head, rest) = text.split_once(NOTES_MARK)?;
         let title = head
             .lines()

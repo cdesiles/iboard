@@ -30,7 +30,7 @@ pub fn link(slug: &str, file: &str) -> String {
 }
 
 /// The first `NN.png` after the highest number already in `dir`.
-pub fn next_name(dir: &Path) -> String {
+fn next_name(dir: &Path) -> String {
     let last = std::fs::read_dir(dir)
         .into_iter()
         .flatten()

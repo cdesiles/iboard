@@ -10,7 +10,7 @@ use crate::shell::theme;
 
 /// How long ⌘ is held alone before the hints show: longer than a shortcut
 /// takes, so pressing one never shows them.
-pub const HOLD: f64 = theme::HINT_HOLD as f64;
+const HOLD: f64 = theme::HINT_HOLD as f64;
 
 /// How far a row of hints travels as it slides out.
 const SLIDE_BY: f32 = theme::SPACE_3;

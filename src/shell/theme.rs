@@ -121,16 +121,16 @@ pub enum ModalSize {
 /// What a [`ModalSize`] is: its width, the height it may grow to, and where
 /// it sits in the window.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ModalSpec {
-    pub width: f32,
-    pub max_height: f32,
-    pub anchor: egui::Align2,
+struct ModalSpec {
+    width: f32,
+    max_height: f32,
+    anchor: egui::Align2,
 }
 
 impl ModalSize {
     /// S and XL are centred, M and L hang from the top, so only their bottom
     /// edge moves as their content grows. XL is always `max_height` tall.
-    pub const fn spec(self) -> ModalSpec {
+    const fn spec(self) -> ModalSpec {
         let (width, max_height, anchor) = match self {
             Self::S => (MODAL_S, f32::INFINITY, egui::Align2::CENTER_CENTER),
             Self::M => (MODAL_M, f32::INFINITY, egui::Align2::CENTER_TOP),
@@ -146,7 +146,7 @@ impl ModalSize {
 }
 
 /// The gap every modal keeps from the edges of `window`.
-pub fn modal_inset(window: Rect) -> f32 {
+fn modal_inset(window: Rect) -> f32 {
     if window.width() < MODAL_NARROW_WINDOW {
         16.0
     } else {
@@ -260,7 +260,7 @@ pub fn install(ctx: &egui::Context) {
 }
 
 /// Whether macOS asks for reduced motion (Accessibility › Display).
-pub fn system_reduces_motion() -> bool {
+fn system_reduces_motion() -> bool {
     #[cfg(target_os = "macos")]
     return objc2_app_kit::NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion();
     #[cfg(not(target_os = "macos"))]

@@ -65,7 +65,7 @@ impl StoredReview {
     }
 
     /// Whether the issue changed since the agent read it.
-    pub fn is_stale(&self, markdown: &str) -> bool {
+    fn is_stale(&self, markdown: &str) -> bool {
         self.hash != content_hash(markdown)
     }
 }
