@@ -13,9 +13,14 @@ use std::time::{Duration, Instant};
 const LIMIT: Duration = Duration::from_secs(20);
 
 /// What `command` printed once it left, stopped after [`LIMIT`]: one that
-/// hangs or opens a window fails its test instead of holding up the run.
+/// hangs or opens a window fails its test instead of holding up the run. Every
+/// iboard a test starts gets the fake opencode, never the real service.
 fn finished(command: &mut Command) -> Output {
     let mut child = command
+        .env(
+            "IBOARD_OPENCODE",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fakes/opencode"),
+        )
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

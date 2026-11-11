@@ -1,10 +1,11 @@
 .DEFAULT_GOAL := help
-.PHONY: help hooks run iboard idesign list check test lint fmt tokens toolchain build release install app install-app bump clean
+.PHONY: help hooks run iboard idesign list check test third-party lint fmt tokens toolchain build release install app install-app bump clean
 
 # `make run` launches iboard; `make run idesign` switches to the design tool.
 BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
 
 SWIFT_FORMAT := $(shell xcrun --find swift-format 2>/dev/null)
+OPENCODE := $(shell command -v opencode 2>/dev/null)
 PINNED_RUST := $(shell sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
 VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
 NEXT_VERSION = $(shell echo $(VERSION) | awk -F. -v to='$(TO)' '\
@@ -47,8 +48,12 @@ list: ## Print the board to stdout, e.g. make list ARGS="~/code/moon-cull"
 
 check: toolchain lint test ## Everything a ticket needs before it is done: formatting, lints and tests
 
-test: ## Run all tests
-	cargo test
+test: ## Run every test that needs no third-party service
+	IBOARD_OPENCODE= cargo test
+
+third-party: ## Run the tests that need the real opencode service (before a release)
+	@test -n "$(OPENCODE)" || { echo 'opencode is not installed' >&2; exit 2; }
+	IBOARD_OPENCODE="$(OPENCODE)" cargo test --lib third_party -- --ignored
 
 lint: ## Check formatting, clippy, an egui-free core and swift-format (fails on warnings)
 	cargo fmt --all --check

@@ -29,6 +29,9 @@ const PAGE: usize = 20;
 /// How often a watched session is asked how it is doing.
 const POLL: Duration = Duration::from_millis(700);
 
+/// The longest wait between two polls while the service does not answer.
+const BACKOFF_MAX: Duration = Duration::from_secs(30);
+
 /// How many times a read is retried when its reply comes back cut short.
 const RETRIES: usize = 3;
 
@@ -36,8 +39,8 @@ const RETRIES: usize = 3;
 /// given up as dead.
 const STALE: Duration = Duration::from_secs(30 * 60);
 
-/// How many calls in a row may fail before the run is given up.
-const TRIES: usize = 5;
+/// How many failed polls it takes for the wait to stop doubling.
+const TRIES: u32 = 7;
 
 /// The session a run lives in, once the service has made it. Stop interrupts
 /// it; quitting only drops this, and the service carries on.
@@ -181,24 +184,29 @@ pub fn follow_questions(project: PathBuf) -> (Job<()>, Feed) {
     let writing = feed.clone();
     let job = Job::spawn(move |cancel| {
         let mut seen: Option<Vec<Question>> = None;
+        let mut misses = 0;
         while !cancel.is_cancelled() {
-            if let Ok(mut questions) = pending(&project) {
-                let settled = writing
-                    .settled
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
-                questions.retain(|question| {
-                    !settled.contains(&(question.session.clone(), question.id.clone()))
-                });
-                if seen.as_ref() != Some(&questions) {
-                    *writing
-                        .questions
+            match pending(&project) {
+                Ok(mut questions) => {
+                    misses = 0;
+                    let settled = writing
+                        .settled
                         .lock()
-                        .unwrap_or_else(PoisonError::into_inner) = questions.clone();
-                    seen = Some(questions);
+                        .unwrap_or_else(PoisonError::into_inner);
+                    questions.retain(|question| {
+                        !settled.contains(&(question.session.clone(), question.id.clone()))
+                    });
+                    if seen.as_ref() != Some(&questions) {
+                        *writing
+                            .questions
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner) = questions.clone();
+                        seen = Some(questions);
+                    }
                 }
+                Err(_) => misses += 1,
             }
-            std::thread::sleep(POLL);
+            rest(cancel, backoff(misses));
         }
     });
     (job, feed)
@@ -541,25 +549,6 @@ pub fn await_answer(
         if cancel.is_cancelled() {
             return Err("stopped watching the agent".to_string());
         }
-        let status = match status(project, session) {
-            Ok(status) => {
-                misses = 0;
-                status
-            }
-            Err(err) => {
-                misses += 1;
-                if misses >= TRIES {
-                    return Err(err);
-                }
-                std::thread::sleep(POLL);
-                continue;
-            }
-        };
-        if !status.running {
-            return read(project, session)?
-                .1
-                .ok_or_else(|| "the agent returned no answer".to_string());
-        }
         if let Some(timeout) = timeout.filter(|limit| started.elapsed() >= *limit) {
             interrupt(project, session);
             return Err(format!(
@@ -567,14 +556,37 @@ pub fn await_answer(
                 minutes(timeout)
             ));
         }
+        let status = match status(project, session) {
+            Ok(status) => {
+                misses = 0;
+                status
+            }
+            Err(_) => {
+                misses += 1;
+                rest(cancel, backoff(misses));
+                continue;
+            }
+        };
+        if !status.running {
+            match read(project, session) {
+                Ok((_, Some(answer))) => return Ok(answer),
+                Ok((_, None)) => return Err("the agent returned no answer".to_string()),
+                Err(_) => {
+                    misses += 1;
+                    rest(cancel, backoff(misses));
+                    continue;
+                }
+            }
+        }
         if now().saturating_sub(status.updated) > STALE.as_millis() as u64 {
             interrupt(project, session);
             return Err("the agent stopped writing".to_string());
         }
         if status.updated != seen {
             seen = status.updated;
-            let (step, _) = read(project, session)?;
-            if let Some(step) = step.filter(|step| *step != last) {
+            if let Ok((step, _)) = read(project, session)
+                && let Some(step) = step.filter(|step| *step != last)
+            {
                 last = step.clone();
                 if let Some(progress) = progress {
                     *progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(step.clone());
@@ -584,7 +596,7 @@ pub fn await_answer(
                 }
             }
         }
-        std::thread::sleep(POLL);
+        rest(cancel, POLL);
     }
 }
 
@@ -693,11 +705,15 @@ fn request(
     Ok(text)
 }
 
+/// The `opencode` to call: the tests' fake, or the real one outside them.
 fn binary() -> Option<PathBuf> {
     std::env::var_os("IBOARD_OPENCODE")
         .map(PathBuf::from)
         .filter(|path| path.is_file())
-        .or_else(|| super::find_binary("opencode"))
+        .or_else(|| {
+            let path = super::Tool::OpenCode.program();
+            path.is_file().then_some(path)
+        })
 }
 
 fn parse(text: &str) -> Result<Value, String> {
@@ -715,6 +731,24 @@ fn minutes(timeout: Duration) -> String {
     match timeout.as_secs() {
         seconds if seconds < 60 => format!("{seconds}s"),
         seconds => format!("{} min", seconds / 60),
+    }
+}
+
+/// The wait after `misses` polls in a row without an answer.
+fn backoff(misses: u32) -> Duration {
+    POLL.saturating_mul(1u32 << misses.min(TRIES))
+        .min(BACKOFF_MAX)
+}
+
+/// Sleeps for `duration`, waking to notice a cancel.
+fn rest(cancel: &Cancel, duration: Duration) {
+    let until = Instant::now() + duration;
+    while !cancel.is_cancelled() {
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        std::thread::sleep(left.min(POLL));
     }
 }
 
@@ -921,5 +955,38 @@ mod tests {
         assert_eq!(feed.questions(), [question]);
         feed.remove("ses_1", "frm_1");
         assert!(feed.questions().is_empty());
+    }
+
+    #[test]
+    fn failed_polls_back_off_up_to_a_cap() {
+        assert_eq!(backoff(0), POLL);
+        assert_eq!(backoff(1), POLL * 2);
+        assert_eq!(backoff(2), POLL * 4);
+        assert_eq!(backoff(TRIES), BACKOFF_MAX);
+    }
+
+    #[test]
+    fn tests_use_the_fake_opencode() {
+        let path = binary().expect("a fake opencode");
+        assert!(
+            path.starts_with(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fakes")),
+            "{path:?}"
+        );
+    }
+
+    /// The only test that may reach the real service. `make third-party` runs
+    /// it, with `IBOARD_OPENCODE` pointing at the real opencode.
+    #[test]
+    #[ignore = "third-party: run `make third-party` with the real opencode service"]
+    fn third_party_the_real_service_answers() {
+        let real = std::env::var_os("IBOARD_OPENCODE")
+            .map(PathBuf::from)
+            .filter(|path| path.is_file())
+            .expect("run `make third-party`, not `cargo test`");
+        let project = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let reply = request(&real, project, &["get", "/api/session"], None, CALL)
+            .expect("the real opencode api answers");
+        let value = parse(&reply).expect("its reply is JSON");
+        assert!(value["data"].is_array(), "{value}");
     }
 }
