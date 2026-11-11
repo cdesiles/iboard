@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn an_inherited_git_dir_is_ignored() {
-        const NAME: &str = "git::tests::an_inherited_git_dir_is_ignored";
+        const NAME: &str = "platform::git::tests::an_inherited_git_dir_is_ignored";
         if std::env::var_os("IBOARD_DECOY_GIT_DIR").is_some() {
             let dir = repo("real");
             let subject = output(dir.path(), &["log", "-1", "--format=%s"]).unwrap();

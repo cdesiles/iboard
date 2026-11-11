@@ -16,21 +16,16 @@ pub mod design;
 #[cfg(feature = "gui")]
 pub mod design_ui;
 pub mod domains;
-pub mod files;
-pub mod format;
 pub mod general;
-pub mod git;
-pub mod job;
 pub mod kernel;
-pub mod markdown;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod menu;
 pub mod new_issue;
 pub mod notifications;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod pasteboard;
+pub mod platform;
 pub mod preferences;
-pub mod process;
 pub mod release;
 #[cfg(test)]
 mod scratch_git;
@@ -50,3 +45,4 @@ pub use domains::agent::{
 pub use domains::authoring::{diff, prose, sheet};
 pub use domains::board::{commits, config, discovery, filter, history, labels, priority, trash};
 pub use kernel::issue;
+pub use platform::{files, format, git, job, markdown, process};

@@ -40,7 +40,7 @@ pub fn dir_from_env(var: &str, fallback: &str) -> Option<PathBuf> {
 
 /// The user's home folder, from `HOME`.
 pub fn home() -> Option<PathBuf> {
-    env_dir("HOME")
+    files::home()
 }
 
 fn env_dir(var: &str) -> Option<PathBuf> {

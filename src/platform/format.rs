@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 
 /// A path with the home folder shortened to `~`.
 pub fn display_path(path: &Path) -> String {
-    if let Some(home) = crate::settings::home()
+    if let Some(home) = crate::files::home()
         && let Ok(relative) = path.strip_prefix(&home)
     {
         return format!("~/{}", relative.display());

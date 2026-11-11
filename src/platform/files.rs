@@ -7,6 +7,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
+/// The user's home folder, from `HOME`.
+pub fn home() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
 /// A fresh path in the temp folder, `iboard-<tag>-<pid>-<n>.<extension>`: the
 /// counter keeps two files made at the same instant apart.
 fn temp_path(tag: &str, extension: &str) -> PathBuf {

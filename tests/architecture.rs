@@ -22,7 +22,8 @@ enum Layer {
 /// The shared kernel and the aliases `lib.rs` keeps for its old paths.
 const KERNEL: &[&str] = &["issue", "kernel"];
 
-/// The platform layer until `git mv` puts it under `src/platform/`.
+/// The platform layer, moved under `src/platform/`, with the aliases `lib.rs`
+/// keeps for its old paths, and its test helper.
 const PLATFORM: &[&str] = &[
     "files",
     "format",
