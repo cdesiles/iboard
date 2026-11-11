@@ -49,7 +49,7 @@ fn releasing_writes_a_note_commits_tags_and_pushes() {
     let flow = app.session.release.as_mut().unwrap();
     assert_eq!(flow.tag, "v0.2.0", "a feature bumps the minor after v0.1.0");
     assert_eq!(
-        flow.body, "### Added\n#### Board\n- Add a flag\n",
+        flow.body, "### New\n#### Board\n- Add a flag\n",
         "the commits since the tag become the note"
     );
     flow.body = "- Alpha\n- Beta\n".to_string();
@@ -374,7 +374,7 @@ fn the_note_lists_only_the_commits_since_the_last_release() {
     let flow = app.session.release.as_ref().unwrap();
     assert_eq!(flow.tag, "v0.4.0", "a feature after v0.3.0");
     assert_eq!(
-        flow.body, "### Added\n#### Board\n- Add a flag\n",
+        flow.body, "### New\n#### Board\n- Add a flag\n",
         "the old release's commits stay out"
     );
 }
@@ -509,7 +509,7 @@ fn the_opening_is_written_only_when_its_box_is_ticked() {
     assert_eq!(flow.lead, "A flag arrives.");
     assert!(
         flow.section()
-            .contains("A flag arrives.\n\n### Added\n#### Board\n- Add a flag"),
+            .contains("A flag arrives.\n\n### New\n#### Board\n- Add a flag"),
         "{}",
         flow.section()
     );

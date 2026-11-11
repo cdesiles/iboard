@@ -5,7 +5,7 @@ use crate::release::{self, ReleaseChoices};
 
 use super::{
     Align, ButtonKind, Duration, IboardApp, Icon, Instant, Job, Layout, MarginF32, PathBuf,
-    ReviewMode, RichText, Vec2, agent, job, settings, theme, widgets,
+    RichText, Vec2, agent, job, settings, theme, widgets,
 };
 
 /// What the user chose on the release panel.
@@ -171,7 +171,15 @@ impl ReleaseFlow {
         };
         self.writer = None;
         match result {
-            Ok(text) => self.lead = text.trim().trim_matches(['"', '\'']).trim().to_string(),
+            Ok(text) => {
+                let opening = release::opening(&text);
+                if opening.is_empty() {
+                    self.preamble_error =
+                        Some("the agent answered with nothing usable".to_string());
+                } else {
+                    self.lead = opening;
+                }
+            }
             Err(error) => self.preamble_error = Some(error),
         }
         false
@@ -533,14 +541,7 @@ impl IboardApp {
             return;
         }
         let prompt = release::preamble_prompt(&flow.body);
-        let note = flow.project.join(flow.file.trim());
-        let (writer, _) = agent::start_review(
-            &agent,
-            &prompt,
-            &note,
-            Some(flow.project.as_path()),
-            ReviewMode::Quick,
-        );
+        let (writer, _) = agent::start_draft(&agent, &prompt, Some(flow.project.as_path()));
         flow.writer = Some(writer);
         flow.preamble_error = None;
     }
