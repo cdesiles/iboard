@@ -339,6 +339,7 @@ mod tests {
                 release: ReleaseChoices {
                     note: false,
                     file: "release-notes.md".to_string(),
+                    preamble: false,
                     push: false,
                 },
                 notifications: notifications::Prefs::default(),

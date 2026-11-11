@@ -20,11 +20,13 @@ const SECTION: &str = "release";
 const FIRST_TAG: &str = "v0.1.0";
 
 /// What the release modal opens on: whether to write a note, in which file,
-/// and whether to push afterwards. Kept in `[release]`.
+/// whether an agent opens it, and whether to push afterwards. Kept in
+/// `[release]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseChoices {
     pub note: bool,
     pub file: String,
+    pub preamble: bool,
     pub push: bool,
 }
 
@@ -33,6 +35,7 @@ impl Default for ReleaseChoices {
         Self {
             note: true,
             file: NOTE_FILE.to_string(),
+            preamble: false,
             push: true,
         }
     }
@@ -43,6 +46,7 @@ impl Default for ReleaseChoices {
 pub struct ReleaseSection {
     note: Option<bool>,
     file: Option<String>,
+    preamble: Option<bool>,
     push: Option<bool>,
 }
 
@@ -58,6 +62,7 @@ impl ReleaseSection {
                     ReleaseChoices {
                         note: self.note.unwrap_or(defaults.note),
                         file: defaults.file,
+                        preamble: self.preamble.unwrap_or(defaults.preamble),
                         push: self.push.unwrap_or(defaults.push),
                     },
                     vec![format!("[{SECTION}]: file is empty")],
@@ -69,6 +74,7 @@ impl ReleaseSection {
             ReleaseChoices {
                 note: self.note.unwrap_or(defaults.note),
                 file,
+                preamble: self.preamble.unwrap_or(defaults.preamble),
                 push: self.push.unwrap_or(defaults.push),
             },
             Vec::new(),
@@ -82,6 +88,7 @@ impl ReleaseChoices {
         ReleaseSection {
             note: Some(self.note),
             file: Some(self.file.clone()),
+            preamble: Some(self.preamble),
             push: Some(self.push),
         }
     }
@@ -453,23 +460,50 @@ pub fn note(subjects: &[String], technical: bool) -> Note {
     }
 }
 
-/// The `### ` section of `kind`, empty when no entry has it.
+/// The instruction for the agent that writes the note's opening sentences,
+/// from the note's own lines and nothing else.
+pub fn preamble_prompt(body: &str) -> String {
+    format!(
+        "You write the opening of a software release note, from the note's own lines below. Say \
+         what the release brings in one or two sentences, at most forty words, naming the changes \
+         that matter most. Use only what the lines say and invent nothing: no version number, no \
+         date, no promise. Answer with the sentences alone, no heading, no list, no markdown.\n\
+         \n\
+         ---\n\
+         {}",
+        body.trim()
+    )
+}
+
+/// The `### ` section of `kind`, empty when no entry has it. The added ones
+/// are split by domain under a `#### ` heading; fixed and technical stay flat.
 fn section_of(kind: Kind, entries: &[Entry]) -> String {
     let mine: Vec<&Entry> = entries.iter().filter(|e| e.kind == kind).collect();
     if mine.is_empty() {
         return String::new();
     }
     let mut section = format!("### {}\n", kind.heading());
-    for entry in by_domain(&mine) {
+    if kind != Kind::Added {
+        for entry in &mine {
+            section.push_str(&line(entry));
+        }
+        return section;
+    }
+    for entry in mine.iter().filter(|e| e.domain.is_none()) {
         section.push_str(&line(entry));
-        section.push('\n');
+    }
+    for (domain, group) in by_domain(&mine) {
+        section.push_str(&format!("#### {}\n", capitalised(domain)));
+        for entry in group {
+            section.push_str(&line(entry));
+        }
     }
     section
 }
 
 /// `entries` grouped by domain, the most used domain first then by name; the
-/// ones with no domain last, in commit order.
-fn by_domain<'a>(entries: &[&'a Entry]) -> Vec<&'a Entry> {
+/// ones with no domain are not part of a group.
+fn by_domain<'a>(entries: &[&'a Entry]) -> Vec<(&'a str, Vec<&'a Entry>)> {
     let mut counts: HashMap<&str, usize> = HashMap::new();
     for entry in entries {
         if let Some(domain) = &entry.domain {
@@ -478,25 +512,22 @@ fn by_domain<'a>(entries: &[&'a Entry]) -> Vec<&'a Entry> {
     }
     let mut domains: Vec<(&str, usize)> = counts.into_iter().collect();
     domains.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
-    let mut ordered = Vec::with_capacity(entries.len());
-    for (domain, _) in domains {
-        ordered.extend(
-            entries
+    domains
+        .into_iter()
+        .map(|(domain, _)| {
+            let group = entries
                 .iter()
                 .filter(|entry| entry.domain.as_deref() == Some(domain))
-                .copied(),
-        );
-    }
-    ordered.extend(entries.iter().copied().filter(|e| e.domain.is_none()));
-    ordered
+                .copied()
+                .collect();
+            (domain, group)
+        })
+        .collect()
 }
 
-/// One `- **Domain** — text` line, or `- text` without a domain.
+/// One `- text` line.
 fn line(entry: &Entry) -> String {
-    match &entry.domain {
-        Some(domain) => format!("- **{}** — {}", capitalised(domain), entry.text),
-        None => format!("- {}", entry.text),
-    }
+    format!("- {}\n", entry.text)
 }
 
 /// `board` as `Board`; anything else stays as it is.
@@ -716,12 +747,14 @@ mod tests {
         assert_eq!(
             note.body,
             "### Added\n\
-             - **Board** — Save the panel\n\
-             - **Board** — The bell\n\
-             - **Agent** — Plan mode\n\
+             #### Board\n\
+             - Save the panel\n\
+             - The bell\n\
+             #### Agent\n\
+             - Plan mode\n\
              \n\
              ### Fixed\n\
-             - **Board** — The filter\n"
+             - The filter\n"
         );
         assert_eq!(note.features, 3);
         assert_eq!(note.technical, 0);
@@ -736,7 +769,7 @@ mod tests {
             "[feat] [board] Save the panel".to_string(),
         ];
         let note = note(&subjects, false);
-        assert_eq!(note.body, "### Added\n- **Board** — Save the panel\n");
+        assert_eq!(note.body, "### Added\n#### Board\n- Save the panel\n");
         assert_eq!(note.unclassified, 2, "no kind, or a topic where it belongs");
     }
 
@@ -752,20 +785,20 @@ mod tests {
         let loud = note(&subjects, true);
         assert_eq!(
             loud.body,
-            "### Added\n- **Board** — Save the panel\n\n\
-             ### Technical\n- **Board** — Split the module\n"
+            "### Added\n#### Board\n- Save the panel\n\n\
+             ### Technical\n- Split the module\n"
         );
     }
 
     #[test]
-    fn a_subject_without_a_domain_lists_plain_and_last() {
+    fn a_subject_without_a_domain_lists_plain_before_the_domains() {
         let subjects = [
             "[feat] Ship it".to_string(),
             "[feat] [board] Save the panel".to_string(),
         ];
         assert_eq!(
             note(&subjects, false).body,
-            "### Added\n- **Board** — Save the panel\n- Ship it\n"
+            "### Added\n- Ship it\n#### Board\n- Save the panel\n"
         );
     }
 
@@ -774,7 +807,7 @@ mod tests {
         let subjects = ["[feat] [board] [ux] Save the panel".to_string()];
         assert_eq!(
             note(&subjects, false).body,
-            "### Added\n- **Board** — Save the panel\n"
+            "### Added\n#### Board\n- Save the panel\n"
         );
     }
 
@@ -939,14 +972,16 @@ mod tests {
 
     #[test]
     fn the_choices_are_read_from_the_release_section_and_written_back() {
-        let (choices, problems) =
-            release("[release]\nnote = false\nfile = \"release-notes.md\"\npush = false\n")
-                .choices();
+        let (choices, problems) = release(
+            "[release]\nnote = false\nfile = \"release-notes.md\"\npreamble = true\npush = false\n",
+        )
+        .choices();
         assert_eq!(
             choices,
             ReleaseChoices {
                 note: false,
                 file: "release-notes.md".to_string(),
+                preamble: true,
                 push: false,
             }
         );

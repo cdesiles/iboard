@@ -49,7 +49,7 @@ fn releasing_writes_a_note_commits_tags_and_pushes() {
     let flow = app.session.release.as_mut().unwrap();
     assert_eq!(flow.tag, "v0.2.0", "a feature bumps the minor after v0.1.0");
     assert_eq!(
-        flow.body, "### Added\n- **Board** — Add a flag\n",
+        flow.body, "### Added\n#### Board\n- Add a flag\n",
         "the commits since the tag become the note"
     );
     flow.body = "- Alpha\n- Beta\n".to_string();
@@ -374,7 +374,7 @@ fn the_note_lists_only_the_commits_since_the_last_release() {
     let flow = app.session.release.as_ref().unwrap();
     assert_eq!(flow.tag, "v0.4.0", "a feature after v0.3.0");
     assert_eq!(
-        flow.body, "### Added\n- **Board** — Add a flag\n",
+        flow.body, "### Added\n#### Board\n- Add a flag\n",
         "the old release's commits stay out"
     );
 }
@@ -443,8 +443,7 @@ fn the_technical_changes_stay_out_until_their_box_is_ticked() {
     press(&mut harness, "Include technical changes (1)");
     let flow = harness.state().1.session.release.as_ref().unwrap();
     assert!(
-        flow.body
-            .ends_with("### Technical\n- **Board** — Split the module\n"),
+        flow.body.ends_with("### Technical\n- Split the module\n"),
         "{}",
         flow.body
     );
@@ -484,4 +483,34 @@ fn the_bump_follows_the_features_and_yields_to_a_click() {
     let flow = harness.state().1.session.release.as_ref().unwrap();
     assert_eq!(flow.tag, "v0.2.1", "the tag follows the click");
     harness.get_by_label("You chose a patch, though 1 feature shipped since v0.2.0.");
+}
+
+#[test]
+fn the_opening_is_written_only_when_its_box_is_ticked() {
+    let (_dir, mut app) =
+        labelled_project("release-preamble", None, &["[feat] [board] Add a flag"]);
+    app.prefs.agent = fake_agent("printf 'A flag arrives.\\n' # {prompt}");
+    app.open_release();
+    let flow = app.session.release.as_ref().unwrap();
+    assert!(flow.lead.is_empty(), "nothing runs while the box is off");
+
+    let mut harness = kittest(app);
+    press(&mut harness, "Open with a sentence");
+    let started = Instant::now();
+    loop {
+        let flow = harness.state().1.session.release.as_ref().unwrap();
+        if !flow.lead.is_empty() {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 30, "the opening never landed");
+        harness.run_steps(1);
+    }
+    let flow = harness.state().1.session.release.as_ref().unwrap();
+    assert_eq!(flow.lead, "A flag arrives.");
+    assert!(
+        flow.section()
+            .contains("A flag arrives.\n\n### Added\n#### Board\n- Add a flag"),
+        "{}",
+        flow.section()
+    );
 }

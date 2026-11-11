@@ -4,8 +4,8 @@
 use crate::release::{self, ReleaseChoices};
 
 use super::{
-    Align, ButtonKind, IboardApp, Icon, Instant, Layout, MarginF32, PathBuf, RichText, Vec2,
-    settings, theme, widgets,
+    Align, ButtonKind, Duration, IboardApp, Icon, Instant, Job, Layout, MarginF32, PathBuf,
+    ReviewMode, RichText, Vec2, agent, job, settings, theme, widgets,
 };
 
 /// What the user chose on the release panel.
@@ -31,6 +31,18 @@ pub(super) struct ReleaseFlow {
     generated: String,
     /// Whether the release commits an updated note before tagging.
     pub(super) note: bool,
+    /// Whether the note opens with sentences the agent writes.
+    pub(super) preamble: bool,
+    /// Whether an agent is set up to write them; without one the box is off.
+    can_write: bool,
+    /// The opening sentences the agent wrote, editable like the note.
+    pub(super) lead: String,
+    /// The opening the agent is writing, while it runs.
+    writer: Option<Job<Result<String, String>>>,
+    /// Whether the box was just ticked: the panel starts the agent.
+    ask_preamble: bool,
+    /// Why the agent could not write the opening; the note keeps none.
+    preamble_error: Option<String>,
     /// Whether the note prints its technical section.
     pub(super) technical: bool,
     /// The note file, relative to the project root.
@@ -52,6 +64,7 @@ pub(super) struct ReleaseFlow {
 }
 
 impl ReleaseFlow {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         project: PathBuf,
         project_name: String,
@@ -60,6 +73,7 @@ impl ReleaseFlow {
         subjects: Vec<String>,
         since: Option<String>,
         choices: ReleaseChoices,
+        can_write: bool,
     ) -> Self {
         let bump = release::Bump::of(&subjects);
         let note = release::note(&subjects, false);
@@ -73,6 +87,12 @@ impl ReleaseFlow {
             body: note.body.clone(),
             generated: note.body,
             note: choices.note,
+            preamble: choices.preamble,
+            can_write,
+            lead: String::new(),
+            writer: None,
+            ask_preamble: false,
+            preamble_error: None,
             technical: false,
             file: choices.file,
             push: choices.push,
@@ -121,10 +141,45 @@ impl ReleaseFlow {
         }
     }
 
+    /// The note's opening sentences, then its sections, as one body.
+    fn composed(&self) -> String {
+        let lead = self.lead.trim();
+        match self.preamble && !lead.is_empty() {
+            true => format!("{lead}\n\n{}", self.body.trim_end()),
+            false => self.body.trim_end().to_string(),
+        }
+    }
+
     /// The section this release writes, dated today.
-    fn section(&self) -> String {
+    pub(super) fn section(&self) -> String {
         let day = chrono::Local::now().format("%-d %b %Y").to_string();
-        release::section(self.tag.trim(), &day, &self.body)
+        release::section(self.tag.trim(), &day, &self.composed())
+    }
+
+    /// Whether the agent is still writing the opening.
+    fn writing(&self) -> bool {
+        self.writer.is_some()
+    }
+
+    /// Adopts the opening once the agent answers; true while it writes.
+    fn adopt_preamble(&mut self) -> bool {
+        let Some(writer) = &self.writer else {
+            return false;
+        };
+        let Some(result) = writer.answer() else {
+            return true;
+        };
+        self.writer = None;
+        match result {
+            Ok(text) => self.lead = text.trim().trim_matches(['"', '\'']).trim().to_string(),
+            Err(error) => self.preamble_error = Some(error),
+        }
+        false
+    }
+
+    /// Whether the panel should ask the agent for the opening now.
+    fn preamble_requested(&mut self) -> bool {
+        std::mem::take(&mut self.ask_preamble)
     }
 
     /// Makes the release in order: the note and its commit, the tag, the
@@ -291,6 +346,7 @@ impl ReleaseFlow {
                 .font(theme::ui_small())
                 .color(p.ink_muted),
         );
+        self.preamble_ui(ui, p);
         let note = egui::TextEdit::multiline(&mut self.body)
             .hint_text(RichText::new("What changed in this release").color(p.ink_faint))
             .desired_rows(6)
@@ -314,6 +370,49 @@ impl ReleaseFlow {
                 &format!("{} {noun} without a kind won't appear.", self.unclassified),
                 p.ink_muted,
             );
+        }
+    }
+
+    /// The opening: the agent's box, the sentences it wrote, and why it
+    /// could not.
+    fn preamble_ui(&mut self, ui: &mut egui::Ui, p: &theme::Palette) {
+        let box_ui = ui.add_enabled_ui(self.can_write, |ui| {
+            widgets::checkbox(ui, &mut self.preamble, "Open with a sentence")
+        });
+        if box_ui.inner.changed() {
+            self.error = None;
+            if self.preamble && self.lead.trim().is_empty() && !self.writing() {
+                self.ask_preamble = true;
+            }
+        }
+        if !self.can_write {
+            widgets::help(
+                ui,
+                "Set an agent up to have the release note opened for you.",
+                p.ink_muted,
+            );
+        }
+        if self.writing() {
+            widgets::announce_thinking(ui, "Writing the opening", Duration::ZERO);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_2;
+                widgets::thinking(ui, 14.0);
+                ui.label(
+                    RichText::new("Writing the opening…")
+                        .font(theme::ui_button())
+                        .color(p.ink),
+                );
+            });
+        } else if self.preamble {
+            let lead = egui::TextEdit::multiline(&mut self.lead)
+                .hint_text(RichText::new("What this release brings").color(p.ink_faint))
+                .desired_rows(2)
+                .desired_width(f32::INFINITY)
+                .margin(Vec2::new(theme::SPACE_3, theme::SPACE_2));
+            ui.add(lead);
+        }
+        if let Some(error) = &self.preamble_error {
+            widgets::help(ui, &format!("The opening stayed empty: {error}"), p.danger);
         }
     }
 
@@ -388,6 +487,7 @@ impl IboardApp {
             subjects,
             since,
             choices,
+            self.prefs.agent.configured(),
         );
         self.session.release = Some(flow);
     }
@@ -417,8 +517,39 @@ impl IboardApp {
         }
     }
 
+    /// The opening the agent is writing, or `None` while it stays quiet.
+    fn poll_release(&mut self) -> Option<Duration> {
+        let flow = self.session.release.as_mut()?;
+        flow.adopt_preamble().then_some(job::POLL_EVERY)
+    }
+
+    /// Starts the agent the panel just asked for, from the note it will open.
+    fn start_preamble(&mut self) {
+        let agent = self.prefs.agent.clone();
+        let Some(flow) = self.session.release.as_mut() else {
+            return;
+        };
+        if !flow.preamble_requested() || !flow.can_write {
+            return;
+        }
+        let prompt = release::preamble_prompt(&flow.body);
+        let note = flow.project.join(flow.file.trim());
+        let (writer, _) = agent::start_review(
+            &agent,
+            &prompt,
+            &note,
+            Some(flow.project.as_path()),
+            ReviewMode::Quick,
+        );
+        flow.writer = Some(writer);
+        flow.preamble_error = None;
+    }
+
     /// Done's release modal, while one is open.
     pub(super) fn release_window(&mut self, ui: &egui::Ui) {
+        if let Some(after) = self.poll_release() {
+            ui.ctx().request_repaint_after(after);
+        }
         let Some(flow) = self.session.release.as_mut() else {
             return;
         };
@@ -426,6 +557,7 @@ impl IboardApp {
         let choices = ReleaseChoices {
             note: flow.note,
             file: flow.file.clone(),
+            preamble: flow.preamble,
             push: flow.push,
         };
         if choices != self.prefs.release {
@@ -435,6 +567,7 @@ impl IboardApp {
                 &self.prefs.release.section(),
             ));
         }
+        self.start_preamble();
         match (choice, close) {
             (Some(choice), _) => self.release_choice(choice),
             (None, true) => self.release_choice(ReleaseChoice::Cancel),
