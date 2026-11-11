@@ -73,7 +73,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | --- | --- | --- |
 | **board** | `Board`, `Column`, `ColumnKind`, `Repo`, discovery and `Located`, priority, trash, filter, commits, history, the project `iboard.toml` | `src/domains/board/` (done) |
 | **agent** | `Agent`, `AgentConfig`, `ReviewMode`, `Verdict`, `Report`, `Leash`, `Challenge`, `Refinement`, the build queue, Ask, `Plan`, `Draft`, `Engine`, prompts, `BuildLog`, review sidecars | `src/domains/agent/{runtime,workflows,artifacts}` (done) |
-| **authoring** | `Sheet`, `Section`, checklist progress, word count, `Prose`/`Block`, `Diff`/`File`/`Hunk`/`Line`; the draft and parked notes of `new_issue` | `src/domains/authoring/` (done); `new_issue` is still at the root |
+| **authoring** | `Sheet`, `Section`, checklist progress, word count, `Prose`/`Block`, `Diff`/`File`/`Hunk`/`Line`; the draft and parked notes of `new_issue` | `src/domains/authoring/` (done) |
 | **workspace** | `Workspace`, `Group`, `WorkspaceSection`, `Order`, the group draft, a project's repo paths | `src/domains/workspace/` (done) |
 | **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, the tag, the changelog note and the push | `src/domains/delivery/` (done) |
 | **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `src/domains/insights/` (done) |
@@ -106,8 +106,7 @@ leak. Add it here and file the ticket before writing the call.
 These are the leaks the extraction tickets cut. The ticket's own acceptance
 criteria are the source of truth for the fix.
 
-`new_issue.rs` is not a leak: nothing above the kernel names it, but it is
-Authoring vocabulary and no extraction ticket moves it yet.
+None is open: every module in the map above sits in the code that owns it.
 
 ## Ticket labels
 

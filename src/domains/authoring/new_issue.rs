@@ -5,8 +5,8 @@
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use crate::labels;
-use crate::markdown;
+use crate::kernel::labels;
+use crate::platform::markdown;
 
 /// One `##` section of a draft.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -346,7 +346,7 @@ impl Parked {
         if self.notes.trim().is_empty() {
             return clear(path);
         }
-        crate::files::write_creating(path, self.to_text()).map_err(Into::into)
+        crate::platform::files::write_creating(path, self.to_text()).map_err(Into::into)
     }
 
     pub fn load(path: &Path) -> Option<Self> {

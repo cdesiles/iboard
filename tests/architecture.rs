@@ -28,8 +28,7 @@ enum Layer {
 enum Owner {
     Platform,
     Kernel,
-    /// A folder under `src/domains/`; `None` for the tree's own `mod.rs` and
-    /// for a module not extracted yet, which are domains but sit on no edge.
+    /// A folder under `src/domains/`; `None` for the tree's own `mod.rs`.
     Domain(Option<&'static str>),
     Shell,
 }
@@ -68,6 +67,7 @@ const ALIASES: &[(&str, Owner)] = &[
     ("reviews", Owner::Domain(Some("agent"))),
     ("titles", Owner::Domain(Some("agent"))),
     ("diff", Owner::Domain(Some("authoring"))),
+    ("new_issue", Owner::Domain(Some("authoring"))),
     ("prose", Owner::Domain(Some("authoring"))),
     ("sheet", Owner::Domain(Some("authoring"))),
     ("commits", Owner::Domain(Some("board"))),
@@ -101,7 +101,6 @@ const ROOT: &[(&str, Owner)] = &[
     ("bin", Owner::Shell),
     ("design_ui", Owner::Shell),
     ("main", Owner::Shell),
-    ("new_issue", Owner::Domain(None)),
     ("pasteboard", Owner::Shell),
     ("scratch_git", Owner::Platform),
     ("settings_ui", Owner::Shell),

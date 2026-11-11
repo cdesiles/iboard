@@ -15,7 +15,6 @@
 pub mod design_ui;
 pub mod domains;
 pub mod kernel;
-pub mod new_issue;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod pasteboard;
 pub mod platform;
@@ -31,7 +30,7 @@ pub use domains::agent::{
     runtime as agent,
     workflows::{plan, prompts, refinement, titles},
 };
-pub use domains::authoring::{diff, prose, sheet};
+pub use domains::authoring::{diff, new_issue, prose, sheet};
 pub use domains::board::{commits, discovery, filter, history, labels, priority, trash};
 pub use domains::delivery as release;
 pub use domains::design;
