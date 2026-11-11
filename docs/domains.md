@@ -80,7 +80,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | **design** | `DesignSystem`, `Token`, `Theme`, the `Catalog` and its pages, components, assets, CSS, Rust tokens, scaffold and validation | `design/` → `src/domains/design/` (015); `design_ui` stays shell; `design/` on disk stays the shared format |
 | **preferences** | `Preferences`, `UserConfig`, `Section`, appearance, delete confirmation, notifications, label colours and presets, splits, filter suggestions, the idesign switch | `settings`, `preferences`, `general`, `notifications`, `domains/preferences/labels` → `src/domains/preferences/` (016) |
 | **shell** | `App`, screen, frame, dialog and widget vocabulary, `Theme`, `Intent`, `Action`, the keymap, `CardFacts` and the other view models | `app/*`, `theme`, `widgets`, `menu`, `instance`, `recents`, `project_menu`, `groups_ui`, `label_picker`, `dialog`, `assets` → `src/shell/` (017); `settings_ui`, `design_ui` and `pasteboard` are shell by the same rule |
-| **platform** | `Job`/`Cancel`, `Process`, `Git`/`Batch`, `File` and atomic writes, the markdown structure, paths/times/numbers formatting | `files`, `git`, `process`, `job`, `markdown`, `format` → `src/platform/` (009) |
+| **platform** | `Job`/`Cancel`, `Process`, `Git`/`Batch`, `File` and atomic writes, the markdown structure, paths/times/numbers formatting | `src/platform/` (done) |
 
 ## Domain edges
 
@@ -111,7 +111,7 @@ criteria are the source of truth for the fix.
 | Insights starts a cycle from the Agent's `.builds/` log and `.reviews/` sidecars | `src/stats/cycle.rs` | 014, which keys cycles on Board history and git alone |
 | Design generates the `label-*` tokens from Preferences' `Hue` | `src/design/rust_tokens.rs` | 015; the palette order is shared vocabulary, so it moves to the kernel |
 | Workspace edits the user configuration itself (`settings::edit`) | `src/workspace/config.rs` | 016, where Workspace hands its `[[workspace.group]]` section to Preferences |
-| Preferences holds the XDG path helpers (`home`, `cache_dir`, `dir_from_env`) that Agent, Board, Design, Workspace and platform's `format` call | `src/settings.rs` | 009/016, which keep only config I/O in Preferences and move the helpers to platform (`files`) |
+| Preferences holds the XDG path helpers (`home`, `cache_dir`, `dir_from_env`) that Agent, Board, Design and Workspace call | `src/settings.rs` | 016, which keeps only config I/O in Preferences and moves the helpers to platform (`files`) |
 
 `new_issue.rs` is not a leak: nothing above the kernel names it, but it is
 Authoring vocabulary and no extraction ticket moves it yet.
