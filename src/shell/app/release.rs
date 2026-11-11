@@ -4,8 +4,8 @@
 use crate::release::{self, ReleaseChoices};
 
 use super::{
-    Align, ButtonKind, Duration, IboardApp, Icon, Instant, Job, Layout, MarginF32, PathBuf,
-    ReviewMode, RichText, Vec2, agent, job, settings, theme, widgets,
+    Align, ButtonKind, IboardApp, Icon, Instant, Layout, MarginF32, PathBuf, RichText, Vec2,
+    settings, theme, widgets,
 };
 
 /// What the user chose on the release panel.
@@ -20,22 +20,31 @@ pub(super) struct ReleaseFlow {
     project: PathBuf,
     project_name: String,
     pub(super) tag: String,
+    /// Which part of the version the release moves.
+    pub(super) bump: release::Bump,
+    /// The tag pattern the project releases under.
+    pattern: String,
+    /// Whether the tag follows the bump, or the user typed over it.
+    tag_follows: bool,
     pub(super) body: String,
+    /// The note the subjects make: what `body` holds while it is untouched.
+    generated: String,
     /// Whether the release commits an updated note before tagging.
     pub(super) note: bool,
+    /// Whether the note prints its technical section.
+    pub(super) technical: bool,
     /// The note file, relative to the project root.
     pub(super) file: String,
     /// Whether the release pushes the branch and its new tag.
     pub(super) push: bool,
-    /// The commit subjects the note lists, as the list the agent was asked to
-    /// group.
+    /// The commit subjects the note is written from, in commit order.
     subjects: Vec<String>,
-    /// The sectioned note the agent is writing, while it runs.
-    writer: Option<Job<Result<String, String>>>,
-    /// Whether the agent grouped the note into sections.
-    pub(super) grouped: bool,
-    /// Why the agent could not group the note; the raw list stays.
-    note_error: Option<String>,
+    /// The subjects with no kind label: they stay out of the note.
+    pub(super) unclassified: usize,
+    /// The technical subjects, printed only when `technical` is on.
+    technical_count: usize,
+    /// The `feat` subjects, what the bump follows.
+    features: usize,
     /// The newest tag the note follows, if any: the release window.
     since: Option<String>,
     progress: release::ReleaseProgress,
@@ -46,27 +55,69 @@ impl ReleaseFlow {
     fn new(
         project: PathBuf,
         project_name: String,
+        pattern: String,
         tag: String,
         subjects: Vec<String>,
         since: Option<String>,
         choices: ReleaseChoices,
-        writer: Option<Job<Result<String, String>>>,
     ) -> Self {
+        let bump = release::Bump::of(&subjects);
+        let note = release::note(&subjects, false);
         Self {
             project,
             project_name,
             tag,
-            body: release::note_body(&subjects),
+            bump,
+            pattern,
+            tag_follows: true,
+            body: note.body.clone(),
+            generated: note.body,
             note: choices.note,
+            technical: false,
             file: choices.file,
             push: choices.push,
             subjects,
-            writer,
-            grouped: false,
-            note_error: None,
+            unclassified: note.unclassified,
+            technical_count: note.technical,
+            features: note.features,
             since,
             progress: release::ReleaseProgress::default(),
             error: None,
+        }
+    }
+
+    /// Rewrites the note from the subjects, unless the user typed over it.
+    fn rebuild(&mut self) {
+        let note = release::note(&self.subjects, self.technical);
+        if self.body == self.generated {
+            self.body = note.body.clone();
+        }
+        self.generated = note.body;
+        self.unclassified = note.unclassified;
+        self.technical_count = note.technical;
+        self.features = note.features;
+    }
+
+    /// What the bump says about the window, in the field's own words.
+    fn bump_help(&self) -> String {
+        let window = match &self.since {
+            Some(tag) => format!("since {tag}"),
+            None => "in the repository".to_string(),
+        };
+        let noun = match self.features {
+            1 => "feature",
+            _ => "features",
+        };
+        match (self.bump, self.features) {
+            (release::Bump::Patch, 0) => format!("No {noun} {window}, so a patch."),
+            (release::Bump::Patch, n) => {
+                format!("You chose a patch, though {n} {noun} shipped {window}.")
+            }
+            (release::Bump::Minor, 0) => format!("You chose a minor, with no feature {window}."),
+            (release::Bump::Minor, n) => format!("{n} {noun} {window}, so a minor."),
+            (release::Bump::Major, n) => {
+                format!("You chose a major, with {n} {noun} {window}.")
+            }
         }
     }
 
@@ -97,34 +148,6 @@ impl ReleaseFlow {
         self.progress.finished(self.push)
     }
 
-    /// Whether the agent is still grouping the note.
-    fn writing(&self) -> bool {
-        self.writer.is_some()
-    }
-
-    /// Adopts the sectioned note once the agent answers, unless the user has
-    /// typed over the raw list it was asked to group. True while it writes.
-    fn adopt_note(&mut self) -> bool {
-        let Some(writer) = &self.writer else {
-            return false;
-        };
-        let Some(result) = writer.answer() else {
-            return true;
-        };
-        self.writer = None;
-        match result {
-            Ok(text) => {
-                let text = text.trim();
-                if !text.is_empty() && self.body == release::note_body(&self.subjects) {
-                    self.body = format!("{text}\n");
-                    self.grouped = true;
-                }
-            }
-            Err(error) => self.note_error = Some(error),
-        }
-        false
-    }
-
     /// The modal's body and buttons; `close` when its scrim or `esc` asked.
     fn show(&mut self, ui: &egui::Ui) -> (Option<ReleaseChoice>, bool) {
         let p = theme::palette(ui);
@@ -143,7 +166,6 @@ impl ReleaseFlow {
                 ui.set_width(width - 2.0 * pad);
                 ui.style_mut().interaction.selectable_labels = false;
                 ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                widgets::mark_busy(ui, self.writing());
                 self.head(ui, p);
                 theme::scroll_area(
                     ui,
@@ -206,13 +228,29 @@ impl ReleaseFlow {
             .desired_width(f32::INFINITY)
             .margin(Vec2::new(theme::SPACE_3, 4.0));
         if widgets::text_entry(ui, tag).changed() {
+            self.tag_follows = false;
             self.error = None;
         }
-        ui.label(
-            RichText::new("The next patch after the newest tag that matches [stats] release_tags.")
-                .font(theme::ui_small())
-                .color(p.ink_muted),
+        ui.add_space(theme::SPACE_2);
+        let bump = widgets::segmented(
+            ui,
+            self.bump,
+            &[
+                (release::Bump::Patch, "Patch"),
+                (release::Bump::Minor, "Minor"),
+                (release::Bump::Major, "Major"),
+            ],
         );
+        if let Some(bump) = bump
+            && bump != self.bump
+        {
+            self.bump = bump;
+            self.error = None;
+            if self.tag_follows {
+                self.tag = release::next_tag(&self.project, &self.pattern, bump);
+            }
+        }
+        widgets::help(ui, &self.bump_help(), p.ink_muted);
     }
 
     fn note_choice_ui(&mut self, ui: &mut egui::Ui, p: &theme::Palette) {
@@ -227,10 +265,6 @@ impl ReleaseFlow {
         {
             self.note = note;
             self.error = None;
-            if !note {
-                self.writer = None;
-                self.note_error = None;
-            }
         }
         let help = match self.note {
             true => "Commits the updated note before tagging the commit.",
@@ -257,53 +291,30 @@ impl ReleaseFlow {
                 .font(theme::ui_small())
                 .color(p.ink_muted),
         );
-        if self.writing() {
-            self.grouping_ui(ui, p);
-        } else if self.grouped {
-            widgets::announce(ui, "release-grouped", "The note was grouped into sections");
-            ui.label(
-                RichText::new("Grouped into sections.")
-                    .font(theme::ui_small())
-                    .color(p.status_done),
-            );
-        }
-        let writing = self.writing();
         let note = egui::TextEdit::multiline(&mut self.body)
             .hint_text(RichText::new("What changed in this release").color(p.ink_faint))
             .desired_rows(6)
             .desired_width(f32::INFINITY)
             .margin(Vec2::new(theme::SPACE_3, theme::SPACE_2));
-        ui.add_enabled(!writing, note);
-        if let Some(error) = &self.note_error {
-            ui.label(
-                RichText::new(format!("The note stayed a list: {error}"))
-                    .font(theme::ui_small())
-                    .color(p.danger),
+        ui.add(note);
+        let label = match self.technical_count {
+            0 => "Include technical changes".to_string(),
+            n => format!("Include technical changes ({n})"),
+        };
+        if widgets::checkbox(ui, &mut self.technical, &label).changed() {
+            self.rebuild();
+        }
+        if self.unclassified > 0 {
+            let noun = match self.unclassified {
+                1 => "commit",
+                _ => "commits",
+            };
+            widgets::help(
+                ui,
+                &format!("{} {noun} without a kind won't appear.", self.unclassified),
+                p.ink_muted,
             );
         }
-    }
-
-    /// The Thinking mark and the time spent while the agent groups the note.
-    fn grouping_ui(&self, ui: &mut egui::Ui, p: &theme::Palette) {
-        let elapsed = self
-            .writer
-            .as_ref()
-            .map_or_default(|writer| writer.elapsed());
-        widgets::announce_thinking(ui, "Grouping the note into sections", elapsed);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-            widgets::thinking(ui, 14.0);
-            ui.label(
-                RichText::new("Grouping the note into sections…")
-                    .font(theme::ui_button())
-                    .color(p.ink),
-            );
-            ui.label(
-                RichText::new(crate::format::clock(elapsed))
-                    .font(theme::meta())
-                    .color(p.ink_muted),
-            );
-        });
     }
 
     fn push_ui(&mut self, ui: &mut egui::Ui, p: &theme::Palette) {
@@ -339,17 +350,13 @@ impl ReleaseFlow {
         let mut choice = None;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-            let confirm = ui
-                .add_enabled_ui(!self.writing(), |ui| {
-                    widgets::button(
-                        ui,
-                        ButtonKind::Primary,
-                        Some(Icon::Release),
-                        self.action(),
-                        Some("⌘↩"),
-                    )
-                })
-                .inner;
+            let confirm = widgets::button(
+                ui,
+                ButtonKind::Primary,
+                Some(Icon::Release),
+                self.action(),
+                Some("⌘↩"),
+            );
             if confirm.clicked() {
                 choice = Some(ReleaseChoice::Confirm);
             }
@@ -363,37 +370,24 @@ impl ReleaseFlow {
 
 impl IboardApp {
     /// Opens the release flow: its note lists the commits made since the
-    /// newest release tag, and the refinement agent groups their subjects into
-    /// sections when it is set up.
+    /// newest release tag, grouped by the kind and domain their subjects name.
     pub(super) fn open_release(&mut self) {
         let project = self.board.project_dir.clone();
-        let last = release::last_release(&project, &self.prefs.releases.tags);
-        let tag = release::next_tag(&project, &self.prefs.releases.tags);
-        let subjects = release::commit_subjects(&project, &self.prefs.releases.tags);
+        let pattern = self.prefs.releases.tags.clone();
+        let last = release::last_release(&project, &pattern);
+        let subjects = release::commit_subjects(&project, &pattern);
+        let tag = release::next_tag(&project, &pattern, release::Bump::of(&subjects));
         let mut choices = self.prefs.release.clone();
         choices.file = release::note_file(&project, &choices.file);
-        let writer =
-            (choices.note && self.prefs.agent.configured() && !subjects.is_empty()).then(|| {
-                let prompt = release::note_prompt(&subjects);
-                let note = project.join(&choices.file);
-                let (writer, _) = agent::start_review(
-                    &self.prefs.agent,
-                    &prompt,
-                    &note,
-                    Some(project.as_path()),
-                    ReviewMode::Quick,
-                );
-                writer
-            });
         let since = last.map(|(tag, _)| tag);
         let flow = ReleaseFlow::new(
             project,
             self.board.name(),
+            pattern,
             tag,
             subjects,
             since,
             choices,
-            writer,
         );
         self.session.release = Some(flow);
     }
@@ -410,9 +404,6 @@ impl IboardApp {
                 return;
             }
             ReleaseChoice::Confirm => {
-                if flow.writing() {
-                    return;
-                }
                 if let Err(error) = flow.confirm() {
                     flow.error = Some(error);
                     return;
@@ -426,18 +417,8 @@ impl IboardApp {
         }
     }
 
-    /// Adopts the sectioned note once the agent writes it; called every
-    /// frame the modal draws, and asks to draw again while it does.
-    pub(super) fn poll_release(&mut self) -> Option<Duration> {
-        let flow = self.session.release.as_mut()?;
-        flow.adopt_note().then_some(job::POLL_EVERY)
-    }
-
     /// Done's release modal, while one is open.
     pub(super) fn release_window(&mut self, ui: &egui::Ui) {
-        if let Some(after) = self.poll_release() {
-            ui.ctx().request_repaint_after(after);
-        }
         let Some(flow) = self.session.release.as_mut() else {
             return;
         };

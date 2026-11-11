@@ -2,7 +2,7 @@
 //! and push the one release panel makes.
 
 use egui::accesskit::Role;
-use egui_kittest::kittest::{NodeT, Queryable};
+use egui_kittest::kittest::Queryable;
 
 use super::super::release::ReleaseChoice;
 use super::*;
@@ -23,7 +23,16 @@ fn release_project(tag: &str) -> (Scratch, Scratch, IboardApp) {
     if !tag.is_empty() {
         git(&dir, &["tag", tag]);
     }
-    git(&dir, &["commit", "-q", "--allow-empty", "-m", "Add a flag"]);
+    git(
+        &dir,
+        &[
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "[feat] [board] Add a flag",
+        ],
+    );
     let remote = scratch_dir("release-remote");
     git(&remote, &["init", "-q", "--bare"]);
     git(&dir, &["remote", "add", "origin", remote.to_str().unwrap()]);
@@ -38,32 +47,32 @@ fn releasing_writes_a_note_commits_tags_and_pushes() {
 
     app.open_release();
     let flow = app.session.release.as_mut().unwrap();
-    assert_eq!(flow.tag, "v0.1.1", "the next patch after the newest tag");
+    assert_eq!(flow.tag, "v0.2.0", "a feature bumps the minor after v0.1.0");
     assert_eq!(
-        flow.body, "- Add a flag\n",
+        flow.body, "### Added\n- **Board** — Add a flag\n",
         "the commits since the tag become the note"
     );
     flow.body = "- Alpha\n- Beta\n".to_string();
 
     app.release_choice(ReleaseChoice::Confirm);
     let note = std::fs::read_to_string(dir.join("CHANGELOG.md")).unwrap();
-    assert!(note.starts_with("# Changelog\n\n## v0.1.1 — "), "{note}");
+    assert!(note.starts_with("# Changelog\n\n## v0.2.0 — "), "{note}");
     assert!(note.contains("- Alpha\n- Beta\n"), "{note}");
-    assert_eq!(git(&dir, &["log", "-1", "--format=%s"]), "Release v0.1.1");
-    assert_eq!(git(&dir, &["tag", "--list", "v0.1.1"]), "v0.1.1");
+    assert_eq!(git(&dir, &["log", "-1", "--format=%s"]), "Release v0.2.0");
+    assert_eq!(git(&dir, &["tag", "--list", "v0.2.0"]), "v0.2.0");
     assert!(app.session.release.is_none(), "one panel, one release");
     assert_eq!(
         app.session.notice.as_ref().map(|(text, _)| text.as_str()),
-        Some("Released v0.1.1")
+        Some("Released v0.2.0")
     );
     assert_eq!(
-        git(&remote, &["tag", "--list", "v0.1.1"]),
-        "v0.1.1",
+        git(&remote, &["tag", "--list", "v0.2.0"]),
+        "v0.2.0",
         "the tag reached origin"
     );
     assert_eq!(
         git(&remote, &["log", "-1", "--format=%s", "main"]),
-        "Release v0.1.1"
+        "Release v0.2.0"
     );
 }
 
@@ -79,13 +88,13 @@ fn tag_only_leaves_the_note_alone_and_keep_local_leaves_the_push_out() {
     assert!(!dir.join("CHANGELOG.md").exists(), "no note was written");
     assert_eq!(
         git(&dir, &["log", "-1", "--format=%s"]),
-        "Add a flag",
+        "[feat] [board] Add a flag",
         "tag only adds no commit"
     );
-    assert_eq!(git(&dir, &["tag", "--list", "v0.1.1"]), "v0.1.1");
+    assert_eq!(git(&dir, &["tag", "--list", "v0.2.0"]), "v0.2.0");
     assert!(app.session.release.is_none());
     assert_eq!(
-        git(&remote, &["tag", "--list", "v0.1.1"]),
+        git(&remote, &["tag", "--list", "v0.2.0"]),
         "",
         "the push was left out"
     );
@@ -100,7 +109,7 @@ fn a_written_note_goes_to_the_file_the_user_chose() {
 
     assert!(!dir.join("CHANGELOG.md").exists());
     let note = std::fs::read_to_string(dir.join("release-notes.md")).unwrap();
-    assert!(note.starts_with("# Changelog\n\n## v0.1.1 — "), "{note}");
+    assert!(note.starts_with("# Changelog\n\n## v0.2.0 — "), "{note}");
     assert_eq!(
         git(&dir, &["show", "--name-only", "--format=", "HEAD"]),
         "release-notes.md"
@@ -115,7 +124,7 @@ fn cancelling_stops_the_release_before_anything_is_written() {
 
     assert!(app.session.release.is_none());
     assert!(!dir.join("CHANGELOG.md").exists());
-    assert_eq!(git(&dir, &["tag", "--list", "v0.1.1"]), "");
+    assert_eq!(git(&dir, &["tag", "--list", "v0.2.0"]), "");
 }
 
 #[test]
@@ -309,8 +318,8 @@ fn the_panel_makes_the_whole_release_in_one_confirmation() {
 
     press(&mut harness, "Update release note, version and push");
     assert!(dir.join("CHANGELOG.md").is_file());
-    assert_eq!(git(&dir, &["tag", "--list", "v0.1.1"]), "v0.1.1");
-    assert_eq!(git(&remote, &["tag", "--list", "v0.1.1"]), "v0.1.1");
+    assert_eq!(git(&dir, &["tag", "--list", "v0.2.0"]), "v0.2.0");
+    assert_eq!(git(&remote, &["tag", "--list", "v0.2.0"]), "v0.2.0");
     assert!(harness.state().1.session.release.is_none());
 }
 
@@ -343,97 +352,29 @@ fn the_choices_made_are_kept_in_the_settings_file() {
 }
 
 #[test]
-fn the_agent_groups_the_note_into_sections() {
-    let (dir, mut app) = project("release-agent", &[("done/a.md", "# Alpha\n")]);
-    git(&dir, &["init", "-q", "-b", "main"]);
-    git(&dir, &["add", "."]);
-    git(&dir, &["commit", "-q", "-m", "Alpha"]);
-    app.prefs.agent = fake_agent("printf '### Added\\n- Alpha\\n' # {prompt}");
-    app.open_release();
-    assert_eq!(
-        app.session.release.as_ref().unwrap().body,
-        "- Alpha\n",
-        "the raw list shows while the agent writes"
-    );
-
-    assert!(until(|| {
-        app.poll_release();
-        app.session
-            .release
-            .as_ref()
-            .is_some_and(|flow| flow.body == "### Added\n- Alpha\n")
-    }));
-    assert!(
-        app.session.release.as_ref().unwrap().grouped,
-        "the note says it was grouped"
-    );
-    assert_eq!(app.poll_release(), None, "the note is no longer writing");
-}
-
-#[test]
-fn a_grouping_note_blocks_edits_and_shows_the_thinking_mark() {
-    use egui::accesskit::Live;
-    let (dir, mut app) = project("release-grouping-a11y", &[("done/a.md", "# Alpha\n")]);
-    git(&dir, &["init", "-q", "-b", "main"]);
-    git(&dir, &["add", "."]);
-    git(&dir, &["commit", "-q", "-m", "Alpha"]);
-    app.prefs.agent = fake_agent("sleep 3; printf '### Added\\n- Alpha\\n' # {prompt}");
-    app.open_release();
-    let mut harness = kittest(app);
-    harness.run_steps(2);
-
-    let dialog = harness.get_by_role_and_label(Role::Dialog, "Release");
-    assert!(dialog.accesskit_node().is_busy(), "the dialog is busy");
-    assert!(
-        harness.query_by_label("Working").is_some(),
-        "the Thinking mark turns while the agent groups"
-    );
-    let live = harness
-        .get_all_by_label("Grouping the note into sections")
-        .filter(|node| node.accesskit_node().live() == Live::Polite)
-        .count();
-    assert_eq!(live, 1, "the screen reader hears the grouping");
-    let note = harness.get_by_role(Role::MultilineTextInput);
-    assert!(
-        note.accesskit_node().is_disabled(),
-        "the note can't be edited while the agent groups it"
-    );
-
-    let started = Instant::now();
-    while harness
-        .state()
-        .1
-        .session
-        .release
-        .as_ref()
-        .is_some_and(|flow| !flow.grouped)
-    {
-        assert!(started.elapsed().as_secs() < 30, "the note never landed");
-        harness.run_steps(1);
-    }
-    harness.run_steps(2);
-    let dialog = harness.get_by_role_and_label(Role::Dialog, "Release");
-    assert!(!dialog.accesskit_node().is_busy(), "the grouping ended");
-    let note = harness.get_by_role(Role::MultilineTextInput);
-    assert!(!note.accesskit_node().is_disabled(), "the note is editable");
-    harness.get_by_label("Grouped into sections.");
-}
-
-#[test]
 fn the_note_lists_only_the_commits_since_the_last_release() {
     let dir = scratch_dir("release-window");
     std::fs::create_dir_all(dir.join("issues")).unwrap();
     git(&dir, &["init", "-q", "-b", "main"]);
     git(&dir, &["commit", "-q", "--allow-empty", "-m", "old"]);
     git(&dir, &["tag", "v0.3.0"]);
-    git(&dir, &["commit", "-q", "--allow-empty", "-m", "Add a flag"]);
+    git(
+        &dir,
+        &[
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "[feat] [board] Add a flag",
+        ],
+    );
 
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     app.open_release();
     let flow = app.session.release.as_ref().unwrap();
-    assert_eq!(flow.tag, "v0.3.1");
+    assert_eq!(flow.tag, "v0.4.0", "a feature after v0.3.0");
     assert_eq!(
-        flow.body, "- Add a flag\n",
+        flow.body, "### Added\n- **Board** — Add a flag\n",
         "the old release's commits stay out"
     );
 }
@@ -446,7 +387,13 @@ fn a_long_note_scrolls_so_the_buttons_stay_on_screen() {
     for n in 0..40 {
         git(
             &dir,
-            &["commit", "-q", "--allow-empty", "-m", &format!("Issue {n}")],
+            &[
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                &format!("[bug] [board] Issue {n}"),
+            ],
         );
     }
     let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
@@ -459,4 +406,82 @@ fn a_long_note_scrolls_so_the_buttons_stay_on_screen() {
         "the note scrolls, its buttons stay put: {:?}",
         confirm.rect()
     );
+}
+
+/// A git project with one commit behind an optional tag, then `subjects`.
+fn labelled_project(name: &str, tag: Option<&str>, subjects: &[&str]) -> (Scratch, IboardApp) {
+    let dir = scratch_dir(name);
+    std::fs::create_dir_all(dir.join("issues")).unwrap();
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["commit", "-q", "--allow-empty", "-m", "old"]);
+    if let Some(tag) = tag {
+        git(&dir, &["tag", tag]);
+    }
+    for subject in subjects {
+        git(&dir, &["commit", "-q", "--allow-empty", "-m", subject]);
+    }
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    (dir, app)
+}
+
+#[test]
+fn the_technical_changes_stay_out_until_their_box_is_ticked() {
+    let (_dir, mut app) = labelled_project(
+        "release-technical",
+        None,
+        &[
+            "[refactor] [board] Split the module",
+            "[feat] [board] Add a flag",
+        ],
+    );
+    app.open_release();
+    let flow = app.session.release.as_ref().unwrap();
+    assert!(!flow.technical, "the box starts unticked");
+    assert!(!flow.body.contains("Technical"), "{}", flow.body);
+
+    let mut harness = kittest(app);
+    press(&mut harness, "Include technical changes (1)");
+    let flow = harness.state().1.session.release.as_ref().unwrap();
+    assert!(
+        flow.body
+            .ends_with("### Technical\n- **Board** — Split the module\n"),
+        "{}",
+        flow.body
+    );
+}
+
+#[test]
+fn the_panel_counts_the_commits_the_note_leaves_out() {
+    let (_dir, mut app) = labelled_project(
+        "release-unclassified",
+        None,
+        &[
+            "Some chore",
+            "[ux] Column actions name themselves",
+            "[feat] [board] Add a flag",
+        ],
+    );
+    app.open_release();
+    let flow = app.session.release.as_ref().unwrap();
+    assert_eq!(flow.unclassified, 3, "the untagged 'old' commit counts too");
+    let harness = kittest(app);
+    harness.get_by_value("3 commits without a kind won't appear.");
+}
+
+#[test]
+fn the_bump_follows_the_features_and_yields_to_a_click() {
+    let (_dir, mut app) = labelled_project(
+        "release-bump",
+        Some("v0.2.0"),
+        &["[feat] [board] Add a flag"],
+    );
+    app.open_release();
+    assert_eq!(app.session.release.as_ref().unwrap().tag, "v0.3.0");
+
+    let mut harness = kittest(app);
+    harness.get_by_label("1 feature since v0.2.0, so a minor.");
+    press(&mut harness, "Patch");
+    let flow = harness.state().1.session.release.as_ref().unwrap();
+    assert_eq!(flow.tag, "v0.2.1", "the tag follows the click");
+    harness.get_by_label("You chose a patch, though 1 feature shipped since v0.2.0.");
 }

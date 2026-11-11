@@ -108,13 +108,36 @@ fn used_note_file(project: &Path) -> Option<String> {
     })
 }
 
-/// The tag after the newest one matching `pattern`, patch bumped: `v0.3.0`
-/// gives `v0.3.1`, `rel-1.2` gives `rel-1.2.1`. No matching version gives
+/// The tag after the newest one matching `pattern`, `bump` applied: `v0.3.0`
+/// gives `v0.3.1`, `v0.4.0` or `v1.0.0`. No matching version gives
 /// [`FIRST_TAG`].
-pub fn next_tag(dir: &Path, pattern: &str) -> String {
+pub fn next_tag(dir: &Path, pattern: &str, bump: Bump) -> String {
     newest_tag(dir, pattern)
-        .and_then(|tag| bumped(&tag))
+        .and_then(|tag| bumped(&tag, bump))
         .unwrap_or_else(|| FIRST_TAG.to_string())
+}
+
+/// Which part of the version a release moves, and so what its number says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Bump {
+    Patch,
+    Minor,
+    Major,
+}
+
+impl Bump {
+    /// What the subjects bump: a `feat` in the window makes a minor, anything
+    /// less a patch.
+    pub fn of(subjects: &[String]) -> Self {
+        match subjects
+            .iter()
+            .filter_map(|s| entry(s))
+            .any(|e| e.kind == Kind::Added)
+        {
+            true => Self::Minor,
+            false => Self::Patch,
+        }
+    }
 }
 
 fn newest_tag(dir: &Path, pattern: &str) -> Option<String> {
@@ -194,18 +217,24 @@ fn commits_since(dir: &Path, tag: Option<&str>) -> bool {
         .is_some_and(|count| count > 0)
 }
 
-/// `v1.2.3` as `v1.2.4`, keeping the prefix before its first digit.
-fn bumped(tag: &str) -> Option<String> {
+/// `v1.2.3` as `v1.2.4`, `v1.3.0` or `v2.0.0`, keeping the prefix before its
+/// first digit.
+fn bumped(tag: &str, bump: Bump) -> Option<String> {
     let start = tag.find(|c: char| c.is_ascii_digit())?;
     let (prefix, version) = tag.split_at(start);
     let core = version.split(['-', '+']).next().unwrap_or_default();
     let parts: Option<Vec<u64>> = core.split('.').map(|part| part.parse().ok()).collect();
-    match parts.as_deref() {
-        Some([major, minor, patch]) => Some(format!("{prefix}{major}.{minor}.{}", patch + 1)),
-        Some([major, minor]) => Some(format!("{prefix}{major}.{minor}.1")),
-        Some([major]) => Some(format!("{prefix}{major}.0.1")),
-        _ => None,
+    let mut parts = parts?;
+    if parts.len() > 3 {
+        return None;
     }
+    parts.resize(3, 0);
+    let moved = match bump {
+        Bump::Patch => [parts[0], parts[1], parts[2] + 1],
+        Bump::Minor => [parts[0], parts[1] + 1, 0],
+        Bump::Major => [parts[0] + 1, 0, 0],
+    };
+    Some(format!("{prefix}{}.{}.{}", moved[0], moved[1], moved[2]))
 }
 
 /// Whether `tag` already names a tag in the repository.
@@ -314,32 +343,169 @@ pub fn commit_subjects(dir: &Path, pattern: &str) -> Vec<String> {
         .collect()
 }
 
-/// The commit subjects as the note's list, one `- Subject` per commit.
-pub fn note_body(subjects: &[String]) -> String {
-    let mut body = String::new();
-    for subject in subjects {
-        body.push_str("- ");
-        body.push_str(subject.trim());
-        body.push('\n');
-    }
-    body
+/// The section a commit subject's kind label names, in the order the note
+/// prints them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Kind {
+    Added,
+    Fixed,
+    Technical,
 }
 
-/// The instruction for the agent that groups the note: the release's commit
-/// subjects into sections, rather than handing back the raw list.
-pub fn note_prompt(subjects: &[String]) -> String {
-    format!(
-        "You write the release note of a software project from the subjects of the commits it \
-         ships. Group them under a few `### ` headings that fit what they do, such as Added, \
-         Changed, Fixed or Removed. Keep every subject's words exactly as written, list every \
-         subject once, and invent nothing: the subjects below are all there is, so read no file. \
-         Answer with nothing but the sections, each a `### Heading` line then its `- Subject` \
-         lines, with no introduction or closing.\n\
-         \n\
-         ---\n\
-         {}",
-        note_body(subjects)
-    )
+impl Kind {
+    /// The `### ` heading the note prints for `self`.
+    pub fn heading(self) -> &'static str {
+        match self {
+            Self::Added => "Added",
+            Self::Fixed => "Fixed",
+            Self::Technical => "Technical",
+        }
+    }
+
+    /// The kind a subject's first label names; `None` for a label the note
+    /// does not know, which leaves the commit out of the note.
+    fn of(label: &str) -> Option<Self> {
+        match label {
+            "feat" => Some(Self::Added),
+            "bug" => Some(Self::Fixed),
+            "chore" | "refactor" | "perf" | "discovery" => Some(Self::Technical),
+            _ => None,
+        }
+    }
+}
+
+/// One subject read as the note prints it: its kind, the domain of its second
+/// label, and what it says once both labels are gone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Entry {
+    kind: Kind,
+    domain: Option<String>,
+    text: String,
+}
+
+/// The `[label]` a subject opens with, and what follows it.
+fn take_label(subject: &str) -> Option<(&str, &str)> {
+    let rest = subject.trim_start().strip_prefix('[')?;
+    let end = rest.find(']')?;
+    let label = &rest[..end];
+    let label = (!label.is_empty() && label.chars().all(|c| c.is_ascii_lowercase() || c == '-'))
+        .then_some(label)?;
+    Some((label, rest[end + 1..].trim_start()))
+}
+
+/// The subject as an [`Entry`]: its first label is the kind, its second the
+/// domain, and any label after them says nothing the note prints. A subject
+/// with no known kind, or nothing left to say, is `None`.
+fn entry(subject: &str) -> Option<Entry> {
+    let (kind, rest) = take_label(subject)?;
+    let kind = Kind::of(kind)?;
+    let (domain, text) = match take_label(rest) {
+        Some((domain, text)) => (Some(domain.to_string()), text),
+        None => (None, rest),
+    };
+    let text = without_labels(text);
+    (!text.is_empty()).then(|| Entry {
+        kind,
+        domain,
+        text: text.to_string(),
+    })
+}
+
+/// `text` with every `[label]` it opens with taken off.
+fn without_labels(mut text: &str) -> &str {
+    while let Some((_, rest)) = take_label(text) {
+        text = rest;
+    }
+    text
+}
+
+/// The note a release writes from `subjects`: one `### ` section per kind,
+/// each grouped by domain, most used domain first.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Note {
+    pub body: String,
+    /// The subjects the note leaves out: no known kind label.
+    pub unclassified: usize,
+    /// The technical subjects, printed only when `technical` is asked.
+    pub technical: usize,
+    /// The `feat` subjects: what the note's version bump follows.
+    pub features: usize,
+}
+
+/// The subjects as [`Note`], its technical section printed when `technical`.
+pub fn note(subjects: &[String], technical: bool) -> Note {
+    let entries: Vec<Entry> = subjects.iter().filter_map(|s| entry(s)).collect();
+    let mut sections = Vec::new();
+    for kind in [Kind::Added, Kind::Fixed, Kind::Technical] {
+        if kind == Kind::Technical && !technical {
+            continue;
+        }
+        let section = section_of(kind, &entries);
+        if !section.is_empty() {
+            sections.push(section);
+        }
+    }
+    Note {
+        body: sections.join("\n"),
+        unclassified: subjects.len() - entries.len(),
+        technical: entries.iter().filter(|e| e.kind == Kind::Technical).count(),
+        features: entries.iter().filter(|e| e.kind == Kind::Added).count(),
+    }
+}
+
+/// The `### ` section of `kind`, empty when no entry has it.
+fn section_of(kind: Kind, entries: &[Entry]) -> String {
+    let mine: Vec<&Entry> = entries.iter().filter(|e| e.kind == kind).collect();
+    if mine.is_empty() {
+        return String::new();
+    }
+    let mut section = format!("### {}\n", kind.heading());
+    for entry in by_domain(&mine) {
+        section.push_str(&line(entry));
+        section.push('\n');
+    }
+    section
+}
+
+/// `entries` grouped by domain, the most used domain first then by name; the
+/// ones with no domain last, in commit order.
+fn by_domain<'a>(entries: &[&'a Entry]) -> Vec<&'a Entry> {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for entry in entries {
+        if let Some(domain) = &entry.domain {
+            *counts.entry(domain.as_str()).or_default() += 1;
+        }
+    }
+    let mut domains: Vec<(&str, usize)> = counts.into_iter().collect();
+    domains.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    let mut ordered = Vec::with_capacity(entries.len());
+    for (domain, _) in domains {
+        ordered.extend(
+            entries
+                .iter()
+                .filter(|entry| entry.domain.as_deref() == Some(domain))
+                .copied(),
+        );
+    }
+    ordered.extend(entries.iter().copied().filter(|e| e.domain.is_none()));
+    ordered
+}
+
+/// One `- **Domain** — text` line, or `- text` without a domain.
+fn line(entry: &Entry) -> String {
+    match &entry.domain {
+        Some(domain) => format!("- **{}** — {}", capitalised(domain), entry.text),
+        None => format!("- {}", entry.text),
+    }
+}
+
+/// `board` as `Board`; anything else stays as it is.
+fn capitalised(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }
 
 /// A release section: `## v0.3.1 — 7 Nov 2026`, then `body`.
@@ -427,18 +593,50 @@ mod tests {
     }
 
     #[test]
-    fn the_next_tag_bumps_the_newest_matching_version() {
+    fn the_next_tag_moves_the_part_the_bump_names() {
         let dir = repo();
         let dir = dir.path();
         for tag in ["v0.2.9", "v0.3.0", "rel-2.0.0", "nightly"] {
             git(dir, &["tag", tag]);
         }
-        assert_eq!(next_tag(dir, "v*"), "v0.3.1");
-        assert_eq!(next_tag(dir, "rel-*"), "rel-2.0.1");
-        assert_eq!(next_tag(dir, ""), "v0.3.1", "every tag matches");
-        assert_eq!(next_tag(dir, "nightly*"), FIRST_TAG);
+        assert_eq!(next_tag(dir, "v*", Bump::Patch), "v0.3.1");
+        assert_eq!(next_tag(dir, "v*", Bump::Minor), "v0.4.0");
+        assert_eq!(next_tag(dir, "v*", Bump::Major), "v1.0.0");
+        assert_eq!(next_tag(dir, "rel-*", Bump::Patch), "rel-2.0.1");
+        assert_eq!(next_tag(dir, "rel-*", Bump::Minor), "rel-2.1.0");
+        assert_eq!(
+            next_tag(dir, "", Bump::Patch),
+            "v0.3.1",
+            "every tag matches"
+        );
+        assert_eq!(next_tag(dir, "nightly*", Bump::Patch), FIRST_TAG);
         assert!(tag_exists(dir, "v0.3.0"));
         assert!(!tag_exists(dir, "v0.3.1"));
+    }
+
+    #[test]
+    fn a_short_version_is_read_as_a_full_one() {
+        let dir = repo();
+        let dir = dir.path();
+        git(dir, &["tag", "rel-1.2"]);
+        assert_eq!(next_tag(dir, "rel-*", Bump::Patch), "rel-1.2.1");
+        assert_eq!(next_tag(dir, "rel-*", Bump::Minor), "rel-1.3.0");
+    }
+
+    #[test]
+    fn the_bump_follows_the_features_in_the_window() {
+        let without = ["[bug] [board] Fix the box".to_string()];
+        let with = [
+            "[bug] [board] Fix the box".to_string(),
+            "[feat] [board] Add a flag".to_string(),
+        ];
+        assert_eq!(Bump::of(&without), Bump::Patch);
+        assert_eq!(Bump::of(&with), Bump::Minor);
+        assert_eq!(
+            Bump::of(&["Fix the box".to_string()]),
+            Bump::Patch,
+            "an unclassified subject bumps nothing"
+        );
     }
 
     #[test]
@@ -507,24 +705,95 @@ mod tests {
     }
 
     #[test]
+    fn the_note_groups_the_subjects_by_kind_then_domain() {
+        let subjects = [
+            "[feat] [board] Save the panel".to_string(),
+            "[feat] [agent] Plan mode".to_string(),
+            "[bug] [board] The filter".to_string(),
+            "[feat] [board] The bell".to_string(),
+        ];
+        let note = note(&subjects, false);
+        assert_eq!(
+            note.body,
+            "### Added\n\
+             - **Board** — Save the panel\n\
+             - **Board** — The bell\n\
+             - **Agent** — Plan mode\n\
+             \n\
+             ### Fixed\n\
+             - **Board** — The filter\n"
+        );
+        assert_eq!(note.features, 3);
+        assert_eq!(note.technical, 0);
+        assert_eq!(note.unclassified, 0);
+    }
+
+    #[test]
+    fn a_subject_without_a_known_kind_stays_out_and_is_counted() {
+        let subjects = [
+            "Some chore".to_string(),
+            "[ux] Column actions name themselves".to_string(),
+            "[feat] [board] Save the panel".to_string(),
+        ];
+        let note = note(&subjects, false);
+        assert_eq!(note.body, "### Added\n- **Board** — Save the panel\n");
+        assert_eq!(note.unclassified, 2, "no kind, or a topic where it belongs");
+    }
+
+    #[test]
+    fn the_technical_section_comes_last_and_only_when_asked() {
+        let subjects = [
+            "[refactor] [board] Split the module".to_string(),
+            "[feat] [board] Save the panel".to_string(),
+        ];
+        let quiet = note(&subjects, false);
+        assert_eq!(quiet.technical, 1);
+        assert!(!quiet.body.contains("Technical"), "{}", quiet.body);
+        let loud = note(&subjects, true);
+        assert_eq!(
+            loud.body,
+            "### Added\n- **Board** — Save the panel\n\n\
+             ### Technical\n- **Board** — Split the module\n"
+        );
+    }
+
+    #[test]
+    fn a_subject_without_a_domain_lists_plain_and_last() {
+        let subjects = [
+            "[feat] Ship it".to_string(),
+            "[feat] [board] Save the panel".to_string(),
+        ];
+        assert_eq!(
+            note(&subjects, false).body,
+            "### Added\n- **Board** — Save the panel\n- Ship it\n"
+        );
+    }
+
+    #[test]
+    fn a_label_after_the_domain_says_nothing_the_note_prints() {
+        let subjects = ["[feat] [board] [ux] Save the panel".to_string()];
+        assert_eq!(
+            note(&subjects, false).body,
+            "### Added\n- **Board** — Save the panel\n"
+        );
+    }
+
+    #[test]
     fn a_note_lists_the_commits_under_a_dated_heading() {
-        let subjects = ["Add a flag".to_string(), "Fix the box".to_string()];
-        let body = note_body(&subjects);
+        let subjects = [
+            "[feat] Add a flag".to_string(),
+            "[bug] Fix the box".to_string(),
+        ];
+        let body = note(&subjects, false).body;
         let note = section("v1.2.0", "7 Nov 2026", &body);
         assert_eq!(
             note,
-            "## v1.2.0 — 7 Nov 2026\n\n- Add a flag\n- Fix the box\n"
+            "## v1.2.0 — 7 Nov 2026\n\n### Added\n- Add a flag\n\n### Fixed\n- Fix the box\n"
         );
         assert_eq!(
             section("v1.2.1", "8 Nov 2026", "  "),
             "## v1.2.1 — 8 Nov 2026\n"
         );
-    }
-
-    #[test]
-    fn the_note_prompt_asks_for_sections_of_the_same_subjects() {
-        let subjects = ["Add a flag".to_string(), "Fix the box".to_string()];
-        insta::assert_snapshot!(note_prompt(&subjects));
     }
 
     #[test]
