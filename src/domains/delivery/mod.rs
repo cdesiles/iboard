@@ -350,6 +350,32 @@ pub fn commit_subjects(dir: &Path, pattern: &str) -> Vec<String> {
         .collect()
 }
 
+/// The subjects and bodies of the commits since the newest tag matching
+/// `pattern`, oldest first, without their `closes` lines: the why the note's
+/// own lines leave out.
+pub fn commit_context(dir: &Path, pattern: &str) -> String {
+    let range = match newest_tag(dir, pattern) {
+        Some(tag) => format!("{tag}..HEAD"),
+        None => "HEAD".to_string(),
+    };
+    let Ok(out) = git::output(dir, &["log", "--reverse", "--format=%s%n%b%n----", &range]) else {
+        return String::new();
+    };
+    out.split("----")
+        .map(str::trim)
+        .filter(|block| !block.is_empty())
+        .map(|block| {
+            block
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("closes "))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .filter(|block| !block.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 /// A release section: `## v0.3.1 — 7 Nov 2026`, then `body`.
 pub fn section(tag: &str, day: &str, body: &str) -> String {
     let body = body.trim();

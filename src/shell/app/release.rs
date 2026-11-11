@@ -54,6 +54,8 @@ pub(super) struct ReleaseFlow {
     pub(super) push: bool,
     /// The commit subjects the note is written from, in commit order.
     subjects: Vec<String>,
+    /// The commits' own bodies: the why the opening is written from.
+    context: String,
     /// The subjects with no kind label: they stay out of the note.
     pub(super) unclassified: usize,
     /// The technical subjects, printed only when `technical` is on.
@@ -83,6 +85,7 @@ impl ReleaseFlow {
     ) -> Self {
         let bump = release::Bump::of(&subjects);
         let note = release::note(&subjects, false);
+        let context = release::commit_context(&project, &pattern);
         Self {
             project,
             project_name,
@@ -103,6 +106,7 @@ impl ReleaseFlow {
             file: choices.file,
             push: choices.push,
             subjects,
+            context,
             unclassified: note.unclassified,
             technical_count: note.technical,
             features: note.features,
@@ -609,7 +613,7 @@ impl IboardApp {
         if !flow.preamble_requested() || !flow.can_write {
             return;
         }
-        let prompt = release::preamble_prompt(&flow.body);
+        let prompt = release::preamble_prompt(&flow.body, &flow.context);
         let (writer, _) = agent::start_draft(&agent, &prompt, Some(flow.project.as_path()));
         flow.writer = Some(writer);
         flow.preamble_error = None;

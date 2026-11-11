@@ -123,18 +123,23 @@ pub(super) fn has_feature(subjects: &[String]) -> bool {
 
 /// The instruction for the agent that writes the note's opening sentences,
 /// from the note's own lines and nothing else.
-pub fn preamble_prompt(body: &str) -> String {
+pub fn preamble_prompt(body: &str, context: &str) -> String {
     format!(
-        "Write the opening of a software release note, from the note's own lines below. One or \
+        "Write the opening of a software release note, from the note's own lines and the \
+         commits that made them, below. The note says what shipped; the commits say why. One or \
          two sentences, at most thirty words, in the past tense, naming the two or three changes \
          a user would notice first. Never open with \"This release\" or the project's name; never \
          use words like seamless, powerful, improved or various; invent no number, no feature and \
          no claim the lines do not make. Answer with the sentences alone, no heading, no list, no \
          markdown.\n\
          \n\
-         ---\n\
+         --- the note\n\
+         {}\n\
+         \n\
+         --- the commits\n\
          {}",
-        body.trim()
+        body.trim(),
+        context.trim()
     )
 }
 
