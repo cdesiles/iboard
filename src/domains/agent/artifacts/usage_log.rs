@@ -9,19 +9,15 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
+use crate::domains::agent::runtime::service::Session;
 use crate::domains::agent::runtime::{
-    Billing, Cap, Plan, Plans, Provider, Tokens, Usage, Window, provider_key, provider_name,
-    status_of,
+    Billing, Cap, Plan, Plans, Provider, Tokens, Window, provider_key, provider_name,
 };
 use crate::platform::files;
 
 /// How long a session stays in the log.
 const KEEP_DAYS: i64 = 400;
-
-/// The engine the service sessions come from.
-const ENGINE: &str = "opencode";
 
 /// One finished session, as the log keeps it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -243,8 +239,8 @@ pub fn read_for(project: &Path) -> Vec<Entry> {
 }
 
 /// Adds every finished session in `sessions` to the log of `project`.
-pub(crate) fn record(sessions: &[Value], project: &Path) -> Result<(), String> {
-    let entries = finished(sessions, project);
+pub(crate) fn record(sessions: &[Session], project: &Path, engine: &str) -> Result<(), String> {
+    let entries = finished(sessions, project, engine);
     if entries.is_empty() {
         return Ok(());
     }
@@ -252,11 +248,11 @@ pub(crate) fn record(sessions: &[Value], project: &Path) -> Result<(), String> {
 }
 
 /// The finished sessions of `project` in a service session list.
-pub(crate) fn finished(sessions: &[Value], project: &Path) -> Vec<Entry> {
+pub(crate) fn finished(sessions: &[Session], project: &Path, engine: &str) -> Vec<Entry> {
     let project = canonical(project);
     sessions
         .iter()
-        .filter_map(|session| Entry::from_session(session, &project))
+        .filter_map(|session| Entry::from(session, &project, engine))
         .collect()
 }
 
@@ -268,43 +264,24 @@ pub(crate) fn append(entries: &[Entry]) -> Result<(), String> {
 }
 
 impl Entry {
-    fn from_session(session: &Value, project: &Path) -> Option<Self> {
-        let status = status_of(session);
-        if status.running {
+    fn from(session: &Session, project: &Path, engine: &str) -> Option<Self> {
+        if session.status.running || session.id.is_empty() {
             return None;
         }
-        let id = session["id"].as_str().filter(|id| !id.is_empty())?;
-        let directory = session["location"]["directory"].as_str()?;
-        let directory = canonical(Path::new(directory));
-        if directory != project {
-            return None;
-        }
-        let usage = Usage::from_session(session).unwrap_or_default();
-        let ended = ended_of(session, status.created);
+        let usage = session.usage.clone().unwrap_or_default();
         Some(Self {
-            session: id.to_string(),
-            project: directory,
-            engine: ENGINE.to_string(),
+            session: session.id.clone(),
+            project: project.to_path_buf(),
+            engine: engine.to_string(),
             provider: usage.provider,
             model: usage.model,
             billing: usage.billing,
             cost: usage.cost,
             tokens: usage.tokens,
-            started: stamp(status.created),
-            ended: stamp(ended),
+            started: stamp(session.status.created),
+            ended: stamp(session.ended),
         })
     }
-}
-
-/// The last time a finished session wrote anything, in the engine's
-/// milliseconds.
-fn ended_of(session: &Value, created: u64) -> u64 {
-    ["updated", "idle", "busy"]
-        .iter()
-        .filter_map(|key| session["time"][key].as_u64())
-        .max()
-        .unwrap_or(created)
-        .max(created)
 }
 
 /// The engine's milliseconds as an RFC 3339 timestamp.
@@ -378,8 +355,8 @@ fn sorted(entries: HashMap<String, Entry>) -> Vec<Entry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domains::agent::runtime::{Plans, Window};
-    use serde_json::json;
+    use crate::domains::agent::runtime::service::Status;
+    use crate::domains::agent::runtime::{Plans, Usage, Window};
 
     fn project(dir: &Path) -> PathBuf {
         std::fs::canonicalize(dir).unwrap()
@@ -389,25 +366,38 @@ mod tests {
         Utc::now().timestamp_millis() as u64 - 3_600_000
     }
 
-    fn session(id: &str, project: &Path, cost: f64, updated: u64) -> Value {
+    fn session(id: &str, cost: f64, updated: u64) -> Session {
         let at = base();
-        json!({
-            "id": id,
-            "location": {"directory": project},
-            "model": {"id": "deepseek-flash", "providerID": "deepseek"},
-            "cost": cost,
-            "tokens": {"input": 1234, "output": 56, "reasoning": 7,
-                       "cache": {"read": 890, "write": 12}},
-            "time": {"created": at, "busy": at + 1_000, "idle": at + 2_000,
-                     "updated": at + updated},
-        })
+        Session {
+            id: id.to_string(),
+            slug: None,
+            status: Status {
+                running: false,
+                created: at,
+                updated: at + updated,
+            },
+            ended: at + updated,
+            usage: Some(Usage {
+                cost: Some(cost),
+                tokens: Tokens {
+                    input: 1234,
+                    output: 56,
+                    reasoning: 7,
+                    cache_read: 890,
+                    cache_write: 12,
+                },
+                provider: Some("deepseek".to_string()),
+                model: Some("deepseek-flash".to_string()),
+                billing: Billing::Metered,
+            }),
+        }
     }
 
     fn entry(id: &str, project: &Path, ended: String) -> Entry {
         Entry {
             session: id.to_string(),
             project: project.to_path_buf(),
-            engine: ENGINE.to_string(),
+            engine: "opencode".to_string(),
             provider: Some("deepseek".to_string()),
             model: Some("deepseek-flash".to_string()),
             billing: Billing::Metered,
@@ -423,9 +413,9 @@ mod tests {
         let scratch = tempfile::tempdir().unwrap();
         let project = project(scratch.path());
         let log = scratch.path().join("usage.jsonl");
-        let sessions = [session("ses_1", &project, 0.42, 4_000)];
+        let sessions = [session("ses_1", 0.42, 4_000)];
 
-        append_at(&log, &finished(&sessions, &project)).unwrap();
+        append_at(&log, &finished(&sessions, &project, "opencode")).unwrap();
 
         let entries = read_at(&log);
         assert_eq!(entries.len(), 1);
@@ -446,12 +436,9 @@ mod tests {
     fn a_running_session_is_not_written_yet() {
         let scratch = tempfile::tempdir().unwrap();
         let project = project(scratch.path());
-        let running = json!({
-            "id": "ses_live",
-            "location": {"directory": project},
-            "time": {"created": 1_000, "busy": 2_000, "idle": 1_500},
-        });
-        assert!(finished(&[running], &project).is_empty());
+        let mut running = session("ses_live", 0.0, 2_000);
+        running.status.running = true;
+        assert!(finished(&[running], &project, "opencode").is_empty());
     }
 
     #[test]
@@ -462,12 +449,12 @@ mod tests {
 
         append_at(
             &log,
-            &finished(&[session("ses_1", &project, 0.1, 4_000)], &project),
+            &finished(&[session("ses_1", 0.1, 4_000)], &project, "opencode"),
         )
         .unwrap();
         append_at(
             &log,
-            &finished(&[session("ses_1", &project, 0.3, 5_000)], &project),
+            &finished(&[session("ses_1", 0.3, 5_000)], &project, "opencode"),
         )
         .unwrap();
 
@@ -560,7 +547,7 @@ mod tests {
         Entry {
             session: id.to_string(),
             project: PathBuf::from("/p"),
-            engine: ENGINE.to_string(),
+            engine: "opencode".to_string(),
             provider: Some(provider.to_string()),
             model: None,
             billing: Billing::Metered,

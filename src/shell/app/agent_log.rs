@@ -241,14 +241,14 @@ impl IboardApp {
             return;
         }
         if self.building_since(&path).is_some() {
-            let Some((project, session)) = self.build_service_run(&path) else {
+            let Some((project, service, session)) = self.build_service_run(&path) else {
                 self.session.notice = Some((
                     "This build runs as a child process and cannot take a reply".to_string(),
                     Instant::now(),
                 ));
                 return;
             };
-            match crate::agent::service::say(&project, &session, &text) {
+            match service.say(&project, &session, &text) {
                 Ok(()) => {
                     let log = build_log::path(self.board.root_of(&path), &path);
                     let _ = build_log::append(&log, &build_log::author(&text));

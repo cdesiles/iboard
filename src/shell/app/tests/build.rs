@@ -648,11 +648,12 @@ fn deleting_an_issue_at_work_asks_to_stop_its_agent() {
 }
 
 pub(super) fn form_question() -> Question {
-    Question {
-        session: "ses_1".into(),
-        id: "frm_1".into(),
-        title: "Which approach?".into(),
-        kind: QuestionKind::Form(vec![Field {
+    Question::new(
+        crate::agent::service::test_service(),
+        "ses_1",
+        "frm_1",
+        "Which approach?",
+        QuestionKind::Form(vec![Field {
             key: "approach".into(),
             title: "Approach".into(),
             description: String::new(),
@@ -676,20 +677,21 @@ pub(super) fn form_question() -> Question {
                 custom: true,
             },
         }]),
-    }
+    )
 }
 
 pub(super) fn permission_question() -> Question {
-    Question {
-        session: "ses_1".into(),
-        id: "per_1".into(),
-        title: "Allow bash?".into(),
-        kind: QuestionKind::Permission(Permission {
+    Question::new(
+        crate::agent::service::test_service(),
+        "ses_1",
+        "per_1",
+        "Allow bash?",
+        QuestionKind::Permission(Permission {
             action: "bash".into(),
             resources: vec!["git push origin main".into()],
             message: Some("Push the branch?".into()),
         }),
-    }
+    )
 }
 
 /// Adoption asks the service about every project of a group's board, not

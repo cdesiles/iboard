@@ -85,6 +85,15 @@ impl Tool {
         }
     }
 
+    /// The background service this tool builds in; `None` for Claude and a
+    /// custom command, which keep the child process.
+    pub fn service(self) -> Option<&'static dyn service::Service> {
+        match self {
+            Tool::OpenCode => Some(opencode::service()),
+            Tool::Claude | Tool::Custom => None,
+        }
+    }
+
     fn from_key(key: &str) -> Option<Tool> {
         Tool::ALL.into_iter().find(|tool| tool.key() == key)
     }
@@ -116,6 +125,11 @@ impl Tool {
 
 /// Where `opencode` and `claude` run from instead of `PATH`, once set.
 static TOOLS: OnceLock<PathBuf> = OnceLock::new();
+
+/// Every tool's background service, for the work that asks them all.
+pub fn services() -> impl Iterator<Item = &'static dyn service::Service> {
+    Tool::ALL.into_iter().filter_map(Tool::service)
+}
 
 /// Runs `opencode` and `claude` from `dir` for the rest of the process, so
 /// tests never start a real agent. The first call wins.
@@ -842,8 +856,8 @@ fn start_logged(
     );
     let progress = Progress::default();
     let steps = Arc::clone(&progress);
-    let handle = service::Handle::default();
-    let mine = Arc::clone(&handle);
+    let handle = service::Handle::new(config.tool.service());
+    let mine = handle.clone();
     let job = Job::spawn(move |cancel| {
         let at = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
         let started = std::time::Instant::now();
@@ -855,7 +869,7 @@ fn start_logged(
         let steps = Some(&steps);
         let (result, usage) = match purpose {
             // A build runs in the service, so it outlives the window.
-            Purpose::Build(_) if config.tool == Tool::OpenCode => {
+            Purpose::Build(_) if mine.service().is_some() => {
                 let build = service::Build {
                     model: &model_of(&config),
                     prompt: &prompt,
@@ -906,8 +920,8 @@ mod command;
 use command::command;
 mod direnv;
 mod draft;
+mod opencode;
 mod poller;
-pub(crate) use poller::status_of;
 mod reply;
 pub mod service;
 pub mod spend;

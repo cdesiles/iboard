@@ -2,7 +2,7 @@
 //! each moved to the next column while an agent works on it. Doing's header
 //! sets how many agents work at once.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use super::card::CardBuild;
 use super::{
@@ -107,14 +107,20 @@ impl IboardApp {
         }
         if self.session.adoption.is_none() {
             let projects = self.build_projects();
+            let services: Vec<&'static dyn agent::service::Service> = agent::services().collect();
             let look = Job::spawn(move |cancel| {
                 let mut found: AdoptedBuilds = Vec::new();
-                for project in projects {
+                for service in services {
                     if cancel.is_cancelled() {
                         break;
                     }
-                    if let Ok(hits) = agent::service::running(&project) {
-                        found.extend(hits.into_iter().map(|hit| (project.clone(), hit)));
+                    for project in &projects {
+                        if cancel.is_cancelled() {
+                            break;
+                        }
+                        if let Ok(hits) = agent::service::running(service, project) {
+                            found.extend(hits.into_iter().map(|hit| (project.clone(), hit)));
+                        }
                     }
                 }
                 Ok::<_, String>(found)
@@ -140,9 +146,9 @@ impl IboardApp {
                 continue;
             };
             let log = build_log::path(self.board.root_of(&issue), &issue);
-            let session = agent::service::Handle::default();
+            let session = agent::service::Handle::new(Some(hit.service));
             agent::service::remember(&session, &hit.session);
-            let answer = agent::service::watch(project.clone(), hit.session, log);
+            let answer = agent::service::watch(hit.service, project.clone(), hit.session, log);
             runs.push(Run {
                 issue,
                 answer,
@@ -245,22 +251,26 @@ impl IboardApp {
     /// Starts following the service of each project a build runs in, and
     /// stops following the ones no run uses any more.
     fn follow_build_questions(&mut self) {
-        let projects: HashSet<PathBuf> = self
+        let projects: HashMap<(&'static str, PathBuf), &'static dyn agent::service::Service> = self
             .session
             .build
             .iter()
             .flat_map(|build| &build.runs)
-            .filter(|run| agent::service::session_of(&run.session).is_some())
-            .map(|run| run.project.clone())
+            .filter_map(|run| {
+                let service = run.session.service()?;
+                agent::service::session_of(&run.session)?;
+                Some(((service.key(), run.project.clone()), service))
+            })
             .collect();
         self.session
             .feeds
-            .retain(|project, _| projects.contains(project));
-        for project in projects {
+            .retain(|key, _| projects.contains_key(key));
+        for (key, service) in projects {
+            let project = key.1.clone();
             self.session
                 .feeds
-                .entry(project.clone())
-                .or_insert_with(|| agent::service::follow_questions(project));
+                .entry(key)
+                .or_insert_with(|| agent::service::follow_questions(service, project));
         }
     }
 
@@ -283,10 +293,17 @@ impl IboardApp {
         };
         let mut pending = Vec::new();
         for run in &build.runs {
+            let Some(service) = run.session.service() else {
+                continue;
+            };
             let Some(session) = agent::service::session_of(&run.session) else {
                 continue;
             };
-            let Some((_, feed)) = self.session.feeds.get(&run.project) else {
+            let Some((_, feed)) = self
+                .session
+                .feeds
+                .get(&(service.key(), run.project.clone()))
+            else {
                 continue;
             };
             for question in feed
@@ -308,8 +325,9 @@ impl IboardApp {
             .runs
             .iter()
             .find(|run| {
-                agent::service::session_of(&run.session).as_deref()
-                    == Some(question.session.as_str())
+                run.session.service().map(|service| service.key()) == Some(question.service.key())
+                    && agent::service::session_of(&run.session).as_deref()
+                        == Some(question.session.as_str())
             })
             .map(|run| run.project.clone())
     }
@@ -347,12 +365,16 @@ impl IboardApp {
     }
 
     /// The project and service session of the run on `path`, when it runs in
-    /// the service rather than as a child process.
-    pub(super) fn build_service_run(&self, path: &Path) -> Option<(PathBuf, String)> {
+    /// a service rather than as a child process.
+    pub(super) fn build_service_run(
+        &self,
+        path: &Path,
+    ) -> Option<(PathBuf, &'static dyn agent::service::Service, String)> {
         let build = self.session.build.as_ref()?;
         let run = build.runs.iter().find(|run| run.issue == path)?;
+        let service = run.session.service()?;
         let session = agent::service::session_of(&run.session)?;
-        Some((run.project.clone(), session))
+        Some((run.project.clone(), service, session))
     }
 
     /// The `−` and `+` on Doing's header: from none, which stops the build,
@@ -515,7 +537,8 @@ impl IboardApp {
     #[cfg(test)]
     pub(super) fn seed_question(&mut self, path: PathBuf, question: agent::service::Question) {
         let project = self.board.project_of(&path).to_path_buf();
-        let session = agent::service::Handle::default();
+        let service = question.service;
+        let session = agent::service::Handle::new(Some(service));
         agent::service::remember(&session, &question.session);
         let run = Run {
             issue: path,
@@ -533,7 +556,7 @@ impl IboardApp {
         self.session.build = Some(Build::adopted(vec![run]));
         self.session.adopted = true;
         self.session.feeds.insert(
-            project,
+            (service.key(), project),
             (Job::done(()), agent::service::Feed::new(vec![question])),
         );
     }

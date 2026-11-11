@@ -380,8 +380,8 @@ struct Session {
     diff: Option<diff_view::DiffView>,
     /// The AI build working through Ready, while it runs.
     build: Option<build::Build>,
-    /// The forms and tool approvals each project's service is waiting on.
-    feeds: HashMap<PathBuf, (Job<()>, agent::service::Feed)>,
+    /// The forms and tool approvals each service's project is waiting on.
+    feeds: HashMap<(&'static str, PathBuf), (Job<()>, agent::service::Feed)>,
     /// The question open for an answer.
     answer: Option<question::AnswerDraft>,
     /// The builds the service was still running were looked for, once.

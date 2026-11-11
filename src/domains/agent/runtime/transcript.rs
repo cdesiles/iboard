@@ -4,9 +4,8 @@
 use std::fs::File;
 use std::path::Path;
 
-use serde_json::Value;
-
 use super::describe_tool;
+use super::service::{Message, Part};
 use crate::domains::agent::artifacts::build_log;
 
 /// The build log of a run, and how far into its session's transcript it has
@@ -47,7 +46,7 @@ impl Transcript {
     }
 
     /// Adds what `messages` say that the log does not hold yet.
-    pub(super) fn write(&mut self, messages: &[Value]) {
+    pub(super) fn write(&mut self, messages: &[Message]) {
         let lines = self.unread(messages);
         if let Some(log) = self.log.as_mut() {
             for line in lines {
@@ -58,33 +57,25 @@ impl Transcript {
 
     /// The log lines of the parts not written yet, oldest first. It stops at
     /// a part still being written, so nothing is logged out of order.
-    fn unread(&mut self, messages: &[Value]) -> Vec<String> {
-        let assistant: Vec<&Value> = messages
+    fn unread(&mut self, messages: &[Message]) -> Vec<String> {
+        let known = messages
             .iter()
-            .filter(|message| message["type"] == "assistant")
-            .collect();
-        let known = assistant
-            .iter()
-            .position(|message| message["id"].as_str() == Some(self.message.as_str()));
+            .position(|message| message.id == self.message);
         let mut lines = Vec::new();
         self.waiting = false;
-        for (at, message) in assistant.iter().enumerate().skip(known.unwrap_or(0)) {
-            let parts = message["content"].as_array().map_or(&[][..], Vec::as_slice);
-            let streamed = ["streamed", "completed"]
-                .iter()
-                .any(|key| !message["time"][*key].is_null());
+        for (at, message) in messages.iter().enumerate().skip(known.unwrap_or(0)) {
             let mut done = if known == Some(at) { self.parts } else { 0 };
-            while let Some(part) = parts.get(done) {
-                match line(part, streamed || done + 1 < parts.len()) {
-                    Part::Open => break,
-                    Part::Unlogged => {}
-                    Part::Line(line) => lines.push(line),
+            while let Some(part) = message.parts.get(done) {
+                match line(part, message.closed || done + 1 < message.parts.len()) {
+                    Logged::Open => break,
+                    Logged::Unlogged => {}
+                    Logged::Line(line) => lines.push(line),
                 }
                 done += 1;
             }
-            self.message = message["id"].as_str().unwrap_or_default().to_string();
+            self.message.clone_from(&message.id);
             self.parts = done;
-            if done < parts.len() {
+            if done < message.parts.len() {
                 self.waiting = true;
                 break;
             }
@@ -97,7 +88,7 @@ impl Transcript {
 }
 
 /// What a part of a message adds to the log.
-enum Part {
+enum Logged {
     /// A tool's input or a text still streams: read it again later.
     Open,
     /// A part the log leaves out.
@@ -106,78 +97,97 @@ enum Part {
 }
 
 /// What `part` adds to the log; `closed` when nothing more can be added to it.
-fn line(part: &Value, closed: bool) -> Part {
-    match part["type"].as_str() {
-        Some("tool" | "question") if part["state"]["status"] == "streaming" => Part::Open,
-        Some("tool" | "question") => {
-            let tool = part["name"].as_str().unwrap_or("tool");
-            describe_tool(tool, &part["state"]["input"])
-                .map_or(Part::Unlogged, |step| Part::Line(build_log::step(step)))
-        }
-        Some("text") if !closed => Part::Open,
-        Some("text") => match part["text"].as_str().unwrap_or_default().trim() {
-            "" => Part::Unlogged,
-            text => Part::Line(text.to_string()),
+fn line(part: &Part, closed: bool) -> Logged {
+    match part {
+        Part::Tool {
+            streaming: true, ..
+        } => Logged::Open,
+        Part::Tool { name, input, .. } => describe_tool(name, input)
+            .map_or(Logged::Unlogged, |step| Logged::Line(build_log::step(step))),
+        Part::Text(_) if !closed => Logged::Open,
+        Part::Text(text) => match text.trim() {
+            "" => Logged::Unlogged,
+            text => Logged::Line(text.to_string()),
         },
-        _ => Part::Unlogged,
+        Part::Other => Logged::Unlogged,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
-
     use super::*;
 
-    fn read(path: &str) -> Value {
-        json!({"type": "tool", "id": path, "name": "read",
-               "state": {"status": "completed", "input": {"path": path}}})
+    fn read(path: &str) -> Part {
+        Part::Tool {
+            name: "read".into(),
+            input: serde_json::json!({"path": path}),
+            streaming: false,
+        }
+    }
+
+    fn message(id: &str, closed: bool, parts: Vec<Part>) -> Message {
+        Message {
+            id: id.to_string(),
+            closed,
+            parts,
+        }
     }
 
     #[test]
     fn messages_and_tools_are_logged_once_in_order() {
         let mut transcript = Transcript::default();
-        let first = json!({"id": "msg_1", "type": "assistant", "time": {"streamed": 2},
-        "content": [
-            {"type": "reasoning", "text": "thinking"},
-            {"type": "text", "text": " Let me look.\n"},
-            read("/code/app/src/a.rs"),
-            read("/code/app/src/b.rs"),
-        ]});
-        let messages = vec![
-            json!({"id": "msg_0", "type": "user", "text": "Build it"}),
-            first.clone(),
-        ];
+        let first = message(
+            "msg_1",
+            true,
+            vec![
+                Part::Other,
+                Part::Text(" Let me look.\n".into()),
+                read("/code/app/src/a.rs"),
+                read("/code/app/src/b.rs"),
+            ],
+        );
+        let messages = vec![first];
         assert_eq!(
             transcript.unread(&messages),
             ["Let me look.", "→ Reading src/a.rs…", "→ Reading src/b.rs…"]
         );
         assert!(transcript.unread(&messages).is_empty(), "nothing is new");
 
-        let second = json!({"id": "msg_2", "type": "assistant", "time": {"completed": 9},
-            "content": [{"type": "text", "text": "Done."}]});
-        assert_eq!(transcript.unread(&[first, second]), ["Done."]);
+        let second = message("msg_2", true, vec![Part::Text("Done.".into())]);
+        assert_eq!(transcript.unread(&[messages[0].clone(), second]), ["Done."]);
         assert!(!transcript.waiting());
     }
 
     #[test]
     fn a_tool_waits_for_its_whole_input() {
         let mut transcript = Transcript::default();
-        let streaming = json!({"id": "msg_1", "type": "assistant", "time": {"created": 1},
-        "content": [
-            read("/code/app/src/a.rs"),
-            {"type": "tool", "id": "call_2", "name": "bash",
-             "state": {"status": "streaming", "input": "{\"comm"}},
-        ]});
+        let streaming = message(
+            "msg_1",
+            false,
+            vec![
+                read("/code/app/src/a.rs"),
+                Part::Tool {
+                    name: "bash".into(),
+                    input: serde_json::json!("{\"comm"),
+                    streaming: true,
+                },
+            ],
+        );
         assert_eq!(transcript.unread(&[streaming]), ["→ Reading src/a.rs…"]);
         assert!(transcript.waiting(), "the next read does not wait");
 
-        let running = json!({"id": "msg_1", "type": "assistant", "time": {"streamed": 2},
-        "content": [
-            read("/code/app/src/a.rs"),
-            {"type": "tool", "id": "call_2", "name": "bash",
-             "state": {"status": "running", "input": {"command": "make check"}}},
-        ]});
+        let running = message(
+            "msg_1",
+            true,
+            vec![
+                read("/code/app/src/a.rs"),
+                Part::Tool {
+                    name: "bash".into(),
+                    input: serde_json::json!({"command": "make check"}),
+                    streaming: false,
+                },
+            ],
+        );
         assert_eq!(transcript.unread(&[running]), ["→ Running make check…"]);
         assert!(!transcript.waiting());
     }
@@ -185,13 +195,18 @@ mod tests {
     #[test]
     fn a_text_waits_for_its_message_to_stream() {
         let mut transcript = Transcript::default();
-        let open = json!({"id": "msg_1", "type": "assistant", "time": {"created": 1},
-            "content": [{"type": "text", "text": "Let me"}]});
+        let open = message("msg_1", false, vec![Part::Text("Let me".into())]);
         assert!(transcript.unread(&[open]).is_empty());
         assert!(transcript.waiting());
 
-        let followed = json!({"id": "msg_1", "type": "assistant", "time": {"created": 1},
-            "content": [{"type": "text", "text": "Let me look."}, read("/code/app/src/a.rs")]});
+        let followed = message(
+            "msg_1",
+            false,
+            vec![
+                Part::Text("Let me look.".into()),
+                read("/code/app/src/a.rs"),
+            ],
+        );
         assert_eq!(
             transcript.unread(&[followed]),
             ["Let me look.", "→ Reading src/a.rs…"],
@@ -205,24 +220,23 @@ mod tests {
             resumed: true,
             ..Transcript::default()
         };
-        let old = json!({"id": "msg_1", "type": "assistant", "time": {"completed": 2},
-            "content": [{"type": "text", "text": "Before the restart."}]});
+        let old = message(
+            "msg_1",
+            true,
+            vec![Part::Text("Before the restart.".into())],
+        );
         assert!(transcript.unread(std::slice::from_ref(&old)).is_empty());
 
-        let new = json!({"id": "msg_2", "type": "assistant", "time": {"completed": 4},
-            "content": [{"type": "text", "text": "After it."}]});
+        let new = message("msg_2", true, vec![Part::Text("After it.".into())]);
         assert_eq!(transcript.unread(&[old, new]), ["After it."]);
     }
 
     #[test]
     fn a_page_past_the_last_message_read_is_logged_whole() {
         let mut transcript = Transcript::default();
-        let message = |id: &str, text: &str| {
-            json!({"id": id, "type": "assistant", "time": {"completed": 2},
-                   "content": [{"type": "text", "text": text}]})
-        };
-        assert_eq!(transcript.unread(&[message("msg_1", "One.")]), ["One."]);
-        let page = [message("msg_8", "Eight."), message("msg_9", "Nine.")];
+        let said = |id: &str, text: &str| message(id, true, vec![Part::Text(text.to_string())]);
+        assert_eq!(transcript.unread(&[said("msg_1", "One.")]), ["One."]);
+        let page = [said("msg_8", "Eight."), said("msg_9", "Nine.")];
         assert_eq!(transcript.unread(&page), ["Eight.", "Nine."]);
     }
 
@@ -231,10 +245,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("fix.log");
         let mut transcript = Transcript::new(&log);
-        transcript.write(&[
-            json!({"id": "msg_1", "type": "assistant", "time": {"completed": 2},
-                   "content": [{"type": "text", "text": "Reading it."}, read("/p/src/a.rs")]}),
-        ]);
+        transcript.write(&[message(
+            "msg_1",
+            true,
+            vec![Part::Text("Reading it.".into()), read("/p/src/a.rs")],
+        )]);
         assert_eq!(
             build_log::load(&log).as_deref(),
             Some("Reading it.\n→ Reading src/a.rs…\n")

@@ -1,33 +1,23 @@
-//! One poller per project: it asks the service once for every session's state
-//! and for the project's questions, and the runs read what it last saw.
+//! One poller per service and project: it asks the service once for every
+//! session's state and for the project's questions, and the runs read what it
+//! last saw.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
-use serde_json::Value;
-
 use super::Usage;
-use super::reply::{call, parse};
-use super::service::{Feed, POLL, backoff, pending};
+use super::service::{Feed, POLL, Service, Session, Status, backoff};
 use crate::domains::agent::artifacts::usage_log;
 
-/// The live pollers, so every run in a project shares one.
-static POLLERS: LazyLock<Mutex<HashMap<PathBuf, Weak<Poller>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// The live pollers, so every run in a service and project shares one.
+static POLLERS: LazyLock<Mutex<Pollers>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+type Pollers = HashMap<(&'static str, PathBuf), Weak<Poller>>;
 
 /// The longest the shared poller waits before trying a struggling service again.
 const WAIT_MAX: Duration = Duration::from_secs(5);
-
-/// How a session stands, as the service keeps it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Status {
-    pub(crate) running: bool,
-    /// Wall-clock milliseconds, as the service counts them.
-    pub(crate) created: u64,
-    pub(crate) updated: u64,
-}
 
 /// What one poll found for a session: how it stands, and what it spent.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,19 +26,9 @@ pub(super) struct Polled {
     pub(super) usage: Option<Usage>,
 }
 
-/// The state of one service session.
-pub(crate) fn status_of(session: &Value) -> Status {
-    let millis = |key: &str| session["time"][key].as_u64().unwrap_or(0);
-    let (busy, idle) = (millis("busy"), millis("idle"));
-    Status {
-        running: busy > 0 && idle < busy,
-        created: millis("created"),
-        updated: millis("updated").max(busy),
-    }
-}
-
 /// The watchers of one project's runs and questions.
 pub(super) struct Poller {
+    service: &'static dyn Service,
     project: PathBuf,
     inner: Mutex<Inner>,
 }
@@ -69,23 +49,25 @@ pub(super) struct Subscription {
     questions: bool,
 }
 
-/// The poller for `project`, started if no live one exists.
-pub(super) fn project_poller(project: &Path) -> Arc<Poller> {
+/// The poller for `project` in `service`, started if no live one exists.
+pub(super) fn project_poller(service: &'static dyn Service, project: &Path) -> Arc<Poller> {
     let project = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
+    let key = (service.key(), project.clone());
     let mut pollers = POLLERS.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(poller) = pollers.get(&project).and_then(Weak::upgrade) {
+    if let Some(poller) = pollers.get(&key).and_then(Weak::upgrade) {
         return poller;
     }
-    let poller = Arc::new(Poller::new(project.clone()));
-    pollers.insert(project, Arc::downgrade(&poller));
+    let poller = Arc::new(Poller::new(service, project));
+    pollers.insert(key, Arc::downgrade(&poller));
     drop(pollers);
     poller.start();
     poller
 }
 
 impl Poller {
-    fn new(project: PathBuf) -> Self {
+    fn new(service: &'static dyn Service, project: PathBuf) -> Self {
         Self {
+            service,
             project,
             inner: Mutex::new(Inner {
                 sessions: 0,
@@ -156,11 +138,11 @@ impl Poller {
         };
         let mut ok = true;
         if sessions {
-            match statuses(&self.project) {
-                Ok((statuses, listed)) => {
-                    self.log_finished(&listed);
+            match self.service.sessions(&self.project) {
+                Ok(sessions) => {
+                    self.log_finished(&sessions);
                     let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-                    inner.statuses = statuses;
+                    inner.statuses = statuses_from(&sessions);
                     inner.observed = Some(Instant::now());
                 }
                 Err(_) => {
@@ -172,7 +154,7 @@ impl Poller {
             }
         }
         if questions {
-            match pending(&self.project) {
+            match self.service.questions(&self.project) {
                 Ok(questions) => self.feed().publish(questions),
                 Err(_) => ok = false,
             }
@@ -181,8 +163,8 @@ impl Poller {
     }
 
     /// Adds the finished sessions this poller has not seen finish yet.
-    fn log_finished(&self, sessions: &[Value]) {
-        let finished = usage_log::finished(sessions, &self.project);
+    fn log_finished(&self, sessions: &[Session]) {
+        let finished = usage_log::finished(sessions, &self.project, self.service.key());
         let new: Vec<_> = {
             let inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
             finished
@@ -266,32 +248,18 @@ fn waiting(poller: &Weak<Poller>, wait: Duration) -> bool {
     }
 }
 
-/// How every session of `project` stands, from one request, with the sessions
-/// themselves for the usage log.
-fn statuses(project: &Path) -> Result<(HashMap<String, Polled>, Vec<Value>), String> {
-    let reply = call(project, &["get", "/api/session"], None)?;
-    let value = parse(&reply)?;
-    let sessions = value["data"].as_array().cloned().unwrap_or_default();
-    Ok((statuses_from(&value, project), sessions))
-}
-
-/// The sessions of `project` in a session list.
-fn statuses_from(value: &Value, project: &Path) -> HashMap<String, Polled> {
-    let sessions = value["data"].as_array().cloned().unwrap_or_default();
+/// How every session stands, from the ones a service just listed.
+fn statuses_from(sessions: &[Session]) -> HashMap<String, Polled> {
     sessions
         .iter()
-        .filter_map(|session| {
-            let id = session["id"].as_str()?;
-            let directory = session["location"]["directory"].as_str()?;
-            (Path::new(directory) == project).then(|| {
-                (
-                    id.to_string(),
-                    Polled {
-                        status: status_of(session),
-                        usage: Usage::from_session(session),
-                    },
-                )
-            })
+        .map(|session| {
+            (
+                session.id.clone(),
+                Polled {
+                    status: session.status,
+                    usage: session.usage.clone(),
+                },
+            )
         })
         .collect()
 }
@@ -300,18 +268,38 @@ fn statuses_from(value: &Value, project: &Path) -> HashMap<String, Polled> {
 mod tests {
     use super::super::Billing;
     use super::*;
+    use crate::domains::agent::runtime::{Tokens, Usage};
+
+    fn session(id: &str, usage: Option<Usage>) -> Session {
+        Session {
+            id: id.to_string(),
+            slug: None,
+            status: Status {
+                running: true,
+                created: 1_000,
+                updated: 2_000,
+            },
+            ended: 2_000,
+            usage,
+        }
+    }
 
     #[test]
     fn a_polled_session_keeps_what_it_spent() {
-        let value = serde_json::json!({"data": [{
-            "id": "ses_copilot", "location": {"directory": "/code/app"},
-            "model": {"id": "claude-opus-4.6", "providerID": "github-copilot"},
-            "cost": 0,
-            "tokens": {"input": 159, "output": 14001, "reasoning": 0,
-                       "cache": {"read": 1902598, "write": 383223}},
-            "time": {"busy": 2, "idle": 1},
-        }]});
-        let polled = statuses_from(&value, Path::new("/code/app"));
+        let usage = Usage {
+            cost: Some(0.0),
+            tokens: Tokens {
+                input: 159,
+                output: 14_001,
+                cache_read: 1_902_598,
+                cache_write: 383_223,
+                ..Tokens::default()
+            },
+            provider: Some("github-copilot".into()),
+            model: Some("claude-opus-4.6".into()),
+            billing: Billing::Subscription,
+        };
+        let polled = statuses_from(&[session("ses_copilot", Some(usage))]);
         let usage = polled["ses_copilot"].usage.as_ref().expect("usage");
         assert_eq!(usage.cost, Some(0.0));
         assert_eq!(usage.billing, Billing::Subscription);
@@ -319,15 +307,8 @@ mod tests {
     }
 
     #[test]
-    fn only_this_projects_sessions_are_polled() {
-        let value = serde_json::json!({"data": [
-            {"id": "ses_here", "location": {"directory": "/code/app"},
-             "time": {"busy": 2, "idle": 1}},
-            {"id": "ses_there", "location": {"directory": "/code/other"},
-             "time": {"busy": 2}},
-        ]});
-        let statuses = statuses_from(&value, Path::new("/code/app"));
-        assert!(statuses.contains_key("ses_here"));
-        assert_eq!(statuses.len(), 1);
+    fn every_listed_session_is_polled() {
+        let statuses = statuses_from(&[session("ses_here", None), session("ses_other", None)]);
+        assert_eq!(statuses.len(), 2);
     }
 }

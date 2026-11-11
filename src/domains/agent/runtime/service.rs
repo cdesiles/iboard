@@ -1,22 +1,21 @@
-//! opencode's background service: the sessions it owns, spoken to through
-//! `opencode api`. A build started here outlives the window, because the
-//! service runs the turn and iboard only watches it: quitting stops the
-//! watching, not the work.
-//!
-//! Set `IBOARD_OPENCODE` to another binary to test this without one.
+//! The background builds' shared loop: the service a tool runs them in, the
+//! session a run lives in, the questions it waits on, and the builds a restart
+//! finds again. What a service itself does lives in [`opencode`](super::opencode)
+//! when the tool has one; Claude and a custom command keep their child process.
 
 use std::collections::HashSet;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value};
 
-use super::poller::{project_poller, status_of};
-use super::reply::{await_answer, call, now, parse};
+use super::poller::project_poller;
+use super::reply::await_answer;
 use super::transcript::Transcript;
 use super::{Progress, Usage};
-use crate::domains::agent::artifacts::{reviews, usage_log};
+use crate::domains::agent::artifacts::usage_log;
 use crate::platform::job::{Cancel, Job};
 
 /// How often a watched session is asked how it is doing.
@@ -28,13 +27,147 @@ const BACKOFF_MAX: Duration = Duration::from_secs(30);
 /// How many failed polls it takes for the wait to stop doubling.
 const TRIES: u32 = 7;
 
+/// A tool's background service: everything a build does that differs from one
+/// tool to the next. The waits, the stale and no-answer rules and the poller
+/// are shared.
+pub trait Service: Send + Sync {
+    /// The engine's name, as the usage log keeps it.
+    fn key(&self) -> &'static str;
+
+    /// Starts a session for `issue` in `project`, titled after it.
+    fn start(&self, issue: &Path, project: &Path, model: &str) -> Result<String, String>;
+
+    /// The sessions `project` has, running or finished.
+    fn sessions(&self, project: &Path) -> Result<Vec<Session>, String>;
+
+    /// The assistant messages of `session`, oldest first.
+    fn read(&self, project: &Path, session: &str) -> Result<Vec<Message>, String>;
+
+    /// Queues `text` after the turn `session` runs now.
+    fn say(&self, project: &Path, session: &str, text: &str) -> Result<(), String>;
+
+    /// Stops `session`'s turn.
+    fn interrupt(&self, project: &Path, session: &str);
+
+    /// The forms and permission requests `project` waits on.
+    fn questions(&self, project: &Path) -> Result<Vec<Question>, String>;
+
+    /// Answers `session`'s question `id`.
+    fn answer(
+        &self,
+        project: &Path,
+        session: &str,
+        id: &str,
+        answer: &Answer,
+    ) -> Result<(), String>;
+}
+
+impl PartialEq for dyn Service {
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
+impl Eq for dyn Service {}
+
+impl fmt::Debug for dyn Service {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Service").field(&self.key()).finish()
+    }
+}
+
+/// The service a test's question belongs to, with no daemon behind it.
+#[cfg(test)]
+pub fn test_service() -> &'static dyn Service {
+    super::opencode::service()
+}
+
+/// How a session stands, as its service keeps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Status {
+    pub running: bool,
+    /// Wall-clock milliseconds, as the service counts them.
+    pub created: u64,
+    pub updated: u64,
+}
+
+/// One session a service lists for a project: how it stands, what it spent,
+/// and the issue it was started for.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Session {
+    pub id: String,
+    /// The issue's slug, when iboard started it.
+    pub slug: Option<String>,
+    pub status: Status,
+    /// When it last wrote anything, in the service's milliseconds.
+    pub ended: u64,
+    pub usage: Option<Usage>,
+}
+
+/// One assistant message of a session's transcript.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Message {
+    pub id: String,
+    /// Whether it is done streaming: its last text part is complete.
+    pub closed: bool,
+    pub parts: Vec<Part>,
+}
+
+/// What one part of a message adds.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Part {
+    Text(String),
+    /// A tool call, with the input that says what it is doing.
+    Tool {
+        name: String,
+        input: Value,
+        streaming: bool,
+    },
+    /// A part the log leaves out.
+    Other,
+}
+
+/// What a question is answered with.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Answer {
+    Form(Map<String, Value>),
+    Permission(PermissionReply),
+}
+
 /// The session a run lives in, once the service has made it. Stop interrupts
 /// it; quitting only drops this, and the service carries on.
-pub type Handle = Arc<Mutex<Option<String>>>;
+#[derive(Clone)]
+pub struct Handle {
+    service: Option<&'static dyn Service>,
+    session: Arc<Mutex<Option<String>>>,
+}
+
+impl Default for Handle {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl Handle {
+    /// A handle for a run in `service`; `None` when the tool keeps its child
+    /// process.
+    pub fn new(service: Option<&'static dyn Service>) -> Self {
+        Handle {
+            service,
+            session: Arc::default(),
+        }
+    }
+
+    /// The service the run lives in, when it runs in one.
+    pub fn service(&self) -> Option<&'static dyn Service> {
+        self.service
+    }
+}
 
 /// The session in `handle`, if the service made it yet.
 pub fn session_of(handle: &Handle) -> Option<String> {
     handle
+        .session
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone()
@@ -42,16 +175,44 @@ pub fn session_of(handle: &Handle) -> Option<String> {
 
 /// Notes that `handle`'s run lives in `session`.
 pub fn remember(handle: &Handle, session: &str) {
-    *handle.lock().unwrap_or_else(PoisonError::into_inner) = Some(session.to_string());
+    *handle
+        .session
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(session.to_string());
 }
 
 /// A form or permission request a build is waiting on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Question {
+    pub service: &'static dyn Service,
     pub session: String,
     pub id: String,
     pub title: String,
     pub kind: QuestionKind,
+}
+
+impl Question {
+    pub fn new(
+        service: &'static dyn Service,
+        session: impl Into<String>,
+        id: impl Into<String>,
+        title: impl Into<String>,
+        kind: QuestionKind,
+    ) -> Self {
+        Question {
+            service,
+            session: session.into(),
+            id: id.into(),
+            title: title.into(),
+            kind,
+        }
+    }
+
+    /// Answers it in `project`, where its build runs.
+    pub fn answer(&self, project: &Path, answer: Answer) -> Result<(), String> {
+        self.service
+            .answer(project, &self.session, &self.id, &answer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,7 +279,7 @@ pub enum PermissionReply {
 }
 
 impl PermissionReply {
-    fn key(self) -> &'static str {
+    pub(super) fn key(self) -> &'static str {
         match self {
             PermissionReply::Once => "once",
             PermissionReply::Always => "always",
@@ -179,8 +340,8 @@ impl Feed {
 
 /// Polls `project`'s pending forms and permission requests in the background
 /// until the job is dropped.
-pub fn follow_questions(project: PathBuf) -> (Job<()>, Feed) {
-    let poller = project_poller(&project);
+pub fn follow_questions(service: &'static dyn Service, project: PathBuf) -> (Job<()>, Feed) {
+    let poller = project_poller(service, &project);
     let feed = poller.feed();
     let subscription = poller.subscribe(true);
     let job = Job::spawn(move |cancel| {
@@ -192,174 +353,10 @@ pub fn follow_questions(project: PathBuf) -> (Job<()>, Feed) {
     (job, feed)
 }
 
-/// The forms and permission requests `project` waits on.
-pub fn pending(project: &Path) -> Result<Vec<Question>, String> {
-    let forms = list(project, "form.list");
-    let permissions = list(project, "permission.request.list");
-    match (forms, permissions) {
-        (Ok(forms), Ok(permissions)) => Ok(questions(forms, permissions)),
-        (Ok(forms), Err(_)) => Ok(questions(forms, Vec::new())),
-        (Err(_), Ok(permissions)) => Ok(questions(Vec::new(), permissions)),
-        (Err(forms), Err(permissions)) => Err(format!("{forms}; {permissions}")),
-    }
-}
-
-fn questions(forms: Vec<Value>, permissions: Vec<Value>) -> Vec<Question> {
-    let forms = forms.iter().filter_map(question_from_form);
-    let permissions = permissions.iter().filter_map(question_from_permission);
-    forms.chain(permissions).collect()
-}
-
-/// The pending items of one opencode list operation. The operation ID, not a
-/// raw method and path: only an operation binds `--param`, and without the
-/// location the service answers for its default folder.
-fn list(project: &Path, operation: &str) -> Result<Vec<Value>, String> {
-    let args = list_args(project, operation);
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let reply = call(project, &args, None)?;
-    let value = parse(&reply)?;
-    Ok(value["data"].as_array().cloned().unwrap_or_default())
-}
-
-fn list_args(project: &Path, operation: &str) -> Vec<String> {
-    let directory = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
-    vec![
-        operation.to_string(),
-        "--param".to_string(),
-        format!("location[directory]={}", directory.display()),
-    ]
-}
-
-fn question_from_form(value: &Value) -> Option<Question> {
-    let fields = value["fields"]
-        .as_array()?
-        .iter()
-        .filter_map(field_from)
-        .collect();
-    Some(Question {
-        session: value["sessionID"].as_str()?.to_string(),
-        id: value["id"].as_str()?.to_string(),
-        title: value["title"].as_str()?.to_string(),
-        kind: QuestionKind::Form(fields),
-    })
-}
-
-fn field_from(value: &Value) -> Option<Field> {
-    let key = value["key"].as_str()?.to_string();
-    let kind = match value["type"].as_str()? {
-        "string" => FieldKind::Text {
-            options: choices(value),
-            placeholder: value["placeholder"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            default: value["default"].as_str().unwrap_or_default().to_string(),
-            custom: value["custom"].as_bool().unwrap_or(false),
-        },
-        "number" | "integer" => FieldKind::Number {
-            default: number(value["default"].as_f64()),
-            integer: value["type"] == "integer",
-        },
-        "boolean" => FieldKind::Boolean {
-            default: value["default"].as_bool().unwrap_or(false),
-        },
-        "multiselect" => FieldKind::Multi {
-            options: choices(value),
-            default: value["default"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|value| value.as_str().map(str::to_string))
-                .collect(),
-            custom: value["custom"].as_bool().unwrap_or(false),
-        },
-        "external" => FieldKind::External {
-            url: value["url"].as_str().unwrap_or_default().to_string(),
-        },
-        _ => return None,
-    };
-    Some(Field {
-        title: value["title"].as_str().unwrap_or(&key).to_string(),
-        description: value["description"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string(),
-        required: value["required"].as_bool().unwrap_or(false),
-        hidden: value["hidden"].as_bool().unwrap_or(false),
-        key,
-        kind,
-    })
-}
-
-fn choices(value: &Value) -> Vec<Choice> {
-    value["options"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|option| {
-            let value = option["value"].as_str()?.to_string();
-            Some(Choice {
-                label: option["label"].as_str().unwrap_or(&value).to_string(),
-                description: option["description"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_string(),
-                value,
-            })
-        })
-        .collect()
-}
-
-fn number(value: Option<f64>) -> String {
-    value.map(|value| format!("{value}")).unwrap_or_default()
-}
-
-fn question_from_permission(value: &Value) -> Option<Question> {
-    let action = value["action"].as_str()?.to_string();
-    Some(Question {
-        session: value["sessionID"].as_str()?.to_string(),
-        id: value["id"].as_str()?.to_string(),
-        title: format!("Allow {action}?"),
-        kind: QuestionKind::Permission(Permission {
-            action,
-            resources: value["resources"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|resource| resource.as_str().map(str::to_string))
-                .collect(),
-            message: value["message"].as_str().map(str::to_string),
-        }),
-    })
-}
-
-/// Answers a form `question`, whose keys are its fields' keys.
-pub fn answer_form(
-    project: &Path,
-    session: &str,
-    id: &str,
-    answer: &serde_json::Map<String, Value>,
-) -> Result<(), String> {
-    let path = format!("/api/session/{session}/form/{id}/reply");
-    let body = json!({ "answer": answer }).to_string();
-    call(project, &["post", &path], Some(&body)).map(|_| ())
-}
-
-/// Answers a tool's permission request.
-pub fn answer_permission(
-    project: &Path,
-    session: &str,
-    id: &str,
-    reply: PermissionReply,
-) -> Result<(), String> {
-    let path = format!("/api/session/{session}/permission/{id}/reply");
-    let body = json!({ "decision": reply.key() }).to_string();
-    call(project, &["post", &path], Some(&body)).map(|_| ())
-}
-
 /// A build the service is still running, found again after a restart.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
+    pub service: &'static dyn Service,
     pub session: String,
     /// The issue's slug, as its session's metadata has it.
     pub slug: String,
@@ -391,13 +388,17 @@ pub fn start(
     progress: Option<&Progress>,
     handle: &Handle,
 ) -> Result<Finished, String> {
-    let session = create(build.project, build.issue, build.model)?;
+    let service = handle
+        .service()
+        .ok_or_else(|| "no background service runs this build".to_string())?;
+    let session = service.start(build.issue, build.project, build.model)?;
     remember(handle, &session);
     if cancel.is_cancelled() {
         return Err("the agent was not started".to_string());
     }
-    prompt(build.project, &session, build.prompt)?;
+    service.say(build.project, &session, build.prompt)?;
     await_answer(
+        service,
         build.project,
         &session,
         cancel,
@@ -407,89 +408,27 @@ pub fn start(
     )
 }
 
-/// Creates a session for `issue` in `project`, titled after it.
-fn create(project: &Path, issue: &Path, model: &str) -> Result<String, String> {
-    let title = crate::platform::files::file_name(issue);
-    let directory = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
-    let mut body = json!({
-        "title": title,
-        "location": { "directory": directory },
-        "metadata": { "iboard": { "slug": reviews::slug(issue) } },
-    });
-    if let Some(model) = model_ref(model) {
-        body["model"] = model;
-    }
-    let reply = call(project, &["post", "/api/session"], Some(&body.to_string()))?;
-    let value = parse(&reply)?;
-    value["data"]["id"]
-        .as_str()
-        .map(str::to_string)
-        .ok_or_else(|| "opencode made no session".to_string())
-}
-
-/// `provider/model#variant`, as the service wants it, or `None` when the
-/// model is the service's own choice.
-fn model_ref(model: &str) -> Option<Value> {
-    let model = model.split('#').next()?.trim();
-    let (provider, id) = model.split_once('/')?;
-    Some(json!({ "providerID": provider, "id": id }))
-}
-
-/// Hands `text` to `session`; the service runs it whether or not anyone
-/// watches.
-fn prompt(project: &Path, session: &str, text: &str) -> Result<(), String> {
-    let path = format!("/api/session/{session}/prompt");
-    let body = json!({ "text": text, "delivery": "queue" }).to_string();
-    call(project, &["post", &path], Some(&body)).map(|_| ())
-}
-
-/// Queues `text` after the turn `session` runs now, for an instruction typed
-/// while the agent works.
-pub fn say(project: &Path, session: &str, text: &str) -> Result<(), String> {
-    prompt(project, session, text)
-}
-
-/// Stops `session`'s turn, for Stop on the card.
-pub fn interrupt(project: &Path, session: &str) {
-    let path = format!("/api/session/{session}/interrupt");
-    let _ = call(project, &["post", &path], None);
-}
-
-/// The sessions the service lists for `project`, running or finished.
-pub(crate) fn listed(project: &Path) -> Result<Vec<Value>, String> {
-    let reply = call(project, &["get", "/api/session"], None)?;
-    let value = parse(&reply)?;
-    Ok(value["data"].as_array().cloned().unwrap_or_default())
-}
-
 /// The builds the service is still running for `project`, as a restart finds
 /// them. The finished sessions in the same list go to the project's usage log.
-pub fn running(project: &Path) -> Result<Vec<Found>, String> {
-    let sessions = listed(project)?;
-    let _ = usage_log::record(&sessions, project);
-    let wanted = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
+pub fn running(service: &'static dyn Service, project: &Path) -> Result<Vec<Found>, String> {
+    let sessions = service.sessions(project)?;
+    let _ = usage_log::record(&sessions, project, service.key());
     Ok(sessions
         .iter()
-        .filter_map(|session| found(session, &wanted))
+        .filter_map(|session| found(service, session))
         .collect())
 }
 
 /// One running iboard session, if that is what `session` is.
-fn found(session: &Value, project: &Path) -> Option<Found> {
-    let slug = session["metadata"]["iboard"]["slug"].as_str()?.to_string();
-    let directory = session["location"]["directory"].as_str()?;
-    if Path::new(directory) != project {
+fn found(service: &'static dyn Service, session: &Session) -> Option<Found> {
+    if !session.status.running {
         return None;
     }
-    let status = status_of(session);
-    if !status.running {
-        return None;
-    }
-    let elapsed = Duration::from_millis(now().saturating_sub(status.created));
     Some(Found {
-        session: session["id"].as_str()?.to_string(),
-        slug,
-        elapsed,
+        service,
+        session: session.id.clone(),
+        slug: session.slug.clone()?,
+        elapsed: Duration::from_millis(now().saturating_sub(session.status.created)),
     })
 }
 
@@ -510,152 +449,60 @@ pub(super) fn backoff(misses: u32) -> Duration {
         .min(BACKOFF_MAX)
 }
 
+/// Wall-clock milliseconds, as the service counts them.
+pub(super) fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as u64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_session_is_titled_and_tagged_with_its_issue() {
-        let body = json!({
-            "title": crate::platform::files::file_name(Path::new("doing/002-build.md")),
-            "metadata": { "iboard": { "slug": reviews::slug(Path::new("doing/002-build.md")) } },
-        });
-        assert_eq!(body["title"], "002-build.md");
-        assert_eq!(body["metadata"]["iboard"]["slug"], "build");
-    }
-
-    #[test]
-    fn a_model_becomes_the_services_own_reference() {
-        assert_eq!(
-            model_ref("deepseek/deepseek-flash"),
-            Some(json!({ "providerID": "deepseek", "id": "deepseek-flash" }))
-        );
-        assert_eq!(
-            model_ref("anthropic/claude-sonnet#thinking")
-                .as_ref()
-                .unwrap()["id"],
-            "claude-sonnet"
-        );
-        assert_eq!(model_ref(""), None, "the service picks its own");
-        assert_eq!(model_ref("no-provider"), None);
-    }
-
-    #[test]
-    fn a_running_session_is_not_idle_since_its_last_turn() {
-        let running = json!({"id": "ses_1", "location": {"directory": "/code/app"},
-            "metadata": {"iboard": {"slug": "build"}},
-            "time": {"created": 1_000, "busy": 2_000}});
-        assert_eq!(
-            found(&running, Path::new("/code/app")),
-            Some(Found {
-                session: "ses_1".into(),
-                slug: "build".into(),
-                elapsed: Duration::from_millis(now().saturating_sub(1_000)),
-            })
-        );
-        let done = json!({"id": "ses_1", "location": {"directory": "/code/app"},
-            "metadata": {"iboard": {"slug": "build"}},
-            "time": {"created": 1_000, "busy": 2_000, "idle": 3_000}});
-        assert_eq!(found(&done, Path::new("/code/app")), None, "it finished");
-    }
-
-    #[test]
-    fn only_this_projects_iboard_sessions_are_adopted() {
-        let elsewhere = json!({"id": "ses_2", "location": {"directory": "/code/other"},
-            "metadata": {"iboard": {"slug": "build"}}, "time": {"busy": 2_000}});
-        assert_eq!(found(&elsewhere, Path::new("/code/app")), None);
-        let stranger = json!({"id": "ses_3", "location": {"directory": "/code/app"},
-            "time": {"busy": 2_000}});
-        assert_eq!(found(&stranger, Path::new("/code/app")), None, "not ours");
+    fn session(running: bool, slug: Option<&str>) -> Session {
+        Session {
+            id: "ses_1".into(),
+            slug: slug.map(str::to_string),
+            status: Status {
+                running,
+                created: 1_000,
+                updated: 2_000,
+            },
+            ended: 2_000,
+            usage: None,
+        }
     }
 
     #[test]
     fn a_handle_remembers_the_session_for_stop() {
         let handle = Handle::default();
         assert_eq!(session_of(&handle), None);
+        assert_eq!(handle.service(), None);
         remember(&handle, "ses_42");
         assert_eq!(session_of(&handle).as_deref(), Some("ses_42"));
     }
 
     #[test]
-    fn a_form_becomes_a_question_with_its_typed_fields() {
-        let value = json!({
-            "id": "frm_1", "sessionID": "ses_1", "title": "Which approach?",
-            "fields": [
-                {"key": "approach", "type": "string", "title": "Approach",
-                 "required": true, "options": [
-                    {"value": "fast", "label": "Fast", "description": "Ship it"},
-                    {"value": "careful", "label": "Careful"}
-                 ]},
-                {"key": "notes", "type": "string", "placeholder": "Anything else?"},
-                {"key": "count", "type": "integer", "default": 3},
-                {"key": "deploy", "type": "boolean", "default": true},
-                {"key": "areas", "type": "multiselect", "default": ["api"],
-                 "options": [{"value": "api", "label": "API"}]},
-            ]
-        });
-        let question = question_from_form(&value).expect("a form");
-        assert_eq!(question.session, "ses_1");
-        assert_eq!(question.title, "Which approach?");
-        let QuestionKind::Form(fields) = question.kind else {
-            panic!("not a form");
-        };
-        assert_eq!(fields.len(), 5);
-        assert!(fields[0].required);
-        assert!(matches!(
-            &fields[0].kind,
-            FieldKind::Text { options, .. } if options.len() == 2
-        ));
-        assert!(matches!(
-            &fields[2].kind,
-            FieldKind::Number { integer: true, default } if default == "3"
-        ));
-        assert!(matches!(
-            &fields[4].kind,
-            FieldKind::Multi { default, .. } if default == &["api"]
-        ));
-    }
-
-    #[test]
-    fn a_permission_request_becomes_a_question() {
-        let value = json!({
-            "id": "per_1", "sessionID": "ses_1", "action": "bash",
-            "resources": ["git push origin main"],
-            "message": "Push the branch?"
-        });
-        let question = question_from_permission(&value).expect("a request");
-        assert_eq!(question.title, "Allow bash?");
-        let QuestionKind::Permission(permission) = question.kind else {
-            panic!("not a permission");
-        };
-        assert_eq!(permission.resources, ["git push origin main"]);
-        assert_eq!(permission.message.as_deref(), Some("Push the branch?"));
-        assert_eq!(PermissionReply::Once.key(), "once");
-        assert_eq!(PermissionReply::Always.key(), "always");
-        assert_eq!(PermissionReply::Reject.key(), "reject");
-    }
-
-    #[test]
-    fn a_list_names_its_operation_and_the_projects_location() {
-        let scratch = tempfile::tempdir().unwrap();
-        let project = std::fs::canonicalize(scratch.path()).unwrap();
-        let args = list_args(&project, "form.list");
-        assert_eq!(args[0], "form.list", "an operation binds --param");
-        assert_eq!(args[1], "--param");
+    fn only_a_running_iboard_session_is_adopted() {
+        assert_eq!(found(test_service(), &session(false, Some("build"))), None);
+        assert_eq!(found(test_service(), &session(true, None)), None);
+        let adopted = found(test_service(), &session(true, Some("build")));
         assert_eq!(
-            args[2],
-            format!("location[directory]={}", project.display())
+            adopted.map(|found| (found.session, found.slug)),
+            Some(("ses_1".to_string(), "build".to_string()))
         );
     }
 
     #[test]
     fn a_feed_forgets_a_question_once_answered() {
-        let question = Question {
-            session: "ses_1".into(),
-            id: "frm_1".into(),
-            title: "Which approach?".into(),
-            kind: QuestionKind::Form(Vec::new()),
-        };
+        let question = Question::new(
+            test_service(),
+            "ses_1",
+            "frm_1",
+            "Which approach?",
+            QuestionKind::Form(Vec::new()),
+        );
         let feed = Feed::new(vec![question.clone()]);
         assert_eq!(feed.questions(), [question]);
         feed.remove("ses_1", "frm_1");

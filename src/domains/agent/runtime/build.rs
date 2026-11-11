@@ -196,8 +196,10 @@ impl Run {
     /// Stops the agent, wherever it runs: the service is told to interrupt,
     /// a child process is stopped when its job drops.
     pub fn stop(&self) {
-        if let Some(session) = service::session_of(&self.session) {
-            service::interrupt(&self.project, &session);
+        if let (Some(service), Some(session)) =
+            (self.session.service(), service::session_of(&self.session))
+        {
+            service.interrupt(&self.project, &session);
         }
     }
 }

@@ -10,7 +10,7 @@ use super::{
     Path, PathBuf, Pos2, RichText, Sense, Stroke, StrokeKind, Vec2, file_name, job, theme, widgets,
 };
 use crate::agent::service::{
-    Choice, Field, FieldKind, Permission, PermissionReply, Question, QuestionKind,
+    Answer, Choice, Field, FieldKind, Permission, PermissionReply, Question, QuestionKind,
 };
 
 mod card;
@@ -407,7 +407,7 @@ impl IboardApp {
         };
         let answer = match &question.kind {
             QuestionKind::Form(_) => match draft.form_answer() {
-                Ok(answer) => Some(answer),
+                Ok(answer) => Some(Answer::Form(answer)),
                 Err(error) => {
                     if let Some(draft) = self.session.answer.as_mut() {
                         draft.failure = None;
@@ -422,14 +422,11 @@ impl IboardApp {
         if matches!(&question.kind, QuestionKind::Permission(_)) && permission.is_none() {
             return;
         }
-        let (session, id) = (question.session.clone(), question.id.clone());
         let result = match (answer, permission) {
-            (Some(answer), _) => Job::spawn(move |_| {
-                crate::agent::service::answer_form(&project, &session, &id, &answer)
-            }),
-            (None, Some(reply)) => Job::spawn(move |_| {
-                crate::agent::service::answer_permission(&project, &session, &id, reply)
-            }),
+            (Some(answer), _) => Job::spawn(move |_| question.answer(&project, answer)),
+            (None, Some(reply)) => {
+                Job::spawn(move |_| question.answer(&project, Answer::Permission(reply)))
+            }
             (None, None) => return,
         };
         if let Some(draft) = self.session.answer.as_mut() {

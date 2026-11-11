@@ -430,23 +430,6 @@ impl Usage {
         })
     }
 
-    /// A session from OpenCode's session list.
-    pub(crate) fn from_session(session: &Value) -> Option<Self> {
-        let cost = session["cost"].as_f64();
-        let tokens = &session["tokens"];
-        let provider = text(&session["model"]["providerID"]);
-        let model = text(&session["model"]["id"]);
-        (cost.is_some() || !tokens.is_null() || provider.is_some() || model.is_some()).then(|| {
-            Usage {
-                cost,
-                tokens: tokens_of(tokens),
-                billing: billing_of(provider.as_deref()),
-                provider,
-                model,
-            }
-        })
-    }
-
     /// The last usage an agent reported in its stream, when it reported one.
     pub(super) fn from_stream(stdout: &str) -> Option<Self> {
         let mut model = None;
@@ -478,14 +461,14 @@ impl Usage {
     }
 }
 
-fn text(value: &Value) -> Option<String> {
+pub(super) fn text(value: &Value) -> Option<String> {
     value
         .as_str()
         .filter(|text| !text.is_empty())
         .map(str::to_string)
 }
 
-fn tokens_of(value: &Value) -> Tokens {
+pub(super) fn tokens_of(value: &Value) -> Tokens {
     Tokens {
         input: value["input"].as_u64().unwrap_or(0),
         output: value["output"].as_u64().unwrap_or(0),
@@ -495,7 +478,7 @@ fn tokens_of(value: &Value) -> Tokens {
     }
 }
 
-fn billing_of(provider: Option<&str>) -> Billing {
+pub(super) fn billing_of(provider: Option<&str>) -> Billing {
     match provider {
         Some("github-copilot" | "copilot") => Billing::Subscription,
         _ => Billing::Metered,
@@ -556,69 +539,12 @@ fn from_step_finish(event: &Value) -> Option<Usage> {
 mod tests {
     use super::*;
 
-    /// A session from `GET /api/session`, trimmed to what usage reads.
-    const OPENCODE_SESSION: &str = r#"{
-        "id": "ses_deepseek",
-        "model": {"id": "deepseek-flash", "providerID": "deepseek", "variant": "default"},
-        "cost": 0.42,
-        "tokens": {"input": 1234, "output": 56, "reasoning": 7,
-                   "cache": {"read": 890, "write": 12}},
-        "location": {"directory": "/code/app"}
-    }"#;
-
-    /// A Copilot session: a subscription, which reports no money.
-    const COPILOT_SESSION: &str = r#"{
-        "id": "ses_copilot",
-        "model": {"id": "claude-opus-4.6", "providerID": "github-copilot"},
-        "cost": 0,
-        "tokens": {"input": 159, "output": 14001, "reasoning": 0,
-                   "cache": {"read": 1902598, "write": 383223}},
-        "location": {"directory": "/code/app"}
-    }"#;
-
     /// Claude Code's init and result events, trimmed to what usage reads.
     const CLAUDE_STREAM: &str = concat!(
         r#"{"type":"system","subtype":"init","session_id":"abc","model":"claude-sonnet-4-5"}"#,
         "\n",
         r#"{"type":"result","subtype":"success","is_error":false,"result":"Done.","session_id":"abc","total_cost_usd":0.42,"usage":{"input_tokens":1234,"output_tokens":56,"cache_read_input_tokens":890,"cache_creation_input_tokens":12}}"#,
     );
-
-    #[test]
-    fn an_opencode_session_reads_its_cost_and_tokens() {
-        let session: Value = serde_json::from_str(OPENCODE_SESSION).unwrap();
-        let usage = Usage::from_session(&session).expect("usage");
-        assert_eq!(usage.cost, Some(0.42));
-        assert_eq!(
-            usage.tokens,
-            Tokens {
-                input: 1234,
-                output: 56,
-                reasoning: 7,
-                cache_read: 890,
-                cache_write: 12,
-            }
-        );
-        assert_eq!(usage.provider.as_deref(), Some("deepseek"));
-        assert_eq!(usage.model.as_deref(), Some("deepseek-flash"));
-        assert_eq!(usage.billing, Billing::Metered);
-        assert_eq!(usage.cost_label().as_deref(), Some("$0.42"));
-    }
-
-    #[test]
-    fn a_copilot_session_at_cost_zero_is_a_subscription() {
-        let session: Value = serde_json::from_str(COPILOT_SESSION).unwrap();
-        let usage = Usage::from_session(&session).expect("usage");
-        assert_eq!(usage.cost, Some(0.0));
-        assert_eq!(usage.billing, Billing::Subscription);
-        assert_eq!(usage.provider.as_deref(), Some("github-copilot"));
-        assert_eq!(usage.tokens.input, 159);
-        assert_eq!(usage.tokens.cache_read, 1_902_598);
-        assert_eq!(
-            usage.cost_label().as_deref(),
-            Some("$0.00 API-equivalent"),
-            "a subscription's dollars are never spend"
-        );
-    }
 
     #[test]
     fn a_claude_result_reads_its_cost_and_usage() {
