@@ -1,0 +1,79 @@
+<!-- @dsCard group="Board" height=430 subtitle="When a single-project board opens, launch or switch, its board folder (issues/, or the name iboard.toml gives it) is offered the standard column folders it lacks" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>FoldersDialog</title></head>
+<body>
+<div class="ib-pad ib-stack" style="gap:16px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:24px;align-items:start">
+
+<div class="ib-stack"><span class="ib-cap">1 · At launch on shop: its issues/ has ready/, doing/ and blocked/, so two standard columns are missing and a card cannot be sent to Done</span>
+<div class="ib-scrim" style="min-height:360px">
+<section class="ib-confirm" role="dialog" aria-modal="true" aria-labelledby="f1t">
+<h2 class="ib-confirm__title" id="f1t">Board folders</h2>
+<div class="ib-confirm__subject"><b>shop</b><span>~/code/shop</span></div>
+<div class="ib-formrow"><label class="ib-label" for="f1n">Folder</label><input class="ib-input ib-input--mono is-focus" id="f1n" value="issues" maxlength="20" spellcheck="false" autocapitalize="off"></div>
+<p class="ib-confirm__body ib-folders__body">Two of the four columns are missing from this board. Each is created empty, with a <span class="ib-mono">.gitkeep</span> so git keeps it.</p>
+<div class="ib-folders" role="list" aria-label="Standard folders">
+<div class="ib-folders__row is-missing" role="listitem"><span class="ib-folders__name">Todo</span><span class="ib-folders__dir">todo/</span><span class="ib-folders__state">missing</span></div>
+<div class="ib-folders__row is-present" role="listitem"><span class="ib-folders__name">Ready</span><span class="ib-folders__dir">ready/</span><span class="ib-folders__state">present</span></div>
+<div class="ib-folders__row is-present" role="listitem"><span class="ib-folders__name">Doing</span><span class="ib-folders__dir">doing/</span><span class="ib-folders__state">present</span></div>
+<div class="ib-folders__row is-missing" role="listitem"><span class="ib-folders__name">Done</span><span class="ib-folders__dir">done/</span><span class="ib-folders__state">missing</span></div>
+</div>
+<div class="ib-confirm__foot"><button class="ib-btn">Not now <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--primary">Create 2 folders <span class="ib-btn__key">↩</span></button></div>
+</section></div></div>
+
+<div class="ib-stack"><span class="ib-cap">2 · The same project shape with root = "tickets" in iboard.toml: the field shows the configured name, not issues/, and says where it comes from</span>
+<div class="ib-scrim" style="min-height:360px">
+<section class="ib-confirm" role="dialog" aria-modal="true" aria-labelledby="f2t">
+<h2 class="ib-confirm__title" id="f2t">Board folders</h2>
+<div class="ib-confirm__subject"><b>moon-cull</b><span>~/workspace/perso/moon-cull</span></div>
+<div class="ib-formrow"><label class="ib-label" for="f2n">Folder</label><input class="ib-input ib-input--mono" id="f2n" value="tickets" maxlength="20" spellcheck="false" autocapitalize="off" aria-describedby="f2h"><span class="ib-help" id="f2h">Set in <span class="ib-mono">iboard.toml</span>.</span></div>
+<p class="ib-confirm__body ib-folders__body">One of the four columns is missing from this board. It is created empty, with a <span class="ib-mono">.gitkeep</span> so git keeps it.</p>
+<div class="ib-folders" role="list" aria-label="Standard folders">
+<div class="ib-folders__row is-present" role="listitem"><span class="ib-folders__name">Todo</span><span class="ib-folders__dir">todo/</span><span class="ib-folders__state">present</span></div>
+<div class="ib-folders__row is-present" role="listitem"><span class="ib-folders__name">Ready</span><span class="ib-folders__dir">ready/</span><span class="ib-folders__state">present</span></div>
+<div class="ib-folders__row is-present" role="listitem"><span class="ib-folders__name">Doing</span><span class="ib-folders__dir">doing/</span><span class="ib-folders__state">present</span></div>
+<div class="ib-folders__row is-missing" role="listitem"><span class="ib-folders__name">Done</span><span class="ib-folders__dir">done/</span><span class="ib-folders__state">missing</span></div>
+</div>
+<div class="ib-confirm__foot"><button class="ib-btn">Not now <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--primary">Create folder <span class="ib-btn__key">↩</span></button></div>
+</section></div></div>
+
+<div class="ib-stack"><span class="ib-cap">3 · Renaming to a folder that does not exist yet: the consequence is stated, the rows follow the name, and the new folder is offered to .gitignore</span>
+<div class="ib-scrim" style="min-height:360px">
+<section class="ib-confirm" role="dialog" aria-modal="true" aria-labelledby="f3t">
+<h2 class="ib-confirm__title" id="f3t">Board folders</h2>
+<div class="ib-confirm__subject"><b>shop</b><span>~/code/shop</span></div>
+<div class="ib-formrow"><label class="ib-label" for="f3n">Folder</label><input class="ib-input ib-input--mono is-focus" id="f3n" value="tickets" maxlength="20" spellcheck="false" autocapitalize="off"></div>
+<div class="ib-formrow"><label class="ib-check"><input type="checkbox" checked> Keep this folder out of git</label><span class="ib-help">Adds <span class="ib-mono">/tickets/</span> to <span class="ib-mono">.gitignore</span>.</span></div>
+<p class="ib-confirm__body ib-folders__body">The board moves to <span class="ib-mono">tickets/</span>; <span class="ib-mono">issues/</span> stays where it is, off the board.</p>
+<div class="ib-folders" role="list" aria-label="Standard folders">
+<div class="ib-folders__row is-missing" role="listitem"><span class="ib-folders__name">Todo</span><span class="ib-folders__dir">todo/</span><span class="ib-folders__state">missing</span></div>
+<div class="ib-folders__row is-missing" role="listitem"><span class="ib-folders__name">Ready</span><span class="ib-folders__dir">ready/</span><span class="ib-folders__state">missing</span></div>
+<div class="ib-folders__row is-missing" role="listitem"><span class="ib-folders__name">Doing</span><span class="ib-folders__dir">doing/</span><span class="ib-folders__state">missing</span></div>
+<div class="ib-folders__row is-missing" role="listitem"><span class="ib-folders__name">Done</span><span class="ib-folders__dir">done/</span><span class="ib-folders__state">missing</span></div>
+</div>
+<div class="ib-confirm__foot"><button class="ib-btn">Not now <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--primary">Create 4 folders <span class="ib-btn__key">↩</span></button></div>
+</section></div></div>
+
+<div class="ib-stack"><span class="ib-cap">4 · Creation failed on one folder: it stays open with what is left, the line says what happened, and the primary retries</span>
+<div class="ib-scrim" style="min-height:360px">
+<section class="ib-confirm" role="dialog" aria-modal="true" aria-labelledby="f4t">
+<h2 class="ib-confirm__title" id="f4t">Board folders</h2>
+<div class="ib-confirm__subject"><b>shop</b><span>~/code/shop</span></div>
+<div class="ib-formrow"><label class="ib-label" for="f4n">Folder</label><input class="ib-input ib-input--mono" id="f4n" value="issues" maxlength="20" spellcheck="false" autocapitalize="off"></div>
+<p class="ib-confirm__body ib-folders__body">One of the four columns is still missing from this board. It is created empty, with a <span class="ib-mono">.gitkeep</span> so git keeps it.</p>
+<div class="ib-folders" role="list" aria-label="Standard folders">
+<div class="ib-folders__row is-present" role="listitem"><span class="ib-folders__name">Todo</span><span class="ib-folders__dir">todo/</span><span class="ib-folders__state">present</span></div>
+<div class="ib-folders__row is-present" role="listitem"><span class="ib-folders__name">Ready</span><span class="ib-folders__dir">ready/</span><span class="ib-folders__state">present</span></div>
+<div class="ib-folders__row is-present" role="listitem"><span class="ib-folders__name">Doing</span><span class="ib-folders__dir">doing/</span><span class="ib-folders__state">present</span></div>
+<div class="ib-folders__row is-missing" role="listitem"><span class="ib-folders__name">Done</span><span class="ib-folders__dir">done/</span><span class="ib-folders__state">missing</span></div>
+</div>
+<p class="ib-help ib-help--error" role="alert">Couldn't create done/: permission denied.</p>
+<div class="ib-confirm__foot"><button class="ib-btn">Not now <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--primary">Create folder <span class="ib-btn__key">↩</span></button></div>
+</section></div></div>
+
+</div>
+<span class="ib-cap">Only the four standard columns are offered; <span class="ib-mono">blocked/</span> stays a column of its own and is never mentioned here. A project with no board folder at all keeps the error strip and its Create issues/ button, which writes the same folder this dialog names.</span>
+</div>
+</body>
+</html>

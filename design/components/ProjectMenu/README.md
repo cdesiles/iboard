@@ -15,11 +15,12 @@ The menu under the header's project name, top left of the Board: pick a group (e
 2. **Projects.** Head "Projects" with the count. A filter field ("Filter projects", full width), then one two-line row per project, **in the user's order**: folder name in `ui-body` 500, path in `meta`, current one in `accent`; 42pt rows.
    - **The list scrolls inside the menu**, never past the window: at most 336pt (8 rows), or less when the window is short, so the footer is always on screen. Overlay Scrollbar, no track. On open, the current project is scrolled into view.
    - Under 9 projects the filter field is hidden at rest and nothing scrolls; it appears on the first key you type.
-3. **Footer**, on `bg` (the window ground, so it reads as a separate strip, not more list), 8pt padding, a full-width **Stats** row over three secondary buttons, none of which ever moves:
+3. **Footer**, on `bg` (the window ground, so it reads as a separate strip, not more list), 8pt padding, a full-width **Stats** row over three secondary buttons — Add project…, Edit groups…, Reorder — which keep their places, and a fourth line when the project on the board is missing a standard folder:
    - **Stats** (bars; `⌘I`): opens the Stats screen of the project on the board. On a group's board it stays, and the status bar says Stats measure one project.
    - **Add project…** (plus): the native picker, with neutral text: "Choose a project folder", button "Choose". Replaces "Open folder…": you add a project to your list, then it opens.
    - **Edit groups…** (layers): opens GroupsDialog. With no group yet, the dialog opens on its "No groups yet" state.
    - **Reorder** (grip): switches the menu into reorder mode.
+   - **Set up folders…** (folder-plus): only while the project on the board lacks `todo/`, `ready/`, `doing/` or `done/`. It wraps after Reorder on its own line, so nothing above it moves. It forgets that project's *Not now* and opens FoldersDialog again, which is the one way back to a dismissed launch prompt.
 
 Every row is at least 24pt tall and its full width is the hit area.
 
@@ -60,6 +61,7 @@ A project opened or added for the first time goes to the top. Removing one from 
 | Add project… | FolderPickerOpened → ProjectAdded → WorkspaceSwitched | Project at the top of the list, its board open |
 | Stats, `⌘I` | StatsOpened | Stats |
 | Edit groups… | GroupsEditorOpened | GroupsDialog over the board |
+| Set up folders… | FolderSetupOffered | FoldersDialog over the board |
 | Reorder | ProjectReorderStarted | Reorder mode |
 | Drag, `⌥↑ ⌥↓` | ProjectMoved | Same mode, new position |
 | Done (`↩`) / Cancel (`esc`) | ProjectOrderSaved → UserConfigWritten / ProjectReorderCancelled | Normal menu |

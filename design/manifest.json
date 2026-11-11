@@ -15,6 +15,7 @@
     "components/DropZones/README.md",
     "components/Editor/README.md",
     "components/FilterField/README.md",
+    "components/FoldersDialog/README.md",
     "components/GeneralSettings/README.md",
     "components/GroupsDialog/README.md",
     "components/HeaderBar/README.md",
@@ -113,6 +114,11 @@
       "name": "FilterField",
       "group": "Navigation",
       "summary": "The board's filter in the header: compact at rest, wide while you use it, with one-click keyword suggestions for the filters people use most."
+    },
+    {
+      "name": "FoldersDialog",
+      "group": "Onboarding",
+      "summary": "When a single-project board opens — at launch or on a switch — its board folder (issues/, or the name iboard.toml gives it) is offered the standard column folders it lacks, with the name editable and a new folder offered to .gitignore."
     },
     {
       "name": "GeneralSettings",

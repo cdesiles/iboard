@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help hooks run iboard idesign list check test third-party lint fmt tokens toolchain build release install app install-app bump clean
+.PHONY: help hooks run iboard idesign list check test third-party lint fmt tokens toolchain build release install app install-app bump clean preview
 
 # `make run` launches iboard; `make run idesign` switches to the design tool.
 BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
@@ -63,9 +63,6 @@ ifneq ($(SWIFT_FORMAT),)
 	$(SWIFT_FORMAT) lint --strict macos/*.swift
 endif
 
-tokens: ## Regenerate src/shell/theme/tokens.rs from design/tokens.json
-	cargo run --bin idesign -- tokens --rust
-
 fmt: ## Format code in place
 	cargo fmt
 ifneq ($(SWIFT_FORMAT),)
@@ -77,6 +74,15 @@ toolchain:
 		"rustc $(PINNED_RUST)"*) ;; \
 		*) echo "warning: $$(rustc --version) is not the pinned $(PINNED_RUST) (rust-toolchain.toml); new lints may appear" >&2 ;; \
 	esac
+
+##@ Design
+
+tokens: ## Regenerate src/shell/theme/tokens.rs from design/tokens.json
+	cargo run --bin idesign -- tokens --rust
+
+preview: ## Render one component's preview, e.g. make preview C=FoldersDialog [ARGS="--theme dark"]
+	@test -n "$(C)" || { echo 'name a component: make preview C=FoldersDialog' >&2; exit 2; }
+	cargo run --bin idesign -- preview "$(C)" $(ARGS)
 
 ##@ Build
 

@@ -18,8 +18,8 @@
   },
   "lastChange": {
     "by": "Clément",
-    "at": "2026-11-06T09:56:52Z",
+    "at": "2026-11-11T20:43:50Z",
     "via": "Claude Code",
-    "note": "Specs aligned with the implemented quiet pass: keys, the … menu, line-strong's list, what blue is for, helper names, ghost tiles two across, and asking before a proposal replaces unsaved edits."
+    "note": "FoldersDialog: a board folder named by iboard.toml (or issues/) is offered the standard folders it lacks, on launch and on a project switch, with the folder name editable and a new folder offered to .gitignore."
   }
 }

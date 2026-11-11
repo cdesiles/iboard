@@ -263,6 +263,7 @@ fn preview(system: &DesignSystem, name: &str, flags: &Flags) -> Result<(), Failu
     let (html_path, png) = design::render::preview_paths(name)?;
     std::fs::write(&html_path, &html)
         .map_err(|err| format!("couldn't write {}: {err}", html_path.display()))?;
+    println!("{}", html_path.display());
     let out = flags.out.as_ref().map(PathBuf::from).unwrap_or(png);
     render_file(&html_path, &out, flags)
 }

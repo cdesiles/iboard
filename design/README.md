@@ -79,7 +79,7 @@ Issues live as markdown files next to the code. Four folders (`todo/`, `ready/`,
 - Columns are equal width between `column-min` 200 and `column-max` 420. On a 14" MacBook Pro (1512pt wide) four columns sit near 360; with fewer folders they cap at 420 and the spare room stays empty on the right instead of stretching cards.
 - Window skeleton, top to bottom: header bar (`bar-h` 40) · board or page · status bar (`statusbar-h` 24). The title bar is transparent: the traffic lights sit on the header bar's centre line, 20pt from the window's top (`titlebar-light-y`), centres at x 20, 40, 60, inside the leading `titlebar-lead` 80pt; no modal frame enters the top `titlebar-h` 28pt.
 - Radii: `radius-sm` 4 for controls, `radius-md` 6 for cards and pages, `radius-pill` for 18pt pills. Cards are flat; `shadow-popover` is only for the review panel, menus and a card being dragged; modals use the stronger `shadow-modal`.
-- Modals come in four sizes and one anatomy (head 40 · scrolling body · foot 40 with one primary, rightmost): **S** 360 asks a question (ConfirmDialog), **M** 480 holds a form (Settings, GroupsDialog), **L** 760 holds one document, **XL** fills the window minus a 32pt inset, at most 1200 × 900, for work surfaces where you write at length or an agent's answer streams in (NewIssueModal, RefinePanel). Only S closes on a scrim click; XL never asks on `esc`, it parks your input. See Modal.
+- Modals come in four sizes and one anatomy (head 40 · scrolling body · foot 40 with one primary, rightmost): **S** 360 asks a question (ConfirmDialog, FoldersDialog), **M** 480 holds a form (Settings, GroupsDialog), **L** 760 holds one document, **XL** fills the window minus a 32pt inset, at most 1200 × 900, for work surfaces where you write at length or an agent's answer streams in (NewIssueModal, RefinePanel). Only S closes on a scrim click; XL never asks on `esc`, it parks your input. See Modal.
 - Scrollbars are overlays that never take layout width and are hidden at rest, like macOS overlay scrollbars: a 4pt `scrollbar` thumb while scrolling, 8pt `scrollbar-active` when the pointer reaches the pane's edge, `accent` while dragging. No track, no arrows. See Scrollbar.
 - Two panes side by side are separated by the 16pt gutter, and that gutter is the resize handle: a 2×3 dot grip in `ink-faint` at rest, a full-height 2pt `line-strong` rule under the pointer, `accent` while dragging. It never overlaps a pane's scroll strip. See PaneDivider.
 - Anything slow (stats from git history, charts, an agent's answer) shows Skeleton blocks at the content's final size: real labels and axes, data shapes in `surface-sunken`, all pulsing together on a 1.6s beat. Nothing before 300ms; the Thinking i and an elapsed clock from 2s; each block fills in on its own. See Skeleton.
@@ -164,6 +164,10 @@ Spec-first, as commands and events (event-modeling style). A screen only changes
 | Editor | Type | DraftChanged | Editor, Unsaved pill |
 | Editor | Save (`⌘S`, or auto on leave when Auto is on in Settings › General) | IssueSaved / SaveFailed | Reader / Editor with error |
 | Any | Refresh, or file watcher fires | IssuesReloaded | Same screen; open draft kept, conflict flagged |
+| Open a project (launch, or a switch) whose board folder lacks a standard folder | (none) | FolderSetupOffered | FoldersDialog over the board (`components/FoldersDialog`); once per project per launch, single-project boards only |
+| FoldersDialog | Create 2 folders (`↩`) | FoldersCreated | Board reloaded in place; the new columns arrive empty, and the folder joins `.gitignore` when the box is left ticked |
+| FoldersDialog | Not now (`esc`) | FolderSetupQuieted | Board; that project is not asked again, and Set up folders… opens it again |
+| ProjectMenu | Set up folders… (only while one is missing) | FolderSetupOffered | FoldersDialog over the board |
 | Board | Focus filter (`⌘F`, click) | FilterFocused | Field widens to 480pt, the three most used labels shown |
 | Board, Reader | Click a label | LabelClicked → FilterSuggestionPicked | Board filtered by that label |
 | Board | Click a suggestion, or type | FilterSuggestionPicked / FilterChanged | Board shows matches only; counts read "2/6" |
@@ -253,6 +257,14 @@ A build that needs a person stops on a **Question** card at the top of its agent
 - **One card for one field or six.** The agent's title is the heading; a field label repeats it only when it adds something. Options are 36pt rows with their description always visible and a number key to pick; an open answer is Inter 13, never mono. The card is bounded to 55% of the panel, its fields scroll and Send stays pinned. A required field left empty says so under itself and takes focus; Send is never a disabled button with no explanation.
 - **While it waits, the composer goes.** The box under the timeline is one quiet line, "Answer the question above to continue.", so the panel has one filled Send, not two. Closing the panel is allowed; the pin and the bell reopen the ticket on the question.
 - **A tool permission is a fallback, not a step.** The builder's scope is its project folder. The same card shows the exact resource in mono, says "Inside `<project>`", and "Always allow" names the project. When a resource is outside it, one `danger-soft` band says the builder should stay in its own folder, and Always allow is not offered. There is no global allow.
+
+## Previewing a component
+
+- A `preview.html` is a **fragment**: it carries no stylesheet link, because the design tool and `idesign` splice `tokens.css` and `bundle.css` into it. A bare fragment opened in a browser is unstyled, and that is not a bug to fix in the file.
+- **`make preview C=FoldersDialog`** composes one through `idesign` and prints two paths: `/tmp/iboard-previews/<Name>.html`, the fragment with the system inlined, and its rendered PNG. Double-click the HTML to look at it, scroll it, and resize it; that is the same page the catalog renders.
+- **`ARGS` go through**: `make preview C=FoldersDialog ARGS="--theme dark"` renders the dark system, `ARGS="--height 1600"` a tall page whole instead of cut at the renderer's default.
+- Both font faces fall back to the system's in this snapshot: the bundle's `@import` is dropped because neither a file snapshot nor the catalog may reach the network. Kerning will differ from the app; measure nothing from it.
+- `design/.verify/` holds test renders and is ignored by git.
 
 ## Using the tokens from Rust
 
