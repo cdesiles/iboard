@@ -1,4 +1,4 @@
-//! Writing `design/tokens.json` into the committed `src/theme/tokens.rs`.
+//! Writing `design/tokens.json` into the committed `src/shell/theme/tokens.rs`.
 //!
 //! The generator runs from `idesign tokens --rust` and from `make tokens`. One
 //! test in `theme.rs` fails when the committed file is stale, so a token change
@@ -21,7 +21,7 @@ use super::{MONO_MEDIUM, SANS_MEDIUM, SANS_SEMIBOLD, family, hex};
 use crate::kernel::labels::Hue;
 ";
 
-/// The whole of `src/theme/tokens.rs`, ready to write.
+/// The whole of `src/shell/theme/tokens.rs`, ready to write.
 pub fn theme_tokens(system: &DesignSystem) -> Result<String, String> {
     let mut out = String::from(PREFACE);
     palette_struct(&mut out, system)?;

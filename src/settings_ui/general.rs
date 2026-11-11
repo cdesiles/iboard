@@ -3,8 +3,8 @@
 
 use super::Dialog;
 use crate::general::Appearance;
-use crate::theme;
-use crate::widgets::{self, field_label, help};
+use crate::shell::theme;
+use crate::shell::widgets::{self, field_label, help};
 
 impl Dialog {
     /// Settings › General: the theme, and whether deleting an issue asks

@@ -21,8 +21,8 @@ use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use crate::design::{self, Asset, CardMeta, Component, DesignFile, DesignSystem, Token};
 use crate::job::{self, Job};
 
-use crate::theme;
-use crate::widgets::{self, ButtonKind};
+use crate::shell::theme;
+use crate::shell::widgets::{self, ButtonKind};
 
 mod pages;
 

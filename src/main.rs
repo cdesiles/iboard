@@ -1,29 +1,15 @@
 //! iboard: a fast, local kanban board + markdown reader for the
 //! `issues/` directories used across projects.
 
-mod app;
-mod dialog;
-mod groups_ui;
-mod instance;
-mod label_picker;
-mod project_menu;
-mod recents;
-#[cfg(test)]
-mod scratch_git;
-mod settings_ui;
-
-// The shared modules live in the `iboard` library. Re-export them at this crate
-// root so the view modules keep addressing them as `crate::…`.
-use iboard::{
-    agent, assets, build_log, commits, design_ui, discovery, domains, files, filter, format,
-    general, issue, job, kernel, labels, plan, priority, process, reviews, settings, sheet, theme,
-    titles, trash, widgets, workspace,
-};
+// The shell and the domains live in the `iboard` library: this binary is only
+// the CLI and the window's lifecycle.
+use iboard::shell::instance::Request;
+use iboard::shell::{app, instance, recents};
+use iboard::{discovery, settings, workspace};
 
 use std::path::PathBuf;
 
 use eframe::egui;
-use instance::Request;
 
 fn main() -> eframe::Result {
     let mut path: Option<PathBuf> = None;

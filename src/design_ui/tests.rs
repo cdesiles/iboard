@@ -10,7 +10,7 @@ fn repo() -> DesignSystem {
 
 fn panel_ctx() -> (egui::Context, egui::RawInput) {
     let ctx = egui::Context::default();
-    crate::theme::install(&ctx);
+    crate::shell::theme::install(&ctx);
     let input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
@@ -45,8 +45,8 @@ fn kit(panel: Panel, appearance: Appearance) -> PanelKit {
         .build_ui_state(
             move |ui, (themed, panel, system, catalog): &mut (bool, _, DesignSystem, _)| {
                 if !*themed {
-                    crate::theme::install(ui.ctx());
-                    crate::theme::apply(ui.ctx(), appearance);
+                    crate::shell::theme::install(ui.ctx());
+                    crate::shell::theme::apply(ui.ctx(), appearance);
                     *themed = true;
                     return;
                 }

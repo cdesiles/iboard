@@ -1,0 +1,538 @@
+//! The LabelPicker: a small popup that adds labels to one issue without the
+//! Editor. It opens under its trigger (the card's Add label action or the
+//! Reader's Add label button), lists the board's labels most used first, and
+//! adds the typed one on `↩`. It stays open for the next label.
+
+use std::path::{Path, PathBuf};
+
+use egui::text::LayoutJob;
+use egui::{
+    Color32, CornerRadius, FontId, Key, Margin, Pos2, Rect, Response, Sense, Stroke, StrokeKind,
+    TextFormat, Vec2,
+};
+
+use crate::domains::preferences::labels::Labels;
+use crate::labels;
+use crate::shell::theme::{self, Icon};
+use crate::shell::widgets;
+
+/// Width of the popup.
+const WIDTH: f32 = 264.0;
+/// How long an added label's pill keeps its `status-done` edge.
+const FLASH_SECONDS: f64 = 1.2;
+/// The list scrolls after five rows of 18pt pills, 4pt apart.
+const LIST_MAX_H: f32 = 5.0 * 18.0 + 4.0 * 4.0;
+
+/// An open picker, on one issue.
+pub struct LabelPicker {
+    pub path: PathBuf,
+    pub text: String,
+    pub note: Note,
+    /// The label just added or removed, and when, for the `status-done` flash.
+    flash: Option<(String, f64)>,
+    /// Put the cursor back in the field on the next frame.
+    focus_field: bool,
+    /// The popup's size last frame, to flip it above its trigger near the
+    /// window's bottom edge.
+    size: Vec2,
+}
+
+/// What the hint line says beyond the typed text.
+pub enum Note {
+    None,
+    /// "Added ux to todo/ai-assist.md".
+    Added {
+        label: String,
+        file: String,
+    },
+    /// "Removed ux from todo/ai-assist.md".
+    Removed {
+        label: String,
+        file: String,
+    },
+    /// A write failed: the hint turns `danger`.
+    Failed(String),
+}
+
+impl LabelPicker {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            text: String::new(),
+            note: Note::None,
+            flash: None,
+            focus_field: true,
+            size: Vec2::new(WIDTH, 160.0),
+        }
+    }
+
+    /// After a label was written: clear the field, keep the cursor in it,
+    /// flash the label's pill and say what happened.
+    pub fn added(&mut self, label: String, file: String, now: f64) {
+        self.text.clear();
+        self.flash = Some((label.clone(), now));
+        self.note = Note::Added { label, file };
+        self.focus_field = true;
+    }
+
+    /// After a label was taken off: keep the cursor in the field, flash the
+    /// label's pill and say what happened.
+    pub fn removed(&mut self, label: String, file: String, now: f64) {
+        self.flash = Some((label.clone(), now));
+        self.note = Note::Removed { label, file };
+        self.focus_field = true;
+    }
+
+    pub fn failed(&mut self, message: String) {
+        self.note = Note::Failed(message);
+        self.focus_field = true;
+    }
+}
+
+/// What the user asked for this frame.
+pub enum Outcome {
+    /// Add this label (already normalized).
+    Add(String),
+    /// Take this label (already normalized) off the issue.
+    Remove(String),
+    /// A click outside: close, dropping the field's text.
+    Close,
+}
+
+fn open_id() -> egui::Id {
+    egui::Id::unique("label_picker_open")
+}
+
+fn anchor_id(path: &Path) -> egui::Id {
+    egui::Id::unique(("label_picker_anchor", path))
+}
+
+/// Tells the cards which issue's picker is open, so its actions stay shown.
+pub fn set_open(ctx: &egui::Context, path: Option<&Path>) {
+    ctx.data_mut(|d| match path {
+        Some(path) => {
+            d.insert_temp(open_id(), path.to_path_buf());
+        }
+        None => d.remove::<PathBuf>(open_id()),
+    });
+}
+
+/// The issue whose picker is open, if any.
+pub fn open_path(ctx: &egui::Context) -> Option<PathBuf> {
+    ctx.data(|d| d.get_temp::<PathBuf>(open_id()))
+}
+
+/// A trigger records where it is, every frame it can be seen, so the popup
+/// follows it. Drawn scrolled out of its area, it records nothing.
+pub fn set_anchor(ui: &egui::Ui, path: &Path, rect: Rect) {
+    if !ui.clip_rect().intersects(rect) {
+        return;
+    }
+    let frame = ui.ctx().cumulative_frame_nr();
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(anchor_id(path), (rect, frame)));
+}
+
+/// Where the trigger is, when it recorded itself this frame or the last.
+fn anchor(ctx: &egui::Context, path: &Path) -> Option<Rect> {
+    let (rect, frame) = ctx.data(|d| d.get_temp::<(Rect, u64)>(anchor_id(path)))?;
+    (frame + 1 >= ctx.cumulative_frame_nr()).then_some(rect)
+}
+
+/// Draws the popup. `has` are the issue's labels, `board` every label on the
+/// board, most used first.
+pub fn show(
+    ui: &mut egui::Ui,
+    picker: &mut LabelPicker,
+    has: &[String],
+    board: &[String],
+    colors: &Labels,
+) -> Option<Outcome> {
+    let ctx = ui.ctx().clone();
+    let p = theme::palette(ui);
+    let trigger = anchor(&ctx, &picker.path);
+    let pos = position(trigger, picker.size, ctx.content_rect());
+    let now = ctx.input(|i| i.time);
+    let typed = labels::normalize(&picker.text);
+    let mut outcome = None;
+
+    let area = egui::Area::new(egui::Id::unique("label_picker"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos)
+        .constrain(false)
+        .show(&ctx, |ui| {
+            widgets::popover_frame(ui)
+                .inner_margin(Margin::same(8))
+                .show(ui, |ui| {
+                    let inner = WIDTH - 16.0 - 2.0;
+                    ui.set_width(inner);
+                    ui.spacing_mut().item_spacing.y = 6.0;
+                    let field = filter_field(ui, picker, typed.as_ref(), has, inner, &mut outcome);
+                    hint_line(ui, picker, typed.as_deref(), has, board, inner);
+                    let shown: Vec<&String> = board
+                        .iter()
+                        .filter(|name| typed.as_deref().is_none_or(|text| name.contains(text)))
+                        .collect();
+                    group_head(ui, shown.len());
+                    let pill_ids = if board.is_empty() {
+                        ui.label(
+                            egui::RichText::new("No labels on this board yet. Type one above.")
+                                .font(theme::ui_small())
+                                .color(p.ink_muted),
+                        );
+                        Vec::new()
+                    } else {
+                        label_list(ui, picker, &shown, has, colors, now, &mut outcome)
+                    };
+                    hand_off(ui, picker, &field, &pill_ids);
+                    key_hints(ui);
+                });
+        });
+    picker.size = area.response.rect.size();
+    if picker
+        .flash
+        .as_ref()
+        .is_some_and(|(_, at)| now - at < FLASH_SECONDS)
+    {
+        ctx.request_repaint();
+    }
+    if pressed_outside(&ctx, area.response.rect, trigger) {
+        return Some(Outcome::Close);
+    }
+    outcome
+}
+
+/// Under the trigger, right-aligned with it; above it when it would leave
+/// the window. Without a trigger on screen (it scrolled away), centred.
+fn position(trigger: Option<Rect>, size: Vec2, screen: Rect) -> Pos2 {
+    match trigger {
+        Some(rect) => {
+            let below = rect.max.y + theme::SPACE_2;
+            let y = if below + size.y > screen.max.y - theme::SPACE_3 {
+                (rect.min.y - theme::SPACE_2 - size.y).max(screen.min.y)
+            } else {
+                below
+            };
+            let x = (rect.max.x - WIDTH)
+                .min(screen.max.x - WIDTH - theme::SPACE_3)
+                .max(screen.min.x + theme::SPACE_3);
+            Pos2::new(x, y)
+        }
+        None => screen.center() - size / 2.0,
+    }
+}
+
+/// The field, focused on open. `↩` adds the typed label.
+fn filter_field(
+    ui: &mut egui::Ui,
+    picker: &mut LabelPicker,
+    typed: Option<&String>,
+    has: &[String],
+    width: f32,
+    outcome: &mut Option<Outcome>,
+) -> Response {
+    let field = widgets::text_entry(
+        ui,
+        egui::TextEdit::singleline(&mut picker.text)
+            .id(egui::Id::unique("label_picker_field"))
+            .hint_text("Add a label")
+            .font(theme::ui_body())
+            .desired_width(width)
+            .margin(Margin::symmetric(6, 3))
+            .min_size(Vec2::new(0.0, theme::CONTROL_H)),
+    );
+    if std::mem::take(&mut picker.focus_field) {
+        field.request_focus();
+    }
+    if field.changed() && !matches!(picker.note, Note::Failed(_)) {
+        picker.note = Note::None;
+    }
+    let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+    if enter {
+        picker.focus_field = true;
+        if let Some(label) = typed
+            && !has.contains(label)
+        {
+            *outcome = Some(Outcome::Add(label.clone()));
+        }
+    }
+    field
+}
+
+/// The hint line under the field, in `meta`, with the label in `ink`.
+fn hint_line(
+    ui: &mut egui::Ui,
+    picker: &LabelPicker,
+    typed: Option<&str>,
+    has: &[String],
+    board: &[String],
+    width: f32,
+) {
+    let p = theme::palette(ui);
+    let meta = theme::meta();
+    let strong = FontId::new(meta.size, theme::ui_strong().family);
+    let plain = |color: Color32| TextFormat {
+        font_id: meta.clone(),
+        color,
+        ..Default::default()
+    };
+    let bold = |color: Color32| TextFormat {
+        font_id: strong.clone(),
+        color,
+        ..Default::default()
+    };
+    let mut job = LayoutJob::default();
+    job.wrap.max_width = width;
+    match (&picker.note, typed) {
+        (Note::Failed(message), _) => job.append(message, 0.0, plain(p.danger)),
+        (_, Some(label)) if has.iter().any(|name| name == label) => {
+            job.append(label, 0.0, bold(p.ink));
+            job.append(" is already on this issue", 0.0, plain(p.ink_muted));
+        }
+        (_, Some(label)) => {
+            job.append("↩ adds ", 0.0, plain(p.ink_muted));
+            job.append(label, 0.0, bold(p.ink));
+            if !board.iter().any(|name| name == label) {
+                job.append(" · new on this board", 0.0, plain(p.ink_muted));
+            }
+        }
+        (Note::Added { label, file }, None) => {
+            job.append("Added ", 0.0, plain(p.ink_muted));
+            job.append(label, 0.0, bold(p.ink));
+            job.append(&format!(" to {file}"), 0.0, plain(p.ink_muted));
+        }
+        (Note::Removed { label, file }, None) => {
+            job.append("Removed ", 0.0, plain(p.ink_muted));
+            job.append(label, 0.0, bold(p.ink));
+            job.append(&format!(" from {file}"), 0.0, plain(p.ink_muted));
+        }
+        (Note::None, None) => {
+            job.append(
+                "Type a new label, or pick one below",
+                0.0,
+                plain(p.ink_muted),
+            );
+        }
+    }
+    ui.label(job);
+}
+
+/// "On this board", and on the right how many labels show.
+fn group_head(ui: &mut egui::Ui, count: usize) {
+    let ink = theme::palette(ui).ink_muted;
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new("On this board")
+                .font(theme::ui_button())
+                .color(ink),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new(count.to_string())
+                    .font(theme::meta())
+                    .color(ink),
+            );
+        });
+    });
+}
+
+/// The labels, wrapping, scrolling after five rows. Returns the ids of the
+/// pills, for [`hand_off`].
+fn label_list(
+    ui: &mut egui::Ui,
+    picker: &mut LabelPicker,
+    shown: &[&String],
+    has: &[String],
+    colors: &Labels,
+    now: f64,
+    outcome: &mut Option<Outcome>,
+) -> Vec<egui::Id> {
+    let mut pill_ids = Vec::new();
+    theme::scroll_area(
+        ui,
+        egui::ScrollArea::vertical()
+            .id_salt("label_picker_list")
+            .content_margin(theme::scroll_margin(0.0, 0.0))
+            .max_height(LIST_MAX_H)
+            .auto_shrink([false, true]),
+        |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::splat(4.0);
+                for name in shown {
+                    let flashing = picker
+                        .flash
+                        .as_ref()
+                        .is_some_and(|(label, at)| label == *name && now - at < FLASH_SECONDS);
+                    if has.contains(name) {
+                        let pill = on_pill(ui, name, flashing)
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(format!("Remove {name}"));
+                        focus_edge(ui, &pill);
+                        pill_ids.push(pill.id);
+                        if pill.clicked() {
+                            *outcome = Some(Outcome::Remove((*name).clone()));
+                        }
+                    } else {
+                        let pill = widgets::label_pill(ui, name, colors.style(name))
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(format!("Add {name}"));
+                        if flashing {
+                            ui.painter().rect_stroke(
+                                pill.rect,
+                                CornerRadius::same(theme::RADIUS_PILL),
+                                Stroke::new(1.0, theme::palette(ui).status_done),
+                                StrokeKind::Inside,
+                            );
+                        }
+                        focus_edge(ui, &pill);
+                        pill_ids.push(pill.id);
+                        if pill.clicked() {
+                            *outcome = Some(Outcome::Add((*name).clone()));
+                            picker.focus_field = true;
+                        }
+                    }
+                }
+            });
+        },
+    );
+    pill_ids
+}
+
+/// `↓` leaves the field for the first label, and typing on a focused pill
+/// goes back to the field.
+fn hand_off(ui: &egui::Ui, picker: &mut LabelPicker, field: &Response, pill_ids: &[egui::Id]) {
+    if field.has_focus()
+        && ui.input(|i| i.key_pressed(Key::ArrowDown))
+        && let Some(first) = pill_ids.first()
+    {
+        ui.memory_mut(|m| m.request_focus(*first));
+    }
+    let on_pill = ui.memory(|m| m.focused().is_some_and(|id| pill_ids.contains(&id)));
+    if on_pill {
+        let text: String = ui.input(|i| {
+            i.events
+                .iter()
+                .filter_map(|event| match event {
+                    egui::Event::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect()
+        });
+        // `space` toggles the pill: it is not typing.
+        if !text.trim().is_empty() {
+            picker.text.push_str(&text);
+            picker.focus_field = true;
+        }
+    }
+}
+
+/// Its keys, while ⌘ is held.
+fn key_hints(ui: &mut egui::Ui) {
+    if !widgets::key_hints_shown(ui.ctx()) {
+        return;
+    }
+    ui.horizontal(|ui| {
+        widgets::sliding_hints(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+            widgets::hint(ui, "↩", "add");
+            widgets::hint(ui, "↓", "pick");
+            widgets::hint(ui, "esc", "close");
+        });
+    });
+}
+
+/// Whether a press fell outside the popup and its trigger, which closes it.
+fn pressed_outside(ctx: &egui::Context, popup: Rect, trigger: Option<Rect>) -> bool {
+    ctx.input(|i| {
+        i.pointer.any_pressed()
+            && i.pointer.interact_pos().is_some_and(|pos| {
+                !popup.contains(pos) && !trigger.is_some_and(|rect| rect.contains(pos))
+            })
+    })
+}
+
+/// A label the issue already has: a `status-done` check, a `line` edge on
+/// `surface`, `ink-muted` text. Clicking it takes the label off the issue.
+/// Just added, its edge flashes `status-done`; a label just removed does too.
+fn on_pill(ui: &mut egui::Ui, name: &str, flashing: bool) -> Response {
+    let p = theme::palette(ui);
+    let text = ui
+        .painter()
+        .layout_no_wrap(name.to_string(), theme::meta(), p.ink_muted);
+    let check = 10.0;
+    let size = Vec2::new(6.0 + check + 5.0 + text.size().x + 7.0, 18.0);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), true, name)
+    });
+    if !ui.is_rect_visible(rect) {
+        return response;
+    }
+    let painter = ui.painter();
+    painter.rect(
+        rect,
+        CornerRadius::same(theme::RADIUS_PILL),
+        p.surface,
+        Stroke::new(1.0, if flashing { p.status_done } else { p.line }),
+        StrokeKind::Inside,
+    );
+    let icon = Rect::from_min_size(
+        Pos2::new(rect.min.x + 6.0, rect.center().y - check / 2.0),
+        Vec2::splat(check),
+    );
+    theme::paint_icon(painter, Icon::Check, icon, p.status_done);
+    painter.galley(
+        Pos2::new(icon.max.x + 5.0, rect.center().y - text.size().y / 2.0),
+        text,
+        p.ink_muted,
+    );
+    response
+}
+
+/// The 2px `focus` ring around a pill reached with the keyboard.
+fn focus_edge(ui: &egui::Ui, response: &Response) {
+    if response.has_focus() {
+        let p = theme::palette(ui);
+        ui.painter().rect_stroke(
+            response.rect.expand(2.0),
+            CornerRadius::same(theme::RADIUS_PILL),
+            Stroke::new(2.0, p.accent),
+            StrokeKind::Outside,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_popup_centres_once_its_trigger_scrolled_away_or_went() {
+        let ctx = egui::Context::default();
+        let path = Path::new("todo/a.md");
+        let area = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let seen = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(22.0));
+        let scrolled = seen.translate(Vec2::new(0.0, 500.0));
+        let frame = |trigger: Option<Rect>| {
+            let mut found = None;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.set_clip_rect(area);
+                if let Some(rect) = trigger {
+                    set_anchor(ui, path, rect);
+                }
+                found = anchor(ui.ctx(), path);
+            });
+            output.textures_delta.clear();
+            found
+        };
+        assert_eq!(frame(Some(seen)), Some(seen));
+        assert_eq!(frame(None), Some(seen), "last frame's still counts");
+        assert_eq!(frame(None), None, "its card is gone");
+        assert_eq!(frame(Some(seen)), Some(seen));
+        frame(Some(scrolled));
+        assert_eq!(frame(Some(scrolled)), None, "scrolled away");
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0));
+        let size = Vec2::new(WIDTH, 100.0);
+        assert_eq!(position(None, size, screen), screen.center() - size / 2.0);
+    }
+}

@@ -3,9 +3,9 @@
 use egui::{Align, Color32, CornerRadius, Frame, Layout, Rect, RichText, Stroke, UiBuilder, Vec2};
 
 use super::{Dialog, Tab};
-use crate::theme;
+use crate::shell::theme;
+use crate::shell::widgets::{self, ButtonKind, field_label, help};
 use crate::titles::{Availability, Engine};
-use crate::widgets::{self, ButtonKind, field_label, help};
 
 /// Width of a row's radio.
 const RADIO_W: f32 = 14.0;

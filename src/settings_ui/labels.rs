@@ -7,8 +7,8 @@ use egui::{CornerRadius, FontId, Frame, Stroke, Vec2};
 use super::Dialog;
 use crate::domains::preferences::labels::{self, LabelColor, LabelStyle, Rgb};
 use crate::kernel::labels::{Hue, MAX_LABEL_CHARS, normalize};
-use crate::theme::{self, Icon};
-use crate::widgets::{self, ButtonKind, field_label, help};
+use crate::shell::theme::{self, Icon};
+use crate::shell::widgets::{self, ButtonKind, field_label, help};
 
 /// Tallest the label list grows before it scrolls.
 const LABEL_LIST_MAX_H: f32 = 240.0;
@@ -390,11 +390,11 @@ impl Dialog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::preferences::Preferences;
+    use crate::settings::UserConfig;
     use crate::settings_ui::{Catalog, Tab};
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;
-    use iboard::preferences::Preferences;
-    use iboard::settings::UserConfig;
     use std::path::Path;
 
     #[test]

@@ -3,8 +3,8 @@
 
 use egui::{Id, Key, Modifiers, Vec2};
 
-use crate::theme;
-use crate::widgets;
+use crate::shell::theme;
+use crate::shell::widgets;
 
 /// Which select's menu is open.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

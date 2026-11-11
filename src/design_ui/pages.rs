@@ -9,7 +9,7 @@ use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use super::{heading, muted};
 use crate::design::{self, Asset, DesignFile, DesignSystem, Token};
 use crate::format;
-use crate::theme;
+use crate::shell::theme;
 
 /// The Overview landing: identity, counts, the last change and the brief.
 pub(super) fn overview(

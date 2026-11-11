@@ -2,9 +2,10 @@
 //! platform, and the `gui` gate that keeps egui in the shell alone. `make
 //! check` proves the gate with `cargo check --lib --no-default-features`.
 //!
-//! The shell is not extracted yet, so most of its files still sit at the crate
-//! root. This test is the ratchet: classify a module when it moves, and a low
-//! layer can never name a high one without turning it red.
+//! The shell sits under `src/shell/`; `main.rs`, the binaries and the panels
+//! still at the crate root are shell by the same rule. This test is the
+//! ratchet: classify a module when it moves, and a low layer can never name a
+//! high one without turning it red.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -70,23 +71,12 @@ const DOMAINS: &[&str] = &[
 
 /// What names every domain, and the only layer allowed to draw or use egui.
 const SHELL: &[&str] = &[
-    "app",
-    "assets",
     "bin",
     "design_ui",
-    "dialog",
-    "groups_ui",
-    "instance",
-    "label_picker",
     "main",
-    "menu",
     "pasteboard",
-    "project_menu",
-    "recents",
     "settings_ui",
     "shell",
-    "theme",
-    "widgets",
 ];
 
 const EGUI: &[&str] = &["egui::", "egui_", "eframe::", "use egui", "use eframe"];

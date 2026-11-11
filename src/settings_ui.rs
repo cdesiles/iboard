@@ -21,14 +21,14 @@ use std::collections::{BTreeSet, HashMap};
 use egui::{Key, Modifiers, Vec2};
 
 use crate::agent::{AgentConfig, BuildTimeout};
+use crate::domains::preferences::labels::{self as label_config, LabelColor, Labels};
 use crate::general::Appearance;
 use crate::job;
-use crate::theme;
+use crate::preferences::Preferences;
+use crate::shell::theme;
+use crate::shell::widgets::{self, FooterClick};
 use crate::titles::{Availability, Engine};
-use crate::widgets::{self, FooterClick};
 pub use catalog::Catalog;
-use iboard::domains::preferences::labels::{self as label_config, LabelColor, Labels};
-use iboard::preferences::Preferences;
 use select_menu::SelectMenu;
 
 /// What the dialog asks of the app after a frame.
@@ -61,7 +61,7 @@ struct Edits {
     confirm_delete: bool,
     appearance: Appearance,
     auto: bool,
-    notifications: iboard::notifications::Prefs,
+    notifications: crate::notifications::Prefs,
     label_rows: Vec<(String, String)>,
     stand_out: BTreeSet<String>,
     colourless: BTreeSet<String>,
@@ -92,7 +92,7 @@ pub struct Dialog {
     /// Settings › General: reload from disk and save edits as you type.
     pub auto: bool,
     /// Settings › General: whether a Doing issue opens its agent log.
-    pub notifications: iboard::notifications::Prefs,
+    pub notifications: crate::notifications::Prefs,
     /// Settings › Labels: every label and its `#rrggbb` colour. Empty: a
     /// preset's palette colour, or none.
     pub label_rows: Vec<(String, String)>,

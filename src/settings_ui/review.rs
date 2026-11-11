@@ -7,8 +7,8 @@ use super::select_menu::Menu;
 use super::{Catalog, Dialog};
 use crate::agent::{BuildTimeout, Detected, MAX_AGENTS, Models, ReviewMode, Tool};
 use crate::format::display_path;
-use crate::theme::{self, Icon};
-use crate::widgets::{
+use crate::shell::theme::{self, Icon};
+use crate::shell::widgets::{
     self, ButtonKind, MenuOption, field_label, help, menu_note, menu_separator, text_field,
 };
 

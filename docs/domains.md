@@ -79,7 +79,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `src/domains/insights/` (done) |
 | **design** | `DesignSystem`, `Token`, `Theme`, the `Catalog` and its pages, components, assets, CSS, Rust tokens, scaffold and validation | `src/domains/design/` (done); `design_ui` stays shell; `design/` on disk stays the shared format |
 | **preferences** | `Preferences`, `UserConfig`, `Section`, appearance, delete confirmation, notifications, label colours and presets, splits, filter suggestions, the idesign switch | `settings`, `preferences`, `general`, `notifications`, `domains/preferences/labels` → `src/domains/preferences/` (016) |
-| **shell** | `App`, screen, frame, dialog and widget vocabulary, `Theme`, `Intent`, `Action`, the keymap, `CardFacts` and the other view models | `app/*`, `theme`, `widgets`, `menu`, `instance`, `recents`, `project_menu`, `groups_ui`, `label_picker`, `dialog`, `assets` → `src/shell/` (017); `settings_ui`, `design_ui` and `pasteboard` are shell by the same rule |
+| **shell** | `App`, screen, frame, dialog and widget vocabulary, `Theme`, `Intent`, `Action`, the keymap, `CardFacts` and the other view models | `src/shell/` (done); `settings_ui`, `design_ui` and `pasteboard` stay at the crate root and are shell by the same rule |
 | **platform** | `Job`/`Cancel`, `Process`, `Git`/`Batch`, `File` and atomic writes, the markdown structure, paths/times/numbers formatting | `src/platform/` (done) |
 
 ## Domain edges

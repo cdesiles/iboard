@@ -9,7 +9,7 @@
 //! idesign show                          # the default summary
 //! idesign list                          # one line per component
 //! idesign tokens                        # every token, per section
-//! idesign tokens --rust                 # rewrite src/theme/tokens.rs
+//! idesign tokens --rust                 # rewrite src/shell/theme/tokens.rs
 //! idesign validate                      # fatal errors and warnings
 //! idesign add-component NAME [PATH]     # scaffold components/NAME
 //! idesign import PACKAGE [PATH]         # Open Design package -> design/
@@ -355,7 +355,7 @@ fn tokens(system: &DesignSystem) {
     }
 }
 
-/// Rewrite the committed Rust tokens, by default at `<project>/src/theme/tokens.rs`.
+/// Rewrite the committed Rust tokens, by default at `<project>/src/shell/theme/tokens.rs`.
 fn rust_tokens(system: &DesignSystem, flags: &Flags) -> Result<(), Failure> {
     let path = match &flags.out {
         Some(out) => PathBuf::from(out),
@@ -363,7 +363,7 @@ fn rust_tokens(system: &DesignSystem, flags: &Flags) -> Result<(), Failure> {
             .root
             .parent()
             .ok_or_else(|| "the design system has no project folder".to_string())?
-            .join("src/theme/tokens.rs"),
+            .join("src/shell/theme/tokens.rs"),
     };
     design::rust_tokens::write(system, &path)?;
     println!("{}", path.display());
@@ -428,9 +428,9 @@ fn print_help() {
          PATH defaults to the current directory; parent folders are searched for\n\
          a design/ or design-system.json. COMMAND defaults to show.\n\
          \n\
-         COMMANDS:\n    show             Summary of the system (default)\n    list             One line per component\n    tokens           Every token, per section; --rust rewrites src/theme/tokens.rs\n    validate         Fatal errors and warnings (exit 1 on error)\n    add-component    Scaffold components/NAME with a README and a preview\n    import           Turn an Open Design package into design/\n    catalog          Write a live, interactive catalog page of the system\n    preview          Render a component preview to a PNG\n    render           Render any HTML file to a PNG\n\
+         COMMANDS:\n    show             Summary of the system (default)\n    list             One line per component\n    tokens           Every token, per section; --rust rewrites src/shell/theme/tokens.rs\n    validate         Fatal errors and warnings (exit 1 on error)\n    add-component    Scaffold components/NAME with a README and a preview\n    import           Turn an Open Design package into design/\n    catalog          Write a live, interactive catalog page of the system\n    preview          Render a component preview to a PNG\n    render           Render any HTML file to a PNG\n\
          \n\
-         OPTIONS:\n    --group G        The component group for add-component (default Components)\n    --intent TEXT    One line of intent for the README\n    --into DIR       Where import writes the design system (default PATH/design)\n    --out FILE       Where preview writes the PNG, catalog the page, or tokens.rs\n    --theme NAME     The token theme to apply (default light)\n    --view           Open the catalog in a webview window (catalog only)\n    --browser        Open the egui panel instead of the live catalog\n    --rust           Rewrite src/theme/tokens.rs from the tokens (tokens only)\n    --width N        Render width in points (default {width})\n    --height N       Render height in points (default {height})\n    -h, --help       Print this help\n    -V, --version    Print the version",
+         OPTIONS:\n    --group G        The component group for add-component (default Components)\n    --intent TEXT    One line of intent for the README\n    --into DIR       Where import writes the design system (default PATH/design)\n    --out FILE       Where preview writes the PNG, catalog the page, or tokens.rs\n    --theme NAME     The token theme to apply (default light)\n    --view           Open the catalog in a webview window (catalog only)\n    --browser        Open the egui panel instead of the live catalog\n    --rust           Rewrite src/shell/theme/tokens.rs from the tokens (tokens only)\n    --width N        Render width in points (default {width})\n    --height N       Render height in points (default {height})\n    -h, --help       Print this help\n    -V, --version    Print the version",
         name = env!("CARGO_BIN_NAME"),
         version = env!("CARGO_PKG_VERSION"),
         width = DEFAULT_WIDTH,
@@ -509,7 +509,8 @@ impl eframe::App for IDesignApp {
     /// avoids it. Nothing is buffered: each change is written when it is made.
     #[cfg(target_os = "macos")]
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if iboard::menu::take_quit_request() || ctx.input(|i| i.viewport().close_requested()) {
+        if iboard::shell::menu::take_quit_request() || ctx.input(|i| i.viewport().close_requested())
+        {
             iboard::process::stop_all();
             std::process::exit(0);
         }
@@ -549,21 +550,21 @@ fn run_gui(start: PathBuf) -> ExitCode {
         "idesign",
         options,
         Box::new(move |cc| {
-            iboard::theme::install(&cc.egui_ctx);
+            iboard::shell::theme::install(&cc.egui_ctx);
             let file = iboard::settings::config_file();
             let mut config = iboard::settings::UserConfig::load(file.as_deref());
             let appearance = config
                 .section::<iboard::general::AppearanceSection>("appearance")
                 .appearance()
                 .0;
-            iboard::theme::apply(&cc.egui_ctx, appearance);
+            iboard::shell::theme::apply(&cc.egui_ctx, appearance);
             egui_extras::install_image_loaders(&cc.egui_ctx);
             #[cfg(target_os = "macos")]
             {
                 // The same Touch Bar-safe menu the board installs; its Quit item
                 // routes back through `IDesignApp::logic`.
-                iboard::menu::set_context(cc.egui_ctx.clone());
-                iboard::menu::install(
+                iboard::shell::menu::set_context(cc.egui_ctx.clone());
+                iboard::shell::menu::install(
                     "idesign",
                     "Browse, create and render a project's design system",
                     false,
@@ -704,7 +705,7 @@ mod tests {
         };
 
         let ctx = egui::Context::default();
-        iboard::theme::install(&ctx);
+        iboard::shell::theme::install(&ctx);
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,

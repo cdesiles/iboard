@@ -63,7 +63,7 @@ ifneq ($(SWIFT_FORMAT),)
 	$(SWIFT_FORMAT) lint --strict macos/*.swift
 endif
 
-tokens: ## Regenerate src/theme/tokens.rs from design/tokens.json
+tokens: ## Regenerate src/shell/theme/tokens.rs from design/tokens.json
 	cargo run --bin idesign -- tokens --rust
 
 fmt: ## Format code in place
