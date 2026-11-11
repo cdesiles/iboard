@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use crate::agenda::AgendaDays;
+use super::agenda::AgendaDays;
 use crate::git::{self, Batch};
 use crate::job::Cancel;
 pub use cycle::{Cycle, Cycles, span};

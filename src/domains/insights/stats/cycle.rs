@@ -1,19 +1,19 @@
 //! Cycle time: how long an issue took, from entering `doing/` to entering
 //! `done/`, as the board's file moves in git tell it.
 //!
-//! A board that skips `doing/` starts at the issue's first build run in
-//! `.builds/` or its first commit, and one kept out of git ends at the commit
-//! whose `closes <file>.md` line closed it. All follow the issue's slug, so a
-//! renumbered or moved file stays the same issue.
+//! A board that skips `doing/` starts at the issue's first commit, and one
+//! kept out of git ends at the commit whose `closes <file>.md` line closed it.
+//! All follow the issue's slug, so a renumbered or moved file stays the same
+//! issue.
 
 use std::collections::HashMap;
 use std::path::Path;
 
-use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
+use chrono::{DateTime, FixedOffset};
 
 use super::PAGE;
-use crate::discovery::ColumnKind;
-use crate::{build_log, git, reviews};
+use crate::domains::board::{discovery::ColumnKind, priority};
+use crate::git;
 
 /// One issue closed on the page, and how long it took.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,20 +87,13 @@ pub(super) fn collect(dir: &Path, root: &Path, newest: &str) -> Result<Cycles, S
     let mut seen = Vec::new();
     let mut cycles = Cycles::default();
     for (short, closed, issue) in ends {
-        let slug = reviews::slug(Path::new(&issue));
+        let slug = priority::slug(Path::new(&issue));
         if seen.contains(&slug) {
             continue;
         }
         seen.push(slug.clone());
         let moved = moves.get(&slug);
-        let started = moved
-            .and_then(|m| m.doing.as_ref().map(|at| at.date))
-            .or_else(|| {
-                [first_run(root, &issue), moved.and_then(|m| m.added)]
-                    .into_iter()
-                    .flatten()
-                    .min()
-            });
+        let started = moved.and_then(|m| m.doing.as_ref().map(|at| at.date).or(m.added));
         let ended = moved
             .and_then(|m| m.done.as_ref().map(|at| at.date))
             .unwrap_or(closed);
@@ -193,7 +186,7 @@ fn board_moves(log: &str) -> HashMap<String, Moves> {
             && !line.split('/').any(|part| part.starts_with('.'))
         {
             let file = line.rsplit('/').next().unwrap_or(line).to_string();
-            let moved = moves.entry(reviews::slug(Path::new(&file))).or_default();
+            let moved = moves.entry(priority::slug(Path::new(&file))).or_default();
             moved.added = Some(*date);
             let entered = Entered {
                 short: short.clone(),
@@ -209,14 +202,6 @@ fn board_moves(log: &str) -> HashMap<String, Moves> {
         }
     }
     moves
-}
-
-/// When the build agent first took the issue up, from its log's first heading.
-fn first_run(root: &Path, issue: &str) -> Option<DateTime<FixedOffset>> {
-    let text = build_log::load(&build_log::path(root, Path::new(issue)))?;
-    let heading = text.lines().find_map(|line| line.strip_prefix("── "))?;
-    let at = NaiveDateTime::parse_from_str(heading.get(..16)?, "%Y-%m-%d %H:%M").ok()?;
-    Some(Local.from_local_datetime(&at).earliest()?.fixed_offset())
 }
 
 /// `3d 4h`, `5h 12m`, `12m`.

@@ -10,7 +10,6 @@
 //! binary; `idesign` creates, browses, validates and renders a project's
 //! design system, in a terminal or in its own window.
 
-pub mod agenda;
 pub mod assets;
 pub mod design;
 #[cfg(feature = "gui")]
@@ -29,7 +28,6 @@ pub mod preferences;
 #[cfg(test)]
 mod scratch_git;
 pub mod settings;
-pub mod stats;
 #[cfg(feature = "gui")]
 pub mod theme;
 #[cfg(feature = "gui")]
@@ -43,6 +41,7 @@ pub use domains::agent::{
 pub use domains::authoring::{diff, prose, sheet};
 pub use domains::board::{commits, config, discovery, filter, history, labels, priority, trash};
 pub use domains::delivery as release;
+pub use domains::insights::{agenda, stats};
 pub use domains::workspace;
 pub use kernel::issue;
 pub use platform::{files, format, git, job, markdown, process};

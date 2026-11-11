@@ -160,9 +160,7 @@ pub fn content_hash(text: &str) -> String {
 
 /// The key an issue's sidecar goes by: `003-split.md` → `split`.
 pub fn slug(issue: &Path) -> String {
-    let name = files::file_name(issue);
-    let name = priority::strip_priority(&name);
-    name.strip_suffix(".md").unwrap_or(name).to_string()
+    priority::slug(issue)
 }
 
 fn sidecar_path(root: &Path, issue: &Path) -> PathBuf {

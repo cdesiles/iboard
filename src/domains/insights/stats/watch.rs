@@ -184,8 +184,8 @@ pub fn refactor_draft(stats: &Stats, signals: &[Signal]) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{Cycle, Snapshot};
     use super::*;
-    use crate::stats::{Cycle, Snapshot};
 
     fn snapshot(short: &str, code: usize, complexity: usize, test_code: usize) -> Snapshot {
         Snapshot {

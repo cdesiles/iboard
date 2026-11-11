@@ -76,7 +76,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | **authoring** | `Sheet`, `Section`, checklist progress, word count, `Prose`/`Block`, `Diff`/`File`/`Hunk`/`Line`; the draft and parked notes of `new_issue` | `src/domains/authoring/` (done); `new_issue` is still at the root |
 | **workspace** | `Workspace`, `Group`, `WorkspaceSection`, `Order`, the group draft, a project's repo paths | `src/domains/workspace/` (done) |
 | **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, the tag, the changelog note and the push | `src/domains/delivery/` (done) |
-| **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `stats/`, `agenda` → `src/domains/insights/` (014) |
+| **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `src/domains/insights/` (done) |
 | **design** | `DesignSystem`, `Token`, `Theme`, the `Catalog` and its pages, components, assets, CSS, Rust tokens, scaffold and validation | `design/` → `src/domains/design/` (015); `design_ui` stays shell; `design/` on disk stays the shared format |
 | **preferences** | `Preferences`, `UserConfig`, `Section`, appearance, delete confirmation, notifications, label colours and presets, splits, filter suggestions, the idesign switch | `settings`, `preferences`, `general`, `notifications`, `domains/preferences/labels` → `src/domains/preferences/` (016) |
 | **shell** | `App`, screen, frame, dialog and widget vocabulary, `Theme`, `Intent`, `Action`, the keymap, `CardFacts` and the other view models | `app/*`, `theme`, `widgets`, `menu`, `instance`, `recents`, `project_menu`, `groups_ui`, `label_picker`, `dialog`, `assets` → `src/shell/` (017); `settings_ui`, `design_ui` and `pasteboard` are shell by the same rule |
@@ -108,7 +108,6 @@ criteria are the source of truth for the fix.
 | Leak | Where | Fixed by |
 | --- | --- | --- |
 | Board enriches `Issue` with the Agent's build log (`built_in`) and git's done date (`done_at`) | `domains/board/discovery.rs`, `kernel/issue.rs` | 018 |
-| Insights starts a cycle from the Agent's `.builds/` log and `.reviews/` sidecars | `src/stats/cycle.rs` | 014, which keys cycles on Board history and git alone |
 | Design generates the `label-*` tokens from Preferences' `Hue` | `src/design/rust_tokens.rs` | 015; the palette order is shared vocabulary, so it moves to the kernel |
 | Workspace edits the user configuration itself (`settings::edit`) | `src/domains/workspace/config.rs` | 016, where Workspace hands its `[[workspace.group]]` section to Preferences |
 | Preferences holds the XDG path helpers (`home`, `cache_dir`, `dir_from_env`) that Agent, Board, Design and Workspace call | `src/settings.rs` | 016, which keeps only config I/O in Preferences and moves the helpers to platform (`files`) |

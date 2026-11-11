@@ -252,10 +252,10 @@ pub(super) fn read(
 
 #[cfg(test)]
 mod tests {
+    use super::super::{Measures, Need, Source};
     use super::*;
     use crate::scratch_git::{git, git_env};
     use crate::settings;
-    use crate::stats::{Measures, Need, Source};
     use std::sync::Arc;
 
     fn repo() -> tempfile::TempDir {
@@ -376,7 +376,7 @@ mod tests {
         let dir = dir.path();
         commit(dir, "2026-06-01");
         git(dir, &["tag", "v0.1.0"]);
-        for at in 0..crate::stats::PAGE {
+        for at in 0..super::super::PAGE {
             commit(dir, &format!("2026-07-{:02}", at % 28 + 1));
         }
         let found = releases(dir, None);

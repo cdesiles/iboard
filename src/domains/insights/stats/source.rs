@@ -16,7 +16,7 @@ use super::{
     Blobs, Cycles, FileStat, PAGE, Progress, Releases, STOPPED, Snapshot, Stats, cycle, files_at,
     release,
 };
-use crate::agenda::{self, AgendaDays, Repo};
+use crate::domains::insights::agenda::{self, AgendaDays, Repo};
 use crate::files;
 use crate::git::{self, Batch};
 use crate::job::Cancel;

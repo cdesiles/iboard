@@ -4,15 +4,15 @@
 
 use std::collections::BTreeMap;
 
-use crate::agenda::{self, Range};
 use crate::agent::{self, AgentConfig, BuildTimeout};
 use crate::domains::delivery::{ReleaseChoices, ReleaseSection};
+use crate::domains::insights::agenda::{self, Range};
+use crate::domains::insights::stats::{ReleasePrefs, ReleasePrefsSection};
 use crate::domains::preferences::labels::{self, Labels};
 use crate::filter;
 use crate::general::{self, Appearance};
 use crate::notifications;
 use crate::settings::{Section, UserConfig};
-use crate::stats::{ReleasePrefs, ReleasePrefsSection};
 use crate::titles::{self, Engine};
 
 const SPLITS: &str = "splits";

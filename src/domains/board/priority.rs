@@ -28,6 +28,13 @@ pub fn strip_priority(name: &str) -> &str {
     }
 }
 
+/// The key an issue goes by across its moves: `003-split.md` → `split`.
+pub fn slug(issue: &Path) -> String {
+    let name = files::file_name(issue);
+    let name = strip_priority(&name);
+    name.strip_suffix(".md").unwrap_or(name).to_string()
+}
+
 /// The name an issue takes when moved from one folder into another: entering
 /// Ready numbers it after the last issue there, leaving Ready drops the
 /// number. Other moves keep the name.
@@ -272,6 +279,12 @@ mod tests {
         assert_eq!(order("b d", Some("b")), paths("a b d c"));
         assert_eq!(order("c d", Some("c")), paths("a b c d"));
         assert_eq!(order("a", Some("z")), paths("b c d a"));
+    }
+
+    #[test]
+    fn an_issue_keeps_its_slug_across_a_rename() {
+        assert_eq!(slug(Path::new("doing/003-split.md")), "split");
+        assert_eq!(slug(Path::new("a.md")), "a");
     }
 
     #[test]
