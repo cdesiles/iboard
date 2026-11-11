@@ -1,16 +1,8 @@
 //! What the reader sheet says about an issue beyond its text: checklist
 //! progress, word count, and which standard sections are still missing.
 
-use crate::labels;
+use crate::kernel::labels;
 use crate::markdown;
-
-/// The sections the reader asks for when `[reader] sections` is not set.
-pub const DEFAULT_SECTIONS: [&str; 4] = [
-    "Context",
-    "Acceptance criteria",
-    "Out of scope",
-    "Open questions",
-];
 
 /// `(ticked, total)` task-list items (`- [x]`, `* [ ]`, `1. [ ]`, `1) [ ]`), outside
 /// fenced code blocks.
@@ -144,7 +136,10 @@ mod tests {
     }
 
     fn defaults() -> Vec<String> {
-        DEFAULT_SECTIONS.iter().map(|s| s.to_string()).collect()
+        crate::kernel::sections::DEFAULT_SECTIONS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     #[test]

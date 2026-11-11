@@ -15,7 +15,6 @@ pub mod assets;
 pub mod design;
 #[cfg(feature = "gui")]
 pub mod design_ui;
-pub mod diff;
 pub mod domains;
 pub mod files;
 pub mod format;
@@ -32,12 +31,10 @@ pub mod notifications;
 pub mod pasteboard;
 pub mod preferences;
 pub mod process;
-pub mod prose;
 pub mod release;
 #[cfg(test)]
 mod scratch_git;
 pub mod settings;
-pub mod sheet;
 pub mod stats;
 #[cfg(feature = "gui")]
 pub mod theme;
@@ -50,5 +47,6 @@ pub use domains::agent::{
     runtime as agent,
     workflows::{plan, prompts, refinement, titles},
 };
+pub use domains::authoring::{diff, prose, sheet};
 pub use domains::board::{commits, config, discovery, filter, history, labels, priority, trash};
 pub use kernel::issue;

@@ -6,3 +6,4 @@
 pub mod board;
 pub mod issue;
 pub mod labels;
+pub mod sections;

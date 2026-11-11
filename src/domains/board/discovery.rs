@@ -280,7 +280,7 @@ pub(crate) fn reader_sections(config: Option<&Config>) -> Vec<String> {
         .and_then(|c| c.reader.as_ref())
         .and_then(|r| r.sections.clone())
         .unwrap_or_else(|| {
-            crate::sheet::DEFAULT_SECTIONS
+            crate::kernel::sections::DEFAULT_SECTIONS
                 .iter()
                 .map(|s| s.to_string())
                 .collect()

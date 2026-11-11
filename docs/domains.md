@@ -73,7 +73,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | --- | --- | --- |
 | **board** | `Board`, `Column`, `ColumnKind`, `Repo`, discovery and `Located`, priority, trash, filter, commits, history, the project `iboard.toml` | `src/domains/board/` (done) |
 | **agent** | `Agent`, `AgentConfig`, `ReviewMode`, `Verdict`, `Report`, `Leash`, `Challenge`, `Refinement`, the build queue, Ask, `Plan`, `Draft`, `Engine`, prompts, `BuildLog`, review sidecars | `src/domains/agent/{runtime,workflows,artifacts}` (done) |
-| **authoring** | `Sheet`, `Section`, checklist progress, word count, `Prose`/`Block`, `Diff`/`File`/`Hunk`/`Line`; the draft and parked notes of `new_issue` | `sheet`, `prose`, `diff` → `src/domains/authoring/` (011); `new_issue` is still at the root |
+| **authoring** | `Sheet`, `Section`, checklist progress, word count, `Prose`/`Block`, `Diff`/`File`/`Hunk`/`Line`; the draft and parked notes of `new_issue` | `src/domains/authoring/` (done); `new_issue` is still at the root |
 | **workspace** | `Workspace`, `Group`, `WorkspaceSection`, `Order`, the group draft, a project's repo paths | `workspace/` → `src/domains/workspace/` (012) |
 | **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, the tag, the changelog note and the push | `release` → `src/domains/delivery/` (013) |
 | **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `stats/`, `agenda` → `src/domains/insights/` (014) |
@@ -108,8 +108,6 @@ criteria are the source of truth for the fix.
 | Leak | Where | Fixed by |
 | --- | --- | --- |
 | Board enriches `Issue` with the Agent's build log (`built_in`) and git's done date (`done_at`) | `domains/board/discovery.rs`, `kernel/issue.rs` | 018 |
-| Board resolves the reader's four default sections from Authoring's `sheet::DEFAULT_SECTIONS` | `domains/board/discovery.rs` | 011, while it moves `sheet`; the standard section names belong to the kernel |
-| Authoring parses title labels through Board's `crate::labels` alias instead of `kernel::labels` | `src/sheet.rs` | 011, which repoints the import at the kernel |
 | Insights starts a cycle from the Agent's `.builds/` log and `.reviews/` sidecars | `src/stats/cycle.rs` | 014, which keys cycles on Board history and git alone |
 | Design generates the `label-*` tokens from Preferences' `Hue` | `src/design/rust_tokens.rs` | 015; the palette order is shared vocabulary, so it moves to the kernel |
 | Workspace edits the user configuration itself (`settings::edit`) | `src/workspace/config.rs` | 016, where Workspace hands its `[[workspace.group]]` section to Preferences |
