@@ -11,6 +11,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use super::service::{Answer, Message, Part, Question, Service, Session, Status, now};
+use super::{Billing, Tokens, Usage, usage};
 use crate::domains::agent::artifacts::reviews;
 use crate::platform::job::Cancel;
 use crate::platform::process;
@@ -62,10 +63,7 @@ impl Service for Claude {
         )?;
         let listed: Vec<Value> =
             serde_json::from_str(&stdout).map_err(|err| format!("claude agents: {err}"))?;
-        Ok(listed
-            .iter()
-            .filter_map(|session| session_of(session, &project))
-            .collect())
+        Ok(sessions_of(&listed, &project, config_dir().as_deref()))
     }
 
     fn read(&self, project: &Path, session: &str) -> Result<Vec<Message>, String> {
@@ -170,6 +168,19 @@ fn short_id(output: &str) -> Option<String> {
     })
 }
 
+/// The iboard sessions in what `agents --json` listed, with what the finished
+/// ones spent in their transcript.
+fn sessions_of(listed: &[Value], project: &Path, config: Option<&Path>) -> Vec<Session> {
+    listed
+        .iter()
+        .filter_map(|session| {
+            let mut found = session_of(session, project)?;
+            found.usage = config.and_then(|config| usage_of(config, &found.id));
+            Some(found)
+        })
+        .collect()
+}
+
 /// One background session of `project`, if that is what `session` is.
 fn session_of(session: &Value, project: &Path) -> Option<Session> {
     if session["kind"].as_str() != Some("background") {
@@ -207,6 +218,99 @@ fn status_of(session: &Value) -> Status {
     }
 }
 
+/// What `session` spent, from its job's transcript: its `cost-state` when the
+/// run left one, else its assistant records.
+fn usage_of(config: &Path, session: &str) -> Option<Usage> {
+    let state = read_json(&config.join("jobs").join(session).join("state.json"));
+    let path = transcript_path(config, state.as_ref())?;
+    let text = std::fs::read_to_string(path).ok()?;
+    spend_of(&text)
+}
+
+/// What a background transcript spent. A finished one carries a `cost-state`
+/// record with its totals; the assistant records are the fallback.
+fn spend_of(text: &str) -> Option<Usage> {
+    let mut seen = HashSet::new();
+    let mut messages = Tokens::default();
+    let mut model = None;
+    let mut said_anything = false;
+    let mut totals = None;
+    for (at, line) in text.lines().enumerate() {
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        match event["type"].as_str() {
+            Some("assistant") => {
+                let message = &event["message"];
+                let id = event["uuid"]
+                    .as_str()
+                    .or_else(|| message["id"].as_str())
+                    .map_or_else(|| format!("line-{at}"), str::to_string);
+                if !seen.insert(id) {
+                    continue;
+                }
+                let usage = &message["usage"];
+                if usage.is_null() {
+                    continue;
+                }
+                said_anything = true;
+                messages.input += usage["input_tokens"].as_u64().unwrap_or(0);
+                messages.output += usage["output_tokens"].as_u64().unwrap_or(0);
+                messages.reasoning += usage["output_tokens_details"]["thinking_tokens"]
+                    .as_u64()
+                    .unwrap_or(0);
+                messages.cache_read += usage["cache_read_input_tokens"].as_u64().unwrap_or(0);
+                messages.cache_write += usage["cache_creation_input_tokens"].as_u64().unwrap_or(0);
+                let said = usage::text(&message["model"]);
+                if said.as_deref() != Some("<synthetic>") {
+                    model = said.or(model);
+                }
+            }
+            Some("cost-state") => {
+                let (tokens, main) = model_usage_of(&event["modelUsage"]);
+                let cost = event["totalCostUSD"].as_f64();
+                if tokens != Tokens::default() || cost.is_some() {
+                    totals = Some((tokens, main, cost));
+                }
+            }
+            _ => {}
+        }
+    }
+    let (tokens, model, cost) = match totals {
+        Some((tokens, main, cost)) => (tokens, main.or(model), cost),
+        None if said_anything => (messages, model, None),
+        None => return None,
+    };
+    Some(Usage {
+        cost,
+        tokens,
+        provider: Some("claude".to_string()),
+        model,
+        billing: Billing::Subscription,
+    })
+}
+
+/// The tokens and main model in a `cost-state`'s `modelUsage`.
+fn model_usage_of(value: &Value) -> (Tokens, Option<String>) {
+    let Some(models) = value.as_object() else {
+        return (Tokens::default(), None);
+    };
+    let mut tokens = Tokens::default();
+    let mut main: Option<(&str, u64)> = None;
+    for (name, usage) in models {
+        tokens.input += usage["inputTokens"].as_u64().unwrap_or(0);
+        tokens.output += usage["outputTokens"].as_u64().unwrap_or(0);
+        tokens.reasoning += usage["thinkingTokens"].as_u64().unwrap_or(0);
+        tokens.cache_read += usage["cacheReadInputTokens"].as_u64().unwrap_or(0);
+        tokens.cache_write += usage["cacheCreationInputTokens"].as_u64().unwrap_or(0);
+        let output = usage["outputTokens"].as_u64().unwrap_or(0);
+        if main.is_none_or(|(_, best)| output > best) {
+            main = Some((name, output));
+        }
+    }
+    (tokens, main.map(|(name, _)| name.to_string()))
+}
+
 /// Claude Code's configuration folder, where its jobs and transcripts live.
 fn config_dir() -> Option<PathBuf> {
     crate::platform::files::dir_from_env("CLAUDE_CONFIG_DIR", ".claude")
@@ -219,18 +323,25 @@ fn read_json(path: &Path) -> Option<Value> {
 
 /// The messages of a background job's transcript, when it can be found.
 fn transcript(config: &Path, state: Option<&Value>) -> Option<Vec<Message>> {
+    let text = std::fs::read_to_string(transcript_path(config, state)?).ok()?;
+    Some(messages_of(&text))
+}
+
+/// Where a background job's transcript lives: the worktree it moved to, or
+/// the folder it started in.
+fn transcript_path(config: &Path, state: Option<&Value>) -> Option<PathBuf> {
     let state = state?;
     let session = state["sessionId"].as_str()?;
     let cwd = state["worktreePath"]
         .as_str()
         .or_else(|| state["cwd"].as_str())?;
     let folder = cwd.replace('/', "-");
-    let path = config
-        .join("projects")
-        .join(folder)
-        .join(format!("{session}.jsonl"));
-    let text = std::fs::read_to_string(path).ok()?;
-    Some(messages_of(&text))
+    Some(
+        config
+            .join("projects")
+            .join(folder)
+            .join(format!("{session}.jsonl")),
+    )
 }
 
 /// The assistant messages of one transcript file, oldest first.
@@ -433,6 +544,104 @@ mod tests {
         assert_eq!(messages[0].id, "m1");
         assert!(matches!(&messages[0].parts[1], Part::Tool { name, .. } if name == "Read"));
         assert_eq!(messages[1].parts, [Part::Text("Done.".into())]);
+    }
+
+    #[test]
+    fn an_assistant_transcript_adds_up_what_a_session_spent() {
+        let text = concat!(
+            r#"{"type":"assistant","uuid":"m1","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":30,"cache_creation_input_tokens":40,"output_tokens_details":{"thinking_tokens":5}}}}"#,
+            "\n",
+            r#"{"type":"assistant","uuid":"m1","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":30,"cache_creation_input_tokens":40,"output_tokens_details":{"thinking_tokens":5}}}}"#,
+            "\n",
+            r#"{"type":"assistant","uuid":"m2","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1,"output_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4,"output_tokens_details":{"thinking_tokens":6}}}}"#,
+            "\n",
+        );
+        let usage = spend_of(text).expect("usage");
+        assert_eq!(usage.cost, None, "an assistant record has no cost");
+        assert_eq!(
+            usage.tokens,
+            Tokens {
+                input: 11,
+                output: 22,
+                reasoning: 11,
+                cache_read: 33,
+                cache_write: 44,
+            }
+        );
+        assert_eq!(usage.provider.as_deref(), Some("claude"));
+        assert_eq!(usage.model.as_deref(), Some("claude-sonnet-4-5"));
+        assert_eq!(usage.billing, Billing::Subscription);
+    }
+
+    #[test]
+    fn a_cost_state_gives_the_whole_runs_cost_and_main_model() {
+        let text = concat!(
+            r#"{"type":"assistant","uuid":"m1","message":{"model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":2}}}"#,
+            "\n",
+            r#"{"type":"cost-state","totalCostUSD":0.42,"modelUsage":{"claude-haiku-5-5":{"inputTokens":100,"outputTokens":10,"thinkingTokens":1,"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"costUSD":0.1},"claude-opus-5-5":{"inputTokens":20,"outputTokens":200,"thinkingTokens":30,"cacheReadInputTokens":400,"cacheCreationInputTokens":50,"costUSD":0.32}}}"#,
+            "\n",
+        );
+        let usage = spend_of(text).expect("usage");
+        assert_eq!(usage.cost, Some(0.42));
+        assert_eq!(
+            usage.tokens,
+            Tokens {
+                input: 120,
+                output: 210,
+                reasoning: 31,
+                cache_read: 400,
+                cache_write: 50,
+            },
+            "a cost-state holds the whole tree, subagents included"
+        );
+        assert_eq!(usage.model.as_deref(), Some("claude-opus-5-5"));
+    }
+
+    #[test]
+    fn a_sessions_usage_is_read_from_its_job_transcript() {
+        let config = tempfile::tempdir().unwrap();
+        let id = "bg000001";
+        let session = format!("{id}-0000-0000-0000-000000000000");
+        let job = config.path().join("jobs").join(id);
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(
+            job.join("state.json"),
+            json!({ "sessionId": session, "cwd": "/code/app" }).to_string(),
+        )
+        .unwrap();
+        let transcript = config
+            .path()
+            .join("projects/-code-app")
+            .join(format!("{session}.jsonl"));
+        std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+        std::fs::write(
+            &transcript,
+            r#"{"type":"assistant","uuid":"m1","message":{"model":"claude-opus-5-5","usage":{"input_tokens":7,"output_tokens":8}}}"#,
+        )
+        .unwrap();
+
+        let listed = [json!({
+            "id": id, "cwd": "/code/app", "kind": "background",
+            "startedAt": 1_000, "name": "iboard-build", "state": "done"
+        })];
+        let sessions = sessions_of(&listed, Path::new("/code/app"), Some(config.path()));
+        assert_eq!(sessions.len(), 1);
+        let usage = sessions[0].usage.clone().expect("usage");
+        assert_eq!(usage.tokens.input, 7);
+        assert_eq!(usage.tokens.output, 8);
+        assert_eq!(
+            sessions_of(&listed, Path::new("/code/app"), None)[0].usage,
+            None,
+            "no config folder, nothing to read"
+        );
+        let entries = crate::domains::agent::artifacts::usage_log::finished(
+            &sessions,
+            Path::new("/code/app"),
+            service().key(),
+        );
+        assert_eq!(entries[0].engine, "claude");
+        assert_eq!(entries[0].provider.as_deref(), Some("claude"));
+        assert_eq!(entries[0].tokens.input, 7);
     }
 
     #[test]
