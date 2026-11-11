@@ -6,7 +6,7 @@ use std::sync::PoisonError;
 use std::time::{Duration, Instant};
 
 use super::poller::project_poller;
-use super::service::{Finished, Message, POLL, Part, Service, backoff, now};
+use super::service::{Cadence, Finished, Message, Part, Service, now};
 use super::transcript::Transcript;
 use super::{Progress, describe_tool};
 use crate::domains::agent::artifacts::build_log;
@@ -14,7 +14,14 @@ use crate::platform::job::{Cancel, Job};
 
 /// How long a session may go without writing anything before its run is
 /// given up as dead.
-const STALE: Duration = Duration::from_secs(30 * 60);
+pub(super) const STALE: Duration = Duration::from_secs(30 * 60);
+
+/// What a run waits for: its limit, and the cadence it polls the service at.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Wait {
+    pub(super) timeout: Option<Duration>,
+    pub(super) cadence: Cadence,
+}
 
 /// The last step and the last answer in `messages`.
 fn scan(messages: &[Message]) -> (Option<String>, Option<String>) {
@@ -45,12 +52,13 @@ pub(super) fn await_answer(
     project: &std::path::Path,
     session: &str,
     cancel: &Cancel,
-    timeout: Option<Duration>,
+    wait: Wait,
     progress: Option<&Progress>,
     mut transcript: Transcript,
 ) -> Result<Finished, String> {
+    let cadence = wait.cadence;
     let started = Instant::now();
-    let poller = project_poller(service, project);
+    let poller = project_poller(service, project, cadence);
     let _subscription = poller.subscribe(false);
     let mut last = String::new();
     let mut seen = 0;
@@ -61,7 +69,7 @@ pub(super) fn await_answer(
         if cancel.is_cancelled() {
             return Err("stopped watching the agent".to_string());
         }
-        if let Some(timeout) = timeout.filter(|limit| started.elapsed() >= *limit) {
+        if let Some(timeout) = wait.timeout.filter(|limit| started.elapsed() >= *limit) {
             service.interrupt(project, session);
             return Err(format!(
                 "the agent gave no answer within {}",
@@ -77,7 +85,7 @@ pub(super) fn await_answer(
                 misses += 1;
                 quiet = 0;
                 observed = None;
-                rest(cancel, backoff(misses));
+                rest(cancel, cadence.after(misses), cadence.every);
                 continue;
             }
         };
@@ -91,7 +99,7 @@ pub(super) fn await_answer(
                 Ok(Some(answer)) => return Ok(Finished { answer, usage }),
                 Ok(None) => {
                     if observed == Some(at) {
-                        rest(cancel, POLL);
+                        rest(cancel, cadence.every, cadence.every);
                         continue;
                     }
                     observed = Some(at);
@@ -99,14 +107,14 @@ pub(super) fn await_answer(
                     if quiet >= 2 {
                         return Err("the agent returned no answer".to_string());
                     }
-                    rest(cancel, POLL);
+                    rest(cancel, cadence.every, cadence.every);
                     continue;
                 }
                 Err(_) => {
                     misses += 1;
                     quiet = 0;
                     observed = None;
-                    rest(cancel, backoff(misses));
+                    rest(cancel, cadence.after(misses), cadence.every);
                     continue;
                 }
             }
@@ -129,7 +137,7 @@ pub(super) fn await_answer(
                 }
             }
         }
-        rest(cancel, POLL);
+        rest(cancel, cadence.every, cadence.every);
     }
 }
 
@@ -143,8 +151,12 @@ pub fn watch(
 ) -> Job<Result<String, String>> {
     Job::spawn(move |cancel| {
         let transcript = Transcript::resumed(&log);
+        let wait = Wait {
+            timeout: None,
+            cadence: Cadence::default(),
+        };
         let (result, usage) =
-            match await_answer(service, &project, &session, cancel, None, None, transcript) {
+            match await_answer(service, &project, &session, cancel, wait, None, transcript) {
                 Ok(finished) => (Ok(finished.answer), finished.usage),
                 Err(error) => (Err(error), None),
             };
@@ -164,15 +176,15 @@ fn minutes(timeout: Duration) -> String {
     }
 }
 
-/// Sleeps for `duration`, waking to notice a cancel.
-fn rest(cancel: &Cancel, duration: Duration) {
+/// Sleeps for `duration`, waking every `every` to notice a cancel.
+fn rest(cancel: &Cancel, duration: Duration, every: Duration) {
     let until = Instant::now() + duration;
     while !cancel.is_cancelled() {
         let left = until.saturating_duration_since(Instant::now());
         if left.is_zero() {
             break;
         }
-        std::thread::sleep(left.min(POLL));
+        std::thread::sleep(left.min(every));
     }
 }
 

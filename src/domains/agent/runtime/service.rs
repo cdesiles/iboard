@@ -12,7 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value};
 
 use super::poller::project_poller;
-use super::reply::await_answer;
+use super::reply::{Wait, await_answer};
 use super::transcript::Transcript;
 use super::{Progress, Usage};
 use crate::domains::agent::artifacts::usage_log;
@@ -26,6 +26,34 @@ const BACKOFF_MAX: Duration = Duration::from_secs(30);
 
 /// How many failed polls it takes for the wait to stop doubling.
 const TRIES: u32 = 7;
+
+/// How often the loop asks the service how a run is doing. The caller sets
+/// it, so a test plays the whole loop in milliseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Cadence {
+    /// The wait between two polls while the service answers.
+    pub(super) every: Duration,
+    /// The longest wait between two polls while it does not.
+    pub(super) cap: Duration,
+}
+
+impl Cadence {
+    /// The wait after `misses` polls in a row without an answer.
+    pub(super) fn after(&self, misses: u32) -> Duration {
+        self.every
+            .saturating_mul(1u32 << misses.min(TRIES))
+            .min(self.cap)
+    }
+}
+
+impl Default for Cadence {
+    fn default() -> Self {
+        Cadence {
+            every: POLL,
+            cap: BACKOFF_MAX,
+        }
+    }
+}
 
 /// A tool's background service: everything a build does that differs from one
 /// tool to the next. The waits, the stale and no-answer rules and the poller
@@ -341,7 +369,7 @@ impl Feed {
 /// Polls `project`'s pending forms and permission requests in the background
 /// until the job is dropped.
 pub fn follow_questions(service: &'static dyn Service, project: PathBuf) -> (Job<()>, Feed) {
-    let poller = project_poller(service, &project);
+    let poller = project_poller(service, &project, Cadence::default());
     let feed = poller.feed();
     let subscription = poller.subscribe(true);
     let job = Job::spawn(move |cancel| {
@@ -388,6 +416,17 @@ pub fn start(
     progress: Option<&Progress>,
     handle: &Handle,
 ) -> Result<Finished, String> {
+    start_with(build, cancel, progress, handle, Cadence::default())
+}
+
+/// [`start`] with a cadence the caller chose.
+pub(super) fn start_with(
+    build: &Build,
+    cancel: &Cancel,
+    progress: Option<&Progress>,
+    handle: &Handle,
+    cadence: Cadence,
+) -> Result<Finished, String> {
     let service = handle
         .service()
         .ok_or_else(|| "no background service runs this build".to_string())?;
@@ -402,7 +441,10 @@ pub fn start(
         build.project,
         &session,
         cancel,
-        build.timeout,
+        Wait {
+            timeout: build.timeout,
+            cadence,
+        },
         progress,
         Transcript::new(build.log),
     )
@@ -442,12 +484,6 @@ pub fn started(elapsed: Duration) -> Instant {
 /// Watches `session` on a thread of its own, for a run adopted after a
 /// restart: nothing to start, only an answer to wait for.
 pub use super::reply::watch;
-
-/// The wait after `misses` polls in a row without an answer.
-pub(super) fn backoff(misses: u32) -> Duration {
-    POLL.saturating_mul(1u32 << misses.min(TRIES))
-        .min(BACKOFF_MAX)
-}
 
 /// Wall-clock milliseconds, as the service counts them.
 pub(super) fn now() -> u64 {
@@ -511,9 +547,10 @@ mod tests {
 
     #[test]
     fn failed_polls_back_off_up_to_a_cap() {
-        assert_eq!(backoff(0), POLL);
-        assert_eq!(backoff(1), POLL * 2);
-        assert_eq!(backoff(2), POLL * 4);
-        assert_eq!(backoff(TRIES), BACKOFF_MAX);
+        let cadence = Cadence::default();
+        assert_eq!(cadence.after(0), POLL);
+        assert_eq!(cadence.after(1), POLL * 2);
+        assert_eq!(cadence.after(2), POLL * 4);
+        assert_eq!(cadence.after(TRIES), BACKOFF_MAX);
     }
 }

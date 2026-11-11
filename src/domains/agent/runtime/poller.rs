@@ -8,7 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use super::Usage;
-use super::service::{Feed, POLL, Service, Session, Status, backoff};
+use super::service::{Cadence, Feed, POLL, Service, Session, Status};
 use crate::domains::agent::artifacts::usage_log;
 
 /// The live pollers, so every run in a service and project shares one.
@@ -30,6 +30,7 @@ pub(super) struct Polled {
 pub(super) struct Poller {
     service: &'static dyn Service,
     project: PathBuf,
+    cadence: Cadence,
     inner: Mutex<Inner>,
 }
 
@@ -50,14 +51,18 @@ pub(super) struct Subscription {
 }
 
 /// The poller for `project` in `service`, started if no live one exists.
-pub(super) fn project_poller(service: &'static dyn Service, project: &Path) -> Arc<Poller> {
+pub(super) fn project_poller(
+    service: &'static dyn Service,
+    project: &Path,
+    cadence: Cadence,
+) -> Arc<Poller> {
     let project = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
     let key = (service.key(), project.clone());
     let mut pollers = POLLERS.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(poller) = pollers.get(&key).and_then(Weak::upgrade) {
         return poller;
     }
-    let poller = Arc::new(Poller::new(service, project));
+    let poller = Arc::new(Poller::new(service, project, cadence));
     pollers.insert(key, Arc::downgrade(&poller));
     drop(pollers);
     poller.start();
@@ -65,10 +70,11 @@ pub(super) fn project_poller(service: &'static dyn Service, project: &Path) -> A
 }
 
 impl Poller {
-    fn new(service: &'static dyn Service, project: PathBuf) -> Self {
+    fn new(service: &'static dyn Service, project: PathBuf, cadence: Cadence) -> Self {
         Self {
             service,
             project,
+            cadence,
             inner: Mutex::new(Inner {
                 sessions: 0,
                 questions: 0,
@@ -202,9 +208,9 @@ impl Poller {
                 let ok = poller.poll();
                 misses = if ok { 0 } else { misses + 1 };
                 let wait = if ok {
-                    POLL
+                    poller.cadence.every
                 } else {
-                    backoff(misses).min(WAIT_MAX)
+                    poller.cadence.after(misses).min(WAIT_MAX)
                 };
                 drop(poller);
                 if !waiting(&weak, wait) {

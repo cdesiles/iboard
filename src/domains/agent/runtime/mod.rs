@@ -948,4 +948,6 @@ pub use usage::{
 };
 
 #[cfg(test)]
+mod loop_tests;
+#[cfg(test)]
 mod tests;
