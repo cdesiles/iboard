@@ -72,7 +72,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | Domain | Vocabulary it owns | Code it owns (today → target) |
 | --- | --- | --- |
 | **board** | `Board`, `Column`, `ColumnKind`, `Repo`, discovery and `Located`, priority, trash, filter, commits, history, the project `iboard.toml` | `src/domains/board/` (done) |
-| **agent** | `Agent`, `AgentConfig`, `ReviewMode`, `Verdict`, `Report`, `Leash`, `Challenge`, `Refinement`, the build queue, Ask, `Plan`, `Draft`, `Engine`, prompts, `BuildLog`, review sidecars | `agent*`, `prompts`, `reviews`, `build_log`, `refinement`, `plan`, `titles` → `src/domains/agent/{runtime,workflows,artifacts}` (010) |
+| **agent** | `Agent`, `AgentConfig`, `ReviewMode`, `Verdict`, `Report`, `Leash`, `Challenge`, `Refinement`, the build queue, Ask, `Plan`, `Draft`, `Engine`, prompts, `BuildLog`, review sidecars | `src/domains/agent/{runtime,workflows,artifacts}` (done) |
 | **authoring** | `Sheet`, `Section`, checklist progress, word count, `Prose`/`Block`, `Diff`/`File`/`Hunk`/`Line`; the draft and parked notes of `new_issue` | `sheet`, `prose`, `diff` → `src/domains/authoring/` (011); `new_issue` is still at the root |
 | **workspace** | `Workspace`, `Group`, `WorkspaceSection`, `Order`, the group draft, a project's repo paths | `workspace/` → `src/domains/workspace/` (012) |
 | **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, the tag, the changelog note and the push | `release` → `src/domains/delivery/` (013) |

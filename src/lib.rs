@@ -11,9 +11,7 @@
 //! design system, in a terminal or in its own window.
 
 pub mod agenda;
-pub mod agent;
 pub mod assets;
-pub mod build_log;
 pub mod design;
 #[cfg(feature = "gui")]
 pub mod design_ui;
@@ -32,14 +30,10 @@ pub mod new_issue;
 pub mod notifications;
 #[cfg(all(feature = "gui", target_os = "macos"))]
 pub mod pasteboard;
-pub mod plan;
 pub mod preferences;
 pub mod process;
-pub mod prompts;
 pub mod prose;
-pub mod refinement;
 pub mod release;
-pub mod reviews;
 #[cfg(test)]
 mod scratch_git;
 pub mod settings;
@@ -47,10 +41,14 @@ pub mod sheet;
 pub mod stats;
 #[cfg(feature = "gui")]
 pub mod theme;
-pub mod titles;
 #[cfg(feature = "gui")]
 pub mod widgets;
 pub mod workspace;
 
+pub use domains::agent::{
+    artifacts::{build_log, reviews},
+    runtime as agent,
+    workflows::{plan, prompts, refinement, titles},
+};
 pub use domains::board::{commits, config, discovery, filter, history, labels, priority, trash};
 pub use kernel::issue;
