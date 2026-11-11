@@ -3,9 +3,10 @@
 
 // The shell and the domains live in the `iboard` library: this binary is only
 // the CLI and the window's lifecycle.
+use iboard::kernel::board::INIT_COLUMNS;
 use iboard::shell::instance::Request;
 use iboard::shell::{app, instance, recents};
-use iboard::{discovery, history, settings, workspace};
+use iboard::{discovery, history, onboarding, settings, workspace};
 
 use std::path::PathBuf;
 
@@ -61,11 +62,11 @@ fn main() -> eframe::Result {
 
     if init {
         // Create the layout, then carry on and open the board on it as usual.
-        match discovery::init(&start) {
+        match onboarding::init(&start) {
             Ok(located) => println!(
                 "iboard: initialized {} ({})",
                 located.root.display(),
-                discovery::INIT_COLUMNS.join(", ")
+                INIT_COLUMNS.join(", ")
             ),
             Err(err) => {
                 eprintln!("iboard: {err}");

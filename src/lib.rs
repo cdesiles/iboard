@@ -35,6 +35,7 @@ pub use domains::board::{commits, discovery, filter, history, labels, priority, 
 pub use domains::delivery as release;
 pub use domains::design;
 pub use domains::insights::{agenda, stats};
+pub use domains::onboarding;
 pub use domains::preferences::{self, general, notifications, settings};
 pub use domains::workspace;
 pub use kernel::issue;

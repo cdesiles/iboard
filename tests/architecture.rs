@@ -44,7 +44,7 @@ impl Owner {
     }
 }
 
-/// The eight domains, by the folder each owns under `src/domains/`.
+/// The domains, by the folder each owns under `src/domains/`.
 const DOMAINS: &[&str] = &[
     "agent",
     "authoring",
@@ -52,6 +52,7 @@ const DOMAINS: &[&str] = &[
     "delivery",
     "design",
     "insights",
+    "onboarding",
     "preferences",
     "workspace",
 ];
@@ -82,6 +83,7 @@ const ALIASES: &[(&str, Owner)] = &[
     ("design", Owner::Domain(Some("design"))),
     ("agenda", Owner::Domain(Some("insights"))),
     ("stats", Owner::Domain(Some("insights"))),
+    ("onboarding", Owner::Domain(Some("onboarding"))),
     ("general", Owner::Domain(Some("preferences"))),
     ("notifications", Owner::Domain(Some("preferences"))),
     ("preferences", Owner::Domain(Some("preferences"))),
@@ -120,6 +122,7 @@ const EDGES: &[(&str, &str)] = &[
     ("delivery", "board"),
     ("insights", "board"),
     ("insights", "agent"),
+    ("onboarding", "board"),
 ];
 
 const EGUI: &[&str] = &["egui::", "egui_", "eframe::", "use egui", "use eframe"];

@@ -6,5 +6,6 @@ pub mod board;
 pub mod delivery;
 pub mod design;
 pub mod insights;
+pub mod onboarding;
 pub mod preferences;
 pub mod workspace;

@@ -1,6 +1,6 @@
 # The domain map
 
-iboard is one crate behind two binaries. This page names the ten product
+iboard is one crate behind two binaries. This page names the eleven product
 domains, the vocabulary and code each one owns, and the direction the code is
 allowed to point. It is also where a ticket's topic label comes from.
 
@@ -53,7 +53,7 @@ saves them.
 | File | Section | Owner |
 | --- | --- | --- |
 | project `iboard.toml` | `root`, `columns`, `root_column_name`, `title`, `[reader] sections` | board |
-| user `iboard.toml` | `[ai]`, `[build]`, `[titles]` | agent |
+| user `iboard.toml` | `[ai]`, `[build]`, `[titles]`, `[usage]` | agent |
 | user `iboard.toml` | `[filter]` | board |
 | user `iboard.toml` | `[stats]` | insights |
 | user `iboard.toml` | `[release]` | delivery |
@@ -65,7 +65,7 @@ compatibility aliases for the binaries and the tests during the extraction. A
 domain imports from `kernel` or from the owning domain directly, never through
 another domain's alias.
 
-## The ten domains
+## The eleven domains
 
 The numbers in the last column are the extraction tickets in `issues/`.
 
@@ -77,6 +77,7 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | **workspace** | `Workspace`, `Group`, `WorkspaceSection`, `Order`, the group draft, a project's repo paths | `src/domains/workspace/` (done) |
 | **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, the tag, the changelog note and the push | `src/domains/delivery/` (done) |
 | **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `src/domains/insights/` (done) |
+| **onboarding** | the folder a board lives in: its name from the project `iboard.toml`, the standard columns it is missing, and the `init` layout that creates them | `src/domains/onboarding/` (done); the setup dialog's model lands with its ticket, the prompt itself stays shell |
 | **design** | `DesignSystem`, `Token`, `Theme`, the `Catalog` and its pages, components, assets, CSS, Rust tokens, scaffold and validation | `src/domains/design/` (done); `design_ui` stays shell; `design/` on disk stays the shared format |
 | **preferences** | `Preferences`, `UserConfig`, `Section`, appearance, delete confirmation, notifications, label colours and presets, splits, filter suggestions, the idesign switch | `src/domains/preferences/` (done); the bell stays shell |
 | **shell** | `App`, screen, frame, dialog and widget vocabulary, `Theme`, `Intent`, `Action`, the keymap, `CardFacts` and the other view models | `src/shell/` (done); `settings_ui`, `design_ui` and `pasteboard` stay at the crate root and are shell by the same rule |
@@ -96,6 +97,7 @@ composition or a read of a lower domain, never a callback upward.
 | delivery → board | `commits` is a Board read model: it says what closed an issue, not how to release |
 | insights → board | stats and the agenda read columns, issues and the dates in git |
 | insights → agent | the stats cost block reads the project's usage log to report the agents' spend |
+| onboarding → board | it creates the board folder `Located` resolves, and reads the `root` the project config names |
 
 Every domain may also name the kernel and platform, as the rule says;
 authoring and design have no domain edge of their own. Any other edge is a

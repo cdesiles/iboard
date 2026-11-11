@@ -27,6 +27,7 @@ use crate::format::{clock, display_path, relative_time};
 use crate::issue::Issue;
 use crate::job::{self, Job};
 use crate::labels;
+use crate::onboarding;
 use crate::preferences::Preferences;
 use crate::priority::ARCHIVE_DIR;
 use crate::process;
@@ -631,7 +632,7 @@ impl IboardApp {
     /// then opens it.
     fn initialise(&mut self, project: PathBuf) {
         self.uninitialised = None;
-        match discovery::init(&project) {
+        match onboarding::init(&project) {
             Ok(_) => self.open_project(project),
             Err(err) => self.error = Some(err),
         }
