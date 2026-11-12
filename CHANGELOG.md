@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.5.0 — 12 Nov 2026
+
+Added a usage screen charting every provider's daily spend, one status-bar usage pill, and background Claude builds that ask from the board and survive a restart.
+
+### New
+#### Agent
+- Keep a usage log per project
+- Log a service build's messages and every tool call
+- A Claude build runs in the background
+- Claude builds are found again after a restart
+- A Claude build asks and listens from the board
+- A subscription meter knows its pace and breakdown
+- Copilot's credits and reset come from GitHub
+- The agent log shows what the model thought
+#### Shell
+- Offer a ring per subscription plan
+- The Reader's actions are header buttons, not a … menu
+- The ring dashes an unknown share, and a gauge with a pace tick
+- One usage pill replaces the ring and name per provider
+- The usage popover opens a row per provider to its insights
+- Tools › Usage…: the screen, its rail and its empty states
+- The usage screen's main pane: tiles, chart, models and projects
+- The spend and the usage share are one status-bar trigger
+#### Design
+- FoldersDialog: offer a project the board folders it lacks
+- Specify the UsageMeter: one status bar pill and a pace popover
+- Specify how the agent's thinking reads in the AgentLog
+- Claude.ai's session and week are two windows
+- IssueGone: say where the issue went when the Reader loses its file
+- Usage screen: every provider's consumption by day, and a slimmer popover
+- The spend and the usage share are one trigger
+#### Board
+- Offer the projects missing standard folders at launch
+- Move to… from the keyboard
+- The Doing card's question is a "Waiting on you" note
+- The Reader says where its issue went
+#### Delivery
+- Write the opening from the commits' bodies too
+- Install and update from a GitHub release
+- A version tag builds the macOS bundle and publishes it on GitHub
+- A project's prepare hook runs before the release commit
+#### Insights
+- The usage read model
+#### Preferences
+- Declare a provider's plan
+
+### Fixed
+- Run the release off the UI thread and rewrite the opening on open
+- Fold a service build's steps in the agent log
+- Inset the agent log's switch, Now band and composer
+- A one-day usage chart names today, and an empty one draws nothing
+- A Doing card keeps room for the strip it always shows
+- Align list dots and tighten item spacing
+- The usage popover names the providers behind today's spend
+
 ## Unreleased
 
 ### New
