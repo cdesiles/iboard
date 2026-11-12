@@ -296,13 +296,18 @@ fn refresh_shows_its_key_where_it_has_it() {
 
 /// One entry of `provider` in the app's usage log, as if it just finished.
 fn log_run(app: &mut IboardApp, provider: &str, tokens: u64, cost: f64) {
+    log_run_of(app, provider, None, tokens, cost);
+}
+
+/// [`log_run`] with the model the run used.
+fn log_run_of(app: &mut IboardApp, provider: &str, model: Option<&str>, tokens: u64, cost: f64) {
     let at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-    app.usage_entries = vec![Entry {
-        session: format!("ses_{provider}"),
+    app.usage_entries.push(Entry {
+        session: format!("ses_{provider}_{tokens}"),
         project: app.located.project_dir.clone(),
         engine: "opencode".to_string(),
         provider: Some(provider.to_string()),
-        model: None,
+        model: model.map(str::to_string),
         billing: Billing::Subscription,
         cost: Some(cost),
         tokens: Tokens {
@@ -311,13 +316,13 @@ fn log_run(app: &mut IboardApp, provider: &str, tokens: u64, cost: f64) {
         },
         started: at.clone(),
         ended: at,
-    }];
+    });
 }
 
 /// A subscription with a token cap fills the pill with its share, names it
 /// with its reset, and opens the popover with the link to Settings.
 #[test]
-fn a_subscription_pill_reads_its_cap_and_opens_the_meters() {
+fn a_subscription_pill_reads_its_cap_and_opens_the_usage_popover() {
     let dir = scratch_dir("subscription-pill");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
@@ -357,7 +362,7 @@ fn a_subscription_pill_reads_its_cap_and_opens_the_meters() {
             .is_some(),
         "the popover is up"
     );
-    harness.get_by_label("21% of the day used");
+    harness.get_by_label_contains("Claude.ai · 21% · Under pace");
     harness.get_by_label("210 of 1,000 tokens");
     press(&mut harness, "Settings › AI");
     let dialog = harness.state().1.settings.as_ref().expect("Settings opens");
@@ -422,10 +427,7 @@ fn a_subscription_with_no_cap_reads_usage_and_its_tokens() {
         .unwrap()
         .click();
     harness.run_steps(2);
-    assert!(
-        harness.query_all_by_label("unknown").next().is_some(),
-        "the row has no made-up share"
-    );
+    harness.get_by_label_contains("Claude.ai · No cap · Resets");
     harness.get_by_label("3,100,000 tokens burnt");
 }
 
@@ -468,6 +470,155 @@ fn the_usage_pill_is_only_for_subscriptions() {
             .query_all_by_label_contains("tokens burnt")
             .next()
             .is_none()
+    );
+}
+
+/// A plan for `provider` as Settings declares it.
+fn plan(billing: Billing, window: Window, cap: Option<Cap>) -> Plan {
+    Plan {
+        billing,
+        window,
+        price: None,
+        cap,
+    }
+}
+
+/// A board with Claude.ai capped by the week and Copilot with no cap, its
+/// usage popover open.
+fn usage_popover(tag: &str) -> Board {
+    let dir = scratch_dir(tag);
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    app.prefs.usage.set(
+        "claude",
+        plan(
+            Billing::Subscription,
+            Window::Week,
+            Some(Cap::Tokens(1_000)),
+        ),
+    );
+    app.prefs
+        .usage
+        .set("copilot", plan(Billing::Subscription, Window::Month, None));
+    log_run_of(app, "claude", Some("claude-sonnet-4-5"), 210, 0.42);
+    log_run_of(app, "copilot", Some("gpt-5"), 80, 0.10);
+    harness.run_steps(2);
+    harness
+        .get_all_by_label_contains("Claude.ai · 21% of the week used")
+        .next()
+        .unwrap()
+        .click();
+    harness.run_steps(5);
+    harness
+}
+
+/// The popover names a known row with its share and verdict, and an unknown
+/// one with its tokens and reset. Only a known cap earns the even-pace legend.
+#[test]
+fn the_usage_popover_names_a_known_and_an_unknown_row() {
+    let harness = usage_popover("usage-rows");
+
+    harness.get_by_label_contains("Claude.ai · 21% · Under pace");
+    harness.get_by_label_contains("Copilot · No cap · Resets in");
+    harness.get_by_label("Even pace");
+}
+
+/// A click on a row opens it, leaving the other rows as they were: the first
+/// is open at rest, and Copilot opens under it.
+#[test]
+fn opening_a_row_shows_its_days_and_models() {
+    let mut harness = usage_popover("usage-open-row");
+    harness.get_by_label("Tokens per day this week");
+    assert!(
+        harness
+            .query_by_label("Tokens per day this month")
+            .is_none(),
+        "Copilot starts closed"
+    );
+
+    harness
+        .get_all_by_label_contains("Copilot · No cap")
+        .last()
+        .unwrap()
+        .click();
+    harness.run_steps(2);
+    harness.get_by_label("Tokens per day this month");
+    harness.get_by_label("gpt-5");
+    harness.get_by_label("Set a cap");
+    harness.get_by_label("Tokens per day this week");
+}
+
+/// The foot's link opens Settings on the AI review tab and closes the popover.
+#[test]
+fn the_popover_foot_opens_settings_on_the_ai_tab() {
+    let mut harness = usage_popover("usage-settings");
+    press(&mut harness, "Settings › AI");
+
+    let dialog = harness.state().1.settings.as_ref().expect("Settings opens");
+    assert_eq!(dialog.tab, settings_ui::Tab::Review);
+    assert!(
+        harness
+            .query_all_by_label("Subscription usage")
+            .next()
+            .is_none(),
+        "the popover closes"
+    );
+}
+
+/// A row with no cap offers to set one, which opens the same tab.
+#[test]
+fn set_a_cap_opens_settings_on_the_ai_tab() {
+    let dir = scratch_dir("usage-set-cap");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    app.prefs
+        .usage
+        .set("claude", plan(Billing::Subscription, Window::Week, None));
+    log_run(app, "claude", 3_100_000, 3.0);
+    harness.run_steps(2);
+    harness
+        .get_all_by_label_contains("Claude.ai · No cap")
+        .next()
+        .unwrap()
+        .click();
+    harness.run_steps(2);
+
+    press(&mut harness, "Set a cap");
+    let dialog = harness.state().1.settings.as_ref().expect("Settings opens");
+    assert_eq!(dialog.tab, settings_ui::Tab::Review);
+    assert!(
+        harness
+            .query_all_by_label("Subscription usage")
+            .next()
+            .is_none(),
+        "the popover closes"
+    );
+}
+
+/// `esc` closes the popover, as a click outside does.
+#[test]
+fn escape_closes_the_usage_popover() {
+    let mut harness = usage_popover("usage-escape");
+    assert!(
+        harness
+            .query_all_by_label("Subscription usage")
+            .next()
+            .is_some(),
+        "the popover is up"
+    );
+
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_all_by_label("Subscription usage")
+            .next()
+            .is_none(),
+        "esc closed it"
     );
 }
 

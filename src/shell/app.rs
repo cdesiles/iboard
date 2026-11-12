@@ -93,6 +93,7 @@ mod split;
 mod stats;
 mod status;
 mod traffic_lights;
+mod usage_popover;
 mod welcome;
 mod windows;
 
