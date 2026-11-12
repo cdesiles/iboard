@@ -753,11 +753,9 @@ fn a_build_question_shows_on_its_card_and_opens_in_the_ticket() {
     );
     assert!(
         harness
-            .get_by_label("Question: Which approach?")
-            .rect()
-            .width()
-            > 0.0,
-        "the pin sits at the card's top right"
+            .query_by_label("Question: Which approach?")
+            .is_none(),
+        "the note replaces the question pin"
     );
     assert!(
         harness
@@ -778,6 +776,50 @@ fn a_build_question_shows_on_its_card_and_opens_in_the_ticket() {
         "the question waits in the ticket"
     );
     assert!(harness.get_by_label("Approach").rect().width() > 0.0);
+}
+
+#[test]
+fn a_question_note_clamps_to_two_lines() {
+    let long = "Should a resumed build reuse the previous transcript, or start a fresh one that only reads the last commit message?";
+    let (_dir, mut app) = board("build-question-note", "sleep 30 # {prompt}");
+    let path = ready(&app)[0].clone();
+    let mut question = form_question();
+    question.title = long.to_string();
+    app.seed_question(path, question);
+    let harness = kittest(app);
+    assert_eq!(
+        harness
+            .get_by_role_and_label(egui::accesskit::Role::Label, long)
+            .rect()
+            .height(),
+        2.0 * 17.0,
+        "the question keeps two lines in the note"
+    );
+}
+
+#[test]
+fn a_permission_question_names_itself_in_the_note() {
+    let (_dir, mut app) = board("build-question-permission", "sleep 30 # {prompt}");
+    let path = ready(&app)[0].clone();
+    app.seed_question(path.clone(), permission_question());
+    let mut harness = kittest(app);
+    assert!(
+        harness.get_by_label("Answer: Allow bash?").rect().width() > 0.0,
+        "a permission names itself in the note"
+    );
+    assert!(
+        harness.query_by_label("Question: Allow bash?").is_none(),
+        "there is no question pin"
+    );
+    harness.get_by_label("Answer: Allow bash?").focus();
+    harness.run_steps(2);
+    harness.key_press(Key::Enter);
+    harness.run_steps(2);
+    assert!(
+        harness.state().1.agent_log_open(&path),
+        "↩ on the note opens the ticket on its question"
+    );
+    assert!(harness.state().1.session.answer.is_some());
 }
 
 #[test]

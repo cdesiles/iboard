@@ -202,9 +202,6 @@ pub(super) fn issue_card(
         at_work(ui, response.rect, since);
     }
     card_edge(ui, &response, look);
-    if let Some(question) = extras.question {
-        question_pin(ui, issue, response.rect, question, &mut body);
-    }
     let modifiers = ui.input(|i| i.modifiers);
     let click = if response.double_clicked() && !modifiers.shift && !modifiers.command {
         Some(CardAction::Open)
@@ -333,44 +330,6 @@ fn expand_action(
     body.action_rects.push(expand.rect);
     if expand.clicked() {
         body.action = Some(CardAction::Open);
-    }
-}
-
-/// The question pin: a `bubble` in `status-doing` on its own pale tint, at
-/// the card's top right and left of Expand, so a build's question is visible
-/// before the pointer arrives. A click opens the ticket on its question.
-fn question_pin(
-    ui: &mut egui::Ui,
-    issue: &Issue,
-    card: Rect,
-    question: &Question,
-    body: &mut CardBody,
-) {
-    let inset = 6.0;
-    let rect = Rect::from_min_size(
-        Pos2::new(
-            card.max.x - inset - 2.0 * widgets::CARD_ACTION - 4.0,
-            card.min.y + inset,
-        ),
-        Vec2::splat(widgets::CARD_ACTION),
-    );
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-    let title = question.title.trim();
-    let hover = if title.is_empty() {
-        "Question".to_string()
-    } else {
-        format!("Question: {title}")
-    };
-    let pin = widgets::icon_button(
-        &mut child,
-        Icon::Bubble,
-        egui::Id::unique(("card_question_pin", &issue.path)),
-        &hover,
-        widgets::Tone::Doing,
-    );
-    body.action_rects.push(pin.rect);
-    if pin.clicked() {
-        body.action = Some(CardAction::Answer);
     }
 }
 
@@ -536,17 +495,12 @@ fn card_body(
         .show(ui, |ui| {
             ui.set_width(inner);
             ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            let pinned = if extras.question.is_some() {
-                2.0 * widgets::CARD_ACTION + theme::SPACE_2
-            } else {
-                0.0
-            };
             let (review, label_clicks) = card_labels(ui, issue, labels, &extras);
-            card_text(ui, issue, (inner - pinned).max(60.0));
+            card_text(ui, issue, inner);
             let mut action = None;
             let mut action_rects = Vec::new();
             if let Some(question) = extras.question {
-                let note = question_note(ui, issue, question);
+                let note = question_note(ui, issue, question, look);
                 action_rects.push(note.rect);
                 if note.clicked() {
                     action = Some(CardAction::Answer);
@@ -637,35 +591,54 @@ fn card_labels(
     (review.inner, clicks)
 }
 
-/// The question the build waits on, on its card: a click opens its answer
-/// form.
-fn question_note(ui: &mut egui::Ui, issue: &Issue, question: &Question) -> egui::Response {
+/// The question the build waits on, on its card: a note whose one button opens
+/// its answer form.
+fn question_note(
+    ui: &mut egui::Ui,
+    issue: &Issue,
+    question: &Question,
+    look: CardLook,
+) -> egui::Response {
     let p = theme::palette(ui);
+    let fill = card_fill(p, look).lerp_to_gamma(p.status_doing, p.label_tint);
+    let mut answer = None;
     let shown = Frame::new()
-        .fill(p.surface_sunken)
-        .stroke(Stroke::new(1.0, p.status_doing.gamma_multiply(0.6)))
+        .fill(fill)
         .corner_radius(CornerRadius::same(theme::RADIUS_SM))
-        .inner_margin(Vec2::new(theme::SPACE_3, theme::SPACE_2))
+        .inner_margin(Vec2::splat(theme::SPACE_3))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_2;
                 let (icon, _) =
                     ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
                 theme::paint_icon(ui.painter(), Icon::Bubble, icon, p.status_doing);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    ui.label(meta_text("Question".to_owned(), p.status_doing));
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(&question.title)
-                                .font(theme::ui_small())
-                                .color(p.ink),
+                ui.label(
+                    RichText::new("Waiting on you".to_uppercase())
+                        .font(theme::ui_label())
+                        .extra_letter_spacing(theme::LABEL_TRACKING)
+                        .color(p.status_doing),
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    answer = Some(
+                        ui.label(
+                            RichText::new("Answer")
+                                .font(theme::ui_strong())
+                                .color(p.status_doing),
                         )
-                        .truncate(),
+                        .rect,
                     );
                 });
             });
+            let title = clamped(
+                &question.title,
+                theme::ui_small(),
+                SUMMARY_LINE,
+                p.ink,
+                ui.available_width(),
+            );
+            ui.add(egui::Label::new(title).show_tooltip_when_elided(false));
         });
     let response = ui.interact(
         shown.response.rect,
@@ -683,7 +656,24 @@ fn question_note(ui: &mut egui::Ui, issue: &Issue, question: &Question) -> egui:
             "Open the ticket to see how to answer",
         )
     };
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &label));
+    if response.hovered() {
+        let painter = ui.painter();
+        painter.rect_stroke(
+            shown.response.rect,
+            CornerRadius::same(theme::RADIUS_SM),
+            Stroke::new(1.0, p.status_doing),
+            StrokeKind::Inside,
+        );
+        if let Some(answer) = answer {
+            painter.hline(
+                answer.x_range(),
+                answer.max.y - 1.0,
+                Stroke::new(1.0, p.status_doing),
+            );
+        }
+    }
+    widgets::focus_ring(ui, &response, theme::RADIUS_SM);
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(hint)

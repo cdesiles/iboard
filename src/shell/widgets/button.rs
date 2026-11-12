@@ -426,9 +426,6 @@ pub enum Tone {
     Danger,
     /// Review: drawn in the reserved `review` hue, rest and hover.
     Review,
-    /// A question a build waits on: `status-doing` on its own pale tint,
-    /// rest and hover, so the card's pin reads before the pointer reaches it.
-    Doing,
     /// The trigger of an open popup (Add label): `accent` icon on
     /// `accent-soft`, hovered or not.
     Open,
@@ -459,18 +456,13 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, id: egui::Id, hover: &str, tone: Ton
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
     if ui.is_rect_visible(rect) {
         let p = theme::palette(ui);
-        let fade = if matches!(tone, Tone::Open | Tone::Doing) {
+        let fade = if matches!(tone, Tone::Open) {
             1.0
         } else {
             hover_fade(ui.ctx(), response.id, response.hovered())
         };
         let (fill, rest, lit) = match tone {
             Tone::Review => (p.review_soft, p.review, p.review),
-            Tone::Doing => (
-                p.status_doing.gamma_multiply(0.16),
-                p.status_doing,
-                p.status_doing,
-            ),
             Tone::Open => (p.accent_soft, p.accent, p.accent),
             Tone::Danger => (p.surface_hover, p.ink_muted, p.danger),
             Tone::Plain | Tone::Ghost => (p.surface_hover, p.ink_muted, p.ink),
