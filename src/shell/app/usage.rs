@@ -1,16 +1,26 @@
 //! The Usage screen: Tools › Usage…, the full view of what the providers
 //! cost and consume (see `design/components/UsageScreen`). This part holds its
-//! header bar, its rail and its blank states; the main pane's blocks come next.
+//! header bar, its rail, its blank states and the pane that lays out the
+//! blocks; the blocks themselves live in `usage/`.
 
 use chrono::{Local, Utc};
 
 use super::{
-    Align, CornerRadius, Frame, IboardApp, Icon, Instant, Key, Layout, RichText, Sense, Stroke,
-    Vec2, theme, widgets,
+    Align, ButtonKind, Color32, CornerRadius, Duration, Frame, IboardApp, Icon, Instant, Job, Key,
+    Layout, Pos2, Rect, RichText, Sense, Shape, Stroke, Vec2, job, theme, widgets,
 };
-use crate::agent::{Provider, provider_key};
+use crate::agent::{Billing, Provider, provider_key};
 use crate::domains::agent::artifacts::usage_log::{self, Entry};
 use crate::usage::{ListedProvider, ProviderUsage, Range, UsageView};
+
+mod blocks;
+mod breaks;
+mod chart;
+mod plan;
+mod tiles;
+
+use blocks::Read;
+pub(super) use chart::Metric;
 
 /// The rail's width, and a row's height.
 const RAIL_W: f32 = 208.0;
@@ -22,6 +32,8 @@ const ROW_LEAD: f32 = theme::SPACE_4;
 const ROW_SLOT: f32 = theme::ICON_SIZE;
 /// The widest the blank states' sentence reads.
 const BLANK_W: f32 = 460.0;
+/// How long the log read may take before a block says it failed.
+const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The Usage screen's state: whether it is up, its range and the provider it
 /// shows, and the read model redrawn for the board's scope.
@@ -30,6 +42,14 @@ pub(super) struct UsageScreen {
     pub(super) range: Range,
     /// The provider selected in the rail; `None` is All providers.
     pub(super) provider: Option<String>,
+    /// Tokens or Spend, kept for the session; only a metered provider's
+    /// chart offers Spend.
+    pub(super) metric: Metric,
+    pub(super) chart_hover: Option<usize>,
+    pub(super) chart_selected: Option<usize>,
+    pub(super) read: Read,
+    /// The log read under way, when it takes a frame to land.
+    read_job: Option<Job<Result<Vec<Entry>, String>>>,
     pub(super) view: UsageView,
 }
 
@@ -39,6 +59,11 @@ impl Default for UsageScreen {
             open: false,
             range: Range::default(),
             provider: None,
+            metric: Metric::default(),
+            chart_hover: None,
+            chart_selected: None,
+            read: Read::default(),
+            read_job: None,
             view: UsageView::read_with(&[], &[], Utc::now(), &[] as &[ListedProvider]),
         }
     }
@@ -50,27 +75,38 @@ impl UsageScreen {
         self.view.providers.len() >= 2
     }
 
-    /// The provider pane drawn, or `None` for All providers.
-    fn chosen(&self) -> Option<&ProviderUsage> {
+    /// The provider the pane shows: the chosen one with a rail, else the only
+    /// one; `None` is All providers.
+    fn chosen_key(&self) -> Option<String> {
         if self.rail_shown() {
-            self.provider
-                .as_deref()
-                .and_then(|key| self.view.provider(key))
+            self.provider.clone()
         } else {
-            self.view.providers.first()
+            self.view
+                .providers
+                .first()
+                .map(|provider| provider.provider.clone())
         }
     }
+}
+
+/// What the screen's head calls the board's scope.
+struct Scope {
+    name: String,
+    /// A group's board splits by project; one project's does not.
+    grouped: bool,
 }
 
 /// What the screen asked for this frame.
 enum Ask {
     Provider(Option<String>),
     Range(Range),
+    Measure(Metric),
+    Retry,
     Settings,
 }
 
 impl IboardApp {
-    /// Opens Usage on the board's scope, reading the log at once.
+    /// Opens Usage on the board's scope, reading the log on its own job.
     pub(super) fn open_usage(&mut self) {
         if self.welcoming() {
             return;
@@ -80,21 +116,77 @@ impl IboardApp {
         self.usage_refresh();
     }
 
-    /// Reads the log again now, then redraws the screen.
+    /// Reads the log again now, off the UI thread, then redraws the screen
+    /// when it lands.
     fn usage_refresh(&mut self) {
-        if let Some(path) = self.usage_log_file.clone() {
-            self.usage_entries = usage_log::read_from(&path);
-            self.usage_read = Some(Instant::now());
+        let Some(path) = self.usage_log_file.clone() else {
+            self.usage.read = Read::Loaded;
+            self.refresh_usage_view();
+            return;
+        };
+        self.usage.read = Read::Waiting { pulse: false };
+        let read = Job::spawn(move |_| usage_log::read_result(&path));
+        if let Some(ctx) = self.ctx.clone() {
+            read.wake(move || ctx.request_repaint());
         }
-        self.refresh_usage_view();
+        self.usage.read_job = Some(read);
+    }
+
+    /// Takes the log read once it lands, or fails it after [`READ_TIMEOUT`];
+    /// true while it still reads.
+    pub(super) fn poll_usage(&mut self) -> Option<Duration> {
+        if !self.usage.open {
+            self.usage.read_job = None;
+            return None;
+        }
+        let elapsed = self.usage.read_job.as_ref()?.elapsed();
+        if elapsed >= READ_TIMEOUT {
+            self.usage.read_job = None;
+            self.usage.read = Read::Failed(format!(
+                "Couldn't read the usage log: took longer than {}s",
+                READ_TIMEOUT.as_secs()
+            ));
+            return None;
+        }
+        let landed = self.usage.read_job.as_ref().and_then(Job::answer);
+        match landed {
+            None => {
+                if elapsed >= theme::SKELETON_AFTER && self.usage.read.waiting() == Some(false) {
+                    self.usage.read = Read::Waiting { pulse: true };
+                }
+                Some(job::POLL_EVERY)
+            }
+            Some(Ok(entries)) => {
+                self.usage_entries = entries;
+                self.usage_read = Some(Instant::now());
+                self.usage.read = Read::Loaded;
+                self.usage.read_job = None;
+                self.refresh_usage_view();
+                None
+            }
+            Some(Err(error)) => {
+                self.usage.read = Read::Failed(error);
+                self.usage.read_job = None;
+                None
+            }
+        }
     }
 
     /// Rebuilds the read model for the board's scope. A board switch calls it,
     /// so the screen follows the group or project that opened.
     pub(super) fn refresh_usage_view(&mut self) {
+        let now = Utc::now();
         let projects = self.board_projects();
         let listed = listed(&self.usage_entries);
-        self.usage.view = UsageView::read_with(&self.usage_entries, &projects, Utc::now(), &listed);
+        let meters = usage_log::subscription_meters_with(
+            &self.prefs.usage,
+            &self.usage_entries,
+            now,
+            &self.session.quotas,
+        );
+        let mut view = UsageView::read_with(&self.usage_entries, &projects, now, &listed);
+        view = view.with_meters(&meters);
+        self.usage.view = view;
         if let Some(provider) = self.usage.provider.as_deref()
             && self.usage.view.provider(provider).is_none()
         {
@@ -138,6 +230,17 @@ impl IboardApp {
             .and_then(|selected| rows.iter().position(|row| row.as_ref() == Some(selected)))
             .unwrap_or(0) as isize;
         let next = (at + step).clamp(0, rows.len() as isize - 1) as usize;
+        let metered = rows[next].as_deref().is_some_and(|key| {
+            self.usage
+                .view
+                .provider(key)
+                .is_some_and(|provider| provider.billing == Billing::Metered)
+        });
+        if !metered {
+            self.usage.metric = Metric::Tokens;
+        }
+        self.usage.chart_hover = None;
+        self.usage.chart_selected = None;
         self.usage.provider = rows[next].clone();
     }
 
@@ -197,7 +300,8 @@ impl IboardApp {
     /// Whether the screen has nothing to read: no tool, or a tool with no
     /// provider yet.
     fn usage_blank(&self) -> bool {
-        !self.prefs.agent.configured() || self.usage.view.providers.is_empty()
+        !self.prefs.agent.configured()
+            || (self.usage.view.providers.is_empty() && self.usage.read.failed().is_none())
     }
 
     /// `Read 14:02 · from the usage log`, from when the log last read.
@@ -212,7 +316,6 @@ impl IboardApp {
     /// Usage in place of the board: its rail, then the provider's pane, or the
     /// blank state that says what to set up first.
     pub(super) fn usage_screen(&mut self, ui: &mut egui::Ui) {
-        self.refresh_usage_view();
         ui.style_mut().interaction.selectable_labels = false;
         widgets::rule(ui);
         let mut ask = None;
@@ -227,7 +330,7 @@ impl IboardApp {
             ) {
                 ask = Some(Ask::Settings);
             }
-        } else if self.usage.view.providers.is_empty() {
+        } else if self.usage.view.providers.is_empty() && self.usage.read.failed().is_none() {
             let tool = self.prefs.agent.tool.name();
             blank(
                 ui,
@@ -239,8 +342,31 @@ impl IboardApp {
             ask = self.usage_body(ui);
         }
         match ask {
-            Some(Ask::Provider(provider)) => self.usage.provider = provider,
-            Some(Ask::Range(range)) => self.usage.range = range,
+            Some(Ask::Provider(provider)) => {
+                self.usage.chart_hover = None;
+                self.usage.chart_selected = None;
+                let metered = provider.as_deref().is_some_and(|key| {
+                    self.usage
+                        .view
+                        .provider(key)
+                        .is_some_and(|provider| provider.billing == Billing::Metered)
+                });
+                if !metered {
+                    self.usage.metric = Metric::Tokens;
+                }
+                self.usage.provider = provider;
+            }
+            Some(Ask::Range(range)) => {
+                self.usage.range = range;
+                self.usage.chart_hover = None;
+                self.usage.chart_selected = None;
+            }
+            Some(Ask::Measure(metric)) => {
+                self.usage.metric = metric;
+                self.usage.chart_hover = None;
+                self.usage.chart_selected = None;
+            }
+            Some(Ask::Retry) => self.usage_refresh(),
             Some(Ask::Settings) => self.open_settings(crate::settings_ui::Tab::Build),
             None => {}
         }
@@ -273,18 +399,32 @@ impl IboardApp {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(p.bg))
             .show(ui, |ui| {
-                if let Some(picked) = pane(ui, &self.usage, &scope) {
-                    ask = Some(picked);
-                }
+                theme::scroll_area(
+                    ui,
+                    egui::ScrollArea::vertical()
+                        .content_margin(theme::scroll_margin(theme::SPACE_6, theme::SPACE_5))
+                        .auto_shrink([false, false]),
+                    |ui| {
+                        if let Some(picked) = pane(ui, &mut self.usage, &scope) {
+                            ask = Some(picked);
+                        }
+                    },
+                );
             });
         ask
     }
 
     /// What the head calls the board's scope: the group, or the project.
-    fn usage_scope(&self) -> String {
+    fn usage_scope(&self) -> Scope {
         match self.shown_group() {
-            Some(group) => format!("in the {} group", group.name),
-            None => format!("in {}", self.board.name()),
+            Some(group) => Scope {
+                name: format!("in the {} group", group.name),
+                grouped: true,
+            },
+            None => Scope {
+                name: format!("in {}", self.board.name()),
+                grouped: false,
+            },
         }
     }
 }
@@ -418,53 +558,147 @@ fn rail_row(
     response.clicked()
 }
 
-/// The main pane's head and, for now, its range and any empty-range word.
-fn pane(ui: &mut egui::Ui, screen: &UsageScreen, scope: &str) -> Option<Ask> {
+/// The main pane: the head, the plan window, the tiles, the per-day chart and
+/// the breakdowns, each block on its own read.
+fn pane(ui: &mut egui::Ui, screen: &mut UsageScreen, scope: &Scope) -> Option<Ask> {
+    let mut ask = None;
+    ui.spacing_mut().item_spacing.y = theme::SPACE_5;
+    let key = screen.chosen_key();
+    let UsageScreen {
+        view,
+        range,
+        read,
+        metric,
+        chart_hover,
+        chart_selected,
+        ..
+    } = screen;
+    let chosen = key.as_deref().and_then(|key| view.provider(key));
+    if let Some(picked) = head(ui, chosen, scope, *range) {
+        ask = Some(picked);
+    }
+    if let Some(provider) = chosen
+        && !provider.has_run()
+    {
+        if no_run_yet(ui, &provider.name, read) {
+            ask = Some(Ask::Retry);
+        }
+        return ask;
+    }
+    if let Some(plan) = chosen.and_then(|provider| provider.plan.as_ref()) {
+        if let Some(error) = read.failed() {
+            blocks::card(ui, |ui| {
+                if blocks::failure(ui, error) {
+                    ask = Some(Ask::Retry);
+                }
+            });
+        } else {
+            plan::plan_panel(ui, plan, view.now);
+        }
+    }
+    let effective = match chosen {
+        Some(provider) if provider.billing == Billing::Metered => *metric,
+        _ => Metric::Tokens,
+    };
+    let data = chart::ChartData::of(view, chosen, *range, effective);
+    if tiles::tiles(ui, view, chosen, *range, &data, read) {
+        ask = Some(Ask::Retry);
+    }
+    let mut state = chart::State {
+        range: *range,
+        metric,
+        hover: chart_hover,
+        selected: chart_selected,
+    };
+    match chart::chart_ui(ui, view, chosen, &data, &mut state, read) {
+        Some(chart::Asked::Measure(metric)) => ask = Some(Ask::Measure(metric)),
+        Some(chart::Asked::Retry) => ask = Some(Ask::Retry),
+        None => {}
+    }
+    match breaks::breakdowns(ui, view, chosen, *range, scope.grouped, read) {
+        Some(breaks::Asked::Provider(provider)) => ask = Some(Ask::Provider(Some(provider))),
+        Some(breaks::Asked::Retry) => ask = Some(Ask::Retry),
+        None => {}
+    }
+    ask
+}
+
+/// The head: the provider's swatch and name, how it is paid and what the
+/// numbers cover, then the range.
+fn head(
+    ui: &mut egui::Ui,
+    chosen: Option<&ProviderUsage>,
+    scope: &Scope,
+    range: Range,
+) -> Option<Ask> {
     let p = theme::palette(ui);
     let mut ask = None;
-    Frame::new()
-        .inner_margin(egui::Margin::symmetric(
-            theme::SPACE_6 as i8,
-            theme::SPACE_5 as i8,
-        ))
-        .show(ui, |ui| {
-            let chosen = screen.chosen();
-            let (title, billing) = match chosen {
-                Some(provider) => (provider.name.clone(), Some(provider.billing.name())),
-                None => ("All providers".to_string(), None),
-            };
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-                    ui.label(RichText::new(title).font(theme::ui_title()).color(p.ink));
-                    let meta = match billing {
-                        Some(billing) => {
-                            format!("{billing} · counted from the tool's sessions {scope}")
-                        }
-                        None => format!("counted from the tool's sessions {scope}"),
-                    };
-                    ui.label(RichText::new(meta).font(theme::meta()).color(p.ink_muted));
-                });
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if let Some(range) = range_control(ui, screen.range) {
-                        ask = Some(Ask::Range(range));
-                    }
-                });
-            });
-            ui.add_space(theme::SPACE_5);
-            let empty = match chosen {
-                Some(provider) => !provider.has_run_in(screen.range),
-                None => screen.view.is_empty(screen.range),
-            };
-            if empty {
-                ui.label(
-                    RichText::new("No agent run in this range.")
-                        .font(theme::meta())
-                        .color(p.ink_faint),
-                );
+    let (title, meta) = match chosen {
+        Some(provider) => (
+            provider.name.clone(),
+            format!(
+                "{} · counted from the tool's sessions {}",
+                billing_note(provider.billing),
+                scope.name
+            ),
+        ),
+        None => (
+            "All providers".to_string(),
+            format!(
+                "Every connected provider, stacked · counted from the tool's sessions {}",
+                scope.name
+            ),
+        ),
+    };
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+        if let Some(provider) = chosen {
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::hover());
+            ui.painter()
+                .rect_filled(rect, CornerRadius::same(2), p.label(provider.hue));
+        }
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+            ui.label(RichText::new(title).font(theme::ui_title()).color(p.ink));
+            ui.label(RichText::new(meta).font(theme::meta()).color(p.ink_muted));
+        });
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if let Some(range) = range_control(ui, range) {
+                ask = Some(Ask::Range(range));
             }
         });
+    });
     ask
+}
+
+fn billing_note(billing: Billing) -> &'static str {
+    match billing {
+        Billing::Metered => "Metered · billed per token",
+        Billing::Subscription => "Subscription · API-equivalent dollars",
+    }
+}
+
+/// A provider that never ran: its pane says so under the head.
+fn no_run_yet(ui: &mut egui::Ui, name: &str, read: &Read) -> bool {
+    let mut retry = false;
+    blocks::card(ui, |ui| {
+        if let Some(error) = read.failed() {
+            retry = blocks::failure(ui, error);
+            return;
+        }
+        let p = theme::palette(ui);
+        ui.label(
+            RichText::new("No agent run yet.")
+                .font(theme::ui_strong())
+                .color(p.ink),
+        );
+        ui.label(
+            RichText::new(format!("A finished run through {name} lands here."))
+                .font(theme::meta())
+                .color(p.ink_muted),
+        );
+    });
+    retry
 }
 
 /// The `7d` `30d` `90d` segmented control; the active option is raised.

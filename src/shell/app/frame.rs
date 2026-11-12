@@ -64,6 +64,7 @@ impl IboardApp {
             self.poll_asks(),
             self.poll_answers(),
             self.poll_stats(),
+            self.poll_usage(),
             self.poll_plan(),
             self.poll_spend(),
             self.poll_quota(),
@@ -124,7 +125,12 @@ impl IboardApp {
                     self.session.quota_feed = Some(feed);
                     return Some(crate::job::POLL_EVERY);
                 }
-                Poll::Ready(quotas) => self.session.quotas = quotas,
+                Poll::Ready(quotas) => {
+                    self.session.quotas = quotas;
+                    if self.usage.open {
+                        self.refresh_usage_view();
+                    }
+                }
                 Poll::Lost => self.session.quotas.clear(),
             }
             self.session.quota_read = Some(Instant::now());

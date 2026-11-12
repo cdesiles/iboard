@@ -8,8 +8,8 @@ use super::{
     Align, CornerRadius, Frame, IboardApp, Layout, MarginF32, Pos2, Rect, RichText, Sense, Shape,
     Stroke, Vec2, settings_ui, theme, widgets,
 };
-use crate::agent::{Cap, Measure};
-use crate::domains::agent::artifacts::usage_log::{DayUse, Meter, ModelUse};
+use crate::agent::{Cap, Measure, Plan, Quota};
+use crate::domains::agent::artifacts::usage_log::{Consumption, DayUse, Meter, ModelUse};
 use crate::format::thousands;
 
 /// The popover's width.
@@ -265,9 +265,14 @@ fn verdict_line(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, open: bool
 
 /// `Under pace`, or where the cap is reached at the window's average rate.
 fn verdict(meter: &Meter) -> String {
-    match meter.cap_reached_on() {
+    verdict_of(meter.over_pace(), meter.cap_reached_on().as_deref())
+}
+
+/// [`verdict`] from a plan window's own pace and projected day.
+pub(super) fn verdict_of(over_pace: bool, cap_reached_on: Option<&str>) -> String {
+    match cap_reached_on {
         Some(day) => format!("Over pace · cap by {day}"),
-        None if meter.over_pace() => "Over pace".to_string(),
+        None if over_pace => "Over pace".to_string(),
         None => "Under pace".to_string(),
     }
 }
@@ -344,10 +349,25 @@ fn detail(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) -> bool {
 /// `9,212 of 30,000 AI credits · from GitHub`, `3.1M of 5M tokens`,
 /// `$6.20 of $10.00`, or `3.1M tokens burnt`.
 fn used_line(meter: &Meter) -> String {
-    if let Some(quota) = &meter.reported {
+    used_line_of(
+        &meter.name,
+        &meter.plan,
+        &meter.consumed,
+        meter.reported.as_ref(),
+    )
+}
+
+/// [`used_line`] from the pieces a plan window keeps.
+pub(super) fn used_line_of(
+    name: &str,
+    plan: &Plan,
+    consumed: &Consumption,
+    reported: Option<&Quota>,
+) -> String {
+    if let Some(quota) = reported {
         return match quota.measure {
             Measure::Share(share) => {
-                format!("{:.0}% used · from {}", share * 100.0, meter.name)
+                format!("{:.0}% used · from {}", share * 100.0, name)
             }
             Measure::Count { used, cap, unit } => format!(
                 "{} of {} {unit} · from GitHub",
@@ -356,12 +376,10 @@ fn used_line(meter: &Meter) -> String {
             ),
         };
     }
-    let tokens = thousands(meter.consumed.tokens as usize);
-    match meter.plan.cap {
+    let tokens = thousands(consumed.tokens as usize);
+    match plan.cap {
         Some(Cap::Tokens(cap)) => format!("{tokens} of {} tokens", thousands(cap as usize)),
-        Some(Cap::Money(cap)) => {
-            format!("${:.2} of ${cap:.2}", meter.consumed.dollars(&meter.plan))
-        }
+        Some(Cap::Money(cap)) => format!("${:.2} of ${cap:.2}", consumed.dollars(plan)),
         None => format!("{tokens} tokens burnt"),
     }
 }

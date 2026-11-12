@@ -400,7 +400,12 @@ fn share_text(meter: &Meter) -> String {
 
 /// When the plan's window resets, from `now`.
 pub(super) fn reset_text(meter: &Meter, now: DateTime<Utc>) -> String {
-    let secs = (meter.reset - now).num_seconds().max(0);
+    reset_of(meter.reset, now)
+}
+
+/// [`reset_text`] from a window's own reset instant.
+pub(super) fn reset_of(reset: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    let secs = (reset - now).num_seconds().max(0);
     let left = match secs {
         0..=59 => "now".to_string(),
         60..=3_599 => format!("in {}m", secs / 60),

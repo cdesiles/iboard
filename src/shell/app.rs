@@ -612,6 +612,9 @@ impl IboardApp {
         }
         self.usage_entries = usage_log::read_from(&path);
         self.usage_read = Some(Instant::now());
+        if self.usage.open {
+            self.refresh_usage_view();
+        }
     }
 
     fn from_located(located: Located) -> Self {
