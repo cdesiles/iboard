@@ -11,6 +11,7 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 | Conversation drops every step but the last; Log prints them all. Both read as one stream. | **Timeline** is the default, folded; **Raw** is the exact log, line numbered, in mono. | Two views, two jobs: understand the run, or inspect what really came out. |
 | Edits are eight `Using edit tests/release.rs…` steps buried in the same list. | One **Changes** block per run: "5 files changed +214 −63", a row per file, each opening the Diff screen. | The audit question is "what did it change", not "which tool did it call". This is the dropdown issue 002 asked for. |
 | The head shows `running · 1:54`; run boundaries are a faint `──` line lost in the text; a three-run log reads as one endless stream. | The head shows the state; each run has a heading with its start time and agent, and closes on its outcome. | A log is a history. Runs are the chapters, outcomes are the full stops. |
+| The agent's reasoning is dropped, so a run whose narration lives in its thoughts is steps with nothing between them. | A **Thinking** row, folded with the steps around it and closed by default; one opens in place to its text. | The reasoning is there when you want to know why, and costs one line when you do not. |
 | The composer says "Reply to the agent…" while it runs, after the run, and after a failure alike. | Placeholder and Send follow the state; while a question waits there is no composer at all. | The box says what pressing Send will do. |
 
 ## Placement
@@ -38,6 +39,7 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 - Only while a run is live. A 28pt band above the scroll: the 14pt Thinking mark, the step, and the elapsed clock at the far right in `meta`, tabular.
 - The verb reads in `ink-muted`, its object in `ink` at 500: "Editing **src/app/release.rs**". One line; the object truncates from the end with the full text in a tooltip. No trailing ellipsis: the mark is the progress.
 - If there is no step yet: "Reading **the issue**".
+- While the model thinks, the verb reads "Thinking" and there is no object: the thought is not whole, and half a sentence is noise. The Thinking mark already moves.
 - No percentage, no progress bar, no invented phase. The counts belong to the activity row; the clock is the only time signal.
 - While the panel is live, the timeline follows its end. Scrolling up detaches it; a compact **Latest** pill appears at the bottom right of the timeline and returns to the live edge when pressed. It is not shown while you are at the bottom, so it never competes with the composer.
 - The band leaves in one frame when the run ends. The outcome replaces it as the place that says how it went.
@@ -58,13 +60,25 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 
 ### Activity rows
 
-- The steps between two messages — reads, searches, commands, shell calls — are one **burst**; edits happen in that span but are collected into Changes. A burst with two or more steps folds into one activity row. A lone step stays a single row: a disclosure that opens onto itself is noise.
-- The summary names the verbs and their counts, most used first, ties by first appearance: "Read 5 files, searched 2, ran 1 command". One reads "1 file", "1 search", "1 command"; more than three kinds still list them, truncating the line only if the panel is very narrow.
+- The steps between two messages — reads, searches, commands, shell calls, and the agent's thoughts (see Thinking) — are one **burst**; edits happen in that span but are collected into Changes. A burst with two or more items folds into one activity row. A lone step stays a single row: a disclosure that opens onto itself is noise.
+- The summary names the verbs and their counts, most used first, ties by first appearance, the first part capitalised: "Read 5 files, searched 2, ran 1 command". One reads "1 file", "1 search", "1 command", "1 time"; a thought counts as "thought 3 times". More than three kinds still list them, truncating the line only if the panel is very narrow.
 - The row is 28pt, 12/17 `ink-muted`, with a 12pt chevron on the left, no edge, no fill at rest. Hover `surface-hover`. It is a native `<details>`/`<summary>`: `esc` closes a menu, not this; `↩` or `space` toggles it; the screen reader announces "Read 5 files, searched 2, ran 1 command, collapsed".
 - Open, its rows sit on a 1px `line-soft` rail, `space-1` padding, 24pt minimum: the verb in `ink-muted`, then the object in `ink` at 12/17. The verb is the step as the agent logged it, in the present: "Reading", "Searching", "Running", the same words the Now strip uses. Only the summary speaks in the past. Paths truncate from the end; the full path is a tooltip. Searches show the query unquoted; commands are mono at `edit-body` 13/20.
-- The group's rows are evidence, not actions: nothing opens. The one clickable thing a run produces is its Changes list.
+- The group's rows are evidence, not actions: only a thought row opens, onto its own text. The one clickable thing a run produces is its Changes list.
 - The live step is never in the open group; the Now strip owns it. Once the run stops, the last step returns to the group.
 - Edits are not activity rows. They belong to Changes, so the same edit is not said twice.
+
+### Thinking
+
+What the model reasoned before it acted. It is the agent's own words but not its message to you, so it never takes the place of one: no `read-body`, no tint, closed until you ask.
+
+- **In a burst.** A thought is a row of the activity group, in the order it happened: the verb "Thinking" in `ink-muted`, a gap of `space-3`, the thought's first line in `ink-faint` truncated from the end, the duration at the right in `meta` `ink-faint`, tabular, and a 12pt chevron. The row is 24pt, `surface-hover` on hover, a `<details>`. The duration is the thought's own, when the engine says it; under one second shows none.
+- **Open.** The row's line goes (the text replaces it, it is not said twice) and the thought's whole text sits under it: `ui-small` 12/17 `ink-muted`, paragraphs kept, at most `read-measure` wide, `space-1` above and `space-2` below. No italics, no quotes, no tint: the colour already says it is secondary. Open state is per thought and survives new lines arriving.
+- **Alone.** A thought between two messages, with no step beside it, is a fold of its own: "Thought for 6s" in 12/17 `ink-muted` with the chevron on the left, as an activity row, opening onto the text on the same rail. It does not borrow the burst's summary.
+- **Counted.** Thoughts are part of the summary: "Thought 3 times, read 3 files, searched 1, ran 1 command". With a model that narrates only in thoughts, the summary is the story: how much it thought and what it did.
+- **Not repeated.** The live thought belongs to the Now strip, as the live step does; it joins the fold when it is whole.
+- **Capped.** A thought is logged up to 2000 characters and ends in "…" when longer; the Raw view shows exactly that. The log keeps the reasoning, not a transcript of every token.
+- **No setting.** opencode lets you hide reasoning altogether. Here it is already one quiet line per thought, so there is nothing to turn off, and hiding it would also hide the count.
 
 ### Changes
 
@@ -85,7 +99,8 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 ## Raw
 
 - The exact log, one line per row, `edit-body` 13/20 in the panel's width. A 28pt gutter of line numbers in `meta` `ink-faint`, tabular and not selectable; long lines wrap, so a command is readable at 360pt.
-- Colour is the only addition: `──` run headings in `review`, `▸` author lines in `accent`, `✓` outcomes in `status-done`, `✗` in `danger`. The characters and the text never change.
+- Colour is the only addition: `──` run headings in `review`, `▸` author lines in `accent`, `∴` thoughts in `ink-muted`, `✓` outcomes in `status-done`, `✗` in `danger`. The characters and the text never change.
+- A thought is one log line, `∴ 7s · text`: the seconds, then the text with its line breaks turned into spaces, as an author's instruction is. The seconds are `0s` when the engine gave none or under one second.
 - The Now strip and the composer stay; Raw is a view of the log, not a different screen.
 - Raw is for copying a command, reading a stack trace, or checking whether the folded summary lost something. It is not the default: most looks are Timeline.
 
@@ -115,11 +130,13 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 - **Failed:** the run's outcome names the failure; any changes remain inspectable; the composer reads "Ask it to fix what failed…". There is no Retry in the panel — the Doing card's play button starts the next run, and the log keeps the failed one.
 - **Blocked:** the Question card first, then the switch and the timeline. No composer, one filled Send, on the question card.
 - **No messages, many steps:** one activity row per burst. This is the screenshot's case: the whole run is a run head, a few folded rows and a Changes block, not a page of "Reading…".
+- **Thoughts, no messages:** the same, and the row's summary starts with how many times the model thought. Nothing is promoted to a message: if the agent never wrote to you, the log does not pretend it did.
 
 ## Keyboard and accessibility
 
-- `Tab` order: switch → timeline (a focusable scroll region) → each activity summary → each Changes summary → each file row → composer → Send. No new global shortcut; `⌘↩` sends only inside the composer.
+- `Tab` order: switch → timeline (a focusable scroll region) → each activity summary → each thought row in an open group → each Changes summary → each file row → composer → Send. No new global shortcut; `⌘↩` sends only inside the composer.
 - The panel is a labelled complementary region, "Agent log of `<file>`". Each run is a labelled section, "Run 2, today 14:02, opencode"; the outcome is a status announcement at the end of the run.
+- A thought row reads "Thinking, 7 seconds, collapsed"; the text is not read until it is opened.
 - The Now line is a polite status. Visually it updates at once; for assistive tech the app speaks a new step at most every 10s and always announces the run's start and end. A step never interrupts what is being read.
 - Native `<details>` and `<button>` carry the disclosures and file rows; focus is the 2px `focus` ring, or the inset ring on a file row, never a colour change alone.
 - Contrast: `review` on `review-soft` 5.2:1; `ink-muted` 6.4:1 or better on every surface; `ink-faint` at least 4.5:1; the diffstat's `status-done` and `danger` on `surface-sunken` stay above 4.5:1.
@@ -138,6 +155,8 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 ## In egui
 
 - `build_log::parse` already returns `Run`, `Step`, `Outcome`, `Author` and `Message`. The fold needs one step per line; the lost newlines of issue 002 are the parser's bug and a prerequisite, not something this view can repair.
+- Add `Entry::Thought { secs, text }`, parsed from `∴ 7s · text`, and let `segments()` treat it as part of a burst: a burst is steps and thoughts, a lone thought stays a `Segment::Thought`, and a burst keeps its items in order so the open group can draw a thought between two steps. `summary()` counts a thought as its own kind and capitalises only the first part, which it does not do today for "Read".
+- Both engines write thoughts to the log: opencode's `reasoning` parts (with `time.created` and `time.completed`) and Claude's `thinking` blocks. A thought is written once it is complete, in order with the tool calls around it, and a part still streaming is read again later, as a text is.
 - Add `Entry::Edit(&str)` when a step is an edit, so the view never matches "Editing " by hand, and a `segments()` fold in the same module: consecutive steps (edits excluded) become an `Activity { steps, counts }`, a lone step stays a `Step`, and everything else passes through. Give it tests: a burst folds, a lone step does not, edits leave the burst, counts pluralise, runs split the list.
 - `agent_log_panel` maps the fold to the new widgets. The `LogMode` enum becomes `Timeline` and `Raw`. The Now strip is the last unfurled step of the live run; it is not drawn when `building_since` is `None`. The head detail is derived from `running` and `question_for`.
 - The Changes block needs the run's file list and diffstat from the diff service. Until it can read the working tree, show the paths with no stats and no row action; do not fake the numbers.

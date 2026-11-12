@@ -997,6 +997,16 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-fold__verb{color:var(--ink-muted);white-space:nowrap}
 .ib-fold__target{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ib-fold__target code{font:var(--text-edit-body);color:var(--ink);background:none;padding:0}
+.ib-thought{min-width:0}
+.ib-thought__summary{display:grid;grid-template-columns:max-content minmax(0,1fr) auto 12px;gap:var(--space-3);align-items:baseline;box-sizing:border-box;min-height:24px;margin-left:calc(-1 * var(--space-2));padding:var(--space-1) 0 var(--space-1) var(--space-2);border-radius:var(--radius-sm);list-style:none;font:var(--text-ui-small);color:var(--ink-muted);cursor:pointer}
+.ib-thought__summary::-webkit-details-marker{display:none}
+.ib-thought__summary:hover{background:var(--surface-hover)}
+.ib-thought__summary > .ib-alog__chev{align-self:center}
+.ib-thought__line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-faint)}
+.ib-thought[open] > .ib-thought__summary .ib-thought__line{visibility:hidden}
+.ib-thought__time{font:var(--text-meta);color:var(--ink-faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ib-thought__text{margin:0;padding:var(--space-1) 0 var(--space-2);max-width:var(--read-measure);font:var(--text-ui-small);color:var(--ink-muted);overflow-wrap:anywhere;white-space:pre-wrap}
+.ib-fold__rows > .ib-thought__text{padding-left:0}
 
 .ib-changes{min-width:0;border:1px solid var(--line-soft);border-radius:var(--radius-sm);overflow:hidden}
 .ib-changes__summary{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:var(--space-2);align-items:center;box-sizing:border-box;min-height:28px;padding:0 var(--space-2);background:var(--surface-sunken);list-style:none;font:var(--text-ui-small);color:var(--ink);cursor:pointer}
@@ -1031,6 +1041,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-raw__text{white-space:pre-wrap;overflow-wrap:anywhere}
 .ib-raw__line.is-run .ib-raw__text{color:var(--review);font-weight:500}
 .ib-raw__line.is-author .ib-raw__text{color:var(--accent)}
+.ib-raw__line.is-thought .ib-raw__text{color:var(--ink-muted)}
 .ib-raw__line.is-ok .ib-raw__text{color:var(--status-done)}
 .ib-raw__line.is-bad .ib-raw__text{color:var(--danger)}
 

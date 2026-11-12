@@ -1,4 +1,4 @@
-<!-- @dsCard group="AI review" height=2760 subtitle="The build's transcript: one live step, runs as headings, every burst of tool calls folded into one row, and the changed files opening the Diff screen" -->
+<!-- @dsCard group="AI review" height=2400 subtitle="The build's transcript: one live step, runs as headings, every burst of tool calls folded into one row, and the changed files opening the Diff screen" -->
 <!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>AgentLog</title>
@@ -159,6 +159,113 @@
 </section>
 
 <section class="al-demo">
+  <span class="ib-cap">Thinking: a thought joins the steps around it in one fold; one opens in place, and one alone between two messages is its own row</span>
+  <section class="ib-alog al-mid" aria-label="Agent log of release-mechanism-based-on-git-tag.md">
+    <header class="ib-alog__head">
+      <span class="ib-alog__title">Agent log of release-mechanism-based-on-git-tag.md</span>
+      <span class="ib-alog__detail">not running</span>
+    </header>
+    <div class="ib-alog__bar">
+      <div class="ib-seg" role="group" aria-label="Log view">
+        <button aria-pressed="true">Timeline</button>
+        <button aria-pressed="false">Raw</button>
+      </div>
+    </div>
+    <div class="ib-alog__body" tabindex="0">
+      <section class="ib-run" aria-label="Run 1, today 09:41, opencode">
+        <div class="ib-run__head"><span class="ib-run__n">Run 1</span><span class="ib-run__meta">today 09:41 · <b>opencode</b></span></div>
+        <details class="ib-fold" open>
+          <summary class="ib-fold__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span>Thought 3 times, read 3 files, searched 1, ran 1 command</span>
+          </summary>
+          <div class="ib-fold__rows">
+            <details class="ib-thought">
+              <summary class="ib-thought__summary" aria-label="Thinking, 4 seconds, collapsed"><span>Thinking</span><span class="ib-thought__line">The issue wants a tag check behind the release flag. I should …</span><span class="ib-thought__time">4s</span><svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+            </details>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Reading</span><span class="ib-fold__target">doing/release-mechanism-based-on-git-tag.md</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Reading</span><span class="ib-fold__target">src/release.rs</span></div>
+            <details class="ib-thought" open>
+              <summary class="ib-thought__summary" aria-label="Thinking, 7 seconds, expanded"><span>Thinking</span><span class="ib-thought__line">release_tag is only used in two places, so the check can live …</span><span class="ib-thought__time">7s</span><svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+              <p class="ib-thought__text">release_tag is only used in two places, so the check can live next to it. The v-prefixed tags matter: two release scripts still use v0.3.0, so the grammar has to accept both.</p>
+            
+            </details>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Searching</span><span class="ib-fold__target">release_tag</span></div>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Reading</span><span class="ib-fold__target">src/git.rs</span></div>
+            <details class="ib-thought">
+              <summary class="ib-thought__summary" aria-label="Thinking, 2 seconds, collapsed"><span>Thinking</span><span class="ib-thought__line">Tests first: the new path needs a tag with and without the prefix, and one that is not a tag at all.</span><span class="ib-thought__time">2s</span><svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+            </details>
+            <div class="ib-fold__row"><span class="ib-fold__verb">Running</span><span class="ib-fold__target"><code>cargo test --release</code></span></div>
+          </div>
+        </details>
+        <div class="ib-msg"><p>The tag path is in and <code>cargo test --release</code> passes.</p></div>
+        <details class="ib-fold">
+          <summary class="ib-fold__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span>Thought for 6s</span>
+          </summary>
+          <div class="ib-fold__rows">
+            <p class="ib-thought__text">Two options for the changelog: add a line now or leave it for the release note, which is built from the labels. The second avoids a merge conflict with the release branch.</p>
+          </div>
+        </details>
+        <div class="ib-msg"><p>I left the changelog alone.</p></div>
+        <details class="ib-changes">
+          <summary class="ib-changes__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span class="ib-changes__title">3 files changed</span>
+            <span class="ib-changes__stats"><span class="ib-changes__add">+159</span> <span class="ib-changes__del">−45</span></span>
+          </summary>
+        </details>
+        <div class="ib-out">
+          <svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>
+          <span class="ib-out__label">Finished</span><span class="ib-out__time">in 2:48</span>
+        </div>
+      </section>
+    </div>
+    <div class="ib-alog__foot">
+      <textarea class="ib-reply" rows="2" placeholder="Ask for another pass…" aria-label="Ask the agent to do more"></textarea>
+      <div class="ib-alog__send"><span class="ib-alog__hint">⌘↩ sends</span><span class="ib-alog__spacer"></span><button class="ib-btn ib-btn--primary" disabled>Send</button></div>
+    </div>
+  </section>
+</section>
+
+<section class="al-demo">
+  <span class="ib-cap">Running while it thinks: the Now strip says “Thinking” with no object; the thought itself waits until it is whole</span>
+  <section class="ib-alog al-small" aria-label="Agent log of release-mechanism-based-on-git-tag.md, thinking">
+    <header class="ib-alog__head">
+      <span class="ib-alog__title">Agent log of release-mechanism-based-on-git-tag.md</span>
+      <span class="ib-alog__detail">running</span>
+    </header>
+    <div class="ib-alog__bar">
+      <div class="ib-seg" role="group" aria-label="Log view">
+        <button aria-pressed="true">Timeline</button>
+        <button aria-pressed="false">Raw</button>
+      </div>
+    </div>
+    <div class="ib-alog__now" role="status">
+      <span class="ib-think ib-think--sm" role="img" aria-label="Working"><svg viewBox="0 0 44 44" aria-hidden="true"><g class="ib-think__turn"><rect class="ib-think__stem" x="0" y="17" width="12" height="27" rx="3"/><rect class="ib-think__card" x="0" y="0" width="12" height="12" rx="3"/></g></svg></span>
+      <span class="ib-alog__step">Thinking</span>
+      <span class="ib-alog__clock">0:38</span>
+    </div>
+    <div class="ib-alog__body" tabindex="0">
+      <section class="ib-run" aria-label="Run 1, today 09:41, opencode">
+        <div class="ib-run__head"><span class="ib-run__n">Run 1</span><span class="ib-run__meta">today 09:41 · <b>opencode</b></span></div>
+        <details class="ib-fold">
+          <summary class="ib-fold__summary">
+            <svg class="ib-alog__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            <span>Thought 2 times, read 2 files</span>
+          </summary>
+        </details>
+      </section>
+    </div>
+    <div class="ib-alog__foot">
+      <textarea class="ib-reply" rows="2" placeholder="Reply to the agent…" aria-label="Reply to the agent"></textarea>
+      <div class="ib-alog__send"><span class="ib-alog__hint">⌘↩ sends</span><span class="ib-alog__spacer"></span><button class="ib-btn ib-btn--primary" disabled>Send</button></div>
+    </div>
+  </section>
+</section>
+
+<section class="al-demo">
   <span class="ib-cap">Raw: the exact log, line numbered, in mono; nothing folded, nothing invented</span>
   <section class="ib-alog al-raw" aria-label="Agent log of release-mechanism-based-on-git-tag.md, raw">
     <header class="ib-alog__head">
@@ -179,20 +286,22 @@
     <div class="ib-alog__body" tabindex="0">
       <div class="ib-raw" role="region" aria-label="Raw build log">
         <div class="ib-raw__line is-run"><span class="ib-raw__n" aria-hidden="true">1</span><span class="ib-raw__text">── today 14:02 · opencode</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">2</span><span class="ib-raw__text">→ Reading doing/release-mechanism-based-on-git-tag.md…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">3</span><span class="ib-raw__text">→ Reading src/release.rs…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">4</span><span class="ib-raw__text">→ Searching release_tag…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">5</span><span class="ib-raw__text">→ Reading src/app/release.rs…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">6</span><span class="ib-raw__text">→ Reading src/git.rs…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">7</span><span class="ib-raw__text">→ Reading tests/release.rs…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">8</span><span class="ib-raw__text">→ Searching v0.3…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">9</span><span class="ib-raw__text">→ Editing src/release.rs…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">10</span><span class="ib-raw__text">→ Editing src/app/release.rs…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">11</span><span class="ib-raw__text">→ Using shell cargo test --release…</span></div>
-        <div class="ib-raw__line is-author"><span class="ib-raw__n" aria-hidden="true">12</span><span class="ib-raw__text">▸ keep v-prefixed tags working</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">13</span><span class="ib-raw__text">→ Editing tests/release_tags.rs…</span></div>
-        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">14</span><span class="ib-raw__text">→ Using shell cargo test --release…</span></div>
-        <div class="ib-raw__line is-ok"><span class="ib-raw__n" aria-hidden="true">15</span><span class="ib-raw__text">✓ Finished in 3:12</span></div>
+        <div class="ib-raw__line is-thought"><span class="ib-raw__n" aria-hidden="true">2</span><span class="ib-raw__text">∴ 4s · The issue wants a tag check behind the release flag. I should read how release.rs picks its version first.</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">3</span><span class="ib-raw__text">→ Reading doing/release-mechanism-based-on-git-tag.md…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">4</span><span class="ib-raw__text">→ Reading src/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">5</span><span class="ib-raw__text">→ Searching release_tag…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">6</span><span class="ib-raw__text">→ Reading src/app/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">7</span><span class="ib-raw__text">→ Reading src/git.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">8</span><span class="ib-raw__text">→ Reading tests/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">9</span><span class="ib-raw__text">→ Searching v0.3…</span></div>
+        <div class="ib-raw__line is-thought"><span class="ib-raw__n" aria-hidden="true">10</span><span class="ib-raw__text">∴ 7s · release_tag is only used in two places, so the check can live next to it. Two release scripts still use v0.3.0.</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">11</span><span class="ib-raw__text">→ Editing src/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">12</span><span class="ib-raw__text">→ Editing src/app/release.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">13</span><span class="ib-raw__text">→ Using shell cargo test --release…</span></div>
+        <div class="ib-raw__line is-author"><span class="ib-raw__n" aria-hidden="true">14</span><span class="ib-raw__text">▸ keep v-prefixed tags working</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">15</span><span class="ib-raw__text">→ Editing tests/release_tags.rs…</span></div>
+        <div class="ib-raw__line"><span class="ib-raw__n" aria-hidden="true">16</span><span class="ib-raw__text">→ Using shell cargo test --release…</span></div>
+        <div class="ib-raw__line is-ok"><span class="ib-raw__n" aria-hidden="true">17</span><span class="ib-raw__text">✓ Finished in 3:12</span></div>
       </div>
     </div>
     <div class="ib-alog__foot">
