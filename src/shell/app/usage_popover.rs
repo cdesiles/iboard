@@ -377,10 +377,12 @@ fn runs_line(meter: &Meter) -> String {
 }
 
 /// The window's tokens, a bar per day: today in full `accent`, the days
-/// before it softer, the days after it empty.
+/// before it softer, the days after it empty. A window that used no tokens
+/// has nothing to chart; a one-day window names its bar `Today`, since a lone
+/// weekday initial has no other day to read against.
 fn days(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) {
     let days = meter.per_day();
-    if days.is_empty() {
+    if days.is_empty() || meter.consumed.tokens == 0 {
         return;
     }
     section_label(ui, "Tokens per day");
@@ -449,8 +451,16 @@ fn paint_days(ui: &egui::Ui, rect: Rect, days: &[DayUse], now: DateTime<Utc>) {
     }
 }
 
-/// A day's initial in a week, or only the first day's number in a month.
+/// A day's initial in a week, `Today` when the window holds one day, or only
+/// the first day's number in a month.
 fn day_label(day: &DayUse, at: usize, count: usize) -> Option<String> {
+    if count == 1 {
+        return Some(if day.today {
+            "Today".to_string()
+        } else {
+            day.day.format("%a").to_string()
+        });
+    }
     if count <= 7 {
         return day
             .day
@@ -589,4 +599,29 @@ fn soft_rule(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
     ui.painter()
         .rect_filled(rect, CornerRadius::ZERO, p.line_soft);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn day(date: &str, today: bool) -> DayUse {
+        DayUse {
+            day: date.parse().unwrap(),
+            tokens: 42,
+            today,
+        }
+    }
+
+    #[test]
+    fn a_one_day_chart_names_its_bar_today() {
+        let only = day("2026-11-12", true);
+        assert_eq!(day_label(&only, 0, 1).as_deref(), Some("Today"));
+    }
+
+    #[test]
+    fn a_week_chart_keeps_its_initials() {
+        let tuesday = day("2026-11-10", false);
+        assert_eq!(day_label(&tuesday, 1, 7).as_deref(), Some("T"));
+    }
 }

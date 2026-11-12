@@ -511,6 +511,73 @@ fn a_provider_with_a_session_and_a_week_shows_two_rows() {
     harness.get_by_label("62% used · from Claude.ai");
 }
 
+/// A session that has used no token yet draws no daily chart: one empty well
+/// under a lone weekday initial says nothing the row has not.
+#[test]
+fn a_session_with_no_tokens_draws_no_daily_chart() {
+    let dir = scratch_dir("subscription-session-no-tokens");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    app.session.quotas = vec![crate::agent::Quota {
+        provider: "claude".to_string(),
+        window: Window::Session,
+        measure: crate::agent::Measure::Share(0.18),
+        reset: Utc::now() + chrono::Duration::hours(2),
+    }];
+    harness.run_steps(2);
+    harness
+        .get_all_by_label_contains("Claude.ai · Session · 18% of the session used")
+        .next()
+        .unwrap()
+        .click();
+    harness.run_steps(2);
+
+    harness.get_by_label("18% used · from Claude.ai");
+    assert!(
+        harness
+            .query_by_label("Tokens per day this session")
+            .is_none(),
+        "an empty window has no chart"
+    );
+    assert!(
+        harness
+            .query_all_by_label("TOKENS PER DAY")
+            .next()
+            .is_none(),
+        "not even its heading"
+    );
+}
+
+/// A session with a run keeps its one-day chart, so hiding the empty one
+/// never hides a window's tokens.
+#[test]
+fn a_session_with_tokens_keeps_its_daily_chart() {
+    let dir = scratch_dir("subscription-session-tokens");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    app.session.quotas = vec![crate::agent::Quota {
+        provider: "claude".to_string(),
+        window: Window::Session,
+        measure: crate::agent::Measure::Share(0.18),
+        reset: Utc::now() + chrono::Duration::hours(2),
+    }];
+    log_run(app, "claude", 210, 0.42);
+    harness.run_steps(2);
+    harness
+        .get_all_by_label_contains("Claude.ai · Session · 18% of the session used")
+        .next()
+        .unwrap()
+        .click();
+    harness.run_steps(2);
+
+    harness.get_by_label("Tokens per day this session");
+    harness.get_by_label("TOKENS PER DAY");
+}
+
 /// A board with no subscription plan shows no pill, and a metered plan keeps
 /// its dollars out of it.
 #[test]
