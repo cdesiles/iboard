@@ -20,6 +20,7 @@ mod menu;
 mod modal;
 mod pill;
 mod select;
+mod usage;
 
 pub use button::{
     ButtonKind, CARD_ACTION, Tone, action_button, button, hover_fade, icon_button, split_button,
@@ -42,6 +43,7 @@ pub use pill::{
     chip, filter_token, label_pill, label_pill_lit, pill, review_tag, tag, unfocusable_label_pill,
 };
 pub use select::select;
+pub use usage::{GAUGE_H, GAUGE_SLIM_H, RING, gauge, ring, usage_pill};
 
 fn galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<Galley> {
     WidgetText::from(egui::RichText::new(text).font(font).color(color)).into_galley(
@@ -455,188 +457,6 @@ pub fn ghost_section(ui: &mut Ui, heading: &str, hint: Option<&str>) -> Response
         }
     }
     response
-}
-
-/// The diameter of a subscription meter's ring, in the status bar and in its
-/// popover.
-pub const RING: f32 = 14.0;
-/// The ring's stroke, as the design sets it.
-const RING_STROKE: f32 = 1.75;
-
-/// A subscription meter's ring: `share` of it in `accent`, the rest the
-/// track. `None` leaves the track dashed; it never makes a share up. `warn`
-/// turns the arc `status-doing` for a plan past its even pace.
-pub fn ring(ui: &mut Ui, share: Option<f32>, warn: bool) -> Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(RING), Sense::hover());
-    if ui.is_rect_visible(rect) {
-        paint_ring(ui, rect, share, warn);
-    }
-    response
-}
-
-/// A subscription usage pill: a [`ring`] and a figure, its hit area a control
-/// tall and a `space-3` wider each side. `share` is the share of the provider
-/// closest to its cap; `None` dashes the ring. `detail` is what the pointer and
-/// VoiceOver read, and `open` keeps the hover fill under a showing popover.
-pub fn usage_pill(
-    ui: &mut Ui,
-    share: Option<f32>,
-    warn: bool,
-    figure: &str,
-    detail: &str,
-    open: bool,
-) -> Response {
-    let p = theme::palette(ui);
-    let ink = if warn { p.status_doing } else { p.ink };
-    let text = galley(ui, figure, theme::meta(), ink);
-    let pad = theme::SPACE_3;
-    let gap = theme::SPACE_2;
-    let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(2.0 * pad + RING + gap + text.size().x, theme::CONTROL_H),
-        Sense::click(),
-    );
-    let response = response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(detail);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), detail));
-    if ui.is_rect_visible(rect) {
-        let fade = hover_fade(ui.ctx(), response.id, response.hovered() || open);
-        let painter = ui.painter();
-        painter.rect_filled(
-            rect,
-            CornerRadius::same(theme::RADIUS_SM),
-            p.surface_hover.gamma_multiply(fade),
-        );
-        let ring = Rect::from_min_size(
-            Pos2::new(rect.min.x + pad, rect.center().y - RING / 2.0),
-            Vec2::splat(RING),
-        );
-        paint_ring(ui, ring, share, warn);
-        painter.galley(
-            Pos2::new(ring.max.x + gap, rect.center().y - text.size().y / 2.0),
-            text,
-            ink,
-        );
-    }
-    focus_ring(ui, &response, theme::RADIUS_SM);
-    response
-}
-
-/// Draws a ring's track and, when known, the share that fills it from the
-/// top, clockwise. An unknown share leaves a dashed track; 0% an empty solid
-/// one.
-fn paint_ring(ui: &Ui, rect: Rect, share: Option<f32>, warn: bool) {
-    let p = theme::palette(ui);
-    let radius = rect.width() / 2.0 - RING_STROKE / 2.0;
-    let center = rect.center();
-    let track = Stroke::new(RING_STROKE, p.line_strong);
-    let Some(share) = share else {
-        let points = circle(center, radius, 64);
-        ui.painter()
-            .extend(egui::Shape::dashed_line(&points, track, 6.25, 6.25));
-        return;
-    };
-    ui.painter().circle_stroke(center, radius, track);
-    let share = share.clamp(0.0, 1.0);
-    let color = if warn { p.status_doing } else { p.accent };
-    let stroke = Stroke::new(RING_STROKE, color);
-    if share >= 1.0 {
-        ui.painter().circle_stroke(center, radius, stroke);
-    } else if share > 0.0 {
-        let start = -std::f32::consts::FRAC_PI_2;
-        let steps = 32;
-        let points: Vec<Pos2> = (0..=steps)
-            .map(|step| {
-                let angle = start + std::f32::consts::TAU * share * step as f32 / steps as f32;
-                center + Vec2::angled(angle) * radius
-            })
-            .collect();
-        ui.painter().add(egui::Shape::line(points, stroke));
-    }
-}
-
-/// A point every `1 / steps` around a circle, closed, from the top clockwise.
-fn circle(center: Pos2, radius: f32, steps: usize) -> Vec<Pos2> {
-    let start = -std::f32::consts::FRAC_PI_2;
-    (0..=steps)
-        .map(|step| {
-            let angle = start + std::f32::consts::TAU * step as f32 / steps as f32;
-            center + Vec2::angled(angle) * radius
-        })
-        .collect()
-}
-
-/// The height of a usage row's gauge, and of the model split's under it.
-pub const GAUGE_H: f32 = 6.0;
-pub const GAUGE_SLIM_H: f32 = 3.0;
-
-/// How far a gauge's pace tick reaches above and below it.
-const GAUGE_TICK: f32 = 3.0;
-
-/// A usage gauge: the share of a cap used on a `surface-sunken` track with a
-/// `line` edge, and an optional `ink` tick at an even pace. A share past the
-/// tick is `status-doing`; an unknown one is a dashed outline. `what` names
-/// the window ("the week") or "the tokens", and makes the label VoiceOver
-/// reads.
-pub fn gauge(
-    ui: &mut Ui,
-    share: Option<f32>,
-    tick: Option<f32>,
-    height: f32,
-    what: &str,
-) -> Response {
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
-    let label = gauge_label(share, tick, what);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, &label));
-    if ui.is_rect_visible(rect) {
-        paint_gauge(ui, rect, share, tick);
-    }
-    response
-}
-
-/// What a gauge's label says: its share and, when it has one, the even pace.
-fn gauge_label(share: Option<f32>, tick: Option<f32>, what: &str) -> String {
-    let Some(share) = share else {
-        return "No cap set".to_string();
-    };
-    let share = share.clamp(0.0, 1.0) * 100.0;
-    match tick {
-        Some(tick) => format!(
-            "{share:.0}% of {what} used, an even pace is {:.0}%",
-            tick.clamp(0.0, 1.0) * 100.0
-        ),
-        None => format!("{share:.0}% of {what}"),
-    }
-}
-
-fn paint_gauge(ui: &Ui, rect: Rect, share: Option<f32>, tick: Option<f32>) {
-    let p = theme::palette(ui);
-    let radius = CornerRadius::same((rect.height() / 2.0).min(f32::from(theme::RADIUS_SM)) as u8);
-    let painter = ui.painter();
-    let Some(share) = share else {
-        dashed_rect(painter, rect, theme::RADIUS_SM, p.line_strong);
-        return;
-    };
-    let share = share.clamp(0.0, 1.0);
-    painter.rect_filled(rect, radius, p.surface_sunken);
-    let warn = tick.is_some_and(|tick| share > tick);
-    if share > 0.0 {
-        let filled = Rect::from_min_size(rect.min, Vec2::new(rect.width() * share, rect.height()));
-        let color = if warn { p.status_doing } else { p.accent };
-        painter.rect_filled(filled, radius, color);
-    }
-    painter.rect_stroke(rect, radius, Stroke::new(1.0, p.line), StrokeKind::Inside);
-    if let Some(tick) = tick {
-        let x = rect.min.x + rect.width() * tick.clamp(0.0, 1.0);
-        painter.line_segment(
-            [
-                Pos2::new(x, rect.min.y - GAUGE_TICK),
-                Pos2::new(x, rect.max.y + GAUGE_TICK),
-            ],
-            Stroke::new(2.0, p.ink),
-        );
-    }
 }
 
 /// A 48pt `status-done` meter on a `surface-sunken` track, `done` of `total`.

@@ -1,8 +1,10 @@
-//! The subscription popover: the quick answer per plan window, will it make
-//! the reset, then the links to the full Usage screen and Settings › AI.
+//! The usage popover: the board's spend and the quick answer per plan window,
+//! will it make the reset, then the links to the full Usage screen and
+//! Settings › AI.
 
 use chrono::{DateTime, Utc};
 
+use super::status::BoardSpend;
 use super::{
     Align, CornerRadius, Frame, IboardApp, Layout, MarginF32, Rect, RichText, Sense, Vec2,
     settings_ui, theme, widgets,
@@ -26,14 +28,15 @@ pub(super) fn popup_id() -> egui::Id {
 }
 
 impl IboardApp {
-    /// The popover above the usage pill: a row per plan, then the links to
-    /// Full usage and Settings › AI. It closes on `esc` or a click outside, as
-    /// egui's popup does.
+    /// The popover above the usage trigger: the board's spend, then a row per
+    /// window, then the links to Full usage and Settings › AI. It closes on
+    /// `esc` or a click outside, as egui's popup does.
     pub(super) fn usage_popover(
         &mut self,
         ui: &egui::Ui,
         anchor: Rect,
         meters: &[Meter],
+        spend: Option<&BoardSpend>,
         now: DateTime<Utc>,
     ) {
         let id = popup_id();
@@ -48,8 +51,8 @@ impl IboardApp {
             .align(egui::RectAlign::TOP_END)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .frame(widgets::popover_frame(ui).inner_margin(0.0))
-            .accessible_name("Subscription usage")
-            .show(|ui| foot = body(ui, meters, now));
+            .accessible_name("Usage")
+            .show(|ui| foot = body(ui, meters, spend, now));
         if let Some(foot) = foot {
             egui::Popup::close_id(ui.ctx(), id);
             match foot {
@@ -60,8 +63,14 @@ impl IboardApp {
     }
 }
 
-/// The popover's content: its head, one plain row per plan, then its foot.
-fn body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> Option<Foot> {
+/// The popover's content: its head, the spend row, one plain row per window,
+/// then its foot.
+fn body(
+    ui: &mut egui::Ui,
+    meters: &[Meter],
+    spend: Option<&BoardSpend>,
+    now: DateTime<Utc>,
+) -> Option<Foot> {
     let p = theme::palette(ui);
     ui.style_mut().interaction.selectable_labels = false;
     ui.set_width(WIDTH);
@@ -71,14 +80,16 @@ fn body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> Option<Foot>
         Layout::left_to_right(Align::Center),
         |ui| {
             ui.add_space(theme::SPACE_4);
-            ui.label(
-                RichText::new("Subscription usage")
-                    .font(theme::ui_title())
-                    .color(p.ink),
-            );
+            ui.label(RichText::new("Usage").font(theme::ui_title()).color(p.ink));
         },
     );
     widgets::rule(ui);
+    if let Some(spend) = spend {
+        spend_row(ui, spend);
+        if !meters.is_empty() {
+            soft_rule(ui);
+        }
+    }
     for (at, meter) in meters.iter().enumerate() {
         if at > 0 {
             soft_rule(ui);
@@ -91,7 +102,49 @@ fn body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> Option<Foot>
         row(ui, meter, now, multi);
     }
     widgets::rule(ui);
-    foot(ui, meters)
+    foot(ui)
+}
+
+/// The board's spend, above the windows: `Today` or `Building`, today's
+/// dollars at the right, then the week and the last session under it.
+fn spend_row(ui: &mut egui::Ui, spend: &BoardSpend) {
+    let p = theme::palette(ui);
+    Frame::new()
+        .inner_margin(MarginF32 {
+            left: theme::SPACE_4,
+            right: theme::SPACE_4,
+            top: theme::SPACE_4,
+            bottom: theme::SPACE_4,
+        })
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+            ui.horizontal(|ui| {
+                let name = if spend.running { "Building" } else { "Today" };
+                ui.label(RichText::new(name).font(theme::ui_strong()).color(p.ink));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let color = if spend.today > 0.0 {
+                        p.ink
+                    } else {
+                        p.ink_muted
+                    };
+                    ui.label(
+                        RichText::new(spend.figure())
+                            .font(theme::ui_title())
+                            .color(color),
+                    );
+                });
+            });
+            ui.horizontal(|ui| {
+                let week = format!("This week · ${:.2}", spend.week);
+                ui.label(RichText::new(week).font(theme::meta()).color(p.ink_muted));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if let Some(last) = spend.last {
+                        let last = format!("Last session · ${last:.2}");
+                        ui.label(RichText::new(last).font(theme::meta()).color(p.ink_muted));
+                    }
+                });
+            });
+        });
 }
 
 /// What a row is called: its provider, and the window when it has more than
@@ -238,9 +291,8 @@ pub(super) fn used_line_of(
     }
 }
 
-/// The foot: the even-pace legend when a cap is known, then Full usage and
-/// Settings › AI at the right.
-fn foot(ui: &mut egui::Ui, meters: &[Meter]) -> Option<Foot> {
+/// The foot: Full usage and Settings › AI at the right.
+fn foot(ui: &mut egui::Ui) -> Option<Foot> {
     let mut foot = None;
     Frame::new()
         .inner_margin(MarginF32 {
@@ -251,9 +303,6 @@ fn foot(ui: &mut egui::Ui, meters: &[Meter]) -> Option<Foot> {
         })
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                if meters.iter().any(|meter| meter.share().is_some()) {
-                    legend(ui);
-                }
                 ui.spacing_mut().item_spacing.x = 0.0;
                 let links = widgets::text_width(ui, "Full usage", theme::meta())
                     + theme::SPACE_4
@@ -271,21 +320,6 @@ fn foot(ui: &mut egui::Ui, meters: &[Meter]) -> Option<Foot> {
             });
         });
     foot
-}
-
-/// The `Even pace` legend: the gauge's tick and its word.
-fn legend(ui: &mut egui::Ui) {
-    let p = theme::palette(ui);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(2.0, 10.0), Sense::hover());
-        ui.painter().rect_filled(rect, CornerRadius::ZERO, p.ink);
-        ui.label(
-            RichText::new("Even pace")
-                .font(theme::meta())
-                .color(p.ink_muted),
-        );
-    });
 }
 
 /// The hairline between two rows: `line-soft`, never a card's edge.

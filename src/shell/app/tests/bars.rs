@@ -356,10 +356,7 @@ fn a_subscription_pill_reads_its_cap_and_opens_the_usage_popover() {
         .click();
     harness.run_steps(2);
     assert!(
-        harness
-            .query_all_by_label("Subscription usage")
-            .next()
-            .is_some(),
+        harness.query_all_by_label("Usage").next().is_some(),
         "the popover is up"
     );
     harness.get_by_label("Under pace");
@@ -502,8 +499,8 @@ fn a_provider_with_a_session_and_a_week_shows_two_rows() {
     harness.get_by_label("31%");
 }
 
-/// A board with no subscription plan shows no pill, and a metered plan keeps
-/// its dollars out of it.
+/// A board with no subscription plan shows the spend alone: a metered cap
+/// never fills a share.
 #[test]
 fn the_usage_pill_is_only_for_subscriptions() {
     let dir = scratch_dir("subscription-metered");
@@ -522,6 +519,7 @@ fn the_usage_pill_is_only_for_subscriptions() {
         );
     }
     harness.run_steps(2);
+    harness.get_by_label_contains("Today $0.00, this week $0.00");
     assert!(
         harness
             .query_all_by_label_contains("No cap set")
@@ -541,6 +539,41 @@ fn the_usage_pill_is_only_for_subscriptions() {
             .query_all_by_label_contains("tokens burnt")
             .next()
             .is_none()
+    );
+}
+
+/// Off the board, with no plan window to show, the bar carries no trigger at
+/// all.
+#[test]
+fn no_trigger_without_a_spend_or_a_plan_window() {
+    let dir = scratch_dir("usage-none");
+    let file = dir.join("issues/todo/a.md");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "# Title\n").unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    for provider in ["anthropic", "deepseek", "claude", "copilot"] {
+        app.prefs
+            .usage
+            .set(provider, plan(Billing::Metered, Window::Week, None));
+    }
+    app.open_issue(file);
+    harness.run_steps(2);
+
+    assert!(
+        harness
+            .query_all_by_label_contains("Today $")
+            .next()
+            .is_none(),
+        "no spend off the board"
+    );
+    assert!(
+        harness
+            .query_all_by_label_contains("% of the")
+            .next()
+            .is_none(),
+        "no plan window"
     );
 }
 
@@ -586,19 +619,22 @@ fn usage_popover(tag: &str) -> Board {
 }
 
 /// The popover names a known row with its share and verdict, and an unknown
-/// one with `No cap` and its reset. Only a known cap earns the even-pace
-/// legend.
+/// one with `No cap` and its reset. The spend is its first row: today, the
+/// week and the last session.
 #[test]
 fn the_usage_popover_names_a_known_and_an_unknown_row() {
     let harness = usage_popover("usage-rows");
 
+    harness.get_by_label("Today");
+    harness.get_by_label("$0.00");
+    harness.get_by_label("This week · $0.00");
+    harness.get_by_label("Last session · $0.00");
     harness.get_by_label("Claude.ai");
     harness.get_by_label("21%");
     harness.get_by_label("Under pace");
     harness.get_by_label("Copilot");
     harness.get_by_label("No cap");
     harness.get_by_label_contains("Resets in");
-    harness.get_by_label("Even pace");
 }
 
 /// The foot's link opens Settings on the AI review tab and closes the popover.
@@ -610,10 +646,7 @@ fn the_popover_foot_opens_settings_on_the_ai_tab() {
     let dialog = harness.state().1.settings.as_ref().expect("Settings opens");
     assert_eq!(dialog.tab, settings_ui::Tab::Review);
     assert!(
-        harness
-            .query_all_by_label("Subscription usage")
-            .next()
-            .is_none(),
+        harness.query_all_by_label("Usage").next().is_none(),
         "the popover closes"
     );
 }
@@ -626,10 +659,7 @@ fn full_usage_opens_the_usage_screen_and_closes_the_popover() {
 
     assert!(harness.state().1.usage.open, "the Usage screen opens");
     assert!(
-        harness
-            .query_all_by_label("Subscription usage")
-            .next()
-            .is_none(),
+        harness.query_all_by_label("Full usage").next().is_none(),
         "the popover closes"
     );
 }
@@ -639,20 +669,14 @@ fn full_usage_opens_the_usage_screen_and_closes_the_popover() {
 fn escape_closes_the_usage_popover() {
     let mut harness = usage_popover("usage-escape");
     assert!(
-        harness
-            .query_all_by_label("Subscription usage")
-            .next()
-            .is_some(),
+        harness.query_all_by_label("Usage").next().is_some(),
         "the popover is up"
     );
 
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
     assert!(
-        harness
-            .query_all_by_label("Subscription usage")
-            .next()
-            .is_none(),
+        harness.query_all_by_label("Usage").next().is_none(),
         "esc closed it"
     );
 }
@@ -674,8 +698,8 @@ fn spend_entry(project: &Path, session: &str, billing: Billing, cost: f64) -> En
     }
 }
 
-/// The board's right side says what the projects spent today; its tooltip
-/// holds the week and the last finished session.
+/// The board's trigger carries what the projects spent today; a click opens
+/// the popover with the week and the last finished session.
 #[test]
 fn the_board_shows_what_it_spent_today() {
     let (_dir, app) = project("board-spend", &[("todo/a.md", "# A\n")]);
@@ -684,12 +708,13 @@ fn the_board_shows_what_it_spent_today() {
     harness.state_mut().1.usage_entries = vec![spend_entry(&root, "ses_1", Billing::Metered, 0.42)];
     harness.run_steps(2);
 
-    harness.get_by_label("$0.42");
-    let spot = harness.get_by_label("$0.42").rect().center();
-    harness.event(moved(spot));
+    harness
+        .get_by_label_contains("Today $0.42, this week $0.42")
+        .click();
     harness.run_steps(4);
-    harness.get_by_label_contains("This week · $0.42");
-    harness.get_by_label_contains("Last session · $0.42");
+    harness.get_by_label("$0.42");
+    harness.get_by_label("This week · $0.42");
+    harness.get_by_label("Last session · $0.42");
 }
 
 /// A board that spent nothing says `$0.00`.
@@ -697,10 +722,10 @@ fn the_board_shows_what_it_spent_today() {
 fn a_board_that_spent_nothing_shows_zero() {
     let (_dir, app) = project("board-spend-nothing", &[("todo/a.md", "# A\n")]);
     let harness = kittest(app);
-    harness.get_by_label("$0.00");
+    harness.get_by_label_contains("Today $0.00, this week $0.00");
 }
 
-/// While an agent works, the figure names the build and adds what the live
+/// While an agent works, the popover names the build and adds what the live
 /// session has cost so far to the log's finished spend today.
 #[test]
 fn the_board_builds_its_figure_from_the_live_session() {
@@ -715,10 +740,15 @@ fn the_board_builds_its_figure_from_the_live_session() {
     };
     harness.run_steps(2);
 
-    harness.get_by_label("Building · $0.42");
+    harness
+        .get_by_label_contains("Building $0.42, this week $0.30")
+        .click();
+    harness.run_steps(4);
+    harness.get_by_label("Building");
+    harness.get_by_label("$0.42");
 }
 
-/// The keys slide in to the left of the spend, which stays where it is.
+/// The keys slide in to the left of the trigger, which stays where it is.
 #[test]
 fn the_spend_stays_put_while_the_keys_slide_in() {
     let dir = scratch_dir("board-spend-hints");
@@ -727,11 +757,12 @@ fn the_spend_stays_put_while_the_keys_slide_in() {
     let root = harness.state().1.located.project_dir.clone();
     harness.state_mut().1.usage_entries = vec![spend_entry(&root, "ses_1", Billing::Metered, 0.42)];
     harness.run_steps(2);
-    let at_rest = harness.get_by_label("$0.42").rect();
+    let label = "Today $0.42, this week $0.42";
+    let at_rest = harness.get_by_label_contains(label).rect();
 
     harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
     harness.run_steps(7);
-    assert_eq!(harness.get_by_label("$0.42").rect(), at_rest);
+    assert_eq!(harness.get_by_label_contains(label).rect(), at_rest);
     assert!(
         harness.get_by_label("filter").rect().max.x <= at_rest.min.x,
         "the hints slide in to its left"
@@ -770,5 +801,5 @@ fn a_group_board_sums_its_projects_spend() {
     ];
     let harness = kittest(app);
 
-    harness.get_by_label("$0.65");
+    harness.get_by_label_contains("Today $0.65");
 }

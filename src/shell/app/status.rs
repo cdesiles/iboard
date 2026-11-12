@@ -15,8 +15,8 @@ const STATUS_GAP: f32 = 6.0;
 
 impl IboardApp {
     /// The 24pt bottom strip: where you are on the left and on the right the
-    /// Editor's save state, the subscription meters and, while ⌘ is held,
-    /// what you can press.
+    /// Editor's save state, the usage trigger and, while ⌘ is held, what you
+    /// can press.
     pub(super) fn status_bar(&mut self, ui: &mut egui::Ui) {
         ui.style_mut().interaction.selectable_labels = false;
         ui.horizontal_centered(|ui| {
@@ -39,9 +39,6 @@ impl IboardApp {
                 }
                 self.meter_rings(ui);
                 self.update_item(ui);
-                if matches!(screen, Screen::Board) {
-                    self.board_spend(ui);
-                }
                 if keys {
                     widgets::sliding_hints(ui, |ui| {
                         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
@@ -54,36 +51,29 @@ impl IboardApp {
         });
     }
 
-    /// On the board, what its projects spent: the log's finished runs today
-    /// plus what a running session cost so far, from the light spend feed. Its
-    /// tooltip holds the week and the last finished session.
-    fn board_spend(&mut self, ui: &mut egui::Ui) {
-        let now = Utc::now();
+    /// What the board's projects spent today, with what its running sessions
+    /// cost so far, the week beside it and the last finished session. `None`
+    /// off the board, where the trigger carries no spend.
+    fn spend_today(&self, now: DateTime<Utc>) -> Option<BoardSpend> {
+        if !matches!(self.session.screen, Screen::Board) {
+            return None;
+        }
         let spend = usage_log::Spend::of(&self.usage_entries, &self.board_projects(), now);
         let live = self.session.live_spend;
-        let today = spend.today + live.cost;
-        let figure = format!("${today:.2}");
-        let text = if live.running() {
-            format!("Building · {figure}")
-        } else {
-            figure
-        };
-        let p = theme::palette(ui);
-        let color = if today > 0.0 { p.ink } else { p.ink_muted };
-        let mut tooltip = format!("This week · ${:.2}", spend.week);
-        if let Some(last) = spend.last {
-            tooltip.push_str(&format!("\nLast session · ${last:.2}"));
-        }
-        ui.label(RichText::new(text).font(theme::meta()).color(color))
-            .on_hover_text(tooltip);
+        Some(BoardSpend {
+            today: spend.today + live.cost,
+            week: spend.week,
+            last: spend.last,
+            running: live.running(),
+        })
     }
 
-    /// The one subscription usage pill, and the popover it opens: a row per
-    /// plan with its share, reset and tokens, then Settings › AI. The pill
-    /// carries the share of the plan closest to its cap, or `Usage` when none
-    /// knows one.
+    /// The one usage trigger, and the popover it opens: the board's spend then
+    /// the share of the window closest to its cap. It is absent when there is
+    /// neither a spend nor a plan window.
     fn meter_rings(&mut self, ui: &mut egui::Ui) {
         let now = Utc::now();
+        let spent = self.spend_today(now);
         let meters = usage_log::subscription_meters_with(
             &self.prefs.usage,
             &self.usage_entries,
@@ -91,7 +81,7 @@ impl IboardApp {
             &self.session.quotas,
         );
         let id = super::usage_popover::popup_id();
-        if meters.is_empty() {
+        if spent.is_none() && meters.is_empty() {
             egui::Popup::close_id(ui.ctx(), id);
             return;
         }
@@ -101,17 +91,23 @@ impl IboardApp {
             .max_by(|(_, a), (_, b)| a.total_cmp(b));
         let share = closest.map(|(_, share)| share);
         let warn = closest.is_some_and(|(meter, _)| meter.over_pace());
-        let figure = match share {
+        let figure = (!meters.is_empty()).then(|| match share {
             Some(share) => format!("{:.0}%", share * 100.0),
             None => "Usage".to_string(),
-        };
+        });
         let detail = pill_detail(&meters, now);
+        let pill = spent
+            .as_ref()
+            .map(|spend| (spend.figure(), spend.lit(), spend.line()));
+        let pill = pill
+            .as_ref()
+            .map(|(figure, lit, line)| (figure.as_str(), *lit, line.as_str()));
         let open = egui::Popup::is_id_open(ui.ctx(), id);
-        let response = widgets::usage_pill(ui, share, warn, &figure, &detail, open);
+        let response = widgets::usage_pill(ui, pill, share, warn, figure.as_deref(), &detail, open);
         if response.clicked() {
             egui::Popup::toggle_id(ui.ctx(), id);
         }
-        self.usage_popover(ui, response.rect, &meters, now);
+        self.usage_popover(ui, response.rect, &meters, spent.as_ref(), now);
     }
 
     /// The board's status: where it reads from or what just happened, its
@@ -308,6 +304,39 @@ impl IboardApp {
 
 /// A key hint of the status bar: the key, and what it does.
 type Hint = (&'static str, &'static str);
+
+/// The board's spend as the trigger and the popover show it: today's dollars
+/// with the running sessions' cost, this week's, the last session's, and
+/// whether a run is burning.
+pub(super) struct BoardSpend {
+    pub(super) today: f64,
+    pub(super) week: f64,
+    pub(super) last: Option<f64>,
+    pub(super) running: bool,
+}
+
+impl BoardSpend {
+    /// `$28.61`: today's dollars, as the bar and the popover write them.
+    pub(super) fn figure(&self) -> String {
+        format!("${:.2}", self.today)
+    }
+
+    /// Whether anything was spent today, which lights the figure.
+    fn lit(&self) -> bool {
+        self.today > 0.0
+    }
+
+    /// What VoiceOver reads on the trigger: what today cost, the week and the
+    /// last session, which the bar no longer names on hover.
+    fn line(&self) -> String {
+        let name = if self.running { "Building" } else { "Today" };
+        let mut line = format!("{name} ${:.2}, this week ${:.2}", self.today, self.week);
+        if let Some(last) = self.last {
+            line.push_str(&format!(", last session ${last:.2}"));
+        }
+        line
+    }
+}
 
 /// What the Reader's status line says of an open issue after its path: "modified
 /// 15d ago", then its checklist as a 48pt meter and "1/3 done", or with no
