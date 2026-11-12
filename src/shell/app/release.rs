@@ -1,6 +1,8 @@
 //! Done's Release flag: one panel that picks the version, whether to write a
 //! release note and push, then makes it all in one go.
 
+use std::collections::BTreeMap;
+
 use crate::release::{self, ReleaseChoices};
 
 use super::{
@@ -69,6 +71,16 @@ pub(super) struct ReleaseFlow {
     release: Option<Job<Released>>,
     progress: release::ReleaseProgress,
     pub(super) error: Option<String>,
+    /// The project's own step before the release commit, from its
+    /// `.iboard.toml`.
+    hook: Option<release::Hook>,
+    /// Why `.iboard.toml` could not be read: the release does not start over
+    /// a hook it cannot see.
+    hook_error: Option<String>,
+    /// The hooks the user trusts, per project folder.
+    trusted: BTreeMap<String, String>,
+    /// Whether the hook shown is trusted: ticked once, remembered after.
+    pub(super) trust: bool,
 }
 
 impl ReleaseFlow {
@@ -82,7 +94,15 @@ impl ReleaseFlow {
         since: Option<String>,
         choices: ReleaseChoices,
         can_write: bool,
+        hook: Result<Option<release::Hook>, String>,
     ) -> Self {
+        let (hook, hook_error) = match hook {
+            Ok(hook) => (hook, None),
+            Err(error) => (None, Some(error)),
+        };
+        let trust = hook
+            .as_ref()
+            .is_some_and(|hook| hook.trusted(&choices.trusted, &project));
         let bump = release::Bump::of(&subjects);
         let note = release::note(&subjects, false);
         let context = release::commit_context(&project, &pattern);
@@ -114,6 +134,10 @@ impl ReleaseFlow {
             release: None,
             progress: release::ReleaseProgress::default(),
             error: None,
+            hook,
+            hook_error,
+            trusted: choices.trusted,
+            trust,
         }
     }
 
@@ -204,19 +228,39 @@ impl ReleaseFlow {
     /// Starts the release on its own thread: the note and its commit, the tag,
     /// the push. Its error stays on screen and the flow can be confirmed again.
     fn start(&mut self) {
-        if self.running() {
+        if self.running() || !self.can_start() {
             return;
+        }
+        if let Some(hook) = &self.hook {
+            hook.trust(&mut self.trusted, &self.project);
         }
         let progress = self.progress;
         let (project, tag, section) = (self.project.clone(), self.tag.clone(), self.section());
         let (file, note, push) = (self.file.clone(), self.note, self.push);
+        let (bump, previous, hook) = (self.bump, self.since.clone(), self.hook.clone());
         self.error = None;
         self.release = Some(Job::spawn(move |_cancel| {
             let mut progress = progress;
-            let error =
-                release::confirm(&project, &tag, &section, &file, note, push, &mut progress).err();
+            let release = release::Release {
+                project: &project,
+                tag: &tag,
+                note: &section,
+                file: &file,
+                update_note: note,
+                push,
+                bump,
+                previous: previous.as_deref(),
+                hook: hook.as_ref(),
+            };
+            let error = release::confirm(&release, &mut progress).err();
             Ok((progress, error))
         }));
+    }
+
+    /// Whether the release may start: the project's hook, if it has one, is
+    /// readable and trusted.
+    fn can_start(&self) -> bool {
+        self.hook_error.is_none() && (self.hook.is_none() || self.trust)
     }
 
     /// Whether the release is still being made.
@@ -282,6 +326,7 @@ impl ReleaseFlow {
                     |ui| {
                         ui.add_enabled_ui(editable, |ui| {
                             self.version_ui(ui, p);
+                            self.hook_ui(ui, p);
                             self.note_choice_ui(ui, p);
                             if self.note {
                                 self.note_ui(ui, p);
@@ -398,6 +443,9 @@ impl ReleaseFlow {
         }
         let help = match self.note {
             true => "Commits the updated note before tagging the commit.",
+            false if self.hook.is_some() => {
+                "Tags the newest commit, with no release note; the hook's changes get a commit."
+            }
             false => "Tags the newest commit, with no release note and no new commit.",
         };
         ui.label(
@@ -510,6 +558,31 @@ impl ReleaseFlow {
         );
     }
 
+    /// The project's hook: what it runs and commits, and the trust it needs.
+    fn hook_ui(&mut self, ui: &mut egui::Ui, p: &theme::Palette) {
+        if let Some(error) = &self.hook_error {
+            widgets::field_label(ui, "Project hook");
+            widgets::help(ui, error, p.danger);
+        }
+        let Some(hook) = &self.hook else {
+            return;
+        };
+        widgets::field_label(ui, "Project hook");
+        let command = RichText::new(&hook.command)
+            .font(theme::meta_mono())
+            .color(p.ink);
+        ui.label(command);
+        let help = match hook.files.as_slice() {
+            [] => "Runs before the release commit, from the project root.".to_string(),
+            files => format!(
+                "Runs before the release commit; {} go into it.",
+                files.join(", ")
+            ),
+        };
+        widgets::help(ui, &help, p.ink_muted);
+        widgets::checkbox(ui, &mut self.trust, "Trust this command in this project");
+    }
+
     /// What the confirm button says, from the two selectors.
     fn action(&self) -> &'static str {
         match (self.note, self.push) {
@@ -525,7 +598,7 @@ impl ReleaseFlow {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = theme::SPACE_3;
             let confirm = ui
-                .add_enabled_ui(!self.running(), |ui| {
+                .add_enabled_ui(!self.running() && self.can_start(), |ui| {
                     widgets::button(
                         ui,
                         ButtonKind::Primary,
@@ -558,6 +631,7 @@ impl IboardApp {
         let mut choices = self.prefs.release.clone();
         choices.file = release::note_file(&project, &choices.file);
         let since = last.map(|(tag, _)| tag);
+        let hook = release::hook::read(&project);
         let flow = ReleaseFlow::new(
             project,
             self.board.name(),
@@ -567,6 +641,7 @@ impl IboardApp {
             since,
             choices,
             self.prefs.agent.configured(),
+            hook,
         );
         self.session.release = Some(flow);
     }
@@ -583,7 +658,32 @@ impl IboardApp {
                     self.session.release = None;
                 }
             }
-            ReleaseChoice::Confirm => flow.start(),
+            ReleaseChoice::Confirm => {
+                flow.start();
+                self.remember_release();
+            }
+        }
+    }
+
+    /// Keeps what the panel's selectors say, and the hooks it trusts, in the
+    /// settings file.
+    fn remember_release(&mut self) {
+        let Some(flow) = self.session.release.as_ref() else {
+            return;
+        };
+        let choices = ReleaseChoices {
+            note: flow.note,
+            file: flow.file.clone(),
+            preamble: flow.preamble,
+            push: flow.push,
+            trusted: flow.trusted.clone(),
+        };
+        if choices != self.prefs.release {
+            self.prefs.release = choices;
+            self.remember_section(settings::Section::new(
+                "release",
+                &self.prefs.release.section(),
+            ));
         }
     }
 
@@ -628,19 +728,7 @@ impl IboardApp {
             return;
         };
         let (choice, close) = flow.show(ui);
-        let choices = ReleaseChoices {
-            note: flow.note,
-            file: flow.file.clone(),
-            preamble: flow.preamble,
-            push: flow.push,
-        };
-        if choices != self.prefs.release {
-            self.prefs.release = choices;
-            self.remember_section(settings::Section::new(
-                "release",
-                &self.prefs.release.section(),
-            ));
-        }
+        self.remember_release();
         self.start_preamble();
         match (choice, close) {
             (Some(choice), _) => self.release_choice(choice),

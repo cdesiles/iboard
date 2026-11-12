@@ -367,6 +367,7 @@ mod tests {
                     file: "release-notes.md".to_string(),
                     preamble: false,
                     push: false,
+                    trusted: BTreeMap::new(),
                 },
                 notifications: notifications::Prefs::default(),
             }

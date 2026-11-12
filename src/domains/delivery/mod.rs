@@ -2,7 +2,7 @@
 //! into the project's changelog, and the git commands that commit, tag and
 //! push it. The modal's choices are kept in the user configuration.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -14,8 +14,10 @@ use crate::platform::git;
 
 mod note;
 
+pub mod hook;
 pub mod update;
 
+pub use hook::Hook;
 pub use note::{Kind, Note, note, opening, preamble_prompt};
 
 /// The note file at the project root, newest release first.
@@ -26,14 +28,16 @@ const SECTION: &str = "release";
 const FIRST_TAG: &str = "v0.1.0";
 
 /// What the release modal opens on: whether to write a note, in which file,
-/// whether an agent opens it, and whether to push afterwards. Kept in
-/// `[release]`.
+/// whether an agent opens it, and whether to push afterwards, and which
+/// projects' hooks the user trusts. Kept in `[release]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseChoices {
     pub note: bool,
     pub file: String,
     pub preamble: bool,
     pub push: bool,
+    /// The [`Hook::fingerprint`] the user trusted, per project folder.
+    pub trusted: BTreeMap<String, String>,
 }
 
 impl Default for ReleaseChoices {
@@ -43,6 +47,7 @@ impl Default for ReleaseChoices {
             file: NOTE_FILE.to_string(),
             preamble: false,
             push: true,
+            trusted: BTreeMap::new(),
         }
     }
 }
@@ -54,6 +59,7 @@ pub struct ReleaseSection {
     file: Option<String>,
     preamble: Option<bool>,
     push: Option<bool>,
+    trusted: Option<BTreeMap<String, String>>,
 }
 
 impl ReleaseSection {
@@ -61,30 +67,23 @@ impl ReleaseSection {
     /// default.
     pub fn choices(self) -> (ReleaseChoices, Vec<String>) {
         let defaults = ReleaseChoices::default();
-        let file = match self.file {
+        let mut problems = Vec::new();
+        let file = match self.file.map(|file| file.trim().to_string()) {
             None => defaults.file,
-            Some(file) if file.trim().is_empty() => {
-                return (
-                    ReleaseChoices {
-                        note: self.note.unwrap_or(defaults.note),
-                        file: defaults.file,
-                        preamble: self.preamble.unwrap_or(defaults.preamble),
-                        push: self.push.unwrap_or(defaults.push),
-                    },
-                    vec![format!("[{SECTION}]: file is empty")],
-                );
+            Some(file) if file.is_empty() => {
+                problems.push(format!("[{SECTION}]: file is empty"));
+                defaults.file
             }
-            Some(file) => file.trim().to_string(),
+            Some(file) => file,
         };
-        (
-            ReleaseChoices {
-                note: self.note.unwrap_or(defaults.note),
-                file,
-                preamble: self.preamble.unwrap_or(defaults.preamble),
-                push: self.push.unwrap_or(defaults.push),
-            },
-            Vec::new(),
-        )
+        let choices = ReleaseChoices {
+            note: self.note.unwrap_or(defaults.note),
+            file,
+            preamble: self.preamble.unwrap_or(defaults.preamble),
+            push: self.push.unwrap_or(defaults.push),
+            trusted: self.trusted.unwrap_or_default(),
+        };
+        (choices, problems)
     }
 }
 
@@ -96,6 +95,7 @@ impl ReleaseChoices {
             file: Some(self.file.clone()),
             preamble: Some(self.preamble),
             push: Some(self.push),
+            trusted: (!self.trusted.is_empty()).then(|| self.trusted.clone()),
         }
     }
 }
@@ -139,6 +139,15 @@ pub enum Bump {
 }
 
 impl Bump {
+    /// `patch`, `minor` or `major`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Patch => "patch",
+            Self::Minor => "minor",
+            Self::Major => "major",
+        }
+    }
+
     /// What the subjects bump: a `feat` in the window makes a minor, anything
     /// less a patch.
     pub fn of(subjects: &[String]) -> Self {
@@ -253,9 +262,11 @@ fn tag_exists(project: &Path, tag: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// How far a release got: the note committed, the tag made, the push done.
+/// How far a release got: the hook run, the note committed, the tag made, the
+/// push done.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ReleaseProgress {
+    pub prepared: bool,
     pub committed: bool,
     pub tagged: bool,
     pub pushed: bool,
@@ -297,37 +308,71 @@ fn check_file(file: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Makes the release in order: the note and its commit, the tag, the push.
-/// An error stops it where it is, and a later confirm resumes from there.
-pub fn confirm(
-    project: &Path,
-    name: &str,
-    note: &str,
-    file: &str,
-    update_note: bool,
-    push_after: bool,
-    progress: &mut ReleaseProgress,
-) -> Result<(), String> {
-    let version = name.trim();
-    let file = file.trim();
+/// A release to make: where, under which tag, with which note, and what the
+/// project's own hook adds.
+pub struct Release<'a> {
+    pub project: &'a Path,
+    pub tag: &'a str,
+    /// The section the note file gets, and the tag's message.
+    pub note: &'a str,
+    pub file: &'a str,
+    pub update_note: bool,
+    pub push: bool,
+    pub bump: Bump,
+    /// The tag the release follows, if any.
+    pub previous: Option<&'a str>,
+    pub hook: Option<&'a Hook>,
+}
+
+/// Makes the release in order: the hook, the note and the commit of both, the
+/// tag, the push. An error stops it where it is, and a later confirm resumes
+/// from there.
+pub fn confirm(release: &Release, progress: &mut ReleaseProgress) -> Result<(), String> {
+    let project = release.project;
+    let version = release.tag.trim();
+    let file = release.file.trim();
     if !progress.tagged {
         check_tag(version)?;
         if tag_exists(project, version) {
             return Err(format!("{version} is already a tag."));
         }
     }
-    if update_note && !progress.committed {
+    let writes_note = release.update_note && !progress.committed;
+    if writes_note {
         check_file(file)?;
-        let path = write_note(project, file, note)?;
-        let message = format!("Release {version}");
-        commit(project, Some(&path), &message)?;
+    }
+    if let Some(hook) = release.hook
+        && !progress.prepared
+        && !progress.committed
+    {
+        let env = hook::Env {
+            tag: version,
+            previous: release.previous,
+            bump: release.bump,
+            note_file: release.update_note.then_some(file),
+        };
+        hook::prepare(project, hook, &env)?;
+        progress.prepared = true;
+    }
+    if !progress.committed {
+        let mut paths = Vec::new();
+        if let Some(hook) = release.hook.filter(|hook| hook::changes(project, hook)) {
+            paths.extend(hook.files.iter().cloned());
+        }
+        if writes_note {
+            write_note(project, file, release.note)?;
+            paths.push(file.to_string());
+        }
+        if !paths.is_empty() {
+            commit(project, &paths, &format!("Release {version}"))?;
+        }
         progress.committed = true;
     }
     if !progress.tagged {
-        tag(project, version, note)?;
+        tag(project, version, release.note)?;
         progress.tagged = true;
     }
-    if push_after && !progress.pushed {
+    if release.push && !progress.pushed {
         push(project, true)?;
         progress.pushed = true;
     }
@@ -417,18 +462,14 @@ fn write_note(project: &Path, file: &str, section: &str) -> Result<PathBuf, Stri
     Ok(path)
 }
 
-/// Commits `note` with `message`, or an empty commit without one.
-pub fn commit(project: &Path, note: Option<&Path>, message: &str) -> Result<(), String> {
-    match note.and_then(|note| note.strip_prefix(project).ok()) {
-        Some(note) => {
-            let note = note.to_string_lossy();
-            git::output(project, &["add", "--", &note])?;
-            git::output(project, &["commit", "-m", message])?;
-        }
-        None => {
-            git::output(project, &["commit", "--allow-empty", "-m", message])?;
-        }
-    }
+/// Commits `paths`, relative to the project, with `message`, and nothing
+/// else that is staged.
+fn commit(project: &Path, paths: &[String], message: &str) -> Result<(), String> {
+    let paths = paths.iter().map(String::as_str);
+    let add = ["add", "--"].into_iter().chain(paths.clone());
+    git::output(project, &add.collect::<Vec<_>>())?;
+    let commit = ["commit", "-m", message, "--"].into_iter().chain(paths);
+    git::output(project, &commit.collect::<Vec<_>>())?;
     Ok(())
 }
 
@@ -642,6 +683,153 @@ mod tests {
         assert_eq!(note_file(project, "NOTES.md"), "NOTES.md");
     }
 
+    fn request<'a>(project: &'a Path, tag: &'a str, note: &'a str) -> Release<'a> {
+        Release {
+            project,
+            tag,
+            note,
+            file: NOTE_FILE,
+            update_note: true,
+            push: false,
+            bump: Bump::Minor,
+            previous: None,
+            hook: None,
+        }
+    }
+
+    fn hook(command: &str, files: &[&str]) -> Hook {
+        Hook {
+            command: command.to_string(),
+            files: files.iter().map(ToString::to_string).collect(),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hook_changes_land_in_the_release_commit_with_the_note() {
+        let dir = repo();
+        let project = dir.path();
+        std::fs::write(project.join("version.txt"), "0.1.0\n").unwrap();
+        git(project, &["add", "version.txt"]);
+        git(project, &["commit", "-q", "-m", "version"]);
+        std::fs::write(project.join("other.txt"), "mine\n").unwrap();
+        git(project, &["add", "other.txt"]);
+        let hook = hook("echo \"$IBOARD_VERSION\" > version.txt", &["version.txt"]);
+        let note = section("v0.2.0", "8 Nov 2026", "- One");
+        let mut progress = ReleaseProgress::default();
+
+        let mut release = request(project, "v0.2.0", &note);
+        release.hook = Some(&hook);
+        confirm(&release, &mut progress).unwrap();
+
+        assert!(progress.prepared && progress.committed && progress.tagged);
+        assert_eq!(
+            std::fs::read_to_string(project.join("version.txt")).unwrap(),
+            "0.2.0\n"
+        );
+        assert_eq!(
+            git(project, &["show", "--name-only", "--format=%s", "HEAD"]),
+            "Release v0.2.0\n\nCHANGELOG.md\nversion.txt"
+        );
+        assert_eq!(
+            git(project, &["diff", "--name-only", "--cached"]),
+            "other.txt",
+            "what else was staged stays staged"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hook_runs_without_a_note_and_a_retry_does_not_run_it_twice() {
+        let dir = repo();
+        let project = dir.path();
+        std::fs::write(project.join("version.txt"), "0.1.0\n").unwrap();
+        std::fs::write(project.join("count.txt"), "").unwrap();
+        git(project, &["add", "."]);
+        git(project, &["commit", "-q", "-m", "version"]);
+        let hook = hook(
+            "echo \"$IBOARD_VERSION\" > version.txt; echo ran >> count.txt",
+            &["version.txt"],
+        );
+        let mut release = request(project, "v0.2.0", "- One");
+        release.update_note = false;
+        release.hook = Some(&hook);
+        let mut progress = ReleaseProgress::default();
+
+        confirm(&release, &mut progress).unwrap();
+        assert_eq!(
+            git(project, &["show", "--name-only", "--format=%s", "HEAD"]),
+            "Release v0.2.0\n\nversion.txt",
+            "a tag-only release still commits what its hook changed"
+        );
+
+        let mut again = ReleaseProgress {
+            prepared: true,
+            ..ReleaseProgress::default()
+        };
+        release.tag = "v0.3.0";
+        confirm(&release, &mut again).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(project.join("count.txt")).unwrap(),
+            "ran\n",
+            "a prepared release is not prepared again"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hook_with_nothing_to_change_adds_no_commit() {
+        let dir = repo();
+        let project = dir.path();
+        std::fs::write(project.join("version.txt"), "0.2.0\n").unwrap();
+        git(project, &["add", "."]);
+        git(project, &["commit", "-q", "-m", "version"]);
+        let head = git(project, &["rev-parse", "HEAD"]);
+        let hook = hook("echo \"$IBOARD_VERSION\" > version.txt", &["version.txt"]);
+        let mut release = request(project, "v0.2.0", "- One");
+        release.update_note = false;
+        release.hook = Some(&hook);
+
+        confirm(&release, &mut ReleaseProgress::default()).unwrap();
+        assert_eq!(git(project, &["rev-parse", "HEAD"]), head);
+        assert_eq!(git(project, &["tag", "--list", "v0.2.0"]), "v0.2.0");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failing_hook_stops_the_release_before_the_note_is_written() {
+        let dir = repo();
+        let project = dir.path();
+        let hook = hook("echo broken >&2; exit 1", &[]);
+        let mut release = request(project, "v0.2.0", "- One");
+        release.hook = Some(&hook);
+        let mut progress = ReleaseProgress::default();
+
+        let error = confirm(&release, &mut progress).unwrap_err();
+        assert!(error.contains("broken"), "{error}");
+        assert_eq!(progress, ReleaseProgress::default());
+        assert!(!project.join(NOTE_FILE).exists());
+        assert_eq!(git(project, &["tag", "--list"]), "");
+    }
+
+    #[test]
+    fn a_hook_is_trusted_for_one_project_until_it_changes() {
+        let mut choices = ReleaseChoices::default();
+        let project = Path::new("/work/iboard");
+        let hook = hook("make version", &["Cargo.toml"]);
+        assert!(!hook.trusted(&choices.trusted, project));
+
+        hook.trust(&mut choices.trusted, project);
+        assert!(hook.trusted(&choices.trusted, project));
+        assert!(!hook.trusted(&choices.trusted, Path::new("/work/other")));
+        let changed = self::hook("make other", &["Cargo.toml"]);
+        assert!(!changed.trusted(&choices.trusted, project));
+
+        let (read, problems) = choices.section().choices();
+        assert_eq!(read, choices, "the trust survives the configuration file");
+        assert!(problems.is_empty());
+    }
+
     fn release(text: &str) -> ReleaseSection {
         let document: toml::Table = toml::from_str(text).unwrap();
         document
@@ -670,19 +858,11 @@ mod tests {
         let note = section("v0.2.0", "8 Nov 2026", "- One");
         let mut progress = ReleaseProgress::default();
 
-        confirm(
-            project,
-            "v0.2.0",
-            &note,
-            NOTE_FILE,
-            true,
-            false,
-            &mut progress,
-        )
-        .unwrap();
+        confirm(&request(project, "v0.2.0", &note), &mut progress).unwrap();
         assert_eq!(
             progress,
             ReleaseProgress {
+                prepared: false,
                 committed: true,
                 tagged: true,
                 pushed: false,
@@ -692,16 +872,7 @@ mod tests {
         assert!(project.join(NOTE_FILE).is_file());
         let head = git(project, &["rev-parse", "HEAD"]);
 
-        confirm(
-            project,
-            "v0.2.0",
-            &note,
-            NOTE_FILE,
-            true,
-            false,
-            &mut progress,
-        )
-        .unwrap();
+        confirm(&request(project, "v0.2.0", &note), &mut progress).unwrap();
         assert_eq!(
             git(project, &["rev-parse", "HEAD"]),
             head,
@@ -718,16 +889,7 @@ mod tests {
         let note = section("v0.2.0", "8 Nov 2026", "- One");
         let mut progress = ReleaseProgress::default();
 
-        let error = confirm(
-            project,
-            "v0.2.0",
-            &note,
-            NOTE_FILE,
-            true,
-            false,
-            &mut progress,
-        )
-        .unwrap_err();
+        let error = confirm(&request(project, "v0.2.0", &note), &mut progress).unwrap_err();
         assert!(error.contains("already a tag"), "{error}");
         assert_eq!(progress, ReleaseProgress::default());
         assert!(!project.join(NOTE_FILE).exists());
@@ -746,6 +908,7 @@ mod tests {
                 file: "release-notes.md".to_string(),
                 preamble: true,
                 push: false,
+                trusted: BTreeMap::new(),
             }
         );
         assert!(problems.is_empty());

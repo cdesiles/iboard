@@ -152,6 +152,89 @@ fn a_note_file_outside_the_project_is_refused() {
     assert_eq!(git(&dir, &["tag", "--list"]), "v0.1.0");
 }
 
+/// The project of [`release_project`] with a committed `version.txt` and the
+/// `.iboard.toml` that has a release rewrite it.
+fn hooked_project(settings: &str) -> (Scratch, Scratch, IboardApp) {
+    let (dir, remote, _) = release_project("v0.1.0");
+    std::fs::write(dir.join("version.txt"), "0.1.0\n").unwrap();
+    git(&dir, &["add", "version.txt"]);
+    git(&dir, &["commit", "-q", "-m", "version"]);
+    git(&dir, &["push", "-q"]);
+    std::fs::write(dir.join(".iboard.toml"), settings).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    (dir, remote, app)
+}
+
+const REWRITE: &str =
+    "[release]\nprepare = 'echo \"$IBOARD_VERSION\" > version.txt'\nfiles = [\"version.txt\"]\n";
+
+#[cfg(unix)]
+#[test]
+fn a_projects_hook_waits_for_trust_then_ships_in_the_release_commit() {
+    let (dir, remote, mut app) = hooked_project(REWRITE);
+    app.open_release();
+    let flow = app.session.release.as_ref().unwrap();
+    assert!(!flow.trust, "a hook nobody trusted is not trusted");
+
+    app.release_choice(ReleaseChoice::Confirm);
+    let flow = app.session.release.as_ref().unwrap();
+    assert!(!flow.running(), "an untrusted hook does not run");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("version.txt")).unwrap(),
+        "0.1.0\n"
+    );
+
+    app.session.release.as_mut().unwrap().trust = true;
+    confirm_and_wait(&mut app);
+    assert!(app.session.release.is_none(), "the release ended");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("version.txt")).unwrap(),
+        "0.2.0\n",
+        "the hook was told the version"
+    );
+    assert_eq!(
+        git(&dir, &["show", "--name-only", "--format=%s", "HEAD"]),
+        "Release v0.2.0\n\nCHANGELOG.md\nversion.txt"
+    );
+    assert_eq!(
+        git(&remote, &["tag", "--list", "v0.2.0"]),
+        "v0.2.0",
+        "the pushed tag holds the bumped version"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn trusting_a_hook_is_remembered_until_it_changes() {
+    let (dir, _remote, mut app) = hooked_project(REWRITE);
+    app.open_release();
+    let mut harness = kittest(app);
+    press(&mut harness, "Trust this command in this project");
+    press(&mut harness, "Update release note, version and push");
+    let mut app = harness.into_state().1;
+    wait_for_release(&mut app);
+    assert_eq!(app.prefs.release.trusted.len(), 1, "the trust is kept");
+
+    std::fs::write(dir.join(".iboard.toml"), REWRITE.replace("echo", "printf")).unwrap();
+    app.session.release = None;
+    app.open_release();
+    assert!(
+        !app.session.release.as_ref().unwrap().trust,
+        "a changed hook asks again"
+    );
+}
+
+#[test]
+fn a_project_file_that_cannot_be_read_stops_the_release_instead_of_skipping_its_hook() {
+    let (dir, _remote, mut app) = hooked_project("[release\n");
+    app.open_release();
+    app.release_choice(ReleaseChoice::Confirm);
+
+    let flow = app.session.release.as_ref().unwrap();
+    assert!(!flow.running());
+    assert_eq!(git(&dir, &["tag", "--list"]), "v0.1.0");
+}
+
 #[test]
 fn hovering_done_offers_release_left_of_archive_all() {
     let (dir, mut app) = project("release-head", &[("done/a.md", "# A\n"), ("todo/", "")]);
@@ -416,6 +499,11 @@ fn a_long_note_scrolls_so_the_buttons_stay_on_screen() {
 /// Confirms the panel and waits for the release its thread makes.
 fn confirm_and_wait(app: &mut IboardApp) {
     app.release_choice(ReleaseChoice::Confirm);
+    wait_for_release(app);
+}
+
+/// Waits for the release the panel's thread is making.
+fn wait_for_release(app: &mut IboardApp) {
     assert!(
         until(|| {
             app.poll_release();

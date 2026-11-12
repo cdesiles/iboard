@@ -120,6 +120,28 @@ root_column_name = "Backlog"            # name for the root-level files column
 title = "My foo project"                # window title
 ```
 
+### Releasing
+
+Done's Release flag writes the note, commits it, tags and pushes. A project that keeps its
+version in a file (`Cargo.toml`, `package.json`, `pyproject.toml`…) says how to bump it in a
+`.iboard.toml` at its root:
+
+```toml
+[release]
+prepare = 'make version V="$IBOARD_VERSION"'   # runs before the release commit
+files = ["Cargo.toml", "Cargo.lock"]          # what it changes: committed with the note
+```
+
+`prepare` runs from the project root in your login shell, with `IBOARD_TAG` (`v0.5.0`),
+`IBOARD_VERSION` (`0.5.0`), `IBOARD_PREVIOUS_TAG`, `IBOARD_BUMP` (`patch`, `minor` or `major`)
+and `IBOARD_NOTE_FILE` set. The files it lists go into the one `Release x` commit, and the
+release refuses to start while they have uncommitted changes. A project with no hook releases
+as before.
+
+A command from a repository runs only once you trust it: the release panel shows it, and asks
+again whenever the command or its files change. A `.iboard.toml` that cannot be read stops the
+release rather than skipping its hook.
+
 ### AI review
 
 The review agent is configured once, for every project, in

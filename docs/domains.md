@@ -53,6 +53,7 @@ saves them.
 | File | Section | Owner |
 | --- | --- | --- |
 | project `iboard.toml` | `root`, `columns`, `root_column_name`, `title`, `[reader] sections` | board |
+| project `.iboard.toml` | `[release] prepare`, `files` | delivery |
 | user `iboard.toml` | `[ai]`, `[build]`, `[titles]`, `[usage]` | agent |
 | user `iboard.toml` | `[filter]` | board |
 | user `iboard.toml` | `[stats]` | insights |
