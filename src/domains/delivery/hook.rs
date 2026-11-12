@@ -1,4 +1,4 @@
-//! A project's own step in its release: the command its `.iboard.toml` names,
+//! A project's own step in its release: the command its `iboard.toml` names,
 //! run before the release commit, and the files that command changes.
 
 use std::collections::BTreeMap;
@@ -14,7 +14,7 @@ use crate::platform::job::Cancel;
 use crate::platform::process;
 
 /// The file at the project root that holds the project's release settings.
-pub const PROJECT_FILE: &str = ".iboard.toml";
+pub const PROJECT_FILE: &str = "iboard.toml";
 
 /// How long the command may work.
 const TIMEOUT: Duration = Duration::from_secs(600);
@@ -65,7 +65,7 @@ struct Section {
     files: Vec<String>,
 }
 
-/// The hook the project's `.iboard.toml` names, or `None` when it names none.
+/// The hook the project's `iboard.toml` names, or `None` when it names none.
 /// A file that cannot be read is an error, so a release never skips a hook
 /// silently.
 pub fn read(project: &Path) -> Result<Option<Hook>, String> {
@@ -195,6 +195,16 @@ mod tests {
             .expect("the repository names its hook");
         assert_eq!(hook.command, "make version V=\"$IBOARD_VERSION\"");
         assert_eq!(hook.files, ["Cargo.toml", "Cargo.lock"]);
+    }
+
+    #[test]
+    fn the_hook_shares_its_file_with_the_boards_own_settings() {
+        let dir = project(
+            "root = \"issues\"\ntitle = \"Moon\"\n\n[release]\nprepare = \"make version\"\n",
+        );
+        let hook = read(dir.path()).unwrap().unwrap();
+        assert_eq!(hook.command, "make version");
+        assert!(hook.files.is_empty());
     }
 
     #[test]

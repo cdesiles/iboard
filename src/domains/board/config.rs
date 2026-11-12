@@ -12,6 +12,10 @@
 //!
 //! [reader]
 //! sections = ["Context", "Acceptance criteria"] # asked for by the reader; [] turns it off
+//!
+//! [release]
+//! prepare = 'make version V="$IBOARD_VERSION"'  # delivery's: runs before a release commit
+//! files = ["Cargo.toml", "Cargo.lock"]          # what it changes
 //! ```
 
 use serde::Deserialize;
@@ -33,6 +37,9 @@ pub struct Config {
     /// Window title override.
     pub title: Option<String>,
     pub reader: Option<ReaderConfig>,
+    /// `[release]`: the project's release hook, which delivery reads from the
+    /// same file; the board only lets it through.
+    pub release: Option<toml::Table>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -103,6 +110,17 @@ mod tests {
 
         std::fs::write(dir.join("iboard.toml"), "titel = \"a typo\"\n").unwrap();
         assert!(load(dir).is_none());
+    }
+
+    #[test]
+    fn the_release_table_the_board_does_not_own_is_let_through() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path();
+        let text = "title = \"Moon\"\n[release]\nprepare = \"make version\"\nfiles = []\n";
+        std::fs::write(dir.join("iboard.toml"), text).unwrap();
+        let config = load(dir).unwrap();
+        assert_eq!(config.title.as_deref(), Some("Moon"));
+        assert!(config.release.unwrap().contains_key("prepare"));
     }
 
     #[test]

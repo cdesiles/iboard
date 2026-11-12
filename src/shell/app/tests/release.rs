@@ -153,14 +153,14 @@ fn a_note_file_outside_the_project_is_refused() {
 }
 
 /// The project of [`release_project`] with a committed `version.txt` and the
-/// `.iboard.toml` that has a release rewrite it.
+/// `iboard.toml` that has a release rewrite it.
 fn hooked_project(settings: &str) -> (Scratch, Scratch, IboardApp) {
     let (dir, remote, _) = release_project("v0.1.0");
     std::fs::write(dir.join("version.txt"), "0.1.0\n").unwrap();
     git(&dir, &["add", "version.txt"]);
     git(&dir, &["commit", "-q", "-m", "version"]);
     git(&dir, &["push", "-q"]);
-    std::fs::write(dir.join(".iboard.toml"), settings).unwrap();
+    std::fs::write(dir.join("iboard.toml"), settings).unwrap();
     let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     (dir, remote, app)
 }
@@ -215,7 +215,7 @@ fn trusting_a_hook_is_remembered_until_it_changes() {
     wait_for_release(&mut app);
     assert_eq!(app.prefs.release.trusted.len(), 1, "the trust is kept");
 
-    std::fs::write(dir.join(".iboard.toml"), REWRITE.replace("echo", "printf")).unwrap();
+    std::fs::write(dir.join("iboard.toml"), REWRITE.replace("echo", "printf")).unwrap();
     app.session.release = None;
     app.open_release();
     assert!(

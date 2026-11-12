@@ -72,9 +72,9 @@ pub(super) struct ReleaseFlow {
     progress: release::ReleaseProgress,
     pub(super) error: Option<String>,
     /// The project's own step before the release commit, from its
-    /// `.iboard.toml`.
+    /// `iboard.toml`.
     hook: Option<release::Hook>,
-    /// Why `.iboard.toml` could not be read: the release does not start over
+    /// Why `iboard.toml` could not be read: the release does not start over
     /// a hook it cannot see.
     hook_error: Option<String>,
     /// The hooks the user trusts, per project folder.

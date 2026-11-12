@@ -123,8 +123,9 @@ title = "My foo project"                # window title
 ### Releasing
 
 Done's Release flag writes the note, commits it, tags and pushes. A project that keeps its
-version in a file (`Cargo.toml`, `package.json`, `pyproject.toml`…) says how to bump it in a
-`.iboard.toml` at its root:
+version in a file (`Cargo.toml`, `package.json`, `pyproject.toml`…) says how to bump it in its
+`iboard.toml`, the one beside `.git` that the Optional configuration above describes. Each
+project keeps its own, so every project of a workspace group has its own hook:
 
 ```toml
 [release]
@@ -139,7 +140,7 @@ release refuses to start while they have uncommitted changes. A project with no 
 as before.
 
 A command from a repository runs only once you trust it: the release panel shows it, and asks
-again whenever the command or its files change. A `.iboard.toml` that cannot be read stops the
+again whenever the command or its files change. An `iboard.toml` that cannot be read stops the
 release rather than skipping its hook.
 
 ### AI review
