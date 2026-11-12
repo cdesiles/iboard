@@ -83,6 +83,7 @@ const ALIASES: &[(&str, Owner)] = &[
     ("design", Owner::Domain(Some("design"))),
     ("agenda", Owner::Domain(Some("insights"))),
     ("stats", Owner::Domain(Some("insights"))),
+    ("usage", Owner::Domain(Some("insights"))),
     ("onboarding", Owner::Domain(Some("onboarding"))),
     ("general", Owner::Domain(Some("preferences"))),
     ("notifications", Owner::Domain(Some("preferences"))),

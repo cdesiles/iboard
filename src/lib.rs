@@ -34,7 +34,7 @@ pub use domains::authoring::{diff, new_issue, prose, sheet};
 pub use domains::board::{commits, discovery, filter, history, labels, priority, trash};
 pub use domains::delivery as release;
 pub use domains::design;
-pub use domains::insights::{agenda, stats};
+pub use domains::insights::{agenda, stats, usage};
 pub use domains::onboarding;
 pub use domains::preferences::{self, general, notifications, settings};
 pub use domains::workspace;
