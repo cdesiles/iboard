@@ -1,6 +1,8 @@
 //! The header and status bars: what they name, and their keys, out of sight
 //! until ⌘ is held.
 
+use std::collections::BTreeMap;
+
 use chrono::{SecondsFormat, Utc};
 use egui_kittest::kittest::Queryable;
 
@@ -712,7 +714,12 @@ fn the_board_shows_what_it_spent_today() {
         .get_by_label_contains("Today $0.42, this week $0.42")
         .click();
     harness.run_steps(4);
-    harness.get_by_label("$0.42");
+    harness.get_by_label("DeepSeek");
+    assert_eq!(
+        harness.get_all_by_label("$0.42").count(),
+        2,
+        "today's figure, then the provider's share of it"
+    );
     harness.get_by_label("This week · $0.42");
     harness.get_by_label("Last session · $0.42");
 }
@@ -737,6 +744,7 @@ fn the_board_builds_its_figure_from_the_live_session() {
     app.session.live_spend = agent::spend::Live {
         sessions: 1,
         cost: 0.12,
+        providers: BTreeMap::from([("deepseek".to_string(), 0.12)]),
     };
     harness.run_steps(2);
 
@@ -745,7 +753,39 @@ fn the_board_builds_its_figure_from_the_live_session() {
         .click();
     harness.run_steps(4);
     harness.get_by_label("Building");
-    harness.get_by_label("$0.42");
+    harness.get_by_label("DeepSeek");
+    assert_eq!(harness.get_all_by_label("$0.42").count(), 2);
+}
+
+/// Each metered provider that spent today is named under the figure, the
+/// largest first; a subscription's dollars are not listed.
+#[test]
+fn the_popover_names_the_providers_behind_the_spend() {
+    let (_dir, app) = project("board-spend-providers", &[("todo/a.md", "# A\n")]);
+    let mut harness = kittest(app);
+    let root = harness.state().1.located.project_dir.clone();
+    let mut anthropic = spend_entry(&root, "ses_2", Billing::Metered, 0.10);
+    anthropic.provider = Some("anthropic".to_string());
+    let mut copilot = spend_entry(&root, "ses_3", Billing::Subscription, 3.0);
+    copilot.provider = Some("github-copilot".to_string());
+    harness.state_mut().1.usage_entries = vec![
+        spend_entry(&root, "ses_1", Billing::Metered, 0.30),
+        anthropic,
+        copilot,
+    ];
+    harness.run_steps(2);
+
+    harness.get_by_label_contains("Today $0.40").click();
+    harness.run_steps(4);
+    let deepseek = harness.get_by_label("DeepSeek").rect();
+    let anthropic = harness.get_by_label("Anthropic API").rect();
+    assert!(deepseek.min.y < anthropic.min.y, "the largest comes first");
+    harness.get_by_label("$0.30");
+    harness.get_by_label("$0.10");
+    assert!(
+        harness.query_all_by_label("$3.00").next().is_none(),
+        "a subscription's dollars are no spend"
+    );
 }
 
 /// The keys slide in to the left of the trigger, which stays where it is.

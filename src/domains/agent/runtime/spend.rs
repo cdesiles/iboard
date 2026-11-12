@@ -5,28 +5,31 @@
 //! only while an agent works. The board's figure is there with no agent
 //! running, and a group's board sums its projects from one light ask each.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use super::service::Session;
-use super::{Billing, services};
+use super::{Billing, provider_key, services};
 
 /// How often the board asks the services about their running sessions.
 pub const EVERY: Duration = Duration::from_secs(30);
 
 /// What the sessions running in a board's projects have cost so far.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Live {
     /// How many sessions are running.
     pub sessions: usize,
     /// What their metered runs cost so far; a subscription's notional
     /// dollars are never spend.
     pub cost: f64,
+    /// That cost by normalized provider ID.
+    pub providers: BTreeMap<String, f64>,
 }
 
 impl Live {
     /// Whether an agent is at work in one of the projects.
-    pub fn running(self) -> bool {
+    pub fn running(&self) -> bool {
         self.sessions > 0
     }
 
@@ -50,7 +53,12 @@ impl Live {
             self.sessions += 1;
             match &session.usage {
                 Some(usage) if usage.billing == Billing::Metered => {
-                    self.cost += usage.cost.unwrap_or(0.0);
+                    let cost = usage.cost.unwrap_or(0.0);
+                    self.cost += cost;
+                    if cost > 0.0 {
+                        let provider = provider_key(usage.provider.as_deref().unwrap_or("unknown"));
+                        *self.providers.entry(provider).or_default() += cost;
+                    }
                 }
                 _ => {}
             }
@@ -97,7 +105,8 @@ mod tests {
             live,
             Live {
                 sessions: 1,
-                cost: 0.12
+                cost: 0.12,
+                providers: BTreeMap::from([("deepseek".to_string(), 0.12)]),
             }
         );
         assert!(live.running());
@@ -117,7 +126,8 @@ mod tests {
             live,
             Live {
                 sessions: 1,
-                cost: 0.0
+                cost: 0.0,
+                providers: BTreeMap::new(),
             }
         );
         assert!(live.running(), "an agent is at work");

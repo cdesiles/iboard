@@ -8,6 +8,7 @@ use super::{
     Align, ButtonKind, Frame, IboardApp, Issue, Layout, NOTICE_FOR, Path, RichText, Screen, Undo,
     display_path, file_name, relative_time, sheet, theme, widgets,
 };
+use crate::agent::provider_name;
 use crate::domains::agent::artifacts::usage_log::{self, Meter};
 
 /// Between a status bar item and the `·` that parts it from the next.
@@ -59,12 +60,22 @@ impl IboardApp {
             return None;
         }
         let spend = usage_log::Spend::of(&self.usage_entries, &self.board_projects(), now);
-        let live = self.session.live_spend;
+        let live = &self.session.live_spend;
+        let mut providers = spend.providers;
+        for (provider, cost) in &live.providers {
+            *providers.entry(provider.clone()).or_default() += cost;
+        }
+        let mut providers: Vec<(String, f64)> = providers
+            .into_iter()
+            .map(|(provider, cost)| (provider_name(&provider), cost))
+            .collect();
+        providers.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         Some(BoardSpend {
             today: spend.today + live.cost,
             week: spend.week,
             last: spend.last,
             running: live.running(),
+            providers,
         })
     }
 
@@ -307,12 +318,14 @@ type Hint = (&'static str, &'static str);
 
 /// The board's spend as the trigger and the popover show it: today's dollars
 /// with the running sessions' cost, this week's, the last session's, and
-/// whether a run is burning.
+/// whether a run is burning, and which providers today's dollars went to.
 pub(super) struct BoardSpend {
     pub(super) today: f64,
     pub(super) week: f64,
     pub(super) last: Option<f64>,
     pub(super) running: bool,
+    /// Provider names and today's dollars, the largest first.
+    pub(super) providers: Vec<(String, f64)>,
 }
 
 impl BoardSpend {

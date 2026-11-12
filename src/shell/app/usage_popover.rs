@@ -134,6 +134,15 @@ fn spend_row(ui: &mut egui::Ui, spend: &BoardSpend) {
                     );
                 });
             });
+            for (name, cost) in &spend.providers {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(name).font(theme::meta()).color(p.ink_muted));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let cost = format!("${cost:.2}");
+                        ui.label(RichText::new(cost).font(theme::meta()).color(p.ink_muted));
+                    });
+                });
+            }
             ui.horizontal(|ui| {
                 let week = format!("This week · ${:.2}", spend.week);
                 ui.label(RichText::new(week).font(theme::meta()).color(p.ink_muted));

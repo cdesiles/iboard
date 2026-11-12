@@ -4,7 +4,7 @@
 //! OpenCode prunes its sessions and a cache is made to be cleared, so this is
 //! user data. A per-repo `.git/iboard/` file would go with a clone.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, NaiveDate, SecondsFormat, Utc};
@@ -258,10 +258,12 @@ pub use meters::{subscription_meters, subscription_meters_with};
 
 /// What a board's projects spent, as the log has it: today's and this week's
 /// metered dollars, and the last finished session's.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Spend {
     /// What today's finished runs were charged.
     pub today: f64,
+    /// Today's charge by normalized provider ID, none of them zero.
+    pub providers: BTreeMap<String, f64>,
     /// What this week's finished runs were charged.
     pub week: f64,
     /// The last finished session's metered dollars, when there is one.
@@ -289,6 +291,10 @@ impl Spend {
             };
             if ended >= day {
                 spend.today += cost;
+                if cost > 0.0 {
+                    let provider = provider_key(entry.provider.as_deref().unwrap_or("unknown"));
+                    *spend.providers.entry(provider).or_default() += cost;
+                }
             }
             if ended >= week {
                 spend.week += cost;
@@ -927,12 +933,28 @@ mod tests {
     }
 
     #[test]
+    fn spend_today_is_split_by_provider() {
+        let now = noon();
+        let entries = [
+            used("ses_a", "deepseek", 0.25, now),
+            used("ses_b", "deepseek", 0.5, now),
+            used("ses_c", "anthropic", 1.0, now),
+            used("ses_yesterday", "deepseek", 2.0, now - Duration::days(1)),
+        ];
+        let spend = Spend::of(&entries, &[PathBuf::from("/p")], now);
+        assert_eq!(spend.providers.len(), 2);
+        assert_eq!(spend.providers["deepseek"], 0.75);
+        assert_eq!(spend.providers["anthropic"], 1.0);
+    }
+
+    #[test]
     fn a_subscription_adds_no_spend() {
         let now = noon();
         let mut sub = used("ses_sub", "github-copilot", 3.0, now);
         sub.billing = Billing::Subscription;
         let spend = Spend::of(&[sub], &[PathBuf::from("/p")], now);
         assert_eq!(spend.today, 0.0);
+        assert!(spend.providers.is_empty());
         assert_eq!(spend.week, 0.0);
         assert_eq!(spend.last, Some(0.0), "notional dollars are not spend");
     }

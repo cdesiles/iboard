@@ -1090,6 +1090,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-usage__spend{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-3);align-items:center;padding:var(--space-4)}
 .ib-usage__spend__fig{font:var(--text-ui-title);font-variant-numeric:tabular-nums}
 .ib-usage__spend.is-zero .ib-usage__spend__fig{color:var(--ink-muted)}
+.ib-usage__spend__by{grid-column:1 / 3;display:flex;justify-content:space-between;gap:var(--space-3);margin-top:calc(var(--space-2) * -1);font:var(--text-meta);color:var(--ink-muted);font-variant-numeric:tabular-nums}
 .ib-usage__spend__sub{grid-column:1 / 3;display:flex;justify-content:space-between;gap:var(--space-3);margin-top:calc(var(--space-2) * -1);font:var(--text-meta);color:var(--ink-muted)}
 .ib-usage__list{margin:0;padding:0;list-style:none}
 .ib-usage__spend+.ib-usage__list>li:first-child,.ib-usage__list>li+li{border-top:1px solid var(--line-soft)}
