@@ -101,3 +101,8 @@ Added a usage screen charting every provider's daily spend, one status-bar usage
 - Keep inline code's background one rectangle
 - Keep tests off the real opencode service
 - Write the note opening with a draft, not a review
+
+## v0.1-v0.3 — <11 Nov 2026
+
+The dark age. Bring more 500 food and build 2 buildings.
+
