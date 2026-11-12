@@ -73,7 +73,9 @@ impl IboardApp {
     /// takes the rightmost slot.
     pub(super) fn header_controls(&mut self, ui: &mut egui::Ui) {
         self.notifications_button(ui);
-        if self.session.stats.is_some() {
+        if self.usage.open {
+            self.usage_controls(ui);
+        } else if self.session.stats.is_some() {
             self.stats_controls(ui);
         } else {
             match self.session.screen.clone() {

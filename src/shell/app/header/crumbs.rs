@@ -11,6 +11,10 @@ impl IboardApp {
     /// `project / Column`, each a link, and the issue's title once the page's
     /// own has scrolled away (always in the editor).
     pub(super) fn breadcrumb(&mut self, ui: &mut egui::Ui) {
+        if self.usage.open {
+            self.usage_crumbs(ui);
+            return;
+        }
         if self.session.stats.is_some() {
             self.stats_crumbs(ui);
             return;

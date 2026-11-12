@@ -163,6 +163,7 @@ impl IboardApp {
         if self.welcoming() {
             return;
         }
+        self.usage.open = false;
         self.project_menu = None;
         if self.showing_group() {
             let notice = "Stats measure one project: open it from the project menu";

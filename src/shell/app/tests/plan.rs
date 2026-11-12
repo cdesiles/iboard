@@ -12,7 +12,7 @@ fn answering(answer: &str) -> AgentConfig {
 fn the_plan_menu_pick_opens_the_panel() {
     let (_dir, mut app) = project("plan-open", &[("todo/", "")]);
     app.prefs.agent = answering("Who uses it?\\n");
-    app.menu_picks(false, false, true);
+    app.menu_picks(false, false, true, false);
     assert!(app.session.plan.is_some());
     assert!(!app.session.plan.as_ref().unwrap().is_resuming());
 

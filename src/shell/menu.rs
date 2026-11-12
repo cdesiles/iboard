@@ -45,6 +45,9 @@ static STATS_REQUESTED: AtomicBool = AtomicBool::new(false);
 /// Set by Tools › Plan… and read once per frame by the app.
 static PLAN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+/// Set by Tools › Usage… and read once per frame by the app.
+static USAGE_REQUESTED: AtomicBool = AtomicBool::new(false);
+
 /// The running app's context, so a menu action can wake its frame loop.
 static CONTEXT: OnceLock<eframe::egui::Context> = OnceLock::new();
 
@@ -93,6 +96,11 @@ pub fn take_plan_request() -> bool {
     PLAN_REQUESTED.swap(false, Ordering::SeqCst)
 }
 
+/// Whether Tools › Usage… was picked since the last call.
+pub fn take_usage_request() -> bool {
+    USAGE_REQUESTED.swap(false, Ordering::SeqCst)
+}
+
 define_class!(
     /// Receives the menu actions AppKit has no standard selector for.
     #[unsafe(super(NSObject))]
@@ -125,6 +133,14 @@ define_class!(
         #[unsafe(method(openPlan:))]
         fn open_plan(&self, _sender: Option<&AnyObject>) {
             PLAN_REQUESTED.store(true, Ordering::SeqCst);
+            if let Some(ctx) = CONTEXT.get() {
+                ctx.request_repaint();
+            }
+        }
+
+        #[unsafe(method(openUsage:))]
+        fn open_usage(&self, _sender: Option<&AnyObject>) {
+            USAGE_REQUESTED.store(true, Ordering::SeqCst);
             if let Some(ctx) = CONTEXT.get() {
                 ctx.request_repaint();
             }
@@ -179,8 +195,8 @@ fn set_target(item: &NSMenuItem, target: &'static AnyObject) {
 ///
 /// `app_name` titles the application menu and the About panel; `credits` is the
 /// text under the version there, `**bold**` spans and `https://` links styled. `board` adds File › Settings… and Tools ›
-/// Plan… and Project Stats…, which the caller watches with [`take_settings_request`],
-/// [`take_plan_request`] and [`take_stats_request`].
+/// Plan…, Project Stats… and Usage…, which the caller watches with [`take_settings_request`],
+/// [`take_plan_request`], [`take_stats_request`] and [`take_usage_request`].
 pub fn install(app_name: &str, credits: &str, board: bool) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
@@ -257,6 +273,9 @@ pub fn install(app_name: &str, credits: &str, board: bool) {
         let stats = item(mtm, "Project Stats…", Some(sel!(openStats:)), "");
         set_target(&stats, target);
         tools_menu.addItem(&stats);
+        let usage = item(mtm, "Usage…", Some(sel!(openUsage:)), "");
+        set_target(&usage, target);
+        tools_menu.addItem(&usage);
     }
 
     // Window menu: AppKit appends the open windows to it.

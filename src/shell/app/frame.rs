@@ -186,6 +186,8 @@ impl IboardApp {
         }
         if self.project_menu.is_some() {
             self.project_menu_keys(ctx);
+        } else if self.usage.open {
+            self.usage_keys(ctx);
         } else if self.session.stats.is_some() {
             self.stats_keys(ctx);
         } else if self.session.ask_draft.is_some() {
@@ -290,6 +292,7 @@ impl IboardApp {
             crate::shell::menu::take_settings_request(),
             crate::shell::menu::take_stats_request(),
             crate::shell::menu::take_plan_request(),
+            crate::shell::menu::take_usage_request(),
         );
         let close_requested = ctx.input(|i| i.viewport().close_requested());
         if close_requested && !self.closing {
@@ -303,9 +306,10 @@ impl IboardApp {
         }
     }
 
-    /// Settings, Plan or Project Stats picked from the menu bar. A modal stops
-    /// the board until it is answered, so a pick made under one is dropped.
-    pub(super) fn menu_picks(&mut self, settings: bool, stats: bool, plan: bool) {
+    /// Settings, Plan, Project Stats or Usage picked from the menu bar. A modal
+    /// stops the board until it is answered, so a pick made under one is
+    /// dropped.
+    pub(super) fn menu_picks(&mut self, settings: bool, stats: bool, plan: bool, usage: bool) {
         if self.modal_up() {
             return;
         }
@@ -317,6 +321,9 @@ impl IboardApp {
         }
         if plan {
             self.open_plan();
+        }
+        if usage {
+            self.open_usage();
         }
     }
 
