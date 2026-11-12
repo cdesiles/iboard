@@ -67,7 +67,7 @@ impl Billing {
     }
 }
 
-/// What a plan's cap fills over.
+/// What a plan's cap fills over, or a window a provider reports.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Window {
@@ -75,9 +75,14 @@ pub enum Window {
     Day,
     Week,
     Month,
+    /// Claude.ai's rolling five-hour session, which only a provider report
+    /// anchors: [`Window::start_before`] reads it from the reset.
+    Session,
 }
 
 impl Window {
+    /// The windows a plan may declare. A session is provider-anchored, so it
+    /// is never a declared cap.
     pub const ALL: [Window; 3] = [Window::Day, Window::Week, Window::Month];
 
     /// The word `[usage]` stores.
@@ -86,15 +91,17 @@ impl Window {
             Window::Day => "day",
             Window::Week => "week",
             Window::Month => "month",
+            Window::Session => "session",
         }
     }
 
-    /// The word Settings › AI shows.
+    /// The word Settings › AI and the meters show.
     pub fn name(self) -> &'static str {
         match self {
             Window::Day => "Day",
             Window::Week => "Week",
             Window::Month => "Month",
+            Window::Session => "Session",
         }
     }
 
@@ -107,11 +114,15 @@ impl Window {
         }
     }
 
-    /// When the window holding `at` began, in UTC.
+    /// When the window holding `at` began, in UTC. A session is only anchored
+    /// by a provider's reset, so this reads it as one starting now.
     pub fn start(self, at: DateTime<Utc>) -> DateTime<Utc> {
+        if self == Window::Session {
+            return at;
+        }
         let date = at.date_naive();
         let first = match self {
-            Window::Day => date,
+            Window::Day | Window::Session => date,
             Window::Week => {
                 date - chrono::Duration::days(i64::from(date.weekday().num_days_from_monday()))
             }
@@ -122,6 +133,9 @@ impl Window {
 
     /// When the window holding `at` ends and its next one begins, in UTC.
     pub fn reset(self, at: DateTime<Utc>) -> DateTime<Utc> {
+        if self == Window::Session {
+            return at + chrono::Duration::hours(5);
+        }
         let start = self.start(at);
         let date = start.date_naive();
         let next = match self {
@@ -130,8 +144,23 @@ impl Window {
             Window::Month => date
                 .checked_add_months(chrono::Months::new(1))
                 .unwrap_or(date),
+            Window::Session => date,
         };
         DateTime::from_naive_utc_and_offset(next.and_time(NaiveTime::MIN), Utc)
+    }
+
+    /// When the window that ends at `reset` began: five hours for a session,
+    /// seven days for a week, and so on. A provider's own reset need not fall
+    /// on a calendar boundary.
+    pub fn start_before(self, reset: DateTime<Utc>) -> DateTime<Utc> {
+        match self {
+            Window::Session => reset - chrono::Duration::hours(5),
+            Window::Day => reset - chrono::Duration::days(1),
+            Window::Week => reset - chrono::Duration::days(7),
+            Window::Month => reset
+                .checked_sub_months(chrono::Months::new(1))
+                .unwrap_or(reset),
+        }
     }
 }
 
@@ -704,6 +733,36 @@ mod tests {
             expected("2027-01-01T00:00:00Z"),
             "the year turns"
         );
+    }
+
+    #[test]
+    fn a_provider_reset_anchors_a_window_that_does_not_start_on_a_boundary() {
+        let reset = DateTime::parse_from_rfc3339("2026-11-17T19:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(
+            Window::Session.start_before(reset),
+            reset - chrono::Duration::hours(5)
+        );
+        assert_eq!(
+            Window::Week.start_before(reset),
+            DateTime::parse_from_rfc3339("2026-11-10T19:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc)
+        );
+        assert_eq!(
+            Window::Month.start_before(reset),
+            DateTime::parse_from_rfc3339("2026-10-17T19:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc)
+        );
+    }
+
+    #[test]
+    fn a_session_is_a_provider_window_not_a_declared_one() {
+        assert!(!Window::ALL.contains(&Window::Session));
+        assert_eq!(Window::from_key("session"), None);
+        assert_eq!(Window::Session.name(), "Session");
     }
 
     #[test]

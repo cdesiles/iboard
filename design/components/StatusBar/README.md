@@ -27,8 +27,8 @@ On the board only, the right side starts with what the project spent. A group bo
 
 A plan that `[usage]` declares a subscription feeds one small pill at the right of the status bar, after the spend. A metered plan has none: its money is a plain dollar figure, never a share. The pill takes about 50pt instead of a ring and a name per provider.
 
-- **The pill** is a 14pt ring and the share of the provider closest to its limit (`62%`), turning `status-doing` when that provider is over pace. With no cap on any provider it is a dashed ring and `Usage`. It only fills from a known cap; nothing invents a percentage.
-- **The tooltip** names each provider with its share and reset: `Claude.ai` over `62% of the week used · resets in 3d`.
-- **A click** opens the one subscriptions popover, above the pill and right-aligned to it: a row per plan with its share, an even-pace tick and a verdict, each opening to its daily tokens and model split.
+- **The pill** is a 14pt ring and the share of the window closest to its limit (`62%`), turning `status-doing` when that window is over pace. With no cap on any window it is a dashed ring and `Usage`. It only fills from a known share; nothing invents a percentage.
+- **The tooltip** names each window with its share and reset: `Claude.ai · Week` over `62% of the week used · resets in 3d`, then `Claude.ai · Session` and its reset.
+- **A click** opens the one subscriptions popover, above the pill and right-aligned to it: a row per window with its share, an even-pace tick and a verdict, each opening to its daily tokens and model split. Claude.ai's session and week are two rows.
 
 The pill, the popover, pace, units and the no-cap state are specified in `components/UsageMeter`.

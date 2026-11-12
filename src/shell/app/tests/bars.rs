@@ -445,9 +445,12 @@ fn a_copilot_quota_reports_ai_credits_and_its_reset() {
         .set("claude", plan(Billing::Metered, Window::Week, None));
     app.session.quotas = vec![crate::agent::Quota {
         provider: "copilot".to_string(),
-        used: 9_193,
-        cap: 30_000,
-        unit: "AI credits",
+        window: Window::Month,
+        measure: crate::agent::Measure::Count {
+            used: 9_193,
+            cap: 30_000,
+            unit: "AI credits",
+        },
         reset: Utc::now() + chrono::Duration::days(19),
     }];
     log_run(app, "copilot", 500, 3.0);
@@ -465,6 +468,47 @@ fn a_copilot_quota_reports_ai_credits_and_its_reset() {
         harness.query_all_by_label("Set a cap").next().is_none(),
         "a reported quota needs no cap"
     );
+}
+
+/// Claude.ai reports a session and a week: the pill names both windows, and
+/// the popover gives each its own row, reset and days.
+#[test]
+fn a_provider_with_a_session_and_a_week_shows_two_rows() {
+    let dir = scratch_dir("subscription-two-windows");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    let now = Utc::now();
+    app.session.quotas = vec![
+        crate::agent::Quota {
+            provider: "claude".to_string(),
+            window: Window::Session,
+            measure: crate::agent::Measure::Share(0.62),
+            reset: now + chrono::Duration::hours(2),
+        },
+        crate::agent::Quota {
+            provider: "claude".to_string(),
+            window: Window::Week,
+            measure: crate::agent::Measure::Share(0.31),
+            reset: now + chrono::Duration::days(4),
+        },
+    ];
+    log_run(app, "claude", 210, 0.42);
+    harness.run_steps(2);
+
+    harness.get_by_label_contains("Claude.ai · Session · 62% of the session used");
+    harness.get_by_label_contains("Claude.ai · Week · 31% of the week used");
+    harness
+        .get_all_by_label_contains("Claude.ai · Session · 62% of the session used")
+        .next()
+        .unwrap()
+        .click();
+    harness.run_steps(10);
+    harness.get_by_label_contains("Claude.ai · Session · 62% ·");
+    harness.get_by_label_contains("Claude.ai · Week · 31% ·");
+    harness.get_by_label("Tokens per day this session");
+    harness.get_by_label("62% used · from Claude.ai");
 }
 
 /// A board with no subscription plan shows no pill, and a metered plan keeps

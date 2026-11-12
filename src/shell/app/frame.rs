@@ -109,9 +109,9 @@ impl IboardApp {
         Some(agent::spend::EVERY)
     }
 
-    /// Copilot's quota, asked of GitHub off the UI thread every few minutes
-    /// while the window shows. A failed read leaves no figure at all, so the
-    /// meter falls back on the log instead of an old number.
+    /// The providers' quotas, asked off the UI thread every few minutes while
+    /// the window shows. A failed read leaves no figure at all, so the meter
+    /// falls back on the log instead of an old number.
     fn poll_quota(&mut self) -> Option<Duration> {
         if !self.session.quota_live {
             self.session.quota_feed = None;
@@ -123,7 +123,7 @@ impl IboardApp {
                     self.session.quota_feed = Some(feed);
                     return Some(crate::job::POLL_EVERY);
                 }
-                Poll::Ready(quota) => self.session.quotas = quota.into_iter().collect(),
+                Poll::Ready(quotas) => self.session.quotas = quotas,
                 Poll::Lost => self.session.quotas.clear(),
             }
             self.session.quota_read = Some(Instant::now());
@@ -136,7 +136,7 @@ impl IboardApp {
         if left.is_some_and(|left| !left.is_zero()) {
             return left;
         }
-        let feed = Job::spawn(agent::quotas::copilot);
+        let feed = Job::spawn(agent::quotas::all);
         if let Some(ctx) = self.ctx.clone() {
             feed.wake(move || ctx.request_repaint());
         }

@@ -283,7 +283,7 @@
     {
       "name": "UsageMeter",
       "group": "Navigation",
-      "summary": "The status bar's usage pill and the popover behind it: share, even-pace verdict, daily tokens and model split for each subscription provider."
+      "summary": "The status bar's usage pill and the popover behind it: share, even-pace verdict, daily tokens and model split for each subscription window."
     },
     {
       "name": "WelcomeScreen",

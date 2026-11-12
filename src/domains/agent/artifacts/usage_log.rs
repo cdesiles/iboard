@@ -56,8 +56,13 @@ impl Consumption {
     /// `entries`' runs of `provider` inside `plan`'s window, ending at or
     /// after `now`'s window start.
     pub fn of(entries: &[Entry], provider: &str, plan: &Plan, now: DateTime<Utc>) -> Self {
+        Self::since(entries, provider, plan, plan.window.start(now))
+    }
+
+    /// [`Consumption::of`] with the window's own start, which a provider's
+    /// reset may put off a calendar boundary.
+    pub fn since(entries: &[Entry], provider: &str, plan: &Plan, start: DateTime<Utc>) -> Self {
         let key = provider_key(provider);
-        let start = plan.window.start(now);
         let mut used = Consumption {
             cap: plan.cap,
             ..Consumption::default()
@@ -124,9 +129,13 @@ pub struct Meter {
     pub name: String,
     pub plan: Plan,
     pub consumed: Consumption,
-    /// The share, used, cap and unit the provider reports; it wins over a cap.
+    /// The share or count the provider reports; it wins over a cap.
     pub reported: Option<Quota>,
-    /// When the plan's window ends, in UTC.
+    /// Which window this meter reads: the plan's, or the provider's.
+    pub window: Window,
+    /// When that window began, in UTC.
+    pub start: DateTime<Utc>,
+    /// When that window ends, in UTC.
     pub reset: DateTime<Utc>,
     /// The window's runs, for its daily and model split.
     runs: Vec<Entry>,
@@ -148,15 +157,14 @@ impl Meter {
         }
     }
 
-    /// The share of the plan's window already gone, when it has a cap.
+    /// The share of the window already gone, when it has a share.
     pub fn elapsed(&self) -> Option<f32> {
         self.share()?;
-        let start = self.plan.window.start(self.now);
-        let length = (self.reset - start).num_seconds();
+        let length = (self.reset - self.start).num_seconds();
         if length <= 0 {
             return None;
         }
-        let gone = (self.now - start).num_seconds().clamp(0, length);
+        let gone = (self.now - self.start).num_seconds().clamp(0, length);
         Some(gone as f32 / length as f32)
     }
 
@@ -178,11 +186,11 @@ impl Meter {
         let at = if share >= 1.0 {
             self.now
         } else {
-            let start = self.plan.window.start(self.now);
-            let gone = (self.now - start).num_seconds() as f64;
+            let gone = (self.now - self.start).num_seconds() as f64;
             self.now + Duration::seconds((gone * (1.0 - share) / share).round() as i64)
         };
-        Some(match self.plan.window {
+        Some(match self.window {
+            Window::Session => at.format("%H:%M").to_string(),
             Window::Week => at.format("%a").to_string(),
             _ => at.format("%b %-d").to_string(),
         })
@@ -197,9 +205,14 @@ impl Meter {
                 *by_day.entry(ended.date_naive()).or_default() += entry.tokens.total();
             }
         }
+        let last = if self.window == Window::Session {
+            self.reset.date_naive() + Duration::days(1)
+        } else {
+            self.reset.date_naive()
+        };
         let mut days = Vec::new();
-        let mut day = self.plan.window.start(self.now).date_naive();
-        while day < self.reset.date_naive() {
+        let mut day = self.start.date_naive();
+        while day < last {
             days.push(DayUse {
                 day,
                 tokens: by_day.remove(&day).unwrap_or(0),

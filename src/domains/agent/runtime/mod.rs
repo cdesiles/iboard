@@ -948,7 +948,7 @@ pub use answer::{
     parse_split,
 };
 pub use draft::{DraftText, draft_so_far, start_draft};
-pub use quotas::Quota;
+pub use quotas::{Measure, Quota};
 pub use tools::{Detected, Model, Models, detect, list_models};
 use tools::{default_model, find_binary, search_path};
 pub use usage::{

@@ -330,32 +330,48 @@ fn reader_facts(ui: &mut egui::Ui, issue: &Issue) {
     }
 }
 
-/// What the pointer and VoiceOver read on the pill: one block per provider,
+/// What the pointer and VoiceOver read on the pill: one block per window,
 /// its name, share or tokens, its pace, and its reset.
 fn pill_detail(meters: &[Meter], now: DateTime<Utc>) -> String {
     meters
         .iter()
-        .map(|meter| match meter.share() {
-            Some(_) => format!(
-                "{} · {}{} · {}",
-                meter.name,
-                share_text(meter),
-                if meter.over_pace() {
-                    " · over pace"
-                } else {
-                    ""
-                },
-                reset_text(meter, now)
-            ),
-            None => format!(
-                "{} · No cap set · {} tokens this {}",
-                meter.name,
-                short_tokens(meter.consumed.tokens),
-                meter.plan.window.name().to_lowercase()
-            ),
+        .map(|meter| {
+            let name = meter_name(meter, meters);
+            match meter.share() {
+                Some(_) => format!(
+                    "{name} · {}{} · {}",
+                    share_text(meter),
+                    if meter.over_pace() {
+                        " · over pace"
+                    } else {
+                        ""
+                    },
+                    reset_text(meter, now)
+                ),
+                None => format!(
+                    "{name} · No cap set · {} tokens this {}",
+                    short_tokens(meter.consumed.tokens),
+                    meter.window.name().to_lowercase()
+                ),
+            }
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// A meter's name on the pill: the provider, and the window when it has more
+/// than one.
+fn meter_name(meter: &Meter, meters: &[Meter]) -> String {
+    if meters
+        .iter()
+        .filter(|other| other.provider == meter.provider)
+        .count()
+        > 1
+    {
+        format!("{} · {}", meter.name, meter.window.name())
+    } else {
+        meter.name.clone()
+    }
 }
 
 /// `3_100_000` as `3.1M`, the way a tooltip holds tokens.
@@ -375,7 +391,7 @@ fn share_text(meter: &Meter) -> String {
         Some(share) => format!(
             "{:.0}% of the {} used",
             share * 100.0,
-            meter.plan.window.name().to_lowercase()
+            meter.window.name().to_lowercase()
         ),
         None => "unknown".to_string(),
     }

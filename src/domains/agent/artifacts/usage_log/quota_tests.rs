@@ -1,4 +1,4 @@
-use crate::domains::agent::runtime::{Billing, Cap, Plan, Plans, Quota, Window};
+use crate::domains::agent::runtime::{Billing, Cap, Measure, Plan, Plans, Quota, Window};
 
 use super::*;
 
@@ -11,9 +11,12 @@ fn noon() -> DateTime<Utc> {
 fn copilot_quota(now: DateTime<Utc>) -> Quota {
     Quota {
         provider: "copilot".to_string(),
-        used: 9_193,
-        cap: 30_000,
-        unit: "AI credits",
+        window: Window::Month,
+        measure: Measure::Count {
+            used: 9_193,
+            cap: 30_000,
+            unit: "AI credits",
+        },
         reset: now + Duration::days(19),
     }
 }
@@ -33,6 +36,13 @@ fn run(tokens: u64, now: DateTime<Utc>) -> Entry {
         },
         started: stamp(now.timestamp_millis() as u64),
         ended: stamp(now.timestamp_millis() as u64),
+    }
+}
+
+fn claude_run(tokens: u64, now: DateTime<Utc>) -> Entry {
+    Entry {
+        provider: Some("claude".to_string()),
+        ..run(tokens, now)
     }
 }
 
@@ -94,4 +104,99 @@ fn a_provider_reported_quota_that_has_reset_is_not_shown() {
     assert_eq!(meter.reported, None);
     assert_eq!(meter.share(), None, "no old figure as current");
     assert_eq!(meter.reset, Window::Month.reset(now));
+}
+
+fn claude_quota(window: Window, share: f32, reset: DateTime<Utc>) -> Quota {
+    Quota {
+        provider: "claude".to_string(),
+        window,
+        measure: Measure::Share(share),
+        reset,
+    }
+}
+
+#[test]
+fn a_provider_with_two_windows_gets_two_meters_with_their_own_resets() {
+    let now = noon();
+    let session = claude_quota(
+        Window::Session,
+        0.15,
+        now + Duration::hours(3) + Duration::minutes(20),
+    );
+    let week = claude_quota(Window::Week, 0.06, now + Duration::days(5));
+    let quotas = [session.clone(), week.clone()];
+    let meters =
+        subscription_meters_with(&Plans::default(), &[claude_run(1_234, now)], now, &quotas);
+    let claude: Vec<&Meter> = meters
+        .iter()
+        .filter(|meter| meter.provider == "claude")
+        .collect();
+    assert_eq!(claude.len(), 2);
+    assert_eq!(claude[0].window, Window::Session);
+    assert_eq!(claude[0].reset, session.reset);
+    assert_eq!(claude[0].start, session.reset - Duration::hours(5));
+    assert_eq!(claude[0].share(), Some(0.15));
+    assert_eq!(claude[1].window, Window::Week);
+    assert_eq!(claude[1].reset, week.reset);
+    assert_eq!(claude[1].start, week.reset - Duration::days(7));
+    assert_eq!(claude[1].share(), Some(0.06));
+    assert_eq!(
+        claude[0].consumed.tokens, 1_234,
+        "the log still holds the tokens"
+    );
+}
+
+#[test]
+fn a_missing_reported_window_keeps_the_plans_fallback() {
+    let now = noon();
+    let mut plans = Plans::default();
+    plans.set(
+        "claude",
+        Plan {
+            billing: Billing::Subscription,
+            window: Window::Week,
+            price: None,
+            cap: Some(Cap::Tokens(1_000)),
+        },
+    );
+    let session = claude_quota(Window::Session, 0.5, now + Duration::hours(1));
+    let meters = subscription_meters_with(&plans, &[claude_run(100, now)], now, &[session]);
+    let claude: Vec<&Meter> = meters
+        .iter()
+        .filter(|meter| meter.provider == "claude")
+        .collect();
+    assert_eq!(
+        claude.len(),
+        2,
+        "the reported session and the declared week"
+    );
+    assert_eq!(claude[0].window, Window::Session);
+    assert!(claude[0].reported.is_some());
+    assert_eq!(claude[1].window, Window::Week);
+    assert_eq!(claude[1].reported, None);
+    assert_eq!(claude[1].share(), Some(0.1));
+}
+
+#[test]
+fn a_reported_window_beats_the_plans_declared_one() {
+    let now = noon();
+    let mut plans = Plans::default();
+    plans.set(
+        "claude",
+        Plan {
+            billing: Billing::Subscription,
+            window: Window::Week,
+            price: None,
+            cap: Some(Cap::Tokens(1_000)),
+        },
+    );
+    let week = claude_quota(Window::Week, 0.5, now + Duration::days(2));
+    let meters = subscription_meters_with(&plans, &[claude_run(100, now)], now, &[week]);
+    let claude: Vec<&Meter> = meters
+        .iter()
+        .filter(|meter| meter.provider == "claude")
+        .collect();
+    assert_eq!(claude.len(), 1, "no second fallback for the same window");
+    assert_eq!(claude[0].window, Window::Week);
+    assert_eq!(claude[0].share(), Some(0.5), "the report wins over the cap");
 }

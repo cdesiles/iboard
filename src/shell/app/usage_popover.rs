@@ -8,7 +8,7 @@ use super::{
     Align, CornerRadius, Frame, IboardApp, Layout, MarginF32, Pos2, Rect, RichText, Sense, Shape,
     Stroke, Vec2, settings_ui, theme, widgets,
 };
-use crate::agent::Cap;
+use crate::agent::{Cap, Measure};
 use crate::domains::agent::artifacts::usage_log::{DayUse, Meter, ModelUse};
 use crate::format::thousands;
 
@@ -92,7 +92,12 @@ fn body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> bool {
         if at > 0 {
             soft_rule(ui);
         }
-        settings |= row(ui, meter, now, &mut open);
+        let multi = meters
+            .iter()
+            .filter(|other| other.provider == meter.provider)
+            .count()
+            > 1;
+        settings |= row(ui, meter, now, &mut open, multi);
     }
     ui.data_mut(|data| data.insert_temp(rows_id(), open));
     widgets::rule(ui);
@@ -100,29 +105,51 @@ fn body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> bool {
     settings
 }
 
-/// The rows open at rest: the first plan, then whatever the user opened.
+/// The rows open at rest: the first window, then whatever the user opened.
 fn open_rows(ui: &egui::Ui, meters: &[Meter]) -> HashSet<String> {
     if let Some(open) = ui.data(|data| data.get_temp::<HashSet<String>>(rows_id())) {
         return open;
     }
     meters
         .first()
-        .map(|meter| HashSet::from([meter.provider.clone()]))
+        .map(|meter| HashSet::from([row_key(meter)]))
         .unwrap_or_default()
 }
 
-/// One plan's disclosure: its summary, then its detail while open.
-fn row(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, open: &mut HashSet<String>) -> bool {
-    let is_open = open.contains(&meter.provider);
-    let response = summary(ui, meter, now, is_open);
+/// A row is one provider's window: a session and a week are two rows.
+fn row_key(meter: &Meter) -> String {
+    format!("{}:{}", meter.provider, meter.window.key())
+}
+
+/// What a row is called: its provider, and the window when it has more than
+/// one.
+fn title(meter: &Meter, multi: bool) -> String {
+    if multi {
+        format!("{} · {}", meter.name, meter.window.name())
+    } else {
+        meter.name.clone()
+    }
+}
+
+/// One window's disclosure: its summary, then its detail while open.
+fn row(
+    ui: &mut egui::Ui,
+    meter: &Meter,
+    now: DateTime<Utc>,
+    open: &mut HashSet<String>,
+    multi: bool,
+) -> bool {
+    let key = row_key(meter);
+    let is_open = open.contains(&key);
+    let response = summary(ui, meter, now, is_open, multi);
     if response.clicked() {
         if is_open {
-            open.remove(&meter.provider);
+            open.remove(&key);
         } else {
-            open.insert(meter.provider.clone());
+            open.insert(key.clone());
         }
     }
-    if open.contains(&meter.provider) {
+    if open.contains(&key) {
         detail(ui, meter, now)
     } else {
         false
@@ -130,9 +157,17 @@ fn row(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, open: &mut HashSet<
 }
 
 /// The three lines of a row's summary: ring and name, gauge, verdict.
-fn summary(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, open: bool) -> egui::Response {
+fn summary(
+    ui: &mut egui::Ui,
+    meter: &Meter,
+    now: DateTime<Utc>,
+    open: bool,
+    multi: bool,
+) -> egui::Response {
     let p = theme::palette(ui);
-    let id = ui.scope_id().with(("usage-row", meter.provider.as_str()));
+    let id = ui
+        .scope_id()
+        .with(("usage-row", meter.provider.as_str(), meter.window.key()));
     let hover = ui.painter().add(Shape::Noop);
     let frame = Frame::new()
         .inner_margin(MarginF32 {
@@ -148,7 +183,7 @@ fn summary(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, open: bool) -> 
                 widgets::ring(ui, meter.share(), meter.over_pace());
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-                    name_and_share(ui, meter);
+                    name_and_share(ui, meter, multi);
                     widgets::gauge(
                         ui,
                         meter.share(),
@@ -163,7 +198,7 @@ fn summary(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, open: bool) -> 
     let response = ui
         .interact(frame.response.rect, id, Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
-    let label = row_label(meter, now);
+    let label = row_label(meter, now, multi);
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), open, &label)
     });
@@ -179,12 +214,12 @@ fn summary(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, open: bool) -> 
     response
 }
 
-/// The plan's name, and its share at the right, or `No cap`.
-fn name_and_share(ui: &mut egui::Ui, meter: &Meter) {
+/// The window's name, and its share at the right, or `No cap`.
+fn name_and_share(ui: &mut egui::Ui, meter: &Meter, multi: bool) {
     let p = theme::palette(ui);
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(&meter.name)
+            RichText::new(title(meter, multi))
                 .font(theme::ui_strong())
                 .color(p.ink),
         );
@@ -247,26 +282,22 @@ fn capitalized_reset(meter: &Meter, now: DateTime<Utc>) -> String {
 }
 
 /// What VoiceOver reads on a row, and a test finds it by.
-fn row_label(meter: &Meter, now: DateTime<Utc>) -> String {
+fn row_label(meter: &Meter, now: DateTime<Utc>, multi: bool) -> String {
+    let title = title(meter, multi);
     match meter.share() {
         Some(share) => format!(
-            "{} · {:.0}% · {} · {}",
-            meter.name,
+            "{title} · {:.0}% · {} · {}",
             share * 100.0,
             verdict(meter),
             super::status::reset_text(meter, now)
         ),
-        None => format!(
-            "{} · No cap · {}",
-            meter.name,
-            capitalized_reset(meter, now)
-        ),
+        None => format!("{title} · No cap · {}", capitalized_reset(meter, now)),
     }
 }
 
 /// The `the week` a gauge's label names.
 fn window(meter: &Meter) -> String {
-    format!("the {}", meter.plan.window.name().to_lowercase())
+    format!("the {}", meter.window.name().to_lowercase())
 }
 
 /// An open row: what it used, its days and its models, and with no cap the
@@ -314,12 +345,16 @@ fn detail(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) -> bool {
 /// `$6.20 of $10.00`, or `3.1M tokens burnt`.
 fn used_line(meter: &Meter) -> String {
     if let Some(quota) = &meter.reported {
-        return format!(
-            "{} of {} {} · from GitHub",
-            thousands(quota.used as usize),
-            thousands(quota.cap as usize),
-            quota.unit
-        );
+        return match quota.measure {
+            Measure::Share(share) => {
+                format!("{:.0}% used · from {}", share * 100.0, meter.name)
+            }
+            Measure::Count { used, cap, unit } => format!(
+                "{} of {} {unit} · from GitHub",
+                thousands(used as usize),
+                thousands(cap as usize)
+            ),
+        };
     }
     let tokens = thousands(meter.consumed.tokens as usize);
     match meter.plan.cap {
@@ -352,10 +387,7 @@ fn days(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) {
     let height = DAY_WELL_H + theme::SPACE_1 + DAY_LABEL_H;
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
-    let label = format!(
-        "Tokens per day this {}",
-        meter.plan.window.name().to_lowercase()
-    );
+    let label = format!("Tokens per day this {}", meter.window.name().to_lowercase());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, &label));
     if ui.is_rect_visible(rect) {
         paint_days(ui, rect, &days, now);
@@ -371,7 +403,11 @@ fn paint_days(ui: &egui::Ui, rect: Rect, days: &[DayUse], now: DateTime<Utc>) {
     } else {
         theme::SPACE_2
     };
-    let slot = ((rect.width() - gap * (count - 1) as f32) / count as f32).max(1.0);
+    let slot = if count == 1 {
+        40.0
+    } else {
+        ((rect.width() - gap * (count - 1) as f32) / count as f32).max(1.0)
+    };
     let max = days.iter().map(|day| day.tokens).max().unwrap_or(0);
     let today = now.date_naive();
     for (at, day) in days.iter().enumerate() {

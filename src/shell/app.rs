@@ -409,13 +409,14 @@ struct Session {
     /// What the sessions running in the board's projects cost, as the feed
     /// last read it. A test sets it to show a run.
     live_spend: agent::spend::Live,
-    /// The quota GitHub last reported for Copilot, dropped when a read fails
-    /// so an old figure never reads as current.
+    /// The quotas the providers last reported, dropped when a read fails so
+    /// an old figure never reads as current.
     quotas: Vec<agent::Quota>,
-    /// The quota read in the background, and when the last one landed.
-    quota_feed: Option<Job<Option<agent::Quota>>>,
+    /// The quotas read in the background, and when the last ones landed.
+    quota_feed: Option<Job<Vec<agent::Quota>>>,
     quota_read: Option<Instant>,
-    /// Whether the board asks GitHub for its quotas; a test never does.
+    /// Whether the board asks the providers for their quotas; a test never
+    /// does.
     quota_live: bool,
 }
 

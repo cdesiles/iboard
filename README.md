@@ -150,19 +150,27 @@ enabled = false     # true: the Design panel and Draft design
 
 ### Subscription usage
 
-The status bar's usage pill reads Copilot's own quota, not a cap typed in
-Settings. Its source is GitHub's internal endpoint
+The status bar's usage pill reads what a subscription provider itself reports,
+not a cap typed in Settings. Copilot's source is GitHub's internal endpoint
 `GET https://api.github.com/copilot_internal/user`, asked with the GitHub OAuth
 token opencode already stores (`$XDG_DATA_HOME/opencode/auth.json`, or
 `~/.local/share/opencode/auth.json`). It reports premium interactions, so the
 Copilot row reads `9,212 of 30,000 AI credits` with the `quota_reset_date`
 beside it.
 
-The endpoint is internal and undocumented, and may refuse the token or change
-its reply at any time. The board reads it off the UI thread at most every five
-minutes while the board shows; when the token, the network or the reply fails,
-the row falls back to the tokens the usage log counted, with no share, and
-never shows an earlier figure as current.
+Claude.ai's source is its usage endpoint
+`GET https://api.anthropic.com/api/oauth/usage`, asked with the OAuth
+credential Claude Code stores (the macOS keychain item
+`Claude Code-credentials`, or `~/.claude/.credentials.json` elsewhere). It
+reports a `five_hour` session and a `seven_day` week, each a utilization and a
+reset time, so Claude.ai gets one row per window: `Claude.ai · Session` and
+`Claude.ai · Week`.
+
+Both endpoints are internal and undocumented, and may refuse the token or
+change their reply at any time. The board reads them off the UI thread at most
+every five minutes while the board shows; when a token, the network or a reply
+fails, that window falls back to the tokens the usage log counted, with no
+share, and never shows an earlier figure as current.
 
 ### Workspace
 
