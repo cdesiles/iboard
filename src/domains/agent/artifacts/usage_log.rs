@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use chrono::{DateTime, Duration, NaiveDate, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::domains::agent::runtime::service::Session;
@@ -100,6 +100,23 @@ impl Consumption {
     }
 }
 
+/// One day of a plan's window, as its daily chart draws it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DayUse {
+    pub day: NaiveDate,
+    pub tokens: u64,
+    pub today: bool,
+}
+
+/// One model's share of a plan's window.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelUse {
+    pub model: String,
+    pub tokens: u64,
+    /// Its share of the window's tokens, from 0 to 1.
+    pub share: f32,
+}
+
 /// One subscription plan's window: what it used, against the cap it knows.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Meter {
@@ -111,6 +128,10 @@ pub struct Meter {
     pub consumed: Consumption,
     /// When the plan's window ends, in UTC.
     pub reset: DateTime<Utc>,
+    /// The window's runs, for its daily and model split.
+    runs: Vec<Entry>,
+    /// The moment the meter was read, for its pace and today.
+    now: DateTime<Utc>,
 }
 
 impl Meter {
@@ -121,6 +142,96 @@ impl Meter {
             Cap::Tokens(cap) if cap > 0 => Some(self.consumed.tokens as f32 / cap as f32),
             _ => None,
         }
+    }
+
+    /// The share of the plan's window already gone, when it has a cap.
+    pub fn elapsed(&self) -> Option<f32> {
+        self.share()?;
+        let start = self.plan.window.start(self.now);
+        let length = (self.reset - start).num_seconds();
+        if length <= 0 {
+            return None;
+        }
+        let gone = (self.now - start).num_seconds().clamp(0, length);
+        Some(gone as f32 / length as f32)
+    }
+
+    /// Whether the window used a larger share than it has lived through.
+    pub fn over_pace(&self) -> bool {
+        match (self.share(), self.elapsed()) {
+            (Some(share), Some(elapsed)) => share > elapsed,
+            _ => false,
+        }
+    }
+
+    /// The weekday (a week's window) or date (a month's) the cap is reached
+    /// at the window's average rate so far, when it is over pace.
+    pub fn cap_reached_on(&self) -> Option<String> {
+        if !self.over_pace() {
+            return None;
+        }
+        let share = self.share()? as f64;
+        let at = if share >= 1.0 {
+            self.now
+        } else {
+            let start = self.plan.window.start(self.now);
+            let gone = (self.now - start).num_seconds() as f64;
+            self.now + Duration::seconds((gone * (1.0 - share) / share).round() as i64)
+        };
+        Some(match self.plan.window {
+            Window::Week => at.format("%a").to_string(),
+            _ => at.format("%b %-d").to_string(),
+        })
+    }
+
+    /// One entry per day of the window, today flagged and later days empty.
+    pub fn per_day(&self) -> Vec<DayUse> {
+        let today = self.now.date_naive();
+        let mut by_day: HashMap<NaiveDate, u64> = HashMap::new();
+        for entry in &self.runs {
+            if let Some(ended) = instant(&entry.ended) {
+                *by_day.entry(ended.date_naive()).or_default() += entry.tokens.total();
+            }
+        }
+        let mut days = Vec::new();
+        let mut day = self.plan.window.start(self.now).date_naive();
+        while day < self.reset.date_naive() {
+            days.push(DayUse {
+                day,
+                tokens: by_day.remove(&day).unwrap_or(0),
+                today: day == today,
+            });
+            day += Duration::days(1);
+        }
+        days
+    }
+
+    /// The window's models, the largest first, each with its share of it.
+    pub fn by_model(&self) -> Vec<ModelUse> {
+        let mut by_model: HashMap<&str, u64> = HashMap::new();
+        for entry in &self.runs {
+            let model = entry
+                .model
+                .as_deref()
+                .filter(|model| !model.is_empty())
+                .unwrap_or("Unknown");
+            *by_model.entry(model).or_default() += entry.tokens.total();
+        }
+        let total = self.consumed.tokens;
+        let mut models: Vec<ModelUse> = by_model
+            .into_iter()
+            .map(|(model, tokens)| ModelUse {
+                tokens,
+                share: if total == 0 {
+                    0.0
+                } else {
+                    tokens as f32 / total as f32
+                },
+                model: model.to_string(),
+            })
+            .collect();
+        models.sort_by(|a, b| b.tokens.cmp(&a.tokens).then_with(|| a.model.cmp(&b.model)));
+        models
     }
 }
 
@@ -138,12 +249,27 @@ pub fn subscription_meters(plans: &Plans, entries: &[Entry], now: DateTime<Utc>)
     keys.into_iter()
         .filter_map(|key| {
             let plan = plans.plan(&key);
-            (plan.billing == Billing::Subscription).then(|| Meter {
+            if plan.billing != Billing::Subscription {
+                return None;
+            }
+            let start = plan.window.start(now);
+            let reset = plan.window.reset(now);
+            let runs: Vec<Entry> = entries
+                .iter()
+                .filter(|entry| {
+                    entry.provider.as_deref().map(provider_key).as_deref() == Some(key.as_str())
+                        && instant(&entry.ended).is_some_and(|ended| ended >= start && ended <= now)
+                })
+                .cloned()
+                .collect();
+            Some(Meter {
                 name: provider_name(&key),
-                consumed: Consumption::of(entries, &key, &plan, now),
-                reset: plan.window.reset(now),
+                consumed: Consumption::of(&runs, &key, &plan, now),
+                reset,
                 provider: key,
                 plan,
+                runs,
+                now,
             })
         })
         .collect()
@@ -856,3 +982,6 @@ mod tests {
         assert_eq!(spend.week, 0.65);
     }
 }
+
+#[cfg(test)]
+mod pace_tests;
