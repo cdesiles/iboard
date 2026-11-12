@@ -16,6 +16,7 @@ use super::{
 use crate::preferences;
 
 mod chrome;
+mod gone;
 mod lines;
 mod sections;
 
@@ -68,6 +69,8 @@ pub(super) struct Reader {
     /// The issue whose `read-h1` has scrolled out of view: its title joins
     /// the breadcrumb.
     pub(super) title_away: Option<PathBuf>,
+    /// The path whose "issue gone" notice shows, so it takes focus once.
+    gone: Option<PathBuf>,
 }
 
 impl Default for Reader {
@@ -83,6 +86,7 @@ impl Default for Reader {
             reported: HashSet::new(),
             images: images::ImageChecks::default(),
             title_away: None,
+            gone: None,
         }
     }
 }
@@ -112,18 +116,6 @@ const PAGE_STRIDE: f32 = 0.9;
 
 impl IboardApp {
     pub(super) fn detail_ui(&mut self, ui: &mut egui::Ui, path: &Path) {
-        if self.board.find(path).is_none() {
-            page(ui, |ui| {
-                ui.label(
-                    RichText::new(
-                        "This issue no longer exists. It may have been moved or deleted.",
-                    )
-                    .color(theme::palette(ui).ink_muted),
-                );
-            });
-            return;
-        }
-
         let reviewed = self
             .session
             .review
@@ -136,6 +128,10 @@ impl IboardApp {
             .is_some_and(|refine| refine.path == path);
         let reviewing = !reviewed && self.review_is_running(path);
         let logged = self.agent_log_open(path);
+        let missing = self.board.find(path).is_none();
+        let notice = missing.then(|| self.gone_notice(path, logged));
+        let focus = notice.is_some() && self.reader.gone.as_deref() != Some(path);
+        self.reader.gone = notice.as_ref().map(|_| path.to_path_buf());
         let panes = ui.max_rect();
         let side = reviewed || reviewing || logged;
         let stacked = side && panes.width() < PANE_MIN + REVIEW_PANEL_WIDTH;
@@ -160,7 +156,10 @@ impl IboardApp {
         // so opening one keeps the issue's scroll offset. The issue comes
         // first: tab goes from its content to the divider to the panel.
         let mut issue_ui = pane_ui(ui, "issue-pane", issue_rect);
-        if self.session.editing().is_some() {
+        let mut action = None;
+        if let Some(notice) = &notice {
+            action = gone::notice_ui(&mut issue_ui, notice, focus, path);
+        } else if self.session.editing().is_some() {
             self.detail_edit(&mut issue_ui, path);
         } else {
             self.detail_preview(&mut issue_ui, path);
@@ -191,6 +190,11 @@ impl IboardApp {
         }
         if refined {
             self.refine_popin(ui);
+        }
+        match action {
+            Some(gone::Action::Open(to)) => self.follow_moved(path, to),
+            Some(gone::Action::Board) => self.back_to_board(),
+            None => {}
         }
     }
 
