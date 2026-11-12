@@ -122,6 +122,7 @@ impl IboardApp {
                 vec![
                     ("E", "Edit"),
                     ("L", "Labels"),
+                    ("M", "Move to…"),
                     ("Del", "Delete"),
                     ("↑ ↓", "Scroll"),
                     ("Space", "Page"),

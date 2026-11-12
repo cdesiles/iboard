@@ -265,13 +265,23 @@ impl IboardApp {
             .column_of(path)
             .is_some_and(|column| column.accepts_new_issues());
         if todo && self.prefs.agent.configured() {
-            vec![("E", "edit"), ("esc", "board"), ("⌘⇧R", "review")]
+            vec![
+                ("E", "edit"),
+                ("M", "move"),
+                ("esc", "board"),
+                ("⌘⇧R", "review"),
+            ]
         } else if self.can_edit(path) {
-            vec![("E", "edit"), ("esc", "board"), ("Del", "delete")]
+            vec![
+                ("E", "edit"),
+                ("M", "move"),
+                ("esc", "board"),
+                ("Del", "delete"),
+            ]
         } else if self.is_done_issue(path) {
-            vec![("esc", "board")]
+            vec![("M", "move"), ("esc", "board")]
         } else {
-            vec![("Del", "delete"), ("esc", "board")]
+            vec![("M", "move"), ("Del", "delete"), ("esc", "board")]
         }
     }
 

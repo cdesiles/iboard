@@ -2,6 +2,7 @@
 
 use super::board::column_status;
 use super::labelling::set_label_anchor;
+use super::moves::MoveTarget;
 use super::{
     Align, ButtonKind, IboardApp, Icon, Layout, Path, Pos2, RichText, Screen, Sense, Stroke,
     UNIFIED_TITLEBAR, Vec2, file_name, theme, widgets,
@@ -10,6 +11,9 @@ use widgets::DynamicButton;
 
 mod crumbs;
 mod more;
+
+/// The Move to… menu: column names and their number.
+const MOVE_MENU_WIDTH: f32 = 180.0;
 
 /// An issue's dynamic icon buttons, in the order they are laid out.
 #[derive(Debug, PartialEq)]
@@ -126,6 +130,7 @@ impl IboardApp {
             self.save_and_preview();
         }
         if self.session.reading().is_some() {
+            self.move_button(ui, &path);
             self.more_button(ui, &path, exists);
         }
         self.ai_button(ui, &path);
@@ -134,6 +139,51 @@ impl IboardApp {
             self.dynamic_buttons(ui, &path);
             ui.spacing_mut().item_spacing.x = gap;
         }
+    }
+
+    /// Move to…, in the Reader: the other columns, to send the issue to
+    /// without going back to the board. `M` opens the same menu as the click.
+    fn move_button(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let columns = self.move_targets(path);
+        let button = widgets::button(ui, ButtonKind::Secondary, None, "Move to…", Some("M"))
+            .on_hover_text("Send this issue to another column: M, then its number");
+        let menu = egui::Popup::default_response_id(&button);
+        if std::mem::take(&mut self.session.open_move_menu) {
+            egui::Popup::open_id(ui.ctx(), menu);
+        }
+        let picked = egui::Popup::menu(&button)
+            .width(MOVE_MENU_WIDTH)
+            .show(|ui| {
+                ui.set_min_width(MOVE_MENU_WIDTH);
+                let mut picked = None;
+                for (at, (name, target)) in columns.iter().enumerate() {
+                    let key = super::refine::NUMBERS.get(at);
+                    let hint = key.map(|_| (at + 1).to_string()).unwrap_or_default();
+                    let typed = key.is_some_and(|key| {
+                        ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, *key))
+                    });
+                    if widgets::menu_row(
+                        ui,
+                        MOVE_MENU_WIDTH,
+                        name,
+                        &hint,
+                        widgets::RowLook::default(),
+                    )
+                    .clicked()
+                        || typed
+                    {
+                        picked = Some(target.clone());
+                    }
+                }
+                picked
+            })
+            .and_then(|inner| inner.inner);
+        match picked {
+            Some(MoveTarget::Column(dir)) => self.send_to(path, &dir),
+            Some(MoveTarget::Missing(kind)) => self.send_to_missing(path, kind),
+            None => return,
+        }
+        egui::Popup::close_id(ui.ctx(), menu);
     }
 
     /// The buttons `detail_buttons` picks. Delete has no key in the Editor,

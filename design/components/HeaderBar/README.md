@@ -26,9 +26,10 @@ The one top bar: `bar-h` 40pt, `bg` ground, a `line` rule below. It holds where 
 - Right, left to right:
   1. **Edit, Add label, Delete** as dynamic icon buttons (below). Edit only in Todo and Ready (Doing and Done open read-only; Done shows Commits instead). Add label only on Todo and Ready issues (labels are settled once work starts). Delete not on Done issues, which are archived, never deleted. The Editor keeps only Delete, without a key, since `Del` edits text there.
   2. **The AI split button**: `review` label, no edge, `review-soft` on hover. Its face follows the column. **Todo**: Refine (`⌘R`); the chevron opens Refine with a challenger (`⌘R`), Review this issue (`⌘⇧R`), the other review scope as a one-off (Deep review or Quick review) and Ask… (`⌘K`). Reviewing refines an issue, so Refine and Review belong to Todo only. **Ready, Doing and Done**: no AI split button; on Done the `…` menu sits right after the icons. Every menu ends with the current tool and model, which opens Settings (`⌘,`). See ReviewButton for running and Review ready.
-  3. **`…`**: Reader only, a 24pt icon button in `ink-muted`. Its menu: Refresh only when Auto is off, Agent log when the issue has one, Draft design when `idesign` is on (not on Done) and Archive on Done. The Editor has none: `esc` asks to save or discard.
-  4. **Editor only**: Save (`⌘S`), the Editor's one filled button. Discard moves into the `…` menu. The Unsaved pill is in the status bar.
-  5. **The notification bell**, at the very right on both screens: after `…` in the Reader and after Save in the Editor. See Notifications.
+  3. **Move to…**: Reader only, a secondary text button showing `M`. Its menu lists the other columns, numbered 1–9, and the standard columns the project lacks; picking one, or typing its number after `M`, sends the issue there. `esc` closes it.
+  4. **`…`**: Reader only, a 24pt icon button in `ink-muted`. Its menu: Refresh only when Auto is off, Agent log when the issue has one, Draft design when `idesign` is on (not on Done) and Archive on Done. The Editor has none: `esc` asks to save or discard.
+  5. **Editor only**: Save (`⌘S`), the Editor's one filled button. Discard moves into the `…` menu. The Unsaved pill is in the status bar.
+  6. **The notification bell**, at the very right on both screens: after `…` in the Reader and after Save in the Editor. See Notifications.
 - Menus always show their keys, right-aligned in `meta-mono` `ink-faint`. Refresh leaves the Reader header: with Auto on (the default) the file watcher refreshes; with Auto off it is a row of the `…` menu.
 
 ### Dynamic icon buttons

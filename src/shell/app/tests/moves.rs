@@ -3,6 +3,58 @@
 
 use super::*;
 
+/// `M` opens Move to… in the Reader and a column's number sends the issue
+/// there.
+#[test]
+fn m_then_a_number_moves_the_open_issue() {
+    let (dir, mut app) = project(
+        "move-keys",
+        &[("doing/task.md", "# Task\n"), ("ready/", ""), ("done/", "")],
+    );
+    let file = dir.join("issues/doing/task.md");
+    app.open_issue(file.clone());
+    let ctx = themed_ctx();
+    let none = egui::Modifiers::NONE;
+    frame(&ctx, &mut app, Vec::new());
+    frame(&ctx, &mut app, vec![key(Key::M, none)]);
+    frame(&ctx, &mut app, vec![key(Key::Num3, none)]);
+    let moved = dir.join("issues/done/task.md");
+    assert!(
+        moved.exists() && !file.exists(),
+        "3 is Done, after Todo and Ready"
+    );
+    assert!(matches!(&app.session.screen, Screen::Detail(open, _) if *open == moved));
+}
+
+/// A project without a `done/` folder can still send an issue to Done:
+/// Move to… offers it in its place and creates the folder.
+#[test]
+fn move_to_creates_a_standard_column_the_project_lacks() {
+    let (dir, mut app) = project(
+        "move-missing",
+        &[
+            ("ready/task.md", "# Task\n"),
+            ("doing/", ""),
+            ("blocked/", ""),
+        ],
+    );
+    let file = dir.join("issues/ready/task.md");
+    app.open_issue(file.clone());
+    let names: Vec<String> = app
+        .move_targets(&file)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(names, ["Todo", "Doing", "Blocked", "Done"]);
+    let ctx = themed_ctx();
+    let none = egui::Modifiers::NONE;
+    frame(&ctx, &mut app, Vec::new());
+    frame(&ctx, &mut app, vec![key(Key::M, none)]);
+    frame(&ctx, &mut app, vec![key(Key::Num4, none)]);
+    let moved = dir.join("issues/done/task.md");
+    assert!(moved.exists() && !file.exists(), "4 is Done, created");
+}
+
 #[test]
 fn moving_an_issue_reparents_the_file_and_refreshes_the_board() {
     let (dir, mut app) = project("move", &[("todo/01-demo.md", "# Demo\n"), ("doing/", "")]);

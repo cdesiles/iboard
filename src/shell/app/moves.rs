@@ -7,6 +7,14 @@ use super::{
 use crate::domains::board::lifecycle::{self, Exit};
 use crate::priority;
 
+/// Where Move to… sends an issue: a column of the board, or a standard one
+/// whose folder doesn't exist yet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum MoveTarget {
+    Column(PathBuf),
+    Missing(&'static str),
+}
+
 impl IboardApp {
     /// Moves a dragged issue into another column's directory, keeping its file
     /// name apart from the Ready priority number (see
@@ -61,6 +69,86 @@ impl IboardApp {
             .collect();
         if orderable && !moved.is_empty() {
             self.reorder_column(target_dir, &moved, anchor.as_deref());
+        }
+    }
+
+    /// Move to… in the Reader: `path` goes to the end of the column `dir`,
+    /// and the Reader follows it there.
+    pub(super) fn send_to(&mut self, path: &Path, dir: &Path) {
+        self.session.picked.clear();
+        self.place_issue(path, dir, None);
+    }
+
+    /// Move to…'s columns: the other columns of the board, and the standard
+    /// ones it lacks, each in its place.
+    pub(super) fn move_targets(&self, path: &Path) -> Vec<(String, MoveTarget)> {
+        let here = self.board.column_of(path).map(|column| column.dir.clone());
+        let present: Vec<discovery::ColumnKind> = self
+            .board
+            .columns
+            .iter()
+            .filter_map(|column| column.kind)
+            .collect();
+        let mut targets: Vec<(u8, String, MoveTarget)> = self
+            .board
+            .columns
+            .iter()
+            .filter(|column| Some(&column.dir) != here.as_ref())
+            .map(|column| {
+                let rank = column.kind.map_or(u8::MAX, |kind| kind as u8);
+                (
+                    rank,
+                    column.name.clone(),
+                    MoveTarget::Column(column.dir.clone()),
+                )
+            })
+            .collect();
+        for kind in discovery::INIT_COLUMNS {
+            let folder = Path::new(kind);
+            let Some(column) = discovery::ColumnKind::of(folder) else {
+                continue;
+            };
+            if !present.contains(&column) {
+                targets.push((
+                    column as u8,
+                    column.name().to_string(),
+                    MoveTarget::Missing(kind),
+                ));
+            }
+        }
+        targets.sort_by_key(|(rank, _, _)| *rank);
+        targets
+            .into_iter()
+            .map(|(_, name, target)| (name, target))
+            .collect()
+    }
+
+    /// Move to… a standard column the project lacks: its folder is created,
+    /// in the issue's own project, then the issue goes there.
+    pub(super) fn send_to_missing(&mut self, path: &Path, kind: &str) {
+        let created = match self.board.repo_of(path) {
+            Some(repo) => discovery::dir_in(repo, Path::new(kind)).map(|_| ()),
+            None => {
+                let folder = self.board.root.join(kind);
+                std::fs::create_dir_all(&folder)
+                    .map_err(|err| format!("Couldn't create {}: {err}", folder.display()))
+            }
+        };
+        if let Err(err) = created {
+            self.error = Some(err);
+            return;
+        }
+        self.refresh();
+        let column = self
+            .board
+            .columns
+            .iter()
+            .find(|column| {
+                discovery::ColumnKind::of(&column.dir) == discovery::ColumnKind::of(Path::new(kind))
+            })
+            .map(|column| column.dir.clone());
+        if let Some(dir) = column {
+            self.send_to(path, &dir);
         }
     }
 

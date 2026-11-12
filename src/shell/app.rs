@@ -318,6 +318,8 @@ struct Session {
     confirm: Option<Confirm>,
     /// The Ask AI dialog, while it is open.
     ask_draft: Option<ask::AskDraft>,
+    /// `M` asked for the Move to… menu; it opens on the next draw.
+    open_move_menu: bool,
     /// The asks the agent works on, by issue.
     asks: HashMap<PathBuf, ask::AskRun>,
     /// The LabelPicker, open on one issue.
@@ -414,6 +416,7 @@ impl Default for Session {
             discarded: None,
             confirm: None,
             ask_draft: None,
+            open_move_menu: false,
             asks: HashMap::new(),
             new_card: None,
             leave_prompt: None,

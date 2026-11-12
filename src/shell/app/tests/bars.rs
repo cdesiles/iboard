@@ -117,6 +117,7 @@ fn hints_shown(harness: &Board) -> usize {
         "project",
         "open",
         "edit",
+        "move",
         "next column",
         "delete",
         "archive",
@@ -133,11 +134,11 @@ fn hints_shown(harness: &Board) -> usize {
     .count()
 }
 
-/// Wherever you are, the status bar lists three keys at most. `Del` shows only
-/// where it deletes.
+/// Wherever you are, the status bar lists four keys at most. `Del` shows only
+/// where it deletes, and the Reader always offers `M move`.
 #[test]
-fn the_status_bar_lists_three_keys_at_most() {
-    let dir = scratch_dir("three-hints");
+fn the_status_bar_lists_four_keys_at_most() {
+    let dir = scratch_dir("four-hints");
     let mut harness = board_of_every_column(&dir);
     assert_eq!(hints_shown(&harness), 3, "at rest");
 
@@ -155,7 +156,11 @@ fn the_status_bar_lists_three_keys_at_most() {
 
         harness.state_mut().1.open_issue(path);
         harness.run_steps(1);
-        assert!(hints_shown(&harness) <= 3, "{file} open");
+        assert!(hints_shown(&harness) <= 4, "{file} open");
+        assert!(
+            harness.query_by_label("move").is_some(),
+            "{file} offers M move"
+        );
         assert_eq!(
             harness.query_by_label("delete").is_some(),
             deletes,

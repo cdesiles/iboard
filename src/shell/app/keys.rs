@@ -182,6 +182,7 @@ impl IboardApp {
             Command::Edit(path) => self.start_editing(&path),
             Command::Archive(path) => self.archive_issue(&path),
             Command::Labels(path) => self.toggle_label_picker(path),
+            Command::MoveTo => self.session.open_move_menu = true,
             Command::Delete(path) => self.request_delete(path),
             Command::SwitchProject(forward) => self.switch_project(forward),
             Command::Stats => self.open_stats(),

@@ -14,7 +14,8 @@ mod pick;
 mod thinking;
 mod why;
 
-use keys::{NUMBERS, refine_keys};
+pub(super) use keys::NUMBERS;
+use keys::refine_keys;
 use pick::pick_pane;
 use thinking::{thinking_pick, thinking_why};
 use why::{refine_head, why_pane};

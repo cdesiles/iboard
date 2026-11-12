@@ -3,7 +3,7 @@
 
 use super::{Key, RefineAction, Refinement, note_id};
 
-pub(super) const NUMBERS: [Key; 9] = [
+pub(crate) const NUMBERS: [Key; 9] = [
     Key::Num1,
     Key::Num2,
     Key::Num3,

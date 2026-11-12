@@ -79,6 +79,8 @@ pub(super) enum Command {
     Stats,
     /// `⌘↩` with a review's proposal shown: apply it.
     ApplyReview,
+    /// `M` in the Reader: the Move to… menu, its columns numbered.
+    MoveTo,
     /// `⌘K`: Ask AI on the open issue or the selected card, or stop the ask.
     Ask(PathBuf),
     /// `↑ ↓`, `fn ↑ ↓`, `space`, `⇧space` on the Reader's page, down when true.
@@ -105,6 +107,9 @@ pub(super) fn keymap(input: &egui::InputState, cx: &KeyContext) -> Vec<Command> 
     {
         if plain && pressed(Key::L) {
             out.push(Command::Labels(path.clone()));
+        }
+        if plain && pressed(Key::M) {
+            out.push(Command::MoveTo);
         }
         if plain && cx.editable && (pressed(Key::E) || pressed(Key::Enter)) {
             out.push(Command::Edit(path.clone()));
