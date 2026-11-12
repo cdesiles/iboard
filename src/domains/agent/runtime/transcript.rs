@@ -104,6 +104,13 @@ fn line(part: &Part, closed: bool) -> Logged {
         } => Logged::Open,
         Part::Tool { name, input, .. } => describe_tool(name, input)
             .map_or(Logged::Unlogged, |step| Logged::Line(build_log::step(step))),
+        Part::Thought {
+            streaming: true, ..
+        } if !closed => Logged::Open,
+        Part::Thought { secs, text, .. } => match text.trim() {
+            "" => Logged::Unlogged,
+            text => Logged::Line(build_log::thought(*secs, text)),
+        },
         Part::Text(_) if !closed => Logged::Open,
         Part::Text(text) => match text.trim() {
             "" => Logged::Unlogged,
@@ -212,6 +219,40 @@ mod tests {
             ["Let me look.", "→ Reading src/a.rs…"],
             "a part after it closes the text"
         );
+    }
+
+    #[test]
+    fn a_thought_is_logged_once_it_is_whole() {
+        let mut transcript = Transcript::default();
+        let thinking = Part::Thought {
+            secs: 0,
+            text: "Weigh".into(),
+            streaming: true,
+        };
+        assert!(
+            transcript
+                .unread(&[message("msg_1", false, vec![thinking])])
+                .is_empty()
+        );
+        assert!(transcript.waiting());
+
+        let done = message(
+            "msg_1",
+            true,
+            vec![
+                Part::Thought {
+                    secs: 4,
+                    text: "Weighing it".into(),
+                    streaming: false,
+                },
+                read("/p/src/a.rs"),
+            ],
+        );
+        assert_eq!(
+            transcript.unread(&[done]),
+            ["∴ 4s · Weighing it", "→ Reading src/a.rs…"]
+        );
+        assert!(!transcript.waiting());
     }
 
     #[test]

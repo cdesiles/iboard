@@ -324,6 +324,15 @@ fn part_of(value: &Value) -> Part {
             input: value["state"]["input"].clone(),
             streaming: value["state"]["status"] == "streaming",
         },
+        Some("reasoning") => {
+            let created = value["time"]["created"].as_u64().unwrap_or(0);
+            let done = value["time"]["completed"].as_u64();
+            Part::Thought {
+                secs: done.map_or(0, |done| done.saturating_sub(created) / 1000),
+                text: value["text"].as_str().unwrap_or_default().to_string(),
+                streaming: done.is_none(),
+            }
+        }
         Some("text") => Part::Text(value["text"].as_str().unwrap_or_default().to_string()),
         _ => Part::Other,
     }
@@ -518,6 +527,39 @@ mod tests {
             "time": {"busy": 2_000}});
         let session = session_of(&stranger, Path::new("/code/app")).expect("a session");
         assert_eq!(session.slug, None, "not ours");
+    }
+
+    #[test]
+    fn a_reasoning_part_is_read_with_its_time() {
+        let value = json!({
+            "type": "assistant", "id": "msg_1",
+            "time": {"completed": 1_760_000_010_000u64},
+            "content": [
+                {"type": "reasoning", "text": "Weighing the fix.",
+                 "time": {"created": 1_760_000_000_000u64, "completed": 1_760_000_004_000u64}},
+                {"type": "reasoning", "text": "Still going",
+                 "time": {"created": 1_760_000_004_000u64}},
+                {"type": "tool", "name": "read",
+                 "state": {"input": {"path": "/p/src/a.rs"}, "status": "completed"}}
+            ]
+        });
+        let message = message_of(&value).expect("a message");
+        assert_eq!(
+            message.parts[0],
+            Part::Thought {
+                secs: 4,
+                text: "Weighing the fix.".into(),
+                streaming: false
+            }
+        );
+        assert!(matches!(
+            &message.parts[1],
+            Part::Thought {
+                streaming: true,
+                ..
+            }
+        ));
+        assert!(matches!(&message.parts[2], Part::Tool { .. }));
     }
 
     #[test]

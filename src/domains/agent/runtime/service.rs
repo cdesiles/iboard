@@ -164,6 +164,13 @@ pub struct Message {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Part {
     Text(String),
+    /// The model's reasoning, with how long it took when the engine says.
+    Thought {
+        secs: u64,
+        text: String,
+        /// Whether it can still grow: a part still streaming is read again.
+        streaming: bool,
+    },
     /// A tool call, with the input that says what it is doing.
     Tool {
         name: String,

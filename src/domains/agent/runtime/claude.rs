@@ -496,6 +496,11 @@ fn part_of(value: &Value) -> Option<Part> {
         "text" => Some(Part::Text(
             value["text"].as_str().unwrap_or_default().to_string(),
         )),
+        "thinking" => Some(Part::Thought {
+            secs: 0,
+            text: value["thinking"].as_str().unwrap_or_default().to_string(),
+            streaming: false,
+        }),
         "tool_use" => Some(Part::Tool {
             name: value["name"].as_str().unwrap_or("tool").to_string(),
             input: value["input"].clone(),
@@ -655,6 +660,20 @@ mod tests {
         assert_eq!(messages[0].id, "m1");
         assert!(matches!(&messages[0].parts[1], Part::Tool { name, .. } if name == "Read"));
         assert_eq!(messages[1].parts, [Part::Text("Done.".into())]);
+    }
+
+    #[test]
+    fn a_thinking_block_becomes_a_thought_with_no_clock() {
+        let text = r#"{"type":"assistant","uuid":"m1","message":{"content":[{"type":"thinking","thinking":"Weighing it."},{"type":"redacted_thinking","data":"opaque"}]}}"#;
+        let messages = messages_of(text);
+        assert_eq!(
+            messages[0].parts,
+            [Part::Thought {
+                secs: 0,
+                text: "Weighing it.".into(),
+                streaming: false
+            }]
+        );
     }
 
     #[test]

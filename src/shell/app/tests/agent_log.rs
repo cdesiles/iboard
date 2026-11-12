@@ -63,7 +63,7 @@ fn an_unmarked_log_folds_like_a_marked_one() {
     let mut harness = kittest(app);
     harness.run_steps(2);
 
-    harness.get_by_label("ran 2 commands, collapsed");
+    harness.get_by_label("Ran 2 commands, collapsed");
     assert!(harness.query_by_label_contains("Running").is_none());
     assert!(until(|| {
         harness.run_steps(1);
@@ -164,6 +164,83 @@ fn the_live_step_moves_from_now_to_the_timeline() {
         harness.query_by_label("src/a.rs").is_some(),
         "the step returns to the timeline"
     );
+}
+
+/// A run's thoughts fold with the steps around them and open onto their text.
+#[test]
+fn thoughts_fold_with_the_steps_and_open_onto_their_text() {
+    let (_dir, mut app, issue) = logged("agent-log-thoughts");
+    let thoughts = "\
+── 2026-11-07 14:02 · opencode
+∴ 4s · Weighing the fix.
+→ Reading src/a.rs…
+∴ 7s · The tag check lives here.
+→ Reading src/b.rs…
+✓ Finished in 00:10
+";
+    std::fs::write(build_log::path(&app.board.root, &issue), thoughts).unwrap();
+    app.apply(vec![Intent::AgentLog(issue)]);
+    let mut harness = kittest(app);
+    harness.run_steps(2);
+
+    harness
+        .get_by_label("Thought 2 times, read 2 files, collapsed")
+        .click();
+    harness.run_steps(2);
+    harness.get_by_label("Thought 2 times, read 2 files, expanded");
+    assert!(
+        harness.query_by_label("Weighing the fix.").is_none(),
+        "closed"
+    );
+    harness
+        .get_by_label("Thinking, 4 seconds, collapsed")
+        .click();
+    harness.run_steps(2);
+    harness.get_by_label("Thinking, 4 seconds, expanded");
+    harness.get_by_label("Weighing the fix.");
+}
+
+/// While the run is live its newest thought owns the Now strip, with no
+/// object; once it ends the thought returns to the fold.
+#[test]
+fn the_now_strip_says_thinking_for_a_live_thought() {
+    let dir = scratch_dir("agent-log-thinking");
+    for column in ["todo", "ready", "doing", "done"] {
+        std::fs::create_dir_all(dir.join("issues").join(column)).unwrap();
+    }
+    let issue = dir.join("issues/ready/fix.md");
+    std::fs::write(&issue, "# Fix\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let thought = r#"{"type":"reasoning","part":{"type":"reasoning","text":"Weighing the fix.","time":{"created":1000,"completed":4000}}}"#;
+    app.prefs.build_agent = fake_agent(&format!(
+        "printf '%s\\n' '{thought}'; sleep 30 # {{prompt}}"
+    ));
+
+    app.apply(vec![Intent::Build(vec![issue])]);
+    let taken = app.building_now()[0].0.clone();
+    let log = build_log::path(&app.board.root, &taken);
+    app.apply(vec![Intent::AgentLog(taken)]);
+    let mut harness = kittest(app);
+    assert!(until(|| {
+        harness.run_steps(1);
+        harness.query_by_label("Thinking").is_some()
+    }));
+    assert!(
+        harness.query_by_label("Weighing the fix.").is_none(),
+        "the Now strip owns the live thought"
+    );
+
+    harness.state_mut().1.stop_build();
+    assert!(until(|| {
+        std::fs::read_to_string(&log).ok().is_some_and(|text| {
+            build_log::parse(&text)
+                .iter()
+                .any(|entry| matches!(entry, build_log::Entry::Outcome { .. }))
+        })
+    }));
+    harness.run_steps(2);
+    assert!(harness.query_by_label("Thinking").is_none());
+    harness.get_by_label("Thinking, 3 seconds, collapsed");
 }
 
 /// The switch and the foot keep the panel's `space-4` sides, the reply is as

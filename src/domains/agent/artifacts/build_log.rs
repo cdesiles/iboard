@@ -81,6 +81,19 @@ pub fn author(text: &str) -> String {
     format!("▸ {}", text.trim().replace('\n', " "))
 }
 
+/// The most of a thought the log keeps: the reasoning, not every token.
+const THOUGHT_MAX: usize = 2000;
+
+/// The line a thought adds to the log, on one line and capped: how long the
+/// model reasoned, then what it said.
+pub fn thought(secs: u64, text: &str) -> String {
+    let text = text.trim().replace('\n', " ");
+    let mut chars = text.chars();
+    let body: String = chars.by_ref().take(THOUGHT_MAX).collect();
+    let tail = if chars.next().is_some() { "…" } else { "" };
+    format!("∴ {secs}s · {body}{tail}")
+}
+
 const FINISHED: &str = "✓ Finished in ";
 
 /// How long the agent took on the issue: its last run's, when it finished.
@@ -105,6 +118,7 @@ pub fn entries(line: &str) -> Vec<String> {
     };
     match event["type"].as_str() {
         Some("text") => message(&event["part"]["text"]).into_iter().collect(),
+        Some("reasoning") => reasoning(&event["part"]).into_iter().collect(),
         Some("tool_use") => agent::step_of(line).map(step).into_iter().collect(),
         Some("assistant") => event["message"]["content"]
             .as_array()
@@ -112,6 +126,7 @@ pub fn entries(line: &str) -> Vec<String> {
             .flatten()
             .filter_map(|part| match part["type"].as_str()? {
                 "text" => message(&part["text"]),
+                "thinking" => message(&part["thinking"]).map(|text| thought(0, &text)),
                 "tool_use" => {
                     agent::describe_tool(part["name"].as_str()?, &part["input"]).map(step)
                 }
@@ -127,6 +142,15 @@ fn message(text: &serde_json::Value) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
+/// The line an opencode reasoning part adds once it is whole: a part still
+/// streaming has no completion time and comes back later.
+fn reasoning(part: &serde_json::Value) -> Option<String> {
+    let text = message(&part["text"])?;
+    let created = part["time"]["created"].as_u64().unwrap_or(0);
+    let done = part["time"]["completed"].as_u64()?;
+    Some(thought(done.saturating_sub(created) / 1000, &text))
+}
+
 /// The line a step adds to the log: marked, and cut to its first line.
 pub fn step(step: String) -> String {
     format!("→ {}", step.lines().next().unwrap_or_default().trim_end())
@@ -139,6 +163,8 @@ pub enum Entry<'a> {
     Run(&'a str),
     /// A tool the agent used.
     Step(&'a str),
+    /// The model's reasoning: how long it took, in seconds, and what it said.
+    Thought { secs: u64, text: &'a str },
     /// The file an edit tool wrote.
     Edit(&'a str),
     /// How a run ended, and whether it went well.
@@ -246,6 +272,8 @@ pub fn parse(text: &str) -> Vec<Entry<'_>> {
             })
         } else if let Some(rest) = line.strip_prefix("▸ ") {
             Some(Entry::Author(rest.trim()))
+        } else if let Some(thought) = line.strip_prefix("∴ ").and_then(thought_entry) {
+            Some(thought)
         } else {
             line.strip_prefix("✗ ").map(|rest| Entry::Outcome {
                 ok: false,
@@ -269,6 +297,14 @@ pub fn parse(text: &str) -> Vec<Entry<'_>> {
     entries
 }
 
+/// The seconds and text of a thought, from the rest of its `∴ ` line.
+fn thought_entry(line: &str) -> Option<Entry<'_>> {
+    let (secs, text) = line.split_once('s')?;
+    let secs = secs.trim().parse().ok()?;
+    let text = text.strip_prefix(" · ")?;
+    Some(Entry::Thought { secs, text })
+}
+
 /// The kind of a step, from the verb its tool logs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind<'a> {
@@ -276,6 +312,8 @@ pub enum Kind<'a> {
     Search,
     Command,
     Lookup,
+    /// What the model reasoned, which the summary counts on its own.
+    Thought,
     /// A tool the summary names by itself: `fetch`, `edit`, `task`.
     Tool(&'a str),
 }
@@ -309,33 +347,51 @@ pub fn step_parts(step: &str) -> (&str, &str) {
     step.split_once(' ').unwrap_or((step, ""))
 }
 
-/// The steps between two messages in one line: "Read 5 files, searched 2,
-/// ran 1 command". Most used first; ties keep the order they appeared in.
-pub fn summary(steps: &[&str]) -> String {
+/// One row of a burst, in the order it happened: a step, or a thought
+/// between two steps.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Item<'a> {
+    Step(&'a str),
+    Thought { secs: u64, text: &'a str },
+}
+
+/// The burst's items between two messages in one line: "Thought 3 times,
+/// read 5 files, searched 2". Most used first; ties keep the order they
+/// appeared in, and only the first part is capitalised.
+pub fn summary(items: &[Item<'_>]) -> String {
     let mut tallies: Vec<(Kind, usize)> = Vec::new();
-    for step in steps {
-        let kind = kind_of(step);
+    for item in items {
+        let kind = match item {
+            Item::Step(step) => kind_of(step),
+            Item::Thought { .. } => Kind::Thought,
+        };
         match tallies.iter_mut().find(|(seen, _)| *seen == kind) {
             Some((_, count)) => *count += 1,
             None => tallies.push((kind, 1)),
         }
     }
     tallies.sort_by_key(|left| std::cmp::Reverse(left.1));
-    let parts: Vec<String> = tallies
+    let mut parts: Vec<String> = tallies
         .into_iter()
         .map(|(kind, count)| phrase(kind, count))
         .collect();
+    if let Some(first) = parts.first_mut()
+        && let Some(head) = first.chars().next()
+    {
+        first.replace_range(0..head.len_utf8(), &head.to_ascii_uppercase().to_string());
+    }
     parts.join(", ")
 }
 
 fn phrase(kind: Kind<'_>, count: usize) -> String {
     match kind {
-        Kind::Read if count == 1 => "Read 1 file".to_string(),
-        Kind::Read => format!("Read {count} files"),
+        Kind::Read if count == 1 => "read 1 file".to_string(),
+        Kind::Read => format!("read {count} files"),
         Kind::Search => format!("searched {count}"),
         Kind::Command if count == 1 => "ran 1 command".to_string(),
         Kind::Command => format!("ran {count} commands"),
         Kind::Lookup => format!("looked up {count}"),
+        Kind::Thought => format!("thought {count} time{}", if count == 1 { "" } else { "s" }),
         Kind::Tool(tool) => format!(
             "used {tool} {count} time{}",
             if count == 1 { "" } else { "s" }
@@ -367,10 +423,16 @@ pub enum Segment<'a> {
     Run(&'a str),
     Message(String),
     Author(&'a str),
-    /// The steps between two messages, when there are two or more.
-    Activity(Vec<&'a str>),
+    /// The steps and thoughts between two messages, when there are two or
+    /// more, in the order they happened.
+    Activity(Vec<Item<'a>>),
     /// One step between two messages: no disclosure onto itself.
     Step(&'a str),
+    /// One thought between two messages: a fold of its own.
+    Thought {
+        secs: u64,
+        text: &'a str,
+    },
     Edit(&'a str),
     Outcome {
         ok: bool,
@@ -378,14 +440,17 @@ pub enum Segment<'a> {
     },
 }
 
-/// The log's entries folded for the timeline: consecutive steps become one
-/// [`Segment::Activity`], a lone one stays a [`Segment::Step`], and an edit
-/// leaves the burst it sits in without cutting it.
+/// The log's entries folded for the timeline: consecutive steps and thoughts
+/// become one [`Segment::Activity`], a lone one stays a row of its own, and an
+/// edit leaves the burst it sits in without cutting it.
 pub fn segments(entries: Vec<Entry<'_>>) -> Vec<Segment<'_>> {
-    fn flush<'a>(burst: &mut Vec<&'a str>, out: &mut Vec<Segment<'a>>) {
+    fn flush<'a>(burst: &mut Vec<Item<'a>>, out: &mut Vec<Segment<'a>>) {
         match burst.len() {
             0 => {}
-            1 => out.push(Segment::Step(burst[0])),
+            1 => out.push(match burst[0] {
+                Item::Step(step) => Segment::Step(step),
+                Item::Thought { secs, text } => Segment::Thought { secs, text },
+            }),
             _ => out.push(Segment::Activity(std::mem::take(burst))),
         }
         burst.clear();
@@ -394,7 +459,8 @@ pub fn segments(entries: Vec<Entry<'_>>) -> Vec<Segment<'_>> {
     let mut burst = Vec::new();
     for entry in entries {
         match entry {
-            Entry::Step(step) => burst.push(step),
+            Entry::Step(step) => burst.push(Item::Step(step)),
+            Entry::Thought { secs, text } => burst.push(Item::Thought { secs, text }),
             Entry::Edit(edit) => out.push(Segment::Edit(edit)),
             Entry::Message(message) => {
                 flush(&mut burst, &mut out);
@@ -471,13 +537,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn events_become_messages_and_steps() {
+    fn events_become_messages_steps_and_thoughts() {
         let opencode = [
             r#"{"type":"step_start","part":{"type":"step-start"}}"#,
+            r#"{"type":"reasoning","part":{"type":"reasoning","text":"Weighing\nit.","time":{"created":1000,"completed":5000}}}"#,
             r#"{"type":"text","part":{"type":"text","text":"Let me look."}}"#,
             r#"{"type":"tool_use","part":{"tool":"read","state":{"input":{"path":"/p/src/app.rs"}}}}"#,
         ];
-        let claude = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Now grep."},{"type":"tool_use","name":"Grep","input":{"pattern":"fn x"}}]}}"#;
+        let claude = r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"The fix is small."},{"type":"text","text":"Now grep."},{"type":"tool_use","name":"Grep","input":{"pattern":"fn x"}}]}}"#;
         let log: Vec<String> = opencode
             .iter()
             .chain([&claude])
@@ -487,8 +554,10 @@ mod tests {
         assert_eq!(
             log,
             [
+                "∴ 4s · Weighing it.",
                 "Let me look.",
                 "→ Reading src/app.rs…",
+                "∴ 0s · The fix is small.",
                 "Now grep.",
                 "→ Searching fn x…"
             ]
@@ -498,14 +567,39 @@ mod tests {
     }
 
     #[test]
-    fn a_log_parses_into_runs_steps_messages_and_outcomes() {
-        let log = "── 2026-10-17 · opencode\nLet me **look**.\n\n- one\n- two\n→ Reading app.rs…\n→ Using edit src/app.rs…\nDone.\n▸ go on\n✓ Finished\n── later · claude\n✗ stopped\n";
+    fn a_reasoning_part_waits_until_it_is_whole() {
+        let streaming = r#"{"type":"reasoning","part":{"type":"reasoning","text":"Half a","time":{"created":1000}}}"#;
+        assert!(entries(streaming).is_empty(), "it comes back later");
+        let whole = r#"{"type":"reasoning","part":{"type":"reasoning","text":" Half a thought. ","time":{"created":1000,"completed":9000}}}"#;
+        assert_eq!(entries(whole), ["∴ 8s · Half a thought."]);
+        let no_time = r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"No clock here."}]}}"#;
+        assert_eq!(entries(no_time), ["∴ 0s · No clock here."]);
+    }
+
+    #[test]
+    fn a_thought_is_one_line_and_capped() {
+        assert_eq!(thought(4, "Weighing\nit"), "∴ 4s · Weighing it");
+        assert_eq!(thought(0, "  short  "), "∴ 0s · short");
+        let long = "x".repeat(THOUGHT_MAX + 500);
+        let line = thought(7, &long);
+        assert_eq!(line.chars().filter(|c| *c == 'x').count(), THOUGHT_MAX);
+        assert!(line.ends_with('…'), "{line}");
+        assert!(line.starts_with("∴ 7s · "));
+    }
+
+    #[test]
+    fn a_log_parses_into_runs_steps_thoughts_messages_and_outcomes() {
+        let log = "── 2026-10-17 · opencode\nLet me **look**.\n\n- one\n- two\n→ Reading app.rs…\n∴ 4s · Weighing it\n→ Using edit src/app.rs…\nDone.\n▸ go on\n✓ Finished\n── later · claude\n✗ stopped\n";
         assert_eq!(
             parse(log),
             [
                 Entry::Run("2026-10-17 · opencode"),
                 Entry::Message("Let me **look**.\n\n- one\n- two".into()),
                 Entry::Step("Reading app.rs…"),
+                Entry::Thought {
+                    secs: 4,
+                    text: "Weighing it"
+                },
                 Entry::Edit("src/app.rs"),
                 Entry::Message("Done.".into()),
                 Entry::Author("go on"),
@@ -530,14 +624,45 @@ mod tests {
         assert_eq!(
             segments,
             [
-                Segment::Activity(vec!["Reading a.rs…", "Searching fn x…", "Running make…"]),
+                Segment::Activity(vec![
+                    Item::Step("Reading a.rs…"),
+                    Item::Step("Searching fn x…"),
+                    Item::Step("Running make…"),
+                ]),
                 Segment::Message("hi".into()),
                 Segment::Step("Reading b.rs…"),
             ]
         );
         assert_eq!(
-            summary(&["Reading a.rs…", "Searching fn x…", "Running make…"]),
+            summary(&[
+                Item::Step("Reading a.rs…"),
+                Item::Step("Searching fn x…"),
+                Item::Step("Running make…"),
+            ]),
             "Read 1 file, searched 1, ran 1 command"
+        );
+    }
+
+    #[test]
+    fn a_thought_joins_the_burst_in_order_and_stands_alone_between_messages() {
+        let log = "→ Reading a.rs…\n∴ 4s · Weighing it\n→ Searching x…\nhi\n∴ 6s · Alone\n";
+        assert_eq!(
+            segments(parse(log)),
+            [
+                Segment::Activity(vec![
+                    Item::Step("Reading a.rs…"),
+                    Item::Thought {
+                        secs: 4,
+                        text: "Weighing it"
+                    },
+                    Item::Step("Searching x…"),
+                ]),
+                Segment::Message("hi".into()),
+                Segment::Thought {
+                    secs: 6,
+                    text: "Alone"
+                },
+            ]
         );
     }
 
@@ -548,9 +673,9 @@ mod tests {
         assert_eq!(
             runs[0].body,
             [Segment::Activity(vec![
-                "Reading a.rs…",
-                "Reading b.rs…",
-                "Reading c.rs…"
+                Item::Step("Reading a.rs…"),
+                Item::Step("Reading b.rs…"),
+                Item::Step("Reading c.rs…"),
             ])],
             "the edit neither joins the burst nor cuts it"
         );
@@ -616,17 +741,38 @@ mod tests {
     }
 
     #[test]
-    fn activity_counts_pluralise_and_sort_by_use() {
+    fn activity_counts_pluralise_sort_by_use_and_capitalise_only_the_first() {
         let steps = [
-            "Reading a.rs…",
-            "Searching x…",
-            "Searching y…",
-            "Reading b.rs…",
-            "Reading c.rs…",
+            Item::Thought {
+                secs: 2,
+                text: "one",
+            },
+            Item::Step("Searching x…"),
+            Item::Step("Searching y…"),
+            Item::Step("Reading a.rs…"),
+            Item::Step("Reading b.rs…"),
+            Item::Step("Reading c.rs…"),
+            Item::Thought {
+                secs: 3,
+                text: "two",
+            },
+            Item::Thought {
+                secs: 4,
+                text: "three",
+            },
         ];
-        assert_eq!(summary(&steps), "Read 3 files, searched 2");
-        assert_eq!(summary(&["Running make…"]), "ran 1 command");
-        assert_eq!(summary(&["Using fetch https://x…"]), "used fetch 1 time");
+        assert_eq!(summary(&steps), "Thought 3 times, read 3 files, searched 2");
+        assert_eq!(summary(&[Item::Step("Running make…")]), "Ran 1 command");
+        assert_eq!(
+            summary(&[
+                Item::Step("Using fetch https://x…"),
+                Item::Thought {
+                    secs: 0,
+                    text: "why"
+                },
+            ]),
+            "Used fetch 1 time, thought 1 time"
+        );
     }
 
     #[test]

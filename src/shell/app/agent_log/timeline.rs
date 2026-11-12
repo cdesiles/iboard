@@ -8,12 +8,12 @@ use egui::{Align, Align2, Color32, CornerRadius, RichText, Sense, Stroke, Vec2};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 use super::super::theme;
-use crate::build_log::{self, Entry, RunLog, Segment};
+use crate::build_log::{self, Entry, Item, RunLog, Segment};
 use crate::diff::{FileDiff, FileStatus};
 use crate::format::clock;
 
-/// Where the live run's newest step or edit sits in `entries`: none before
-/// the run's heading or an outcome counts.
+/// Where the live run's newest step, edit or thought sits in `entries`: none
+/// before the run's heading or an outcome counts.
 fn live_at(entries: &[Entry<'_>]) -> Option<usize> {
     let run = entries
         .iter()
@@ -21,17 +21,24 @@ fn live_at(entries: &[Entry<'_>]) -> Option<usize> {
         .map_or(0, |at| at + 1);
     entries[run..]
         .iter()
-        .rposition(|entry| matches!(entry, Entry::Step(_) | Entry::Edit(_)))
+        .rposition(|entry| {
+            matches!(
+                entry,
+                Entry::Step(_) | Entry::Edit(_) | Entry::Thought { .. }
+            )
+        })
         .map(|at| run + at)
 }
 
 /// The step the live run is on, as the Now strip reads it: an edit's verb and
-/// file, a tool's own verb and object, or the issue before the first step.
+/// file, a tool's own verb and object, or "Thinking" with no object while the
+/// model reasons. Before the first step it is the issue.
 pub(super) fn live(text: &str) -> (String, String) {
     let entries = build_log::parse(text);
     let (verb, object) = match live_at(&entries).map(|at| &entries[at]) {
         Some(Entry::Edit(path)) => ("Editing", *path),
         Some(Entry::Step(step)) => build_log::step_parts(step),
+        Some(Entry::Thought { .. }) => ("Thinking", ""),
         _ => ("Reading", "the issue"),
     };
     (verb.to_string(), object.to_string())
@@ -43,9 +50,8 @@ pub(super) fn now(ui: &mut egui::Ui, since: Instant, verb: &str, object: &str) {
     let p = theme::palette(ui);
     let (band, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::hover());
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{verb} {object}"))
-    });
+    let reading = format!("{verb} {object}");
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, reading.trim()));
     ui.ctx().accesskit_node_builder(response.id, |node| {
         node.set_live(egui::accesskit::Live::Polite);
     });
@@ -148,7 +154,7 @@ fn entries(text: &str, running: bool) -> Vec<Entry<'_>> {
     let mut entries = build_log::parse(text);
     if running
         && let Some(at) = live_at(&entries)
-        && matches!(entries[at], Entry::Step(_))
+        && matches!(entries[at], Entry::Step(_) | Entry::Thought { .. })
     {
         entries.remove(at);
     }
@@ -188,8 +194,12 @@ fn run_body(ui: &mut egui::Ui, run: &RunLog<'_>, cache: &mut CommonMarkCache, ru
         match segment {
             Segment::Message(text) => prose(ui, (run_at, at), text, cache),
             Segment::Author(text) => author(ui, text),
-            Segment::Activity(steps) => activity(ui, (run_at, at), steps),
+            Segment::Activity(items) => activity(ui, (run_at, at), items),
             Segment::Step(step) => step_row(ui, step, false),
+            Segment::Thought { secs, text } => {
+                let id = ui.make_persistent_id(("thought", (run_at, at)));
+                thought_row(ui, id, *secs, text, false);
+            }
             Segment::Run(_) | Segment::Edit(_) | Segment::Outcome { .. } => {}
         }
     }
@@ -231,10 +241,11 @@ fn author(ui: &mut egui::Ui, text: &str) {
     });
 }
 
-/// A burst of steps in one row: "Read 5 files, searched 2", opening in place.
-fn activity(ui: &mut egui::Ui, at: (usize, usize), steps: &[&str]) {
+/// A burst of steps and thoughts in one row: "Thought 2 times, read 5 files,
+/// searched 2", opening in place.
+fn activity(ui: &mut egui::Ui, at: (usize, usize), items: &[Item<'_>]) {
     let p = theme::palette(ui);
-    let summary = build_log::summary(steps);
+    let summary = build_log::summary(items);
     let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
         ui.ctx(),
         ui.make_persistent_id(("activity", at)),
@@ -272,8 +283,14 @@ fn activity(ui: &mut egui::Ui, at: (usize, usize), steps: &[&str]) {
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             let top = ui.cursor().min.y + theme::SPACE_1;
-            for step in steps {
-                step_row(ui, step, true);
+            for (item_at, item) in items.iter().enumerate() {
+                match item {
+                    Item::Step(step) => step_row(ui, step, true),
+                    Item::Thought { secs, text } => {
+                        let id = ui.make_persistent_id(("thought", at, item_at));
+                        thought_row(ui, id, *secs, text, true);
+                    }
+                }
             }
             let bottom = ui.cursor().min.y - theme::SPACE_1;
             ui.painter().vline(
@@ -310,6 +327,123 @@ fn step_row(ui: &mut egui::Ui, step: &str, in_activity: bool) {
                 .on_hover_text(object);
         }
     });
+}
+
+/// A thought: "Thinking" over the row in a burst, or "Thought for 6s" alone,
+/// opening onto its whole text.
+fn thought_row(ui: &mut egui::Ui, id: egui::Id, secs: u64, text: &str, in_activity: bool) {
+    let p = theme::palette(ui);
+    let mut state =
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
+    if response.clicked() {
+        state.set_open(!state.is_open());
+    }
+    let open = state.is_open();
+    state.store(ui.ctx());
+    let state_name = if open { "expanded" } else { "collapsed" };
+    let reading = if secs > 0 {
+        format!("Thinking, {secs} seconds, {state_name}")
+    } else {
+        format!("Thinking, {state_name}")
+    };
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), reading.as_str())
+    });
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(theme::RADIUS_SM), p.surface_hover);
+    }
+    let chevron_x = if in_activity {
+        rect.right() - 14.0
+    } else {
+        rect.left()
+    };
+    chevron(
+        ui.painter(),
+        egui::Pos2::new(chevron_x, rect.center().y),
+        open,
+        p.ink_muted,
+    );
+    let clue = if in_activity {
+        "Thinking".to_string()
+    } else if secs > 0 {
+        format!("Thought for {secs}s")
+    } else {
+        "Thought".to_string()
+    };
+    let mut x = rect.left() + 20.0;
+    let verb = ui
+        .painter()
+        .layout_no_wrap(clue, theme::ui_small(), p.ink_muted);
+    let top = rect.center().y - verb.size().y / 2.0;
+    ui.painter()
+        .galley(egui::Pos2::new(x, top), verb.clone(), p.ink_muted);
+    x += verb.size().x + theme::SPACE_3;
+
+    let right = rect.right() - if in_activity { 26.0 } else { theme::SPACE_4 };
+    let mut line_right = right;
+    if secs > 0 && in_activity {
+        let time = ui
+            .painter()
+            .layout_no_wrap(format!("{secs}s"), theme::meta(), p.ink_faint);
+        let time_x = right - time.size().x;
+        ui.painter().galley(
+            egui::Pos2::new(time_x, rect.center().y - time.size().y / 2.0),
+            time,
+            p.ink_faint,
+        );
+        line_right = time_x - theme::SPACE_3;
+    }
+    if in_activity && !open {
+        let first = text.lines().next().unwrap_or_default();
+        let line = truncated(
+            ui,
+            first,
+            theme::ui_small(),
+            p.ink_faint,
+            (line_right - x).max(0.0),
+        );
+        ui.painter()
+            .galley(egui::Pos2::new(x, top), line, p.ink_faint);
+    }
+    if open {
+        open_thought(ui, rect, text, in_activity);
+    }
+}
+
+/// The whole text of an open thought: `ui-small` under the row, on the rail.
+fn open_thought(ui: &mut egui::Ui, rect: egui::Rect, text: &str, in_activity: bool) {
+    let p = theme::palette(ui);
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        ui.add_space(theme::SPACE_1);
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            let width = theme::READ_MEASURE.min(ui.available_width());
+            ui.scope(|ui| {
+                ui.set_max_width(width);
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(text)
+                            .font(theme::ui_small())
+                            .color(p.ink_muted),
+                    )
+                    .wrap(),
+                );
+            });
+        });
+        ui.add_space(theme::SPACE_2);
+    });
+    if !in_activity {
+        ui.painter().vline(
+            rect.left() + 10.0,
+            rect.bottom()..=(ui.cursor().min.y - theme::SPACE_2),
+            Stroke::new(1.0, p.line_soft),
+        );
+    }
 }
 
 /// One file a run touched, with its working-tree diff when the file still
@@ -565,6 +699,8 @@ pub(super) fn raw(ui: &mut egui::Ui, text: &str) {
             p.review
         } else if line.starts_with("▸ ") {
             p.accent
+        } else if line.starts_with("∴ ") {
+            p.ink_muted
         } else if line.starts_with("✓ ") {
             p.status_done
         } else if line.starts_with("✗ ") {

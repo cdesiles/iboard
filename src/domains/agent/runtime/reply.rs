@@ -33,6 +33,7 @@ fn scan(messages: &[Message]) -> (Option<String>, Option<String>) {
             match part {
                 Part::Tool { name, input, .. } => step = describe_tool(name, input),
                 Part::Text(said) => text.push_str(said),
+                Part::Thought { .. } => {}
                 Part::Other => {}
             }
         }
