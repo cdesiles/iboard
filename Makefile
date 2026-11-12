@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help hooks run iboard idesign list check test third-party lint fmt tokens toolchain build release install app install-app bump clean preview
+.PHONY: help hooks run iboard idesign list check test third-party lint fmt tokens toolchain build dist install app install-app version bump clean preview
 
 # `make run` launches iboard; `make run idesign` switches to the design tool.
 BIN := $(if $(filter idesign,$(MAKECMDGOALS)),idesign,iboard)
@@ -89,7 +89,7 @@ preview: ## Render one component's preview, e.g. make preview C=FoldersDialog [A
 build: ## Build the binaries (debug)
 	cargo build
 
-release: ## Build the binaries (optimized)
+dist: ## Build the binaries (optimized)
 	cargo build --release
 
 install: install-app ## Install the CLI commands and the iboard.app bundle
@@ -112,12 +112,16 @@ install-app: app ## Install target/iboard.app into ~/Applications (or $(APP_DIR)
 
 ##@ Version
 
+version: ## Set the version in Cargo.toml and Cargo.lock: make version V=x.y.z (the release hook runs it)
+	@printf '%s' '$(V)' | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo 'usage: make version V=x.y.z' >&2; exit 2; }
+	sed -i.bak 's/^version = ".*"/version = "$(V)"/' Cargo.toml && rm Cargo.toml.bak
+	cargo update --workspace
+
 bump: ## Set the version, commit and tag it: make bump TO=patch, minor, major or x.y.z
 	@test -n "$(NEXT_VERSION)" || { echo 'usage: make bump TO=patch|minor|major|x.y.z' >&2; exit 2; }
 	@git diff --quiet HEAD -- Cargo.toml Cargo.lock || { echo 'Cargo.toml or Cargo.lock has uncommitted changes' >&2; exit 1; }
 	@if git rev-parse --quiet --verify refs/tags/v$(NEXT_VERSION) >/dev/null; then echo 'v$(NEXT_VERSION) is already tagged' >&2; exit 1; fi
-	sed -i.bak 's/^version = ".*"/version = "$(NEXT_VERSION)"/' Cargo.toml && rm Cargo.toml.bak
-	cargo update --workspace
+	$(MAKE) version V=$(NEXT_VERSION)
 	git commit -m 'Release $(NEXT_VERSION)' -- Cargo.toml Cargo.lock
 	git tag -a v$(NEXT_VERSION) -m 'iboard $(NEXT_VERSION)'
 	@echo 'Push it with: git push --follow-tags'
