@@ -362,8 +362,7 @@ fn a_subscription_pill_reads_its_cap_and_opens_the_usage_popover() {
             .is_some(),
         "the popover is up"
     );
-    harness.get_by_label_contains("Claude.ai · 21% · Under pace");
-    harness.get_by_label("210 of 1,000 tokens");
+    harness.get_by_label("Under pace");
     press(&mut harness, "Settings › AI");
     let dialog = harness.state().1.settings.as_ref().expect("Settings opens");
     assert_eq!(dialog.tab, settings_ui::Tab::Review);
@@ -427,8 +426,11 @@ fn a_subscription_with_no_cap_reads_usage_and_its_tokens() {
         .unwrap()
         .click();
     harness.run_steps(2);
-    harness.get_by_label_contains("Claude.ai · No cap · Resets");
-    harness.get_by_label("3,100,000 tokens burnt");
+    harness.get_by_label("Claude.ai");
+    assert!(
+        harness.query_all_by_label("No cap").next().is_some(),
+        "the row knows no share"
+    );
 }
 
 /// Copilot's share, used and cap come from GitHub's report, in AI credits,
@@ -457,21 +459,10 @@ fn a_copilot_quota_reports_ai_credits_and_its_reset() {
     harness.run_steps(2);
 
     harness.get_by_label_contains("Copilot · 31% of the month used");
-    harness
-        .get_all_by_label_contains("Copilot · 31%")
-        .last()
-        .unwrap()
-        .click();
-    harness.run_steps(2);
-    harness.get_by_label("9,193 of 30,000 AI credits · from GitHub");
-    assert!(
-        harness.query_all_by_label("Set a cap").next().is_none(),
-        "a reported quota needs no cap"
-    );
 }
 
 /// Claude.ai reports a session and a week: the pill names both windows, and
-/// the popover gives each its own row, reset and days.
+/// the popover gives each its own row.
 #[test]
 fn a_provider_with_a_session_and_a_week_shows_two_rows() {
     let dir = scratch_dir("subscription-two-windows");
@@ -505,77 +496,10 @@ fn a_provider_with_a_session_and_a_week_shows_two_rows() {
         .unwrap()
         .click();
     harness.run_steps(10);
-    harness.get_by_label_contains("Claude.ai · Session · 62% ·");
-    harness.get_by_label_contains("Claude.ai · Week · 31% ·");
-    harness.get_by_label("Tokens per day this session");
-    harness.get_by_label("62% used · from Claude.ai");
-}
-
-/// A session that has used no token yet draws no daily chart: one empty well
-/// under a lone weekday initial says nothing the row has not.
-#[test]
-fn a_session_with_no_tokens_draws_no_daily_chart() {
-    let dir = scratch_dir("subscription-session-no-tokens");
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    let mut harness = kittest(app);
-    let app = &mut harness.state_mut().1;
-    app.session.quotas = vec![crate::agent::Quota {
-        provider: "claude".to_string(),
-        window: Window::Session,
-        measure: crate::agent::Measure::Share(0.18),
-        reset: Utc::now() + chrono::Duration::hours(2),
-    }];
-    harness.run_steps(2);
-    harness
-        .get_all_by_label_contains("Claude.ai · Session · 18% of the session used")
-        .next()
-        .unwrap()
-        .click();
-    harness.run_steps(2);
-
-    harness.get_by_label("18% used · from Claude.ai");
-    assert!(
-        harness
-            .query_by_label("Tokens per day this session")
-            .is_none(),
-        "an empty window has no chart"
-    );
-    assert!(
-        harness
-            .query_all_by_label("TOKENS PER DAY")
-            .next()
-            .is_none(),
-        "not even its heading"
-    );
-}
-
-/// A session with a run keeps its one-day chart, so hiding the empty one
-/// never hides a window's tokens.
-#[test]
-fn a_session_with_tokens_keeps_its_daily_chart() {
-    let dir = scratch_dir("subscription-session-tokens");
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    let mut harness = kittest(app);
-    let app = &mut harness.state_mut().1;
-    app.session.quotas = vec![crate::agent::Quota {
-        provider: "claude".to_string(),
-        window: Window::Session,
-        measure: crate::agent::Measure::Share(0.18),
-        reset: Utc::now() + chrono::Duration::hours(2),
-    }];
-    log_run(app, "claude", 210, 0.42);
-    harness.run_steps(2);
-    harness
-        .get_all_by_label_contains("Claude.ai · Session · 18% of the session used")
-        .next()
-        .unwrap()
-        .click();
-    harness.run_steps(2);
-
-    harness.get_by_label("Tokens per day this session");
-    harness.get_by_label("TOKENS PER DAY");
+    harness.get_by_label("Claude.ai · Session");
+    harness.get_by_label("Claude.ai · Week");
+    harness.get_by_label("62%");
+    harness.get_by_label("31%");
 }
 
 /// A board with no subscription plan shows no pill, and a metered plan keeps
@@ -662,39 +586,19 @@ fn usage_popover(tag: &str) -> Board {
 }
 
 /// The popover names a known row with its share and verdict, and an unknown
-/// one with its tokens and reset. Only a known cap earns the even-pace legend.
+/// one with `No cap` and its reset. Only a known cap earns the even-pace
+/// legend.
 #[test]
 fn the_usage_popover_names_a_known_and_an_unknown_row() {
     let harness = usage_popover("usage-rows");
 
-    harness.get_by_label_contains("Claude.ai · 21% · Under pace");
-    harness.get_by_label_contains("Copilot · No cap · Resets in");
+    harness.get_by_label("Claude.ai");
+    harness.get_by_label("21%");
+    harness.get_by_label("Under pace");
+    harness.get_by_label("Copilot");
+    harness.get_by_label("No cap");
+    harness.get_by_label_contains("Resets in");
     harness.get_by_label("Even pace");
-}
-
-/// A click on a row opens it, leaving the other rows as they were: the first
-/// is open at rest, and Copilot opens under it.
-#[test]
-fn opening_a_row_shows_its_days_and_models() {
-    let mut harness = usage_popover("usage-open-row");
-    harness.get_by_label("Tokens per day this week");
-    assert!(
-        harness
-            .query_by_label("Tokens per day this month")
-            .is_none(),
-        "Copilot starts closed"
-    );
-
-    harness
-        .get_all_by_label_contains("Copilot · No cap")
-        .last()
-        .unwrap()
-        .click();
-    harness.run_steps(2);
-    harness.get_by_label("Tokens per day this month");
-    harness.get_by_label("gpt-5");
-    harness.get_by_label("Set a cap");
-    harness.get_by_label("Tokens per day this week");
 }
 
 /// The foot's link opens Settings on the AI review tab and closes the popover.
@@ -714,29 +618,13 @@ fn the_popover_foot_opens_settings_on_the_ai_tab() {
     );
 }
 
-/// A row with no cap offers to set one, which opens the same tab.
+/// `Full usage` opens Tools › Usage… and closes the popover.
 #[test]
-fn set_a_cap_opens_settings_on_the_ai_tab() {
-    let dir = scratch_dir("usage-set-cap");
-    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
-    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
-    let mut harness = kittest(app);
-    let app = &mut harness.state_mut().1;
-    app.prefs
-        .usage
-        .set("claude", plan(Billing::Subscription, Window::Week, None));
-    log_run(app, "claude", 3_100_000, 3.0);
-    harness.run_steps(2);
-    harness
-        .get_all_by_label_contains("Claude.ai · No cap")
-        .next()
-        .unwrap()
-        .click();
-    harness.run_steps(2);
+fn full_usage_opens_the_usage_screen_and_closes_the_popover() {
+    let mut harness = usage_popover("usage-full");
+    press(&mut harness, "Full usage");
 
-    press(&mut harness, "Set a cap");
-    let dialog = harness.state().1.settings.as_ref().expect("Settings opens");
-    assert_eq!(dialog.tab, settings_ui::Tab::Review);
+    assert!(harness.state().1.usage.open, "the Usage screen opens");
     assert!(
         harness
             .query_all_by_label("Subscription usage")

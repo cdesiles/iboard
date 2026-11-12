@@ -1,43 +1,34 @@
-//! The subscription popover: one collapsible row per plan, opening to the
-//! window's days and models, then the link to Settings › AI.
+//! The subscription popover: the quick answer per plan window, will it make
+//! the reset, then the links to the full Usage screen and Settings › AI.
 
 use chrono::{DateTime, Utc};
-use std::collections::HashSet;
 
 use super::{
-    Align, CornerRadius, Frame, IboardApp, Layout, MarginF32, Pos2, Rect, RichText, Sense, Shape,
-    Stroke, Vec2, settings_ui, theme, widgets,
+    Align, CornerRadius, Frame, IboardApp, Layout, MarginF32, Rect, RichText, Sense, Vec2,
+    settings_ui, theme, widgets,
 };
 use crate::agent::{Cap, Measure, Plan, Quota};
-use crate::domains::agent::artifacts::usage_log::{Consumption, DayUse, Meter, ModelUse};
+use crate::domains::agent::artifacts::usage_log::{Consumption, Meter};
 use crate::format::thousands;
 
 /// The popover's width.
 const WIDTH: f32 = 380.0;
 
-/// The daily chart's well and its label row.
-const DAY_WELL_H: f32 = 40.0;
-const DAY_LABEL_H: f32 = 14.0;
-
-/// How wide a model's gauge sits.
-const MODEL_GAUGE_W: f32 = 64.0;
-
-/// Where an open row's detail starts, indented under the name.
-const DETAIL_INDENT: f32 = theme::SPACE_4 + widgets::RING + theme::SPACE_3;
+/// What the foot asked for, closed with the popover.
+enum Foot {
+    Settings,
+    Usage,
+}
 
 /// The one usage popover, shared by every frame.
 pub(super) fn popup_id() -> egui::Id {
     egui::Id::unique("subscription-usage")
 }
 
-/// The rows that are open, kept while the popover shows.
-fn rows_id() -> egui::Id {
-    popup_id().with("open-rows")
-}
-
 impl IboardApp {
-    /// The popover above the usage pill: a row per plan, then Settings › AI.
-    /// It closes on `esc` or a click outside, as egui's popup does.
+    /// The popover above the usage pill: a row per plan, then the links to
+    /// Full usage and Settings › AI. It closes on `esc` or a click outside, as
+    /// egui's popup does.
     pub(super) fn usage_popover(
         &mut self,
         ui: &egui::Ui,
@@ -47,10 +38,9 @@ impl IboardApp {
     ) {
         let id = popup_id();
         if !egui::Popup::is_id_open(ui.ctx(), id) {
-            ui.data_mut(|data| data.remove::<HashSet<String>>(rows_id()));
             return;
         }
-        let mut settings = false;
+        let mut foot = None;
         egui::Popup::new(id, ui.ctx().clone(), anchor, ui.layer_id())
             .open_memory(None)
             .width(WIDTH)
@@ -59,16 +49,19 @@ impl IboardApp {
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .frame(widgets::popover_frame(ui).inner_margin(0.0))
             .accessible_name("Subscription usage")
-            .show(|ui| settings = body(ui, meters, now));
-        if settings {
+            .show(|ui| foot = body(ui, meters, now));
+        if let Some(foot) = foot {
             egui::Popup::close_id(ui.ctx(), id);
-            self.open_settings(settings_ui::Tab::Review);
+            match foot {
+                Foot::Settings => self.open_settings(settings_ui::Tab::Review),
+                Foot::Usage => self.open_usage(),
+            }
         }
     }
 }
 
-/// The popover's content: its head, one row per plan, then its foot.
-fn body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> bool {
+/// The popover's content: its head, one plain row per plan, then its foot.
+fn body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> Option<Foot> {
     let p = theme::palette(ui);
     ui.style_mut().interaction.selectable_labels = false;
     ui.set_width(WIDTH);
@@ -86,8 +79,6 @@ fn body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> bool {
         },
     );
     widgets::rule(ui);
-    let mut open = open_rows(ui, meters);
-    let mut settings = false;
     for (at, meter) in meters.iter().enumerate() {
         if at > 0 {
             soft_rule(ui);
@@ -97,28 +88,10 @@ fn body(ui: &mut egui::Ui, meters: &[Meter], now: DateTime<Utc>) -> bool {
             .filter(|other| other.provider == meter.provider)
             .count()
             > 1;
-        settings |= row(ui, meter, now, &mut open, multi);
+        row(ui, meter, now, multi);
     }
-    ui.data_mut(|data| data.insert_temp(rows_id(), open));
     widgets::rule(ui);
-    settings |= foot(ui, meters);
-    settings
-}
-
-/// The rows open at rest: the first window, then whatever the user opened.
-fn open_rows(ui: &egui::Ui, meters: &[Meter]) -> HashSet<String> {
-    if let Some(open) = ui.data(|data| data.get_temp::<HashSet<String>>(rows_id())) {
-        return open;
-    }
-    meters
-        .first()
-        .map(|meter| HashSet::from([row_key(meter)]))
-        .unwrap_or_default()
-}
-
-/// A row is one provider's window: a session and a week are two rows.
-fn row_key(meter: &Meter) -> String {
-    format!("{}:{}", meter.provider, meter.window.key())
+    foot(ui, meters)
 }
 
 /// What a row is called: its provider, and the window when it has more than
@@ -131,45 +104,10 @@ fn title(meter: &Meter, multi: bool) -> String {
     }
 }
 
-/// One window's disclosure: its summary, then its detail while open.
-fn row(
-    ui: &mut egui::Ui,
-    meter: &Meter,
-    now: DateTime<Utc>,
-    open: &mut HashSet<String>,
-    multi: bool,
-) -> bool {
-    let key = row_key(meter);
-    let is_open = open.contains(&key);
-    let response = summary(ui, meter, now, is_open, multi);
-    if response.clicked() {
-        if is_open {
-            open.remove(&key);
-        } else {
-            open.insert(key.clone());
-        }
-    }
-    if open.contains(&key) {
-        detail(ui, meter, now)
-    } else {
-        false
-    }
-}
-
-/// The three lines of a row's summary: ring and name, gauge, verdict.
-fn summary(
-    ui: &mut egui::Ui,
-    meter: &Meter,
-    now: DateTime<Utc>,
-    open: bool,
-    multi: bool,
-) -> egui::Response {
-    let p = theme::palette(ui);
-    let id = ui
-        .scope_id()
-        .with(("usage-row", meter.provider.as_str(), meter.window.key()));
-    let hover = ui.painter().add(Shape::Noop);
-    let frame = Frame::new()
+/// One window: its ring and name, its share, gauge and pace tick, then its
+/// verdict and reset. A row is not a control: the foot's two links are.
+fn row(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, multi: bool) {
+    Frame::new()
         .inner_margin(MarginF32 {
             left: theme::SPACE_4,
             right: theme::SPACE_4,
@@ -191,27 +129,10 @@ fn summary(
                         widgets::GAUGE_H,
                         &window(meter),
                     );
-                    verdict_line(ui, meter, now, open);
+                    verdict_line(ui, meter, now);
                 });
             });
         });
-    let response = ui
-        .interact(frame.response.rect, id, Sense::click())
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
-    let label = row_label(meter, now, multi);
-    response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), open, &label)
-    });
-    let fade = widgets::hover_fade(ui.ctx(), response.id, response.hovered());
-    ui.painter().set(
-        hover,
-        Shape::rect_filled(
-            frame.response.rect,
-            CornerRadius::same(theme::RADIUS_SM),
-            p.surface_hover.gamma_multiply(fade),
-        ),
-    );
-    response
 }
 
 /// The window's name, and its share at the right, or `No cap`.
@@ -233,9 +154,9 @@ fn name_and_share(ui: &mut egui::Ui, meter: &Meter, multi: bool) {
     });
 }
 
-/// The verdict on the left, and the reset with the chevron on the right. With
-/// no cap there is no pace, so the reset is the verdict.
-fn verdict_line(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, open: bool) {
+/// The verdict on the left, and the reset on the right. With no cap there is
+/// no pace, so the reset is the verdict.
+fn verdict_line(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) {
     let p = theme::palette(ui);
     ui.horizontal(|ui| {
         let (text, color) = match meter.share() {
@@ -250,8 +171,6 @@ fn verdict_line(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>, open: bool
         };
         ui.label(RichText::new(text).font(theme::meta()).color(color));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-            chevron(ui, open);
             if meter.share().is_some() {
                 ui.label(
                     RichText::new(super::status::reset_text(meter, now))
@@ -286,78 +205,13 @@ fn capitalized_reset(meter: &Meter, now: DateTime<Utc>) -> String {
     }
 }
 
-/// What VoiceOver reads on a row, and a test finds it by.
-fn row_label(meter: &Meter, now: DateTime<Utc>, multi: bool) -> String {
-    let title = title(meter, multi);
-    match meter.share() {
-        Some(share) => format!(
-            "{title} · {:.0}% · {} · {}",
-            share * 100.0,
-            verdict(meter),
-            super::status::reset_text(meter, now)
-        ),
-        None => format!("{title} · No cap · {}", capitalized_reset(meter, now)),
-    }
-}
-
 /// The `the week` a gauge's label names.
 fn window(meter: &Meter) -> String {
     format!("the {}", meter.window.name().to_lowercase())
 }
 
-/// An open row: what it used, its days and its models, and with no cap the
-/// link to set one. Returns whether that link was clicked.
-fn detail(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) -> bool {
-    let p = theme::palette(ui);
-    let mut settings = false;
-    Frame::new()
-        .inner_margin(MarginF32 {
-            left: DETAIL_INDENT,
-            right: theme::SPACE_4,
-            top: 0.0,
-            bottom: theme::SPACE_4,
-        })
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                ui.label(
-                    RichText::new(used_line(meter))
-                        .font(theme::meta())
-                        .color(p.ink_muted),
-                );
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(
-                        RichText::new(runs_line(meter))
-                            .font(theme::meta())
-                            .color(p.ink_muted),
-                    );
-                });
-            });
-            days(ui, meter, now);
-            models(ui, meter);
-            if meter.plan.cap.is_none() && meter.reported.is_none() {
-                let link = RichText::new("Set a cap").font(theme::meta());
-                if ui.link(link).clicked() {
-                    settings = true;
-                }
-            }
-        });
-    settings
-}
-
 /// `9,212 of 30,000 AI credits · from GitHub`, `3.1M of 5M tokens`,
 /// `$6.20 of $10.00`, or `3.1M tokens burnt`.
-fn used_line(meter: &Meter) -> String {
-    used_line_of(
-        &meter.name,
-        &meter.plan,
-        &meter.consumed,
-        meter.reported.as_ref(),
-    )
-}
-
-/// [`used_line`] from the pieces a plan window keeps.
 pub(super) fn used_line_of(
     name: &str,
     plan: &Plan,
@@ -384,163 +238,10 @@ pub(super) fn used_line_of(
     }
 }
 
-/// `$6.20 API-equivalent · 21 runs`.
-fn runs_line(meter: &Meter) -> String {
-    let runs = meter.consumed.runs;
-    let noun = if runs == 1 { "run" } else { "runs" };
-    format!(
-        "{} · {runs} {noun}",
-        meter.consumed.money_label(&meter.plan)
-    )
-}
-
-/// The window's tokens, a bar per day: today in full `accent`, the days
-/// before it softer, the days after it empty. A window that used no tokens
-/// has nothing to chart; a one-day window names its bar `Today`, since a lone
-/// weekday initial has no other day to read against.
-fn days(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) {
-    let days = meter.per_day();
-    if days.is_empty() || meter.consumed.tokens == 0 {
-        return;
-    }
-    section_label(ui, "Tokens per day");
-    let height = DAY_WELL_H + theme::SPACE_1 + DAY_LABEL_H;
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
-    let label = format!("Tokens per day this {}", meter.window.name().to_lowercase());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, &label));
-    if ui.is_rect_visible(rect) {
-        paint_days(ui, rect, &days, now);
-    }
-}
-
-fn paint_days(ui: &egui::Ui, rect: Rect, days: &[DayUse], now: DateTime<Utc>) {
-    let p = theme::palette(ui);
-    let painter = ui.painter_at(rect);
-    let count = days.len();
-    let gap = if count > 7 {
-        theme::SPACE_1
-    } else {
-        theme::SPACE_2
-    };
-    let slot = if count == 1 {
-        40.0
-    } else {
-        ((rect.width() - gap * (count - 1) as f32) / count as f32).max(1.0)
-    };
-    let max = days.iter().map(|day| day.tokens).max().unwrap_or(0);
-    let today = now.date_naive();
-    for (at, day) in days.iter().enumerate() {
-        let left = rect.left() + at as f32 * (slot + gap);
-        let well = Rect::from_min_size(Pos2::new(left, rect.top()), Vec2::new(slot, DAY_WELL_H));
-        painter.line_segment(
-            [well.left_bottom(), well.right_bottom()],
-            Stroke::new(1.0, p.line),
-        );
-        if max > 0 && day.day <= today && day.tokens > 0 {
-            let height = (DAY_WELL_H - 1.0) * day.tokens as f32 / max as f32;
-            let bar =
-                Rect::from_min_max(Pos2::new(left, well.bottom() - height), well.right_bottom());
-            let color = if day.today {
-                p.accent
-            } else {
-                p.accent.gamma_multiply(0.55)
-            };
-            painter.rect_filled(
-                bar,
-                CornerRadius {
-                    nw: 2,
-                    ne: 2,
-                    ..CornerRadius::ZERO
-                },
-                color,
-            );
-        }
-        if let Some(label) = day_label(day, at, count) {
-            let color = if day.today { p.ink } else { p.ink_faint };
-            painter.text(
-                Pos2::new(well.center().x, well.bottom() + theme::SPACE_1),
-                egui::Align2::CENTER_TOP,
-                label,
-                theme::meta_mono(),
-                color,
-            );
-        }
-    }
-}
-
-/// A day's initial in a week, `Today` when the window holds one day, or only
-/// the first day's number in a month.
-fn day_label(day: &DayUse, at: usize, count: usize) -> Option<String> {
-    if count == 1 {
-        return Some(if day.today {
-            "Today".to_string()
-        } else {
-            day.day.format("%a").to_string()
-        });
-    }
-    if count <= 7 {
-        return day
-            .day
-            .format("%a")
-            .to_string()
-            .chars()
-            .next()
-            .map(|initial| initial.to_string());
-    }
-    (at == 0).then(|| day.day.format("%-d").to_string())
-}
-
-/// The window's models, largest first, each with a 3pt gauge and its tokens.
-fn models(ui: &mut egui::Ui, meter: &Meter) {
-    let models = meter.by_model();
-    if models.is_empty() {
-        return;
-    }
-    section_label(ui, "By model");
-    for model in models {
-        model_row(ui, &model);
-    }
-}
-
-fn model_row(ui: &mut egui::Ui, model: &ModelUse) {
-    let p = theme::palette(ui);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-        let tokens = super::status::short_tokens(model.tokens);
-        let tokens_w = widgets::text_width(ui, &tokens, theme::meta());
-        let name_w =
-            (ui.available_width() - MODEL_GAUGE_W - tokens_w - 2.0 * theme::SPACE_3).max(40.0);
-        ui.add_sized(
-            [name_w, 16.0],
-            egui::Label::new(
-                RichText::new(&model.model)
-                    .font(theme::ui_small())
-                    .color(p.ink),
-            )
-            .truncate(),
-        );
-        ui.allocate_ui_with_layout(
-            Vec2::new(MODEL_GAUGE_W, widgets::GAUGE_SLIM_H),
-            Layout::left_to_right(Align::Center),
-            |ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                widgets::gauge(
-                    ui,
-                    Some(model.share),
-                    None,
-                    widgets::GAUGE_SLIM_H,
-                    "the tokens",
-                );
-            },
-        );
-        ui.label(RichText::new(tokens).font(theme::meta()).color(p.ink_muted));
-    });
-}
-
-/// The foot: the even-pace legend when a cap is known, and Settings › AI.
-fn foot(ui: &mut egui::Ui, meters: &[Meter]) -> bool {
-    let mut settings = false;
+/// The foot: the even-pace legend when a cap is known, then Full usage and
+/// Settings › AI at the right.
+fn foot(ui: &mut egui::Ui, meters: &[Meter]) -> Option<Foot> {
+    let mut foot = None;
     Frame::new()
         .inner_margin(MarginF32 {
             left: theme::SPACE_4,
@@ -553,15 +254,23 @@ fn foot(ui: &mut egui::Ui, meters: &[Meter]) -> bool {
                 if meters.iter().any(|meter| meter.share().is_some()) {
                     legend(ui);
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let link = RichText::new("Settings › AI").font(theme::meta());
-                    if ui.link(link).clicked() {
-                        settings = true;
-                    }
-                });
+                ui.spacing_mut().item_spacing.x = 0.0;
+                let links = widgets::text_width(ui, "Full usage", theme::meta())
+                    + theme::SPACE_4
+                    + widgets::text_width(ui, "Settings › AI", theme::meta());
+                ui.add_space((ui.available_width() - links).max(0.0));
+                let usage = RichText::new("Full usage").font(theme::meta());
+                if ui.link(usage).clicked() {
+                    foot = Some(Foot::Usage);
+                }
+                ui.add_space(theme::SPACE_4);
+                let settings = RichText::new("Settings › AI").font(theme::meta());
+                if ui.link(settings).clicked() {
+                    foot = Some(Foot::Settings);
+                }
             });
         });
-    settings
+    foot
 }
 
 /// The `Even pace` legend: the gauge's tick and its word.
@@ -579,67 +288,10 @@ fn legend(ui: &mut egui::Ui) {
     });
 }
 
-/// An uppercase `ui-label`, as a section of an open row is headed.
-fn section_label(ui: &mut egui::Ui, text: &str) {
-    let p = theme::palette(ui);
-    ui.label(
-        RichText::new(text.to_uppercase())
-            .font(theme::ui_label())
-            .color(p.ink_muted),
-    );
-}
-
-/// The chevron of a disclosure: down at rest, up while open.
-fn chevron(ui: &mut egui::Ui, open: bool) {
-    let p = theme::palette(ui);
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(theme::ICON_SIZE), Sense::hover());
-    let center = rect.center();
-    let stroke = Stroke::new(1.6, p.ink_muted);
-    let (left, right) = if open {
-        (center.y + 2.0, center.y - 2.0)
-    } else {
-        (center.y - 2.0, center.y + 2.0)
-    };
-    let painter = ui.painter();
-    painter.line_segment(
-        [Pos2::new(center.x - 4.0, left), Pos2::new(center.x, right)],
-        stroke,
-    );
-    painter.line_segment(
-        [Pos2::new(center.x, right), Pos2::new(center.x + 4.0, left)],
-        stroke,
-    );
-}
-
 /// The hairline between two rows: `line-soft`, never a card's edge.
 fn soft_rule(ui: &mut egui::Ui) {
     let p = theme::palette(ui);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
     ui.painter()
         .rect_filled(rect, CornerRadius::ZERO, p.line_soft);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn day(date: &str, today: bool) -> DayUse {
-        DayUse {
-            day: date.parse().unwrap(),
-            tokens: 42,
-            today,
-        }
-    }
-
-    #[test]
-    fn a_one_day_chart_names_its_bar_today() {
-        let only = day("2026-11-12", true);
-        assert_eq!(day_label(&only, 0, 1).as_deref(), Some("Today"));
-    }
-
-    #[test]
-    fn a_week_chart_keeps_its_initials() {
-        let tuesday = day("2026-11-10", false);
-        assert_eq!(day_label(&tuesday, 1, 7).as_deref(), Some("T"));
-    }
 }
