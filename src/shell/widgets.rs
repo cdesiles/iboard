@@ -474,20 +474,25 @@ pub fn ring(ui: &mut Ui, share: Option<f32>, warn: bool) -> Response {
     response
 }
 
-/// A status bar meter: a [`ring`] and its plan's name, one clickable label.
-/// `detail` is what the pointer and VoiceOver read.
-pub fn meter_ring(
+/// A subscription usage pill: a [`ring`] and a figure, its hit area a control
+/// tall and a `space-3` wider each side. `share` is the share of the provider
+/// closest to its cap; `None` dashes the ring. `detail` is what the pointer and
+/// VoiceOver read, and `open` keeps the hover fill under a showing popover.
+pub fn usage_pill(
     ui: &mut Ui,
     share: Option<f32>,
     warn: bool,
-    name: &str,
+    figure: &str,
     detail: &str,
+    open: bool,
 ) -> Response {
     let p = theme::palette(ui);
-    let text = galley(ui, name, theme::meta(), p.ink_muted);
+    let ink = if warn { p.status_doing } else { p.ink };
+    let text = galley(ui, figure, theme::meta(), ink);
+    let pad = theme::SPACE_3;
     let gap = theme::SPACE_2;
     let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(RING + gap + text.size().x, theme::CONTROL_H),
+        Vec2::new(2.0 * pad + RING + gap + text.size().x, theme::CONTROL_H),
         Sense::click(),
     );
     let response = response
@@ -495,15 +500,22 @@ pub fn meter_ring(
         .on_hover_text(detail);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), detail));
     if ui.is_rect_visible(rect) {
+        let fade = hover_fade(ui.ctx(), response.id, response.hovered() || open);
+        let painter = ui.painter();
+        painter.rect_filled(
+            rect,
+            CornerRadius::same(theme::RADIUS_SM),
+            p.surface_hover.gamma_multiply(fade),
+        );
         let ring = Rect::from_min_size(
-            Pos2::new(rect.min.x, rect.center().y - RING / 2.0),
+            Pos2::new(rect.min.x + pad, rect.center().y - RING / 2.0),
             Vec2::splat(RING),
         );
         paint_ring(ui, ring, share, warn);
-        ui.painter().galley(
+        painter.galley(
             Pos2::new(ring.max.x + gap, rect.center().y - text.size().y / 2.0),
             text,
-            p.ink_muted,
+            ink,
         );
     }
     focus_ring(ui, &response, theme::RADIUS_SM);

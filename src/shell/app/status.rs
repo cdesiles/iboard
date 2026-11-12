@@ -5,8 +5,8 @@ use chrono::{DateTime, Utc};
 use super::compose::DISCARD_UNDO;
 use super::dock::IssueDrag;
 use super::{
-    Align, ButtonKind, Frame, IboardApp, Issue, Layout, NOTICE_FOR, Path, Rect, RichText, Screen,
-    Undo, display_path, file_name, relative_time, settings_ui, sheet, theme, widgets,
+    Align, ButtonKind, Frame, IboardApp, Issue, Layout, NOTICE_FOR, Path, RichText, Screen, Undo,
+    display_path, file_name, relative_time, settings_ui, sheet, theme, widgets,
 };
 use crate::agent::Cap;
 use crate::domains::agent::artifacts::usage_log::{self, Meter};
@@ -47,10 +47,10 @@ impl IboardApp {
                 if let Some(path) = editing {
                     self.save_pill(ui, path);
                 }
+                self.meter_rings(ui);
                 if matches!(screen, Screen::Board) {
                     self.board_spend(ui);
                 }
-                self.meter_rings(ui);
                 if keys {
                     widgets::sliding_hints(ui, |ui| {
                         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
@@ -87,36 +87,39 @@ impl IboardApp {
             .on_hover_text(tooltip);
     }
 
-    /// One ring per subscription plan, and the popover they share: a row per
-    /// plan with its share, reset and tokens, then Settings › AI.
+    /// The one subscription usage pill, and the popover it opens: a row per
+    /// plan with its share, reset and tokens, then Settings › AI. The pill
+    /// carries the share of the plan closest to its cap, or `Usage` when none
+    /// knows one.
     fn meter_rings(&mut self, ui: &mut egui::Ui) {
         let now = Utc::now();
         let meters = usage_log::subscription_meters(&self.prefs.usage, &self.usage_entries, now);
+        let id = meters_popup_id();
         if meters.is_empty() {
-            egui::Popup::close_id(ui.ctx(), meters_popup_id());
+            egui::Popup::close_id(ui.ctx(), id);
             return;
         }
-        let mut clicked = false;
-        let mut anchor: Option<Rect> = None;
-        for meter in &meters {
-            let detail = meter_detail(meter, now);
-            let response =
-                widgets::meter_ring(ui, meter.share(), meter.over_pace(), &meter.name, &detail);
-            clicked |= response.clicked();
-            anchor = Some(anchor.map_or(response.rect, |rect| rect.union(response.rect)));
-        }
-        let id = meters_popup_id();
-        if clicked {
+        let closest = meters
+            .iter()
+            .filter_map(|meter| meter.share().map(|share| (meter, share)))
+            .max_by(|(_, a), (_, b)| a.total_cmp(b));
+        let share = closest.map(|(_, share)| share);
+        let warn = closest.is_some_and(|(meter, _)| meter.over_pace());
+        let figure = match share {
+            Some(share) => format!("{:.0}%", share * 100.0),
+            None => "Usage".to_string(),
+        };
+        let detail = pill_detail(&meters, now);
+        let open = egui::Popup::is_id_open(ui.ctx(), id);
+        let response = widgets::usage_pill(ui, share, warn, &figure, &detail, open);
+        if response.clicked() {
             egui::Popup::toggle_id(ui.ctx(), id);
         }
-        let Some(anchor) = anchor else {
-            return;
-        };
         if !egui::Popup::is_id_open(ui.ctx(), id) {
             return;
         }
         let mut settings = false;
-        egui::Popup::new(id, ui.ctx().clone(), anchor, ui.layer_id())
+        egui::Popup::new(id, ui.ctx().clone(), response.rect, ui.layer_id())
             .open_memory(None)
             .width(METERS_W)
             .gap(theme::SPACE_2)
@@ -422,15 +425,43 @@ fn meter_row(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) {
     });
 }
 
-/// What VoiceOver and the pointer read on a ring: every fact of its row.
-fn meter_detail(meter: &Meter, now: DateTime<Utc>) -> String {
-    format!(
-        "{} · {} · {} · {}",
-        meter.name,
-        share_text(meter),
-        reset_text(meter, now),
-        usage_text(meter)
-    )
+/// What the pointer and VoiceOver read on the pill: one block per provider,
+/// its name, share or tokens, its pace, and its reset.
+fn pill_detail(meters: &[Meter], now: DateTime<Utc>) -> String {
+    meters
+        .iter()
+        .map(|meter| match meter.share() {
+            Some(_) => format!(
+                "{} · {}{} · {}",
+                meter.name,
+                share_text(meter),
+                if meter.over_pace() {
+                    " · over pace"
+                } else {
+                    ""
+                },
+                reset_text(meter, now)
+            ),
+            None => format!(
+                "{} · No cap set · {} tokens this {}",
+                meter.name,
+                short_tokens(meter.consumed.tokens),
+                meter.plan.window.name().to_lowercase()
+            ),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `3_100_000` as `3.1M`, the way a tooltip holds tokens.
+fn short_tokens(tokens: u64) -> String {
+    if tokens < 1_000 {
+        tokens.to_string()
+    } else if tokens < 1_000_000 {
+        format!("{:.1}k", tokens as f64 / 1_000.0)
+    } else {
+        format!("{:.1}M", tokens as f64 / 1_000_000.0)
+    }
 }
 
 /// "42% of the week used", or "unknown" when no cap is known.

@@ -314,11 +314,11 @@ fn log_run(app: &mut IboardApp, provider: &str, tokens: u64, cost: f64) {
     }];
 }
 
-/// A subscription with a token cap fills its ring, names its share, its reset
-/// and its tokens, and opens the popover with the link to Settings.
+/// A subscription with a token cap fills the pill with its share, names it
+/// with its reset, and opens the popover with the link to Settings.
 #[test]
-fn a_subscription_ring_reads_its_cap_and_opens_the_meters() {
-    let dir = scratch_dir("subscription-ring");
+fn a_subscription_pill_reads_its_cap_and_opens_the_meters() {
+    let dir = scratch_dir("subscription-pill");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
     let mut harness = kittest(app);
@@ -336,13 +336,12 @@ fn a_subscription_ring_reads_its_cap_and_opens_the_meters() {
     harness.run_steps(2);
 
     harness.get_by_label_contains("Claude.ai · 21% of the day used");
-    harness.get_by_label_contains("210 of 1,000 tokens");
     assert!(
         harness
             .query_all_by_label_contains("DeepSeek · ")
             .next()
             .is_none(),
-        "a metered provider has no ring"
+        "a metered provider is not in the pill"
     );
 
     harness
@@ -365,10 +364,33 @@ fn a_subscription_ring_reads_its_cap_and_opens_the_meters() {
     assert_eq!(dialog.tab, settings_ui::Tab::Review);
 }
 
-/// No cap is no percentage: the ring stays empty, the row says unknown and
-/// still gives the tokens it burnt.
+/// Over pace, the pill says so where the pointer and VoiceOver read it.
 #[test]
-fn a_subscription_with_no_cap_reads_unknown_and_its_tokens() {
+fn a_subscription_over_pace_says_so_on_the_pill() {
+    let dir = scratch_dir("subscription-over-pace");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    app.prefs.usage.set(
+        "claude",
+        Plan {
+            billing: Billing::Subscription,
+            window: Window::Day,
+            price: None,
+            cap: Some(Cap::Tokens(1_000)),
+        },
+    );
+    log_run(app, "claude", 1_000, 2.0);
+    harness.run_steps(2);
+
+    harness.get_by_label_contains("Claude.ai · 100% of the day used · over pace");
+}
+
+/// No cap is no percentage: the pill reads `Usage`, and its tooltip still
+/// gives the tokens the window burnt.
+#[test]
+fn a_subscription_with_no_cap_reads_usage_and_its_tokens() {
     let dir = scratch_dir("subscription-unknown");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
@@ -377,41 +399,40 @@ fn a_subscription_with_no_cap_reads_unknown_and_its_tokens() {
     app.prefs.usage.set(
         "claude",
         Plan {
-            billing: Billing::Metered,
-            ..Plan::default()
+            billing: Billing::Subscription,
+            window: Window::Week,
+            price: None,
+            cap: None,
         },
     );
-    log_run(app, "github-copilot", 1_234, 3.0);
+    log_run(app, "claude", 3_100_000, 3.0);
     harness.run_steps(2);
 
-    harness.get_by_label_contains("Copilot · unknown");
+    harness.get_by_label_contains("Claude.ai · No cap set · 3.1M tokens this week");
     assert!(
         harness
-            .query_by_label_contains("Copilot · unknown · resets")
-            .is_some(),
-        "the ring names its reset"
-    );
-    assert!(
-        harness
-            .query_all_by_label_contains("% of the month used")
+            .query_all_by_label_contains("% of the week used")
             .next()
             .is_none(),
         "no made-up percentage"
     );
     harness
-        .get_all_by_label_contains("Copilot · unknown")
+        .get_all_by_label_contains("Claude.ai · No cap set")
         .next()
         .unwrap()
         .click();
     harness.run_steps(2);
-    harness.get_by_label("unknown");
-    harness.get_by_label("1,234 tokens burnt");
+    assert!(
+        harness.query_all_by_label("unknown").next().is_some(),
+        "the row has no made-up share"
+    );
+    harness.get_by_label("3,100,000 tokens burnt");
 }
 
-/// A board with no subscription plan shows no ring, and a metered plan keeps
-/// its dollars out of the meters.
+/// A board with no subscription plan shows no pill, and a metered plan keeps
+/// its dollars out of it.
 #[test]
-fn meters_are_only_for_subscriptions() {
+fn the_usage_pill_is_only_for_subscriptions() {
     let dir = scratch_dir("subscription-metered");
     std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
     let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
@@ -430,10 +451,17 @@ fn meters_are_only_for_subscriptions() {
     harness.run_steps(2);
     assert!(
         harness
+            .query_all_by_label_contains("No cap set")
+            .next()
+            .is_none(),
+        "no usage pill"
+    );
+    assert!(
+        harness
             .query_all_by_label_contains("% of the")
             .next()
             .is_none(),
-        "no ring fills from a metered cap"
+        "no pill fills from a metered cap"
     );
     assert!(
         harness
