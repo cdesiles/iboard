@@ -261,9 +261,9 @@ pub fn install(ctx: &egui::Context) {
 
 /// Whether macOS asks for reduced motion (Accessibility › Display).
 fn system_reduces_motion() -> bool {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(test)))]
     return objc2_app_kit::NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion();
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(any(not(target_os = "macos"), test))]
     false
 }
 
