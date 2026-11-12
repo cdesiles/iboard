@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+use chrono::{DateTime, Local, NaiveDate};
 
 use crate::domains::agent::artifacts::usage_log::Entry;
 use crate::domains::agent::runtime::{Billing, provider_key, provider_name};
@@ -81,7 +81,7 @@ pub fn collect(entries: &[Entry], first: NaiveDate, last: NaiveDate) -> Cost {
     let mut cost = Cost::default();
     let mut totals: BTreeMap<(String, bool), (f64, f64, u64, usize)> = BTreeMap::new();
     for entry in entries {
-        let Some(day) = day_of(&entry.ended) else {
+        let Some(day) = ended_day(entry) else {
             continue;
         };
         if day < first || day > last {
@@ -137,7 +137,7 @@ fn order_parts(cost: &mut Cost) {
 fn days_of(entries: &[Entry], first: NaiveDate, last: NaiveDate) -> Vec<CostDay> {
     let mut by_day: BTreeMap<NaiveDate, BTreeMap<String, (f64, f64, u64)>> = BTreeMap::new();
     for entry in entries {
-        let Some(day) = day_of(&entry.ended) else {
+        let Some(day) = ended_day(entry) else {
             continue;
         };
         if day < first || day > last {
@@ -218,10 +218,18 @@ pub(super) fn day_of(stamp: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(stamp.get(..10)?, "%Y-%m-%d").ok()
 }
 
+/// The local day `entry`'s run ended on: its stamp is UTC, while the page's
+/// days are the local ones its commits fall on.
+fn ended_day(entry: &Entry) -> Option<NaiveDate> {
+    let ended = DateTime::parse_from_rfc3339(&entry.ended).ok()?;
+    Some(ended.with_timezone(&Local).date_naive())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::domains::agent::runtime::Tokens;
+    use chrono::{SecondsFormat, TimeZone, Utc};
 
     fn day(text: &str) -> NaiveDate {
         NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
@@ -243,6 +251,25 @@ mod tests {
             started: format!("{day}T10:00:00.000Z"),
             ended: format!("{day}T10:30:00.000Z"),
         }
+    }
+
+    #[test]
+    fn a_run_after_local_midnight_is_counted_on_that_local_day() {
+        let today = Local::now().date_naive();
+        let ended = Local
+            .from_local_datetime(&today.and_hms_opt(0, 30, 0).unwrap())
+            .earliest()
+            .unwrap()
+            .with_timezone(&Utc)
+            .to_rfc3339_opts(SecondsFormat::Millis, true);
+        let mut entry = run("a", "deepseek", Billing::Metered, 0.25, "2026-11-05", 10);
+        entry.started = ended.clone();
+        entry.ended = ended;
+
+        let cost = collect(&[entry], today, today);
+
+        assert_eq!(cost.runs, 1, "a run at 00:30 local is today's");
+        assert_eq!(cost.days[0].day, today);
     }
 
     #[test]
