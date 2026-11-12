@@ -94,8 +94,10 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-md h1{font:600 20px/26px var(--font-sans);margin:0 0 12px;text-wrap:balance}
 .ib-md h2{font:var(--text-read-h2,600 16px/22px var(--font-sans));margin:24px 0 6px}
 .ib-md h3,.ib-md h4{font:var(--text-read-h3,600 14px/20px var(--font-sans));margin:16px 0 4px}
-.ib-md p,.ib-md li{font:var(--text-read-body,400 15px/24px var(--font-sans));margin:0 0 10px;max-width:var(--read-measure,560px)}
-.ib-md ul{margin:0 0 8px;padding-left:20px}
+.ib-md p,.ib-md li{font:var(--text-read-body,400 15px/24px var(--font-sans));margin:0;max-width:var(--read-measure,560px)}
+.ib-md p{margin-bottom:10px}
+.ib-md li+li{margin-top:4px}
+.ib-md ul{margin:0 0 10px;padding-left:20px}
 .ib-md code{font:13px/18px var(--font-mono);background:var(--surface-sunken);padding:1px 4px;border-radius:3px}
 .ib-md a{color:var(--accent)}
 .ib-editable{position:relative;border-radius:var(--radius-sm);margin:0 -8px;padding:4px 8px;cursor:text}

@@ -67,8 +67,55 @@ fn blocks_keep_the_specified_gaps() {
     assert_eq!(notes.top() - second.bottom(), 16.0);
     assert_eq!(third.top() - notes.bottom(), 4.0);
     assert_eq!(one.top() - third.bottom(), 10.0);
-    assert_eq!(two.top() - one.bottom(), 10.0);
+    assert_eq!(two.top() - one.bottom(), 4.0);
     assert_eq!(one.left() - third.left(), 20.0);
+}
+
+/// The dot centres on its item's first line, not on the glyphs' top: the
+/// line's leading sits above and below the text.
+#[test]
+fn a_bullet_centres_on_its_first_line() {
+    let dir = scratch_dir("reader-bullet");
+    let todo = dir.join("issues/todo");
+    std::fs::create_dir_all(&todo).unwrap();
+    let file = todo.join("01-demo.md");
+    std::fs::write(&file, "# Demo\n\n- tickets\n- release\n").unwrap();
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.open_issue(file);
+    let ctx = themed_ctx();
+    draw(&ctx, &mut app, vec![]);
+    let (_, shapes) = painted(&ctx, &mut app, vec![]);
+    let mut bullets: Vec<f32> = shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Circle(circle) if (circle.radius - 2.5).abs() < 0.01 => {
+                Some(circle.center.y)
+            }
+            _ => None,
+        })
+        .collect();
+    let mut lines: Vec<f32> = shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Text(text) => {
+                matches!(text.galley.text(), "tickets" | "release").then(|| {
+                    let row = &text.galley.rows[0];
+                    text.pos.y + row.pos.y + row.row.size.y / 2.0
+                })
+            }
+            _ => None,
+        })
+        .collect();
+    bullets.sort_by(f32::total_cmp);
+    lines.sort_by(f32::total_cmp);
+    assert_eq!(bullets.len(), 2, "{shapes:?}");
+    assert_eq!(lines.len(), 2, "{shapes:?}");
+    for (dot, line) in bullets.iter().zip(&lines) {
+        assert!(
+            (dot - line).abs() <= 1.0,
+            "the dot is at {dot}, the line at {line}"
+        );
+    }
 }
 
 #[test]

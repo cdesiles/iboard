@@ -19,8 +19,11 @@ const H1_LINE: f32 = 26.0;
 const H2_LINE: f32 = 22.0;
 /// `read-h3`'s.
 const H3_LINE: f32 = 20.0;
-/// Under a paragraph or a list, and between a list's items.
+/// Under a paragraph or a list, and between a loose list item's blocks.
 const BLOCK_GAP: f32 = 10.0;
+/// Between a list's items: GitHub's `li + li` margin of `0.25em`, so a list
+/// reads tighter than a paragraph.
+const ITEM_GAP: f32 = 4.0;
 /// Under a `read-h2`.
 const H2_BELOW: f32 = 6.0;
 /// What a list indents by: a bullet, a number or a task box sits in here.
@@ -94,7 +97,7 @@ fn paragraph(ui: &mut Ui, spans: &[Span]) {
 fn list(ui: &mut Ui, start: Option<u64>, items: &[Item], depth: usize, ticked: &mut Ticked) {
     for (index, item) in items.iter().enumerate() {
         if index > 0 {
-            ui.add_space(BLOCK_GAP);
+            ui.add_space(ITEM_GAP);
         }
         let number = start.map(|start| start + index as u64);
         let row = Vec2::new(ui.available_width(), 0.0);
@@ -109,9 +112,9 @@ fn list(ui: &mut Ui, start: Option<u64>, items: &[Item], depth: usize, ticked: &
 
 /// The item's first-line marker, in its column.
 fn marker(ui: &mut Ui, item: &Item, number: Option<u64>, depth: usize, ticked: &mut Ticked) {
-    // A line's glyphs sit at the top of its height: markers centre on the glyphs.
-    let glyphs = ui.fonts_mut(|fonts| fonts.row_height(&theme::read_body()));
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(MARKER_W, glyphs), Sense::hover());
+    // The marker centres on the line box, not on the glyphs: the line's
+    // leading sits above and below the text, so the dot would ride high.
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(MARKER_W, BODY_LINE), Sense::hover());
     if let Some(task) = &item.task {
         let mut checked = task.checked;
         let mut cell = ui.new_child(
