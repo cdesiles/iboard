@@ -47,6 +47,7 @@
     "components/TextField/README.md",
     "components/Thinking/README.md",
     "components/TitleSettings/README.md",
+    "components/UsageMeter/README.md",
     "components/WelcomeScreen/README.md",
     "components/bundle.css",
     "tokens.css"
@@ -278,6 +279,11 @@
       "name": "TitleSettings",
       "group": "AI review",
       "summary": "The Titles tab of the Settings dialog: which engine names new issues from their description."
+    },
+    {
+      "name": "UsageMeter",
+      "group": "Navigation",
+      "summary": "The status bar's usage pill and the popover behind it: share, even-pace verdict, daily tokens and model split for each subscription provider."
     },
     {
       "name": "WelcomeScreen",
