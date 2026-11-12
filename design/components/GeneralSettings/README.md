@@ -20,7 +20,7 @@ The **General** tab of the Settings dialog (`⌘,`), first of five: *General*, *
 
 - One checkbox under the label "Notifications", **checked by default**: "Open the agent log on a Doing issue". The help line under it says questions from a build always reach the bell, and wait in the ticket until answered.
 - **Questions are not optional.** A build waiting on its `question` tool or a tool approval always reaches the bell and waits in its ticket: a setting that silenced it would leave the build stuck with nothing to see.
-- **Auto log.** On (the default), opening a Doing issue that has an agent log opens it beside the reader in Conversation mode. Off, the log is opened from the card, the `…` menu or the bell only. A waiting question opens it whatever the setting says.
+- **Auto log.** On (the default), opening a Doing issue that has an agent log opens it beside the reader in Conversation mode. Off, the log is opened from the card, the Agent log action or the bell only. A waiting question opens it whatever the setting says.
 - Saved with the dialog's Save (`⌘↩`).
 
 ## Ask before deleting an issue

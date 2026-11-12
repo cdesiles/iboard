@@ -205,11 +205,8 @@ fn with_idesign_off_no_path_reaches_the_design_panel() {
     };
     let (offered, mut app) = offers(app, "Design");
     assert!(!offered, "the board has no Design button");
-    app.prefs.auto = false;
     app.open_issue(issue.clone());
-    let mut harness = kittest(app);
-    harness.get_by_label("More actions").click();
-    harness.run_steps(2);
+    let harness = kittest(app);
     let offered = harness.query_by_label("Draft design").is_some();
     let mut app = harness.into_state().1;
     assert!(!offered, "the reader has no Draft design");

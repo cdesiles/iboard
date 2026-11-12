@@ -779,7 +779,6 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-project{display:inline-flex;align-items:center;gap:4px}
 .ib-crumbs a .ib-sico{margin-right:6px}
 .ib-btn--back{color:var(--ink)}
-.ib-btn--more{width:24px;padding:0;justify-content:center;color:var(--ink-muted)}
 
 /* AI split button: one button for Ask, Update, Review and Refine; the face repeats the last one used (Review by default). */
 .ib-split--ai{display:inline-flex}
@@ -787,7 +786,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-split--ai .ib-btn:last-child{border-left:1px solid var(--line-soft)}
 .ib-split--ai .ib-btn:hover{background:var(--review-soft)}
 
-/* Dropdown menu (AI menu, … menu). Menus always show their keys. */
+/* Dropdown menu (AI menu, Move to… menu). Menus always show their keys. */
 .ib-dd{min-width:220px;box-sizing:border-box;padding:4px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-md);box-shadow:var(--shadow-popover);display:flex;flex-direction:column}
 .ib-dd__row{display:flex;align-items:center;gap:8px;height:26px;padding:0 8px;border-radius:var(--radius-sm);font:13px/18px var(--font-sans);color:var(--ink);cursor:pointer;white-space:nowrap}
 .ib-dd__row .ib-ico{color:var(--ink-muted)}

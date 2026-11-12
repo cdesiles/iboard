@@ -54,8 +54,6 @@ pub enum Icon {
     Grip,
     /// Three bars: the Stats screen.
     Bars,
-    /// Three dots in a row: a menu of what is left.
-    More,
     /// Three narrowing lines: refine.
     Narrow,
     /// A speech bubble: ask an agent.
@@ -111,7 +109,7 @@ pub fn paint_icon_stroked(painter: &Painter, icon: Icon, rect: Rect, color: Colo
         Icon::Layers | Icon::Grip | Icon::Warning | Icon::Flame | Icon::Bars | Icon::Release => {
             project_icon(&grid, icon);
         }
-        Icon::More | Icon::Narrow | Icon::Bubble => {
+        Icon::Narrow | Icon::Bubble => {
             menu_icon(&grid, icon);
         }
     }
@@ -442,12 +440,6 @@ fn agent_icon(g: &Grid, icon: Icon) {
 /// The rows of the header's menus.
 fn menu_icon(g: &Grid, icon: Icon) {
     match icon {
-        Icon::More => {
-            for x in [5.0, 12.0, 19.0] {
-                g.painter
-                    .circle_filled(g.at(x, 12.0), 1.5 * g.scale, g.stroke.color);
-            }
-        }
         Icon::Narrow => {
             g.line(&[(4.0, 6.0), (20.0, 6.0)]);
             g.line(&[(7.0, 12.0), (17.0, 12.0)]);

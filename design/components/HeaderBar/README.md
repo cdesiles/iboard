@@ -15,7 +15,7 @@ The one top bar: `bar-h` 40pt, `bg` ground, a `line` rule below. It holds where 
 
 ## Notifications
 
-- The bell is the header's **last** control on every screen, at the very right: an 18pt bell in a 24pt hit area, `ink-muted`, no edge at rest, 8pt after the control before it. Board: after New issue; Reader: after `…`; Editor: after Save; Diff and Stats: after their own controls.
+- The bell is the header's **last** control on every screen, at the very right: an 18pt bell in a 24pt hit area, `ink-muted`, no edge at rest, 8pt after the control before it. Board: after New issue; Reader: after its actions; Editor: after Save; Diff and Stats: after their own controls.
 - It opens the Notifications tray. The count badge, the question rows under `Waiting on you`, the empty state, the keys and the focus behaviour all live in Notifications. The bell is not one of the dynamic icon buttons and has no key hint.
 - **No header badge.** No count sits beside New issue: the bell's badge is the one count, and a card keeps its own note. See IssueCard.
 
@@ -25,12 +25,12 @@ The one top bar: `bar-h` 40pt, `bg` ground, a `line` rule below. It holds where 
 - Breadcrumb links are `ink-muted`, 24pt tall hit areas, with a `surface-hover` fill and an underline on hover. Every segment but the last is a link.
 - Right, left to right:
   1. **Edit, Add label, Delete** as dynamic icon buttons (below). Edit only in Todo and Ready (Doing and Done open read-only; Done shows Commits instead). Add label only on Todo and Ready issues (labels are settled once work starts). Delete not on Done issues, which are archived, never deleted. The Editor keeps only Delete, without a key, since `Del` edits text there.
-  2. **The AI split button**: `review` label, no edge, `review-soft` on hover. Its face follows the column. **Todo**: Refine (`⌘R`); the chevron opens Refine with a challenger (`⌘R`), Review this issue (`⌘⇧R`), the other review scope as a one-off (Deep review or Quick review) and Ask… (`⌘K`). Reviewing refines an issue, so Refine and Review belong to Todo only. **Ready, Doing and Done**: no AI split button; on Done the `…` menu sits right after the icons. Every menu ends with the current tool and model, which opens Settings (`⌘,`). See ReviewButton for running and Review ready.
-  3. **Move to…**: Reader only, a secondary text button showing `M`. Its menu lists the other columns, numbered 1–9, and the standard columns the project lacks; picking one, or typing its number after `M`, sends the issue there. `esc` closes it.
-  4. **`…`**: Reader only, a 24pt icon button in `ink-muted`. Its menu: Refresh only when Auto is off, Agent log when the issue has one, Draft design when `idesign` is on (not on Done) and Archive on Done. The Editor has none: `esc` asks to save or discard.
-  5. **Editor only**: Save (`⌘S`), the Editor's one filled button. Discard moves into the `…` menu. The Unsaved pill is in the status bar.
-  6. **The notification bell**, at the very right on both screens: after `…` in the Reader and after Save in the Editor. See Notifications.
-- Menus always show their keys, right-aligned in `meta-mono` `ink-faint`. Refresh leaves the Reader header: with Auto on (the default) the file watcher refreshes; with Auto off it is a row of the `…` menu.
+  2. **The AI split button**: `review` label, no edge, `review-soft` on hover. Its face follows the column. **Todo**: Refine (`⌘R`); the chevron opens Refine with a challenger (`⌘R`), Review this issue (`⌘⇧R`), the other review scope as a one-off (Deep review or Quick review) and Ask… (`⌘K`). Reviewing refines an issue, so Refine and Review belong to Todo only. **Ready, Doing and Done**: no AI split button; on Done Archive sits right after the icons. Every menu ends with the current tool and model, which opens Settings (`⌘,`). See ReviewButton for running and Review ready.
+  3. **The issue's actions**: header buttons, no edge at rest, shown only where they apply. Left to right: Refresh (`⌘R`; only when Auto is off, and with no key on Todo, where `⌘R` refines), Agent log (only when the issue has one; toggles the panel), Draft design (only with `idesign` on, not on Done) and Archive (Done only). There is no `…` menu: every option is one click away.
+  4. **Move to…**: Reader only, a secondary text button showing `M`. Its menu lists the other columns, numbered 1–9, and the standard columns the project lacks; picking one, or typing its number after `M`, sends the issue there. `esc` closes it.
+  5. **Editor only**: Save (`⌘S`), the Editor's one filled button. The Editor has none of the Reader's actions. The Unsaved pill is in the status bar.
+  6. **The notification bell**, at the very right on both screens: after the Reader's actions and after Save in the Editor. See Notifications.
+- Menus always show their keys, right-aligned in `meta-mono` `ink-faint`. Refresh leaves the Reader header: with Auto on (the default) the file watcher refreshes; with Auto off it is one of the issue's actions.
 
 ### Dynamic icon buttons
 
@@ -38,7 +38,7 @@ Edit (`E`), Add label (`L`) and Delete (`Del`) stay visible, so the actions peop
 
 | State | Looks like |
 | --- | --- |
-| Rest | The 14pt line icon in `ink-muted`, no edge, no fill. 2pt apart, 8pt before what follows: the AI split on Todo, the `…` elsewhere. |
+| Rest | The 14pt line icon in `ink-muted`, no edge, no fill. 2pt apart, 8pt before what follows: the AI split on Todo, the issue's actions elsewhere. |
 | Pointer on it, or keyboard focus | The icon takes the fill and a pill grows to the **left of the whole row**, 2pt before its first icon, over `motion-hint` 120ms, holding the label in `ui-strong` 12pt: "Edit", "Add label", "Delete". Fill `surface-hover` and text `ink` (Delete: `danger` on `danger-soft`, the only red in the header). The pill is paint only and covers none of the icons, which all stay in sight: the icon never moves under the pointer and nothing reflows, and moving the pointer to the next icon switches labels at once. Focus adds the 2px ring round pill and icon. No tooltip, since the pill is the label. |
 | ⌘ held | The key slides out after each icon, in layout, in `meta-mono` (`E`, `L`, `Del`), like every other hint. |
 | ⌘ held, pointer on it | Label, icon and key. |

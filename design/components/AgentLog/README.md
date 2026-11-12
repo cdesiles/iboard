@@ -111,7 +111,7 @@ The build's transcript in the side panel beside its issue: what the agent is doi
 ## Empty, failed, blocked
 
 - **Starting up:** the Now strip, then "The agent has not said anything yet." in `ui-small` `ink-muted`, over three skeleton bars at the message width. No spinner under the head; the mark in the Now strip is the activity.
-- **No log at all:** the panel is not opened. The `…` menu's "Agent log" says there is none, as today.
+- **No log at all:** the panel is not opened. The reader shows no Agent log action.
 - **Failed:** the run's outcome names the failure; any changes remain inspectable; the composer reads "Ask it to fix what failed…". There is no Retry in the panel — the Doing card's play button starts the next run, and the log keeps the failed one.
 - **Blocked:** the Question card first, then the switch and the timeline. No composer, one filled Send, on the question card.
 - **No messages, many steps:** one activity row per burst. This is the screenshot's case: the whole run is a run head, a few folded rows and a Changes block, not a page of "Reading…".

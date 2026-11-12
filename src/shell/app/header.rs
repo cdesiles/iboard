@@ -9,8 +9,8 @@ use super::{
 };
 use widgets::DynamicButton;
 
+mod actions;
 mod crumbs;
-mod more;
 
 /// The Move to… menu: column names and their number.
 const MOVE_MENU_WIDTH: f32 = 180.0;
@@ -111,8 +111,9 @@ impl IboardApp {
         self.filter_field(ui);
     }
 
-    /// An issue's toolbar, right to left: Save in the Editor, the Reader's `…`
-    /// menu, the AI split button by column, then the dynamic icon buttons.
+    /// An issue's toolbar, right to left: Save in the Editor, Move to…, the
+    /// Reader's actions, the AI split button by column, then the dynamic icon
+    /// buttons.
     fn detail_controls(&mut self, ui: &mut egui::Ui, path: &Path) {
         let path = path.to_path_buf();
         let exists = self.board.find(&path).is_some();
@@ -131,7 +132,7 @@ impl IboardApp {
         }
         if self.session.reading().is_some() {
             self.move_button(ui, &path);
-            self.more_button(ui, &path, exists);
+            self.reader_actions(ui, &path, exists);
         }
         self.ai_button(ui, &path);
         if exists {
@@ -255,7 +256,8 @@ impl IboardApp {
     }
 
     /// Only offered when Settings › General turns Auto off: with Auto on the
-    /// board already reloads itself. An issue's is a row of its `…` menu.
+    /// board already reloads itself. An issue's own Refresh is drawn by
+    /// `reader_actions`.
     pub(super) fn refresh_button(&mut self, ui: &mut egui::Ui) {
         if self.prefs.auto {
             return;

@@ -32,7 +32,7 @@
   --review: #7a3fd1; /* Violet. The AI split button (Ask, Update, Review, Refine) and the Challenge verdict. Reserved: nothing else uses this hue. Kept clearly apart from the blue accent and from danger red. */
   --review-soft: #f1ebfc; /* Review panel header fill and the pending-review card flag. */
   --on-review: #ffffff; /* Text on a review fill. */
-  --danger: #b42318; /* Write failures, conflicting file on disk, Block verdict, and Delete inside the … menu and the ConfirmDialog. Never at rest in a header. */
+  --danger: #b42318; /* Write failures, conflicting file on disk, Block verdict, and the hovered Delete icon and the ConfirmDialog. Never at rest in a header. */
   --danger-soft: #fdecea; /* Delete drop zone when a card is over it. danger text reads 5.7:1 on it. */
   --on-danger: #ffffff; /* Label on the danger-filled Delete button in the ConfirmDialog. */
   --scrim: rgba(21,24,29,0.32); /* Dims the board behind a modal confirmation. */

@@ -90,7 +90,7 @@ fn the_keys_scroll_the_readers_page() {
 fn the_keys_leave_the_page_to_a_menu_or_a_dialog() {
     let (_dir, file, mut harness) = opened_in("reader-scroll-guard", "done");
     let top = page_top(&harness);
-    press(&mut harness, "More actions");
+    press(&mut harness, "Move to…");
     hit(&mut harness, Modifiers::NONE, Key::ArrowDown);
     assert_eq!(page_top(&harness), top, "the menu has the arrows");
     hit(&mut harness, Modifiers::NONE, Key::Escape);

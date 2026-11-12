@@ -141,7 +141,7 @@ color: var(--danger, #ff8a7a);
 
 | token | light | dark | usage |
 | --- | --- | --- | --- |
-| `--danger` | #b42318 | #ff8a7a | Write failures, conflicting file on disk, Block verdict, and Delete inside the … menu and the ConfirmDialog. Never at rest in a header. |
+| `--danger` | #b42318 | #ff8a7a | Write failures, conflicting file on disk, Block verdict, and the hovered Delete icon and the ConfirmDialog. Never at rest in a header. |
 | `--danger-soft` | #fdecea | #3d1a17 | Delete drop zone when a card is over it. danger text reads 5.7:1 on it. |
 | `--on-danger` | #ffffff | #3a0d08 | Label on the danger-filled Delete button in the ConfirmDialog. |
 

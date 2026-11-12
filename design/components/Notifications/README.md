@@ -4,7 +4,7 @@ The bell in the top bar and the tray under it. It carries one thing today: a que
 
 ## Placement
 
-- The bell is the header's **last** control on every screen — Board, Reader, Editor, Diff and Stats — at the very right: an 18pt bell in a 24pt hit area, `ink-muted`, no edge at rest. It comes after New issue on the Board, after Save in the Editor, after `…` in the Reader and after Refresh on Diff, 8pt from the control before it and `space-5` from the window edge.
+- The bell is the header's **last** control on every screen — Board, Reader, Editor, Diff and Stats — at the very right: an 18pt bell in a 24pt hit area, `ink-muted`, no edge at rest. It comes after New issue on the Board, after Save in the Editor, after the Reader's actions and after Refresh on Diff, 8pt from the control before it and `space-5` from the window edge.
 - Why the very right: the tray hangs under it, aligned to the window's right gutter. It never covers the header's own controls, and it stays in the same place while the rest of the toolbar changes between screens.
 - **Waiting count.** A `status-doing` badge rides on the bell's top right: 16pt tall, numeral in `on-primary`, `radius-pill`, a `space-1` `bg` ring. 1 to 9 read as the number, 10 and more read 9+; nothing waiting, no badge. A question is about a ticket in Doing, so it takes the Doing colour. No new hue, no red.
 - Hover fills the 24pt hit area with `surface-hover` over `motion-hover`; the icon stays `ink-muted`. Focus draws the 2px `focus` ring; `↩` or `space` opens.

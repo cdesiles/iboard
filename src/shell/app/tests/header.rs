@@ -1,8 +1,9 @@
 //! The Reader and Editor header, driven by label: what each column offers,
-//! the AI split button and its menu, the `…` menu, and the title joining the
-//! breadcrumb.
+//! the AI split button and its menu, the issue's actions, and the title joining
+//! the breadcrumb.
 
 use super::*;
+use crate::build_log;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
@@ -68,7 +69,7 @@ fn nothing_sits_under_the_traffic_lights() {
 }
 
 /// Refine and Review are Todo's; Ready, Doing and Done have no AI split
-/// button, and Done's `…` comes right after Commits.
+/// button, and Done's Archive comes right after Commits.
 #[test]
 fn the_ai_split_button_follows_the_column() {
     let (dir, app) = board("header-ai");
@@ -96,8 +97,8 @@ fn the_ai_split_button_follows_the_column() {
     let harness = opened(&dir, app, "done");
     assert!(!has(&harness, "AI actions"));
     let commits = harness.get_by_label("Commits").rect();
-    let more = harness.get_by_label("More actions").rect();
-    assert!(commits.max.x <= more.min.x);
+    let archive = harness.get_by_label("Archive").rect();
+    assert!(commits.max.x <= archive.min.x);
 }
 
 /// Every AI menu ends with the tool and the model, which opens Settings.
@@ -123,7 +124,7 @@ fn ask_opens_from_the_ai_menu() {
 }
 
 /// Edit in Todo and Ready; Add label too; Delete but on Done; the Editor keeps
-/// Delete only and Save, with no `…`.
+/// Delete only and Save, with none of the Reader's actions.
 #[test]
 fn the_dynamic_buttons_follow_the_column_and_the_mode() {
     let (dir, app) = board("header-dynamic");
@@ -156,7 +157,8 @@ fn the_dynamic_buttons_follow_the_column_and_the_mode() {
     harness.get_by_label("Delete");
     assert!(!has(&harness, "Edit"));
     assert!(!has(&harness, "Add label"));
-    assert!(!has(&harness, "More actions"));
+    assert!(!has(&harness, "Move to…"));
+    assert!(!has(&harness, "Archive"));
 }
 
 /// `esc` closes the menu and stays on the issue.
@@ -164,11 +166,11 @@ fn the_dynamic_buttons_follow_the_column_and_the_mode() {
 fn esc_closes_a_menu_before_leaving_the_issue() {
     let (dir, app) = board("header-esc");
     let mut harness = opened(&dir, app, "done");
-    click(&mut harness, "More actions");
-    assert!(has(&harness, "Archive"));
+    click(&mut harness, "Move to…");
+    assert!(has(&harness, "Todo"));
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
-    assert!(!has(&harness, "Archive"));
+    assert!(!has(&harness, "Todo"));
     assert!(matches!(
         harness.state().1.session.screen,
         Screen::Detail(..)
@@ -178,14 +180,34 @@ fn esc_closes_a_menu_before_leaving_the_issue() {
     assert!(matches!(harness.state().1.session.screen, Screen::Board));
 }
 
-/// On a Done issue the `…` menu is where it gets archived.
+/// On a Done issue Archive is a header action of its own.
 #[test]
-fn the_more_menu_archives_a_done_issue() {
+fn a_done_issue_archives_from_its_header() {
     let (dir, app) = board("header-archive");
     let mut harness = opened(&dir, app, "done");
-    click(&mut harness, "More actions");
     click(&mut harness, "Archive");
     assert!(!issue(&dir, "done").exists());
+}
+
+/// An issue with a build log shows Agent log in its header, and the action
+/// toggles the panel.
+#[test]
+fn the_agent_log_opens_from_its_header_action() {
+    let (dir, app) = board("header-log");
+    let path = issue(&dir, "doing");
+    let log = build_log::path(&dir.join("issues"), &path);
+    std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+    std::fs::write(&log, "# A run\n").unwrap();
+
+    let mut harness = opened(&dir, app, "doing");
+    assert!(
+        harness.state().1.session.agent_log.is_some(),
+        "Auto log opened it"
+    );
+    click(&mut harness, "Agent log");
+    assert!(harness.state().1.session.agent_log.is_none());
+    click(&mut harness, "Agent log");
+    assert!(harness.state().1.session.agent_log.is_some());
 }
 
 /// The title joins the breadcrumb, without its label, once the page's own has

@@ -276,7 +276,7 @@ fn a_split_drafts_checkbox_has_a_name() {
 }
 
 /// With Auto off Refresh is the board's button with its `⌘R`; on an issue it
-/// leaves the header for the `…` menu, with no key on Todo, where `⌘R` refines.
+/// is a header button too, with no key on Todo, where `⌘R` refines.
 #[test]
 fn refresh_shows_its_key_where_it_has_it() {
     let dir = scratch_dir("refresh-key");
@@ -286,9 +286,6 @@ fn refresh_shows_its_key_where_it_has_it() {
     let todo = dir.join("issues/todo/a.md");
     let ready = dir.join("issues/ready/b.md");
     harness.state_mut().1.open_issue(todo.clone());
-    harness.run_steps(1);
-    assert!(harness.query_by_label("Refresh").is_none(), "in the menu");
-    harness.get_by_label("More actions").click();
     harness.run_steps(2);
     harness.get_by_label("Refresh");
 

@@ -62,7 +62,7 @@ pub struct Palette {
     pub review_soft: Color32,
     /// Text on a review fill.
     pub on_review: Color32,
-    /// Write failures, conflicting file on disk, Block verdict, and Delete inside the … menu and the ConfirmDialog. Never at rest in a header.
+    /// Write failures, conflicting file on disk, Block verdict, and the hovered Delete icon and the ConfirmDialog. Never at rest in a header.
     pub danger: Color32,
     /// Delete drop zone when a card is over it. danger text reads 5.7:1 on it.
     pub danger_soft: Color32,
