@@ -12,7 +12,7 @@ use crate::agent::service::Question;
 /// The strip laid over a card's bottom on hover, selection or focus. A card
 /// keeps at least this much under its title, so the strip never changes its
 /// height.
-const STRIP_H: f32 = 28.0;
+pub(super) const STRIP_H: f32 = 28.0;
 /// `ui-strong`, `ui-small` and `meta`'s line heights.
 const TITLE_LINE: f32 = 18.0;
 const SUMMARY_LINE: f32 = 17.0;
@@ -237,7 +237,7 @@ fn focus_within(ctx: &egui::Context, issue: &Issue, card: egui::Id, extras: &Car
 }
 
 /// Where the strip lies: the card's bottom, inside its edge.
-fn strip_rect(card: Rect) -> Rect {
+pub(super) fn strip_rect(card: Rect) -> Rect {
     let inner = card.shrink(CARD_BORDER);
     inner.with_min_y(inner.max.y - STRIP_H)
 }
@@ -575,7 +575,9 @@ fn card_body(
 }
 
 /// What follows the summary: Done's date and "Naming…". With neither, nor a
-/// summary, the card keeps the strip's room under its title.
+/// summary, the card keeps the strip's room under its title. The build keeps
+/// its strip shown, so its card keeps the strip's room plus a row gap under
+/// whatever row comes last.
 fn card_tail(ui: &mut egui::Ui, issue: &Issue, inner: f32, strip: bool, extras: CardExtras) {
     let p = theme::palette(ui);
     if let Some(done_at) = extras.done_at {
@@ -588,9 +590,17 @@ fn card_tail(ui: &mut egui::Ui, issue: &Issue, inner: f32, strip: bool, extras: 
     if extras.naming {
         ui.label(meta_text("Naming…".to_owned(), p.ink_muted));
     }
-    if issue.summary.is_empty() && extras.done_at.is_none() && !extras.naming {
+    if permanent_strip(&extras) {
+        ui.add_space(STRIP_H - CARD_PADDING.y);
+    } else if issue.summary.is_empty() && extras.done_at.is_none() && !extras.naming {
         ui.add_space(STRIP_H - CARD_PADDING.y - theme::SPACE_3);
     }
+}
+
+/// Whether the build keeps the strip shown: it runs, or it waits on the
+/// card's question.
+fn permanent_strip(extras: &CardExtras) -> bool {
+    matches!(extras.build, Some(CardBuild::Running(_))) || extras.question.is_some()
 }
 
 /// The top row, above the title: the last review's verdict first, then the

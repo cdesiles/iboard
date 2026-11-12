@@ -3,8 +3,10 @@
 
 use egui_kittest::kittest::Queryable;
 
+use super::build::form_question;
 use super::kit::{Kit, kittest};
 use super::*;
+use crate::shell::app::card::{STRIP_H, strip_rect};
 use crate::shell::app::dock::IssueDrag;
 
 const LONG_TITLE: &str = "A title long enough to need far more than the two lines a card allows, \
@@ -174,6 +176,51 @@ fn a_title_alone_keeps_28pt_under_it() {
     assert_eq!(
         file.min.x, title.min.x,
         "the file name lines up with the title"
+    );
+}
+
+/// The build keeps the strip shown, so its card makes room for it under its
+/// last row: a running card keeps both summary lines, and the question note
+/// never meets the strip.
+#[test]
+fn a_permanent_strip_keeps_the_room_it_takes() {
+    let text = format!("# {LONG_TITLE}\n\n{LONG_SUMMARY}\n");
+    let (dir, app) = project("permanent-strip", &[("doing/a.md", &text)]);
+    let path = dir.join("issues/doing/a.md");
+    let rest = kittest(app);
+    let at_rest = card_rect(&rest, &path);
+    let summary = rest.state().1.board.find(&path).unwrap().summary.clone();
+    assert_eq!(
+        rest.get_by_label(&summary).rect().height(),
+        2.0 * 17.0,
+        "two lines at rest"
+    );
+    drop(rest);
+
+    let mut app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    app.seed_question(path.clone(), form_question());
+    let harness = kittest(app);
+    let running = card_rect(&harness, &path);
+    assert!(
+        running.height() >= at_rest.height() + STRIP_H,
+        "{running:?} is no taller than {at_rest:?}"
+    );
+    let summary = harness.get_by_label(&summary).rect();
+    assert_eq!(summary.height(), 2.0 * 17.0, "both lines still show");
+    let strip = strip_rect(running);
+    assert!(
+        summary.max.y < strip.min.y,
+        "the summary {summary:?} meets the strip {strip:?}"
+    );
+    let question = harness.get_by_label("Answer: Which approach?").rect();
+    assert!(
+        !question.intersects(strip),
+        "the note {question:?} lies under the strip {strip:?}"
+    );
+    assert_eq!(
+        strip.min.y - question.max.y,
+        theme::SPACE_3,
+        "the strip starts a row gap under the last row"
     );
 }
 
