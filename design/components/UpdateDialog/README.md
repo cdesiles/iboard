@@ -7,7 +7,7 @@ downloads it, then restarts iboard in its place.
   never offers one: it has no bundle to replace, and its toolchain already knows.
 - **The check is quiet.** iboard asks `GET /repos/cdesiles/iboard/releases/latest` when it opens and
   every six hours, off the UI thread. A draft, a prerelease, an older tag, a release with no
-  `iboard.app.zip`, or a failed request offers nothing and says nothing.
+  `iboard-<version>-aarch64-apple-darwin.zip`, or a failed request offers nothing and says nothing.
 
 ## The offer
 

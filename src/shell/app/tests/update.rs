@@ -12,7 +12,7 @@ fn offered(tag: &str, version: &str) -> (Scratch, IboardApp) {
     app.update.bundle = Some(PathBuf::from("/tmp/iboard.app"));
     app.update.latest = Some(Update {
         version: version.to_string(),
-        asset: "https://example.com/iboard.app.zip".to_string(),
+        asset: "https://example.com/iboard-0.5.0-aarch64-apple-darwin.zip".to_string(),
     });
     (dir, app)
 }
@@ -52,7 +52,7 @@ fn a_copy_outside_the_bundle_offers_no_update() {
     app.update.live = false;
     app.update.latest = Some(Update {
         version: "0.5.0".to_string(),
-        asset: "https://example.com/iboard.app.zip".to_string(),
+        asset: "https://example.com/iboard-0.5.0-aarch64-apple-darwin.zip".to_string(),
     });
     let harness = kittest(app);
     assert!(

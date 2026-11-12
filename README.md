@@ -50,13 +50,16 @@ forward, and `iboard ~/code/my-project` shows that project in it.
 
 ## Install
 
-Download `iboard.app.zip` from the [latest release](https://github.com/cdesiles/iboard/releases/latest),
-unzip it, and move `iboard.app` to `~/Applications`. A first install needs no toolchain,
-just macOS 12 or later:
+Download the `iboard-<version>-aarch64-apple-darwin.zip` asset from the
+[latest release](https://github.com/cdesiles/iboard/releases/latest), unzip it, and move
+`iboard.app` to `~/Applications`. A first install needs no toolchain, just macOS 12 or later
+on Apple silicon:
 
 ```sh
-curl -L https://github.com/cdesiles/iboard/releases/latest/download/iboard.app.zip -o /tmp/iboard.app.zip
-ditto -x -k /tmp/iboard.app.zip ~/Applications
+asset=$(curl -fsSL https://api.github.com/repos/cdesiles/iboard/releases/latest |
+  sed -n 's/.*"browser_download_url": "\(.*aarch64-apple-darwin\.zip\)".*/\1/p')
+curl -L "$asset" -o /tmp/iboard.zip
+ditto -x -k /tmp/iboard.zip ~/Applications
 open ~/Applications/iboard.app
 ```
 

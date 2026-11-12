@@ -1,9 +1,10 @@
 //! The newer release GitHub publishes, and the bundle swap that installs it.
 //!
-//! CI attaches `iboard.app.zip` to every tag. The app asks the releases API for
-//! the newest one, offers it in the status bar, downloads and unpacks it into
-//! the cache, then hands the swap to a small shell script that waits for this
-//! process to quit, replaces `iboard.app` and reopens it on the same project.
+//! CI attaches `iboard-<version>-aarch64-apple-darwin.zip` to every tag. The app
+//! asks the releases API for the newest one, offers it in the status bar,
+//! downloads and unpacks it into the cache, then hands the swap to a small
+//! shell script that waits for this process to quit, replaces `iboard.app` and
+//! reopens it on the same project.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -16,8 +17,8 @@ use crate::platform::{download, files, process};
 
 /// The repository the releases come from.
 pub const REPO: &str = "cdesiles/iboard";
-/// The asset CI attaches to a tag.
-pub const ASSET: &str = "iboard.app.zip";
+/// The suffix of the bundle CI attaches to a tag.
+pub const ASSET: &str = "-aarch64-apple-darwin.zip";
 /// The version this copy runs.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -29,7 +30,7 @@ const UNPACK: Duration = Duration::from_secs(120);
 pub struct Update {
     /// The version without its leading `v`: `0.5.0`.
     pub version: String,
-    /// The URL of its `iboard.app.zip` asset.
+    /// The URL of its macOS bundle asset.
     pub asset: String,
 }
 
@@ -60,13 +61,13 @@ fn latest_from(reply: &str, current: &str) -> Result<Option<Update>, String> {
         .and_then(|assets| {
             assets.iter().find_map(|asset| {
                 let name = asset["name"].as_str()?;
-                if name != ASSET {
+                if !name.ends_with(ASSET) {
                     return None;
                 }
                 asset["browser_download_url"].as_str()
             })
         })
-        .ok_or_else(|| format!("{tag} has no {ASSET} asset."))?;
+        .ok_or_else(|| format!("{tag} has no *{} asset.", ASSET.trim_start_matches('-')))?;
     Ok(Some(Update {
         version: version_of(tag).unwrap_or_else(|| tag.trim_start_matches('v').to_string()),
         asset: asset.to_string(),
@@ -171,7 +172,7 @@ pub fn stage(update: &Update, cancel: &Cancel) -> Result<PathBuf, String> {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root)
         .map_err(|err| format!("Couldn't make {}: {err}", root.display()))?;
-    let zip = root.join(ASSET);
+    let zip = root.join("iboard.zip");
     download::file(&update.asset, &zip, cancel)?;
     unpack(&zip, &root.join("unpacked"), cancel)
 }
@@ -279,30 +280,62 @@ mod tests {
         )
     }
 
+    fn bundle(version: &str) -> String {
+        format!("iboard-{version}{ASSET}")
+    }
+
     #[test]
     fn a_newer_release_names_its_app_asset() {
-        let reply = release("v0.5.0", false, false, Some(ASSET));
+        let name = bundle("0.5.0");
+        let reply = release("v0.5.0", false, false, Some(name.as_str()));
         assert_eq!(
             latest_from(&reply, "0.4.0").unwrap(),
             Some(Update {
                 version: "0.5.0".to_string(),
-                asset: format!("https://example.com/{ASSET}"),
+                asset: format!("https://example.com/{name}"),
             })
         );
     }
 
     #[test]
+    fn the_macos_bundle_is_picked_among_platform_assets() {
+        let reply = r#"{"tag_name":"v0.5.0","draft":false,"prerelease":false,"assets":[
+            {"name":"iboard-0.5.0-x86_64-unknown-linux-gnu.zip","browser_download_url":"https://example.com/linux"},
+            {"name":"iboard-0.5.0-aarch64-apple-darwin.zip","browser_download_url":"https://example.com/macos"}
+        ]}"#;
+        assert_eq!(
+            latest_from(reply, "0.4.0")
+                .unwrap()
+                .map(|update| update.asset),
+            Some("https://example.com/macos".to_string())
+        );
+    }
+
+    #[test]
     fn no_newer_release_or_no_asset_offers_nothing() {
+        let name = bundle("0.5.0");
         assert_eq!(
-            latest_from(&release("v0.4.0", false, false, Some(ASSET)), "0.4.0").unwrap(),
+            latest_from(
+                &release("v0.4.0", false, false, Some(name.as_str())),
+                "0.4.0"
+            )
+            .unwrap(),
             None
         );
         assert_eq!(
-            latest_from(&release("v0.5.0", true, false, Some(ASSET)), "0.4.0").unwrap(),
+            latest_from(
+                &release("v0.5.0", true, false, Some(name.as_str())),
+                "0.4.0"
+            )
+            .unwrap(),
             None
         );
         assert_eq!(
-            latest_from(&release("v0.5.0", false, true, Some(ASSET)), "0.4.0").unwrap(),
+            latest_from(
+                &release("v0.5.0", false, true, Some(name.as_str())),
+                "0.4.0"
+            )
+            .unwrap(),
             None
         );
         assert!(latest_from(&release("v0.5.0", false, false, None), "0.4.0").is_err());
@@ -329,7 +362,7 @@ mod tests {
         let macos = app.join("Contents/MacOS");
         std::fs::create_dir_all(&macos).unwrap();
         std::fs::write(macos.join("iboard"), "binary").unwrap();
-        let zip = dir.path().join(ASSET);
+        let zip = dir.path().join(bundle("0.5.0"));
         let packed = Command::new("ditto")
             .args(["-c", "-k", "--keepParent"])
             .arg(&app)
