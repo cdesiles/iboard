@@ -7,10 +7,10 @@ It replaces the first in-ticket card, where a `surface-sunken` block with an edg
 ## Placement
 
 - First block in the agent panel body, above the Timeline/Raw switch and the timeline's scroll area. The panel head stays: "Agent log of `<file>`" with the state, now "waiting on you"; the run heading below keeps the agent and start time.
-- The question never lives in a modal, a tray or a toast. The bell and the card's pin only take you to this spot in the ticket.
+- The question never lives in a modal, a tray or a toast. The bell and the Doing card's note only take you to this spot in the ticket.
 - The card is bounded: at most 55% of the panel body. Its fields scroll inside; the foot with Send is pinned. The conversation keeps its own scroll below.
 - While an answerable question waits, the composer under the timeline is not drawn. A single quiet line takes its place: "Answer the question above to continue." No second textarea and no second Send. A question only another terminal answers keeps the composer, disabled, saying the build cannot take a reply.
-- Closing the panel is allowed, and the X never refuses with a notice. The question stays in the ticket; the card pin and the bell both reopen the ticket on it.
+- Closing the panel is allowed, and the X never refuses with a notice. The question stays in the ticket; the Doing card's note and the bell both reopen the ticket on it.
 
 ## Anatomy
 
@@ -19,7 +19,7 @@ It replaces the first in-ticket card, where a `surface-sunken` block with an edg
 3. **Fields.** One per question field, `space-4` apart, in the order the agent sent them. A field is its label in `ui-strong` (with "Optional" in `meta` `ink-faint` when it can be left empty), its help line in `ui-small` `ink-muted`, then its control.
 4. **Foot.** A `line-soft` rule, `space-3` padding, one filled `review` Send on the right, "Send answer" with `⌘↩`. Nothing on the left at rest; while ⌘ is held, the selection keys ("1–3 choose") appear in `meta` `ink-faint`.
 
-The card is `surface` with a `line-soft` edge and `radius-md`, `space-4` at the sides and the head. It sits on the side panel's `surface`, which the edge separates. Nothing is tinted `status-doing`: the card is the agent talking, so its identity is `review`. The blocked Doing ticket keeps that colour on the card pin and the bell badge.
+The card is `surface` with a `line-soft` edge and `radius-md`, `space-4` at the sides and the head. It sits on the side panel's `surface`, which the edge separates. Nothing is tinted `status-doing`: the card is the agent talking, so its identity is `review`. The blocked Doing ticket keeps that colour on the Doing card's note and the bell badge.
 
 ## Fields
 

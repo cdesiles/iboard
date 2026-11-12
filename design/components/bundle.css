@@ -771,6 +771,24 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-card__date{font:var(--text-meta,400 12px/16px var(--font-sans));color:var(--ink-muted);font-variant-numeric:tabular-nums}
 .ib-act:hover,.ib-act.is-hover{border-color:transparent}
 
+/* A card the AI build holds: the strip is always on, with the time spent in status-doing. It is no longer a hover overlay, so the card keeps
+   the strip's 28pt and the row gap under its last row and nothing is ever hidden under it. The edge is 2pt, status-doing. */
+.ib-card.is-working{border:2px solid var(--status-doing);padding:9px 11px}
+.ib-card.is-working .ib-card__strip{visibility:visible}
+.ib-card.is-held::after{content:"";display:block;height:19px}
+.ib-card__clock{font:var(--text-meta,400 12px/16px var(--font-sans));color:var(--status-doing);font-variant-numeric:tabular-nums}
+
+/* Build question note, on the card: the question the build waits on, one click target that opens the ticket on it. status-doing at the label
+   tint over the card's fill, no edge. status-doing on it is 5.0:1 light and 5.7:1 dark; the question is ink. */
+.ib-ask{display:flex;flex-direction:column;gap:var(--space-2);width:100%;box-sizing:border-box;margin:0;padding:var(--space-3);border:0;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--status-doing) calc(var(--label-tint,.1)*100%),var(--surface));color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.ib-ask:hover,.ib-ask.is-hover{box-shadow:inset 0 0 0 1px var(--status-doing)}
+.ib-ask:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.ib-ask__head{display:flex;align-items:center;gap:var(--space-2);color:var(--status-doing);font:var(--text-ui-label);letter-spacing:.06em;text-transform:uppercase}
+.ib-ask__go{margin-left:auto;font:var(--text-ui-strong);letter-spacing:0;text-transform:none}
+.ib-ask:hover .ib-ask__go,.ib-ask.is-hover .ib-ask__go{text-decoration:underline;text-underline-offset:2px}
+.ib-ask__text{font:var(--text-ui-small);color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ib-card__expand{position:absolute;top:6px;right:6px;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--ink-muted)}
+
 /* Header bar: traffic lights centred on the bar's centre line (titlebar-light-y 20). .ib-lights is drawn in previews only. */
 .ib-lights{position:absolute;top:calc(var(--titlebar-light-y,20px) - 6px);left:calc(var(--titlebar-light-x,20px) - 6px);display:flex;gap:8px;z-index:5;pointer-events:none}
 .ib-lights i{width:12px;height:12px;border-radius:50%;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.2)}
