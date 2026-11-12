@@ -1,0 +1,429 @@
+<!-- @dsCard group="Screens" height=1500 page subtitle="Tools › Usage…: every connected provider's consumption by day, a vertical rail of providers, and the states for one provider and none" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Usage screen</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../bundle.css">
+<style>
+html{background:var(--bg)}
+.pv{display:flex;flex-direction:column;gap:var(--space-6);padding:var(--space-5);max-width:1280px;margin:0 auto;box-sizing:border-box}
+.pv-tools{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3) var(--space-5);font:var(--text-meta);color:var(--ink-muted)}
+.pv-tools .ib-seg{margin-left:0}
+.pv-tools label{display:inline-flex;align-items:center;gap:var(--space-3)}
+.pv-win{position:relative;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden;background:var(--bg)}
+.pv-win .ib-bar{flex:none}
+.pv-win .ib-us{flex:1}
+.pv-path{overflow:hidden;text-overflow:ellipsis}
+.pv-right{margin-left:auto;display:flex;align-items:center;gap:var(--space-4)}
+.pv-toast{position:absolute;left:50%;bottom:calc(var(--statusbar-h) + var(--space-5));transform:translateX(-50%);padding:var(--space-3) var(--space-4);border-radius:var(--radius-md);background:var(--ink);color:var(--bg);font:var(--text-ui-small);box-shadow:var(--shadow-popover);opacity:0;pointer-events:none;transition:opacity var(--motion-hint)}
+.pv-toast.is-on{opacity:1}
+.pv-row{display:flex;flex-wrap:wrap;gap:var(--space-6);align-items:flex-start}
+.pv-fig{margin:0;display:flex;flex-direction:column;gap:var(--space-3)}
+.pv-fig .ib-cap{max-width:56ch}
+.pv-menu{width:220px;padding:var(--space-2);border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);box-shadow:var(--shadow-popover);font:var(--text-ui-body)}
+.pv-menu p{margin:0;padding:var(--space-1) var(--space-3) var(--space-2);font:var(--text-ui-label);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-muted)}
+.pv-menu div{display:flex;justify-content:space-between;align-items:center;height:24px;padding:0 var(--space-3);border-radius:var(--radius-sm)}
+.pv-menu .is-hot{background:var(--accent);color:var(--on-accent)}
+#refresh[hidden]{display:none}
+.pv-hint{margin:0;font:var(--text-meta);color:var(--ink-muted)}
+</style>
+</head>
+<body>
+<div class="pv">
+
+  <div class="pv-tools" role="group" aria-label="Preview controls (not part of the screen)">
+    <span>Preview</span>
+    <label>Providers
+      <span class="ib-seg" id="pv-scn" role="group" aria-label="Scenario">
+        <button type="button" data-scn="three" aria-pressed="true">Three</button>
+        <button type="button" data-scn="idle" aria-pressed="false">Three, one idle</button>
+        <button type="button" data-scn="one" aria-pressed="false">One</button>
+        <button type="button" data-scn="tool" aria-pressed="false">Tool, none connected</button>
+        <button type="button" data-scn="none" aria-pressed="false">No tool</button>
+      </span>
+    </label>
+    <label>Scope
+      <span class="ib-seg" id="pv-scope" role="group" aria-label="Scope">
+        <button type="button" data-scope="group" aria-pressed="true">Group</button>
+        <button type="button" data-scope="project" aria-pressed="false">Project, no group</button>
+      </span>
+    </label>
+    <label>Theme
+      <span class="ib-seg" id="pv-theme" role="group" aria-label="Theme">
+        <button type="button" data-theme-set="light" aria-pressed="true">Light</button>
+        <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+      </span>
+    </label>
+  </div>
+
+  <div class="pv-win" id="win">
+    <div class="ib-bar ib-bar--window">
+      <div class="ib-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+      <button class="ib-btn ib-btn--back" type="button" data-toast="Back to the board is not part of this preview"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Board <span class="ib-btn__key">esc</span></button>
+      <span class="ib-vsep" aria-hidden="true"></span>
+      <nav class="ib-crumbs" aria-label="Breadcrumb"><span class="ib-here">Usage</span></nav>
+      <span class="ib-spacer"></span>
+      <span class="ib-cap" id="read-at"></span>
+      <button class="ib-btn" type="button" id="refresh"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Refresh</button>
+      <span class="ib-bellwrap"><button class="ib-bell" type="button" aria-label="Notifications" data-toast="Notifications are not part of this preview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg></button></span>
+    </div>
+    <div class="ib-us" id="us"></div>
+    <div class="ib-statusbar"><span class="pv-path">~/workspace/perso/iboard/issues</span><span class="pv-right"><span>Idle</span><span id="pill"></span></span></div>
+    <div class="pv-toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="pv-row">
+    <figure class="pv-fig">
+      <figcaption class="ib-cap">Entry point: a third item in the macOS Tools menu, after Plan… and Project Stats…. No key, like its neighbours.</figcaption>
+      <div class="pv-menu" role="presentation">
+        <p>Tools</p>
+        <div>Plan…</div>
+        <div>Project Stats…</div>
+        <div class="is-hot">Usage…</div>
+      </div>
+    </figure>
+
+    <figure class="pv-fig">
+      <figcaption class="ib-cap">The status bar popover once the full screen exists: it keeps the quick answer (will I make it to the reset?) and loses the day chart and model split. Rows no longer open. The foot gains a link to the screen.</figcaption>
+      <div class="ib-usage pv-pop" role="group" aria-label="Subscription usage, proposed">
+        <div class="ib-usage__head"><h3 class="ib-usage__title">Subscription usage</h3></div>
+        <ul class="ib-usage__list">
+          <li><div class="ib-usage__sum">
+            <span class="ib-usage__ring"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
+            <span class="ib-usage__name">Claude.ai · Session</span>
+            <span class="ib-usage__figure">62%</span>
+            <span class="ib-usage__bar"><div class="ib-gauge is-warn" role="img" aria-label="62% of the session used, an even pace is 60%" style="--p:0.62;--t:0.6"><span class="ib-gauge__fill"></span><span class="ib-gauge__tick"></span></div></span>
+            <span class="ib-usage__sub"><span class="is-warn">Over pace · cap by 15:40</span><span class="ib-usage__end"><span>resets in 2h</span></span></span>
+          </div></li>
+          <li><div class="ib-usage__sum">
+            <span class="ib-usage__ring"><svg class="ib-ring" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.307"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
+            <span class="ib-usage__name">Copilot</span>
+            <span class="ib-usage__figure">31%</span>
+            <span class="ib-usage__bar"><div class="ib-gauge" role="img" aria-label="31% of the month used, an even pace is 38%" style="--p:0.307;--t:0.38"><span class="ib-gauge__fill"></span><span class="ib-gauge__tick"></span></div></span>
+            <span class="ib-usage__sub"><span>Under pace</span><span class="ib-usage__end"><span>resets in 19d</span></span></span>
+          </div></li>
+        </ul>
+        <div class="ib-usage__foot"><span class="ib-usage__legend"><i></i>Even pace</span><span class="ib-usage__links"><button class="ib-usage__link" type="button" data-toast="Opens Usage">Full usage</button><button class="ib-usage__link" type="button" data-toast="Opens Settings › AI">Settings › AI</button></span></div>
+      </div>
+    </figure>
+  </div>
+</div>
+
+<script>
+const TODAY = new Date(2026, 10, 12);
+const N_DAYS = 180;
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+const PROJECTS = [["iboard", .58], ["opencode-kit", .21], ["ansible-playbooks", .13], ["moon-cull", .08]];
+const CATALOG = {
+  anthropic: { id: "anthropic", name: "Anthropic", c: "var(--label-orange)", metered: true, note: "Metered · billed per token",
+    rate: 2.6, base: 1.5e6, seed: 11, models: [["claude-sonnet-4-5", .68], ["claude-opus-4-1", .22], ["claude-haiku-4-5", .10]] },
+  deepseek: { id: "deepseek", name: "DeepSeek", c: "var(--label-teal)", metered: true, note: "Metered · prepaid balance",
+    rate: .35, base: 1.1e6, seed: 23, models: [["deepseek-chat", .71], ["deepseek-reasoner", .29]] },
+  copilot: { id: "copilot", name: "Copilot", c: "var(--label-pink)", metered: false, note: "Subscription · Copilot Business",
+    rate: 1.9, base: .55e6, seed: 37, models: [["gpt-5", .45], ["claude-sonnet-4-5", .33], ["gemini-2.5-pro", .22]],
+    plan: { used: 9212, of: 30000, share: .307, pace: .38, reset: "1 Dec", resetIn: 19 } }
+};
+const SCENARIOS = {
+  three: { tool: "OpenCode", ids: ["anthropic", "deepseek", "copilot"] },
+  idle:  { tool: "OpenCode", ids: ["anthropic", "deepseek", "copilot"], idle: ["deepseek"] },
+  one:   { tool: "OpenCode", ids: ["anthropic"] },
+  tool:  { tool: "OpenCode", ids: [] },
+  none:  { tool: null, ids: [] }
+};
+
+function rng(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function makeDays(p, idle, scale) {
+  const r = rng(p.seed), out = [];
+  for (let i = 0; i < N_DAYS; i++) {
+    const date = new Date(TODAY); date.setDate(TODAY.getDate() - (N_DAYS - 1 - i));
+    const dow = date.getDay(), weekend = dow === 0 || dow === 6;
+    let t = p.base * (weekend ? .22 : 1) * (.35 + 1.3 * r()) * (1 + i / N_DAYS * .35);
+    if (!weekend && r() < .1) t = 0;
+    if (i === N_DAYS - 1) t *= .6;
+    if (idle) t = 0;
+    t *= scale;
+    t = Math.round(t / 1000) * 1000;
+    out.push({ date, t, runs: t ? Math.max(1, Math.round(t / 260000)) : 0 });
+  }
+  return out;
+}
+function shares(list, seed) {
+  const r = rng(seed), raw = list.map(([n, w]) => [n, w * (.8 + .4 * r())]);
+  const sum = raw.reduce((a, [, w]) => a + w, 0);
+  return raw.map(([n, w]) => [n, w / sum]).sort((a, b) => b[1] - a[1]);
+}
+
+const sum = (a, k) => a.reduce((s, x) => s + x[k], 0);
+const tok = n => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(Math.round(n));
+const usd = n => "$" + n.toFixed(2);
+const usdAxis = n => "$" + (n >= 10 ? Math.round(n) : n.toFixed(1).replace(/\.0$/, ""));
+const dayName = d => DOW[d.getDay()] + " " + d.getDate() + " " + MON[d.getMonth()];
+const shortDate = d => d.getDate() + " " + MON[d.getMonth()];
+const nice = max => { const e = Math.pow(10, Math.floor(Math.log10(max || 1))); const f = max / e;
+  return ([1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find(x => f <= x + 1e-9)) * e; };
+const tokAxis = n => n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0).replace(/\.0$/, "") + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(n);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const SCOPES = { group: { label: "the Perso group", scale: 1 }, project: { label: "iboard", scale: PROJECTS[0][1] } };
+const state = { scope: "group", scn: "three", tab: "all", range: 30, metric: "tokens", sel: N_DAYS - 1, readAt: "14:02" };
+let providers = [];
+
+function load() {
+  const s = SCENARIOS[state.scn];
+  providers = s.ids.map(id => {
+    const p = Object.assign({}, CATALOG[id]);
+    p.idle = (s.idle || []).includes(id);
+    p.days = makeDays(p, p.idle, SCOPES[state.scope].scale);
+    return p;
+  });
+  if (providers.length <= 1) state.tab = providers[0] ? providers[0].id : "all";
+  else if (state.tab !== "all" && !providers.find(p => p.id === state.tab)) state.tab = "all";
+}
+
+const win = days => days.slice(days.length - state.range);
+const prevWin = days => days.slice(days.length - 2 * state.range, days.length - state.range);
+
+function rangeCaption() {
+  const a = new Date(TODAY); a.setDate(TODAY.getDate() - (state.range - 1));
+  return shortDate(a) + " – " + shortDate(TODAY);
+}
+function delta(cur, prev) {
+  if (!prev) return "No run in the " + state.range + " days before";
+  const d = Math.round((cur - prev) / prev * 100);
+  return (d >= 0 ? "+" : "−") + Math.abs(d) + "% vs the previous " + state.range + " days";
+}
+
+function tile(label, value, meta) {
+  return '<div class="ib-statcard"><div class="ib-statcard__head"><span class="ib-statcard__label">' + label + '</span></div>' +
+    '<span class="ib-statcard__value">' + value + '</span><span class="ib-statcard__meta">' + meta + '</span></div>';
+}
+
+function seriesFor(list) {
+  const n = state.range;
+  return Array.from({ length: n }, (_, i) => {
+    const parts = list.map(p => { const d = win(p.days)[i]; return { p, t: d.t, runs: d.runs, v: state.metric === "spend" ? d.t * p.rate / 1e6 : d.t }; });
+    const date = win(list[0].days)[i].date;
+    return { date, parts, tokens: sum(parts, "t"), runs: sum(parts, "runs"), total: sum(parts, "v") };
+  });
+}
+
+function chartHTML(cols, stacked) {
+  const n = cols.length, max = nice(Math.max(...cols.map(c => c.total)));
+  const fmt = state.metric === "spend" ? usdAxis : tokAxis;
+  const g = n > 40 ? "2px" : n > 10 ? "4px" : "8px";
+  const step = n <= 7 ? 1 : n <= 30 ? 5 : 15;
+  const bars = cols.map((c, i) => '<div class="ib-us-col' + (i === state.sel ? " is-sel" : "") + '" data-i="' + i + '">' +
+    c.parts.filter(x => x.v > 0).map(x => '<span class="ib-us-seg" style="height:' + (x.v / max * 100) + '%;--c:' + x.p.c + '"></span>').join("") + "</div>").join("");
+  const labels = cols.map((c, i) => {
+    const on = (n - 1 - i) % step === 0, last = i === n - 1;
+    const text = n <= 7 ? DOW[c.date.getDay()] + " " + c.date.getDate() : shortDate(c.date);
+    return '<span class="' + (last ? "is-last" : "") + '">' + (on ? "<b>" + text + "</b>" : "") + "</span>";
+  }).join("");
+  const peak = cols.reduce((a, c) => c.total > a.total ? c : a, cols[0]);
+  const aria = (state.metric === "spend" ? "Spend" : "Tokens") + " per day, " + rangeCaption() + ". Busiest day " + dayName(peak.date) + ". Left and right arrows read a day.";
+  return '<div class="ib-us-chart" style="--n:' + n + ';--g:' + g + '">' +
+    '<div class="ib-us-y" aria-hidden="true">' + [0, .5, 1].map(y => '<span style="--y:' + y + '">' + (y ? fmt(max * y) : "0") + "</span>").join("") + "</div>" +
+    '<div class="ib-us-plot" id="plot" tabindex="0" role="img" aria-label="' + aria + '"><div class="ib-us-grid" aria-hidden="true"><i style="--y:0"></i><i style="--y:.5"></i><i style="--y:1"></i></div><div class="ib-us-cols">' + bars + "</div></div>" +
+    '<div class="ib-us-x" aria-hidden="true">' + labels + "</div></div>";
+}
+
+function readoutHTML(c, cols, stacked) {
+  const isToday = c === cols[cols.length - 1], head = (isToday ? "Today · " : "") + dayName(c.date);
+  if (!c.tokens) return '<span>' + head + '</span><span class="ib-us-read__val">No run</span><span class="ib-us-read__sub">&nbsp;</span>';
+  const one = c.parts[0].p;
+  const val = state.metric === "spend" ? usd(c.total) : tok(c.tokens) + "<small>tokens</small>";
+  let sub;
+  if (stacked) sub = c.parts.filter(x => x.t).map(x => '<span><i class="ib-us-dot" style="--c:' + x.p.c + '"></i>' + x.p.name + " " + (state.metric === "spend" ? (x.p.metered ? usd(x.v) : "–") : tok(x.t)) + "</span>").join("");
+  else if (state.metric === "spend") sub = "<span>" + tok(c.tokens) + " tokens</span><span>" + c.runs + " runs</span>";
+  else sub = "<span>" + c.runs + " runs</span>" + (one.metered ? "<span>" + usd(c.tokens * one.rate / 1e6) + "</span>" : "<span>" + usd(c.tokens * one.rate / 1e6) + " API-equivalent</span>");
+  return "<span>" + head + '</span><span class="ib-us-read__val">' + val + '</span><span class="ib-us-read__sub">' + sub + "</span>";
+}
+
+function listHTML(label, items, withSpend, mono) {
+  const head = '<li aria-hidden="true"><div class="ib-us-item is-head"><span>' + label + '</span><span></span><span>Tokens</span>' + (withSpend ? "<span>Spend</span>" : "") + "</div></li>";
+  const rows = items.map(r => {
+    const tag = r.go ? "button" : "div", attr = r.go ? ' type="button" data-go="' + r.go + '"' : "";
+    const nm = '<span class="ib-us-item__nm' + (mono ? " is-mono" : "") + '">' + (r.c && r.go ? '<i class="ib-us-dot" style="--c:' + r.c + '"></i>' : "") + esc(r.name) + "</span>";
+    const bar = r.idle ? '<span class="is-quiet">No run yet</span>'
+      : '<span class="ib-us-share" role="img" aria-label="' + Math.round(r.share * 100) + '% of the tokens" style="--p:' + r.share + ";--c:" + (r.c || "var(--accent)") + '"><i></i></span>';
+    const spend = withSpend ? "<span" + (r.title ? ' title="' + esc(r.title) + '"' : "") + ">" + (r.spend || "") + "</span>" : "";
+    return "<li><" + tag + ' class="ib-us-item"' + attr + ">" + nm + bar + "<span>" + (r.idle ? "" : tok(r.tokens)) + "</span>" + spend + "</" + tag + "></li>";
+  }).join("");
+  return '<ul class="ib-us-list' + (withSpend ? " has-spend" : "") + '">' + head + rows + "</ul>";
+}
+
+function panel(title, cap, body, extra) {
+  return '<section class="ib-panel"><div class="ib-panel__head"><span class="ib-panel__title">' + title + "</span>" +
+    (cap ? '<span class="ib-cap">' + cap + "</span>" : "") + (extra || "") + "</div>" + body + "</section>";
+}
+
+function splitRows(total, weights, seed, c) {
+  return shares(weights, seed).map(([name, w]) => ({ name, share: w, tokens: total * w, c }));
+}
+
+function planHTML(p) {
+  const pl = p.plan, over = pl.share > pl.pace;
+  const ring = '<svg class="ib-ring' + (over ? " is-warn" : "") + '" viewBox="0 0 14 14" aria-hidden="true" style="--p:' + pl.share + '"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg>';
+  return '<section class="ib-panel" aria-label="Premium credits this month"><div class="ib-panel__head"><span class="ib-panel__title">Premium credits</span><span class="ib-cap">This month, whatever the range</span></div>' +
+    '<div class="ib-us-plan">' + ring + '<span class="ib-us-plan__name">' + pl.used.toLocaleString("en-US") + " of " + pl.of.toLocaleString("en-US") + ' AI credits <span class="ib-cap">· from GitHub</span></span><span class="ib-us-plan__fig">' + Math.round(pl.share * 100) + "%</span>" +
+    '<span class="ib-us-plan__bar"><div class="ib-gauge' + (over ? " is-warn" : "") + '" role="img" aria-label="' + Math.round(pl.share * 100) + '% of the month used, an even pace is ' + Math.round(pl.pace * 100) + '%" style="--p:' + pl.share + ";--t:" + pl.pace + '"><span class="ib-gauge__fill"></span><span class="ib-gauge__tick"></span></div></span>' +
+    '<span class="ib-us-plan__sub"><span class="' + (over ? "is-warn" : "") + '">' + (over ? "Over pace" : "Under pace") + '</span><span>Chat and completions are unlimited · resets ' + pl.reset + " (in " + pl.resetIn + "d)</span></span></div></section>";
+}
+
+function viewHTML() {
+  if (!SCENARIOS[state.scn].tool) return blank("Configure a tool first",
+    "Usage reads the runs of the tool iboard drives. Choose OpenCode or Claude Code in Settings › AI build. Each provider it connects gets its own tab here, with its usage by day.", true);
+  if (!providers.length) return blank("OpenCode has no provider connected yet",
+    "Connect one in OpenCode. Each provider you connect gets its own tab here, with its usage by day.", false);
+
+  const all = state.tab === "all" && providers.length > 1;
+  const list = all ? providers : [providers.find(p => p.id === state.tab) || providers[0]];
+  const solo = list[0];
+  const idleOnly = !all && solo.idle;
+  const rangeSeg = '<span class="ib-seg" role="group" aria-label="Range">' + [7, 30, 90].map(n => '<button type="button" data-range="' + n + '" aria-pressed="' + (state.range === n) + '">' + n + "d</button>").join("") + "</span>";
+  const title = all ? "All providers" : '<i class="ib-us-dot" style="--c:' + solo.c + '"></i>' + solo.name;
+  const scope = SCOPES[state.scope].label;
+  const sub = all ? "Every connected provider, stacked · counted from the tool's sessions in " + scope : solo.note + " · counted from the tool's sessions in " + scope;
+  let out = '<div class="ib-us-head"><div><h2 class="ib-us-title">' + title + '</h2><p class="ib-us-sub">' + sub + "</p></div>" + rangeSeg + "</div>";
+
+  if (idleOnly) return out + '<section class="ib-panel"><div class="ib-us-empty"><b>No agent run yet.</b>A finished run through ' + solo.name + " lands here.</div></section>";
+
+  if (!all && solo.plan) out += planHTML(solo);
+
+  const active = list.filter(p => !p.idle);
+  const cur = active.flatMap(p => win(p.days).map(d => ({ p, d })));
+  const prev = active.flatMap(p => prevWin(p.days).map(d => ({ p, d })));
+  const tokens = sum(cur.map(x => x.d), "t"), prevTokens = sum(prev.map(x => x.d), "t"), runs = sum(cur.map(x => x.d), "runs");
+  const spent = cur.filter(x => x.p.metered).reduce((s, x) => s + x.d.t * x.p.rate / 1e6, 0);
+  const apiEq = cur.filter(x => !x.p.metered).reduce((s, x) => s + x.d.t * x.p.rate / 1e6, 0);
+  const cols = seriesFor(active);
+  const peak = cols.reduce((a, c) => c.tokens > a.tokens ? c : a, cols[0]);
+  const hasSub = active.some(p => !p.metered), hasMetered = active.some(p => p.metered);
+
+  let tiles = tile("Tokens", tok(tokens), delta(tokens, prevTokens));
+  if (hasMetered) tiles += tile("Spent", usd(spent), hasSub ? "plus " + usd(apiEq) + " API-equivalent, never charged" : "billed by the provider");
+  else tiles += tile("API-equivalent", usd(apiEq), "never charged: it is a subscription");
+  tiles += tile("Runs", String(runs), (runs / state.range).toFixed(1) + " a day on average");
+  tiles += tile("Busiest day", tok(peak.tokens), dayName(peak.date));
+  out += '<div class="ib-us-tiles">' + tiles + "</div>";
+
+  const stacked = all;
+  const canSpend = !all && solo.metered;
+  if (!canSpend) state.metric = "tokens";
+  const metricSeg = canSpend ? '<span class="ib-seg" role="group" aria-label="Measure"><button type="button" data-metric="tokens" aria-pressed="' + (state.metric === "tokens") + '">Tokens</button><button type="button" data-metric="spend" aria-pressed="' + (state.metric === "spend") + '">Spend</button></span>' : "";
+  const legend = all ? '<span class="ib-us-legend">' + active.map(p => '<span><i class="ib-us-dot" style="--c:' + p.c + '"></i>' + p.name + "</span>").join("") + "</span>" : "";
+  if (state.sel >= cols.length || state.sel === null) state.sel = cols.length - 1;
+  out += '<section class="ib-panel"><div class="ib-panel__head"><span class="ib-panel__title">' + (state.metric === "spend" ? "Spend" : "Tokens") + ' per day</span><span class="ib-cap">' + rangeCaption() + "</span>" +
+    '<span style="margin-left:auto;display:inline-flex;gap:var(--space-4);align-items:center">' + legend + metricSeg + "</span></div>" +
+    '<div class="ib-us-read" id="read">' + readoutHTML(cols[state.sel], cols, stacked) + "</div>" + chartHTML(cols, stacked) + "</section>";
+
+  if (all) {
+    const rows = providers.map(p => {
+      const t = p.idle ? 0 : sum(win(p.days), "t");
+      return { name: p.name, c: p.c, go: p.id, idle: p.idle, tokens: t, share: tokens ? t / tokens : 0,
+        spend: p.metered && !p.idle ? usd(t * p.rate / 1e6) : "", title: p.metered || p.idle ? "" : usd(t * p.rate / 1e6) + " API-equivalent, never spend" };
+    });
+    const byProject = splitRows(tokens, PROJECTS, 5, "var(--accent)");
+    out += '<div class="ib-us-pair">' +
+      panel("By provider", "click one to open it", listHTML("Provider", rows, true, false)) +
+      (state.scope === "group" ? panel("By project", "", listHTML("Project", byProject, false, false)) : "") + "</div>";
+  } else {
+    const t = sum(win(solo.days), "t");
+    const byModel = splitRows(t, solo.models, solo.seed, solo.c).map(r => Object.assign(r, { spend: solo.metered ? usd(r.tokens * solo.rate / 1e6) : "" }));
+    const byProject = splitRows(t, PROJECTS, solo.seed + 1, solo.c);
+    out += '<div class="ib-us-pair">' +
+      panel("By model", "", listHTML("Model", byModel, solo.metered, true)) +
+      (state.scope === "group" ? panel("By project", "", listHTML("Project", byProject, false, false)) : "") + "</div>";
+  }
+  return out;
+}
+
+function blank(title, text, withButton) {
+  return '<div class="ib-us-blank"><h2>' + title + "</h2><p>" + text + "</p>" +
+    (withButton ? '<button class="ib-btn ib-btn--primary" type="button" data-toast="Opens Settings › AI build">Open Settings <span class="ib-btn__key">⌘,</span></button>' : "") + "</div>";
+}
+
+function railHTML() {
+  const tab = (id, label, dot, icon) => '<button class="ib-us-tab" role="tab" type="button" id="tab-' + id + '" data-tab="' + id + '" aria-selected="' + (state.tab === id) + '" aria-controls="panel" tabindex="' + (state.tab === id ? 0 : -1) + '">' +
+    (dot ? '<i class="ib-us-dot" style="--c:' + dot + '"></i>' : icon) + '<span class="ib-us-tab__name">' + label + "</span></button>";
+  const bars = '<svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>';
+  return '<nav class="ib-us-rail" role="tablist" aria-orientation="vertical" aria-label="Providers">' + tab("all", "All providers", "", bars) + "<hr>" +
+    providers.map(p => tab(p.id, p.name, p.c)).join("") + "</nav>";
+}
+
+function pillHTML() {
+  const p = providers.find(x => x.plan);
+  if (!p) return "";
+  const over = p.plan.share > p.plan.pace;
+  return '<button class="ib-usage-trigger' + (over ? " is-warn" : "") + '" type="button" aria-label="Subscription usage: ' + p.name + " " + Math.round(p.plan.share * 100) + '% of the month used" data-toast="Opens the usage popover"><svg class="ib-ring' + (over ? " is-warn" : "") + '" viewBox="0 0 14 14" aria-hidden="true" style="--p:' + p.plan.share + '"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">' + Math.round(p.plan.share * 100) + "%</span></button>";
+}
+
+function render() {
+  const rail = providers.length > 1 ? railHTML() : "";
+  $("#us").innerHTML = rail + '<main class="ib-us-main" id="panel" role="' + (rail ? "tabpanel" : "region") + '" ' + (rail ? 'aria-labelledby="tab-' + state.tab + '"' : 'aria-label="Usage"') + ">" + viewHTML() + "</main>";
+  $("#pill").innerHTML = pillHTML();
+  $("#read-at").textContent = providers.length ? "Read " + state.readAt + " · from the usage log" : "";
+  $("#refresh").hidden = !providers.length;
+  document.querySelectorAll("#pv-scn button").forEach(b => b.setAttribute("aria-pressed", b.dataset.scn === state.scn));
+}
+
+function setSel(i) {
+  const cols = document.querySelectorAll(".ib-us-col");
+  if (!cols.length || i === state.sel) return;
+  cols[state.sel] && cols[state.sel].classList.remove("is-sel");
+  cols[i].classList.add("is-sel");
+  state.sel = i;
+  const list = state.tab === "all" && providers.length > 1 ? providers : [providers.find(p => p.id === state.tab) || providers[0]];
+  const active = list.filter(p => !p.idle), data = seriesFor(active);
+  $("#read").innerHTML = readoutHTML(data[i], data, list.length > 1);
+}
+
+const $ = s => document.querySelector(s);
+let toastTimer;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("is-on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("is-on"), 2200);
+}
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-tab],[data-go],[data-range],[data-metric],[data-scn],[data-scope],[data-theme-set],[data-toast],#refresh");
+  if (!t) return;
+  if (t.dataset.tab || t.dataset.go) { state.tab = t.dataset.tab || t.dataset.go; state.sel = N_DAYS - 1; render(); const nt = $("#tab-" + state.tab); if (nt && t.dataset.tab) nt.focus(); }
+  else if (t.dataset.range) { state.range = +t.dataset.range; state.sel = N_DAYS - 1; render(); $('[data-range="' + state.range + '"]').focus(); }
+  else if (t.dataset.metric) { state.metric = t.dataset.metric; render(); $('[data-metric="' + state.metric + '"]').focus(); }
+  else if (t.dataset.scn) { state.scn = t.dataset.scn; state.tab = "all"; state.sel = N_DAYS - 1; load(); render(); }
+  else if (t.dataset.scope) { state.scope = t.dataset.scope; state.sel = N_DAYS - 1; load(); render(); document.querySelectorAll("#pv-scope button").forEach(b => b.setAttribute("aria-pressed", b === t)); }
+  else if (t.dataset.themeSet) { document.documentElement.dataset.theme = t.dataset.themeSet; document.querySelectorAll("#pv-theme button").forEach(b => b.setAttribute("aria-pressed", b === t)); }
+  else if (t.dataset.toast) toast(t.dataset.toast);
+  else if (t.id === "refresh") { state.readAt = "14:" + String(2 + Math.floor(Math.random() * 50)).padStart(2, "0"); render(); toast("Read again from the usage log"); $("#refresh").focus(); }
+});
+
+document.addEventListener("mouseover", e => { const c = e.target.closest(".ib-us-col"); if (c) setSel(+c.dataset.i); });
+document.addEventListener("mouseout", e => { if (e.target.closest(".ib-us-plot") && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".ib-us-plot"))) setSel(N_DAYS_RANGE() - 1); });
+function N_DAYS_RANGE() { return state.range; }
+
+document.addEventListener("keydown", e => {
+  const tab = e.target.closest && e.target.closest("[role=tab]");
+  if (tab && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    e.preventDefault();
+    const ids = ["all"].concat(providers.map(p => p.id)), i = ids.indexOf(state.tab);
+    state.tab = ids[(i + (e.key === "ArrowDown" ? 1 : ids.length - 1)) % ids.length]; state.sel = N_DAYS - 1; render(); $("#tab-" + state.tab).focus();
+  }
+  if (e.target.id === "plot") {
+    const n = state.range, k = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+    if (k) { e.preventDefault(); setSel(Math.max(0, Math.min(n - 1, state.sel + k))); }
+    if (e.key === "Home") { e.preventDefault(); setSel(0); }
+    if (e.key === "End") { e.preventDefault(); setSel(n - 1); }
+  }
+});
+
+load(); render();
+</script>
+</body>
+</html>
