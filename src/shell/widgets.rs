@@ -460,22 +460,29 @@ pub fn ghost_section(ui: &mut Ui, heading: &str, hint: Option<&str>) -> Response
 /// The diameter of a subscription meter's ring, in the status bar and in its
 /// popover.
 pub const RING: f32 = 14.0;
-/// The ring's stroke.
-const RING_STROKE: f32 = 1.5;
+/// The ring's stroke, as the design sets it.
+const RING_STROKE: f32 = 1.75;
 
 /// A subscription meter's ring: `share` of it in `accent`, the rest the
-/// track. `None` leaves it empty; it never makes a share up.
-pub fn ring(ui: &mut Ui, share: Option<f32>) -> Response {
+/// track. `None` leaves the track dashed; it never makes a share up. `warn`
+/// turns the arc `status-doing` for a plan past its even pace.
+pub fn ring(ui: &mut Ui, share: Option<f32>, warn: bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(RING), Sense::hover());
     if ui.is_rect_visible(rect) {
-        paint_ring(ui, rect, share);
+        paint_ring(ui, rect, share, warn);
     }
     response
 }
 
 /// A status bar meter: a [`ring`] and its plan's name, one clickable label.
 /// `detail` is what the pointer and VoiceOver read.
-pub fn meter_ring(ui: &mut Ui, share: Option<f32>, name: &str, detail: &str) -> Response {
+pub fn meter_ring(
+    ui: &mut Ui,
+    share: Option<f32>,
+    warn: bool,
+    name: &str,
+    detail: &str,
+) -> Response {
     let p = theme::palette(ui);
     let text = galley(ui, name, theme::meta(), p.ink_muted);
     let gap = theme::SPACE_2;
@@ -492,7 +499,7 @@ pub fn meter_ring(ui: &mut Ui, share: Option<f32>, name: &str, detail: &str) -> 
             Pos2::new(rect.min.x, rect.center().y - RING / 2.0),
             Vec2::splat(RING),
         );
-        paint_ring(ui, ring, share);
+        paint_ring(ui, ring, share, warn);
         ui.painter().galley(
             Pos2::new(ring.max.x + gap, rect.center().y - text.size().y / 2.0),
             text,
@@ -504,18 +511,23 @@ pub fn meter_ring(ui: &mut Ui, share: Option<f32>, name: &str, detail: &str) -> 
 }
 
 /// Draws a ring's track and, when known, the share that fills it from the
-/// top, clockwise.
-fn paint_ring(ui: &Ui, rect: Rect, share: Option<f32>) {
+/// top, clockwise. An unknown share leaves a dashed track; 0% an empty solid
+/// one.
+fn paint_ring(ui: &Ui, rect: Rect, share: Option<f32>, warn: bool) {
     let p = theme::palette(ui);
     let radius = rect.width() / 2.0 - RING_STROKE / 2.0;
     let center = rect.center();
     let track = Stroke::new(RING_STROKE, p.line_strong);
-    ui.painter().circle_stroke(center, radius, track);
     let Some(share) = share else {
+        let points = circle(center, radius, 64);
+        ui.painter()
+            .extend(egui::Shape::dashed_line(&points, track, 6.25, 6.25));
         return;
     };
+    ui.painter().circle_stroke(center, radius, track);
     let share = share.clamp(0.0, 1.0);
-    let stroke = Stroke::new(RING_STROKE, p.accent);
+    let color = if warn { p.status_doing } else { p.accent };
+    let stroke = Stroke::new(RING_STROKE, color);
     if share >= 1.0 {
         ui.painter().circle_stroke(center, radius, stroke);
     } else if share > 0.0 {
@@ -528,6 +540,90 @@ fn paint_ring(ui: &Ui, rect: Rect, share: Option<f32>) {
             })
             .collect();
         ui.painter().add(egui::Shape::line(points, stroke));
+    }
+}
+
+/// A point every `1 / steps` around a circle, closed, from the top clockwise.
+fn circle(center: Pos2, radius: f32, steps: usize) -> Vec<Pos2> {
+    let start = -std::f32::consts::FRAC_PI_2;
+    (0..=steps)
+        .map(|step| {
+            let angle = start + std::f32::consts::TAU * step as f32 / steps as f32;
+            center + Vec2::angled(angle) * radius
+        })
+        .collect()
+}
+
+/// The height of a usage row's gauge, and of the model split's under it.
+pub const GAUGE_H: f32 = 6.0;
+pub const GAUGE_SLIM_H: f32 = 3.0;
+
+/// How far a gauge's pace tick reaches above and below it.
+const GAUGE_TICK: f32 = 3.0;
+
+/// A usage gauge: the share of a cap used on a `surface-sunken` track with a
+/// `line` edge, and an optional `ink` tick at an even pace. A share past the
+/// tick is `status-doing`; an unknown one is a dashed outline. `what` names
+/// the window ("the week") or "the tokens", and makes the label VoiceOver
+/// reads.
+pub fn gauge(
+    ui: &mut Ui,
+    share: Option<f32>,
+    tick: Option<f32>,
+    height: f32,
+    what: &str,
+) -> Response {
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
+    let label = gauge_label(share, tick, what);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, &label));
+    if ui.is_rect_visible(rect) {
+        paint_gauge(ui, rect, share, tick);
+    }
+    response
+}
+
+/// What a gauge's label says: its share and, when it has one, the even pace.
+fn gauge_label(share: Option<f32>, tick: Option<f32>, what: &str) -> String {
+    let Some(share) = share else {
+        return "No cap set".to_string();
+    };
+    let share = share.clamp(0.0, 1.0) * 100.0;
+    match tick {
+        Some(tick) => format!(
+            "{share:.0}% of {what} used, an even pace is {:.0}%",
+            tick.clamp(0.0, 1.0) * 100.0
+        ),
+        None => format!("{share:.0}% of {what}"),
+    }
+}
+
+fn paint_gauge(ui: &Ui, rect: Rect, share: Option<f32>, tick: Option<f32>) {
+    let p = theme::palette(ui);
+    let radius = CornerRadius::same((rect.height() / 2.0).min(f32::from(theme::RADIUS_SM)) as u8);
+    let painter = ui.painter();
+    let Some(share) = share else {
+        dashed_rect(painter, rect, theme::RADIUS_SM, p.line_strong);
+        return;
+    };
+    let share = share.clamp(0.0, 1.0);
+    painter.rect_filled(rect, radius, p.surface_sunken);
+    let warn = tick.is_some_and(|tick| share > tick);
+    if share > 0.0 {
+        let filled = Rect::from_min_size(rect.min, Vec2::new(rect.width() * share, rect.height()));
+        let color = if warn { p.status_doing } else { p.accent };
+        painter.rect_filled(filled, radius, color);
+    }
+    painter.rect_stroke(rect, radius, Stroke::new(1.0, p.line), StrokeKind::Inside);
+    if let Some(tick) = tick {
+        let x = rect.min.x + rect.width() * tick.clamp(0.0, 1.0);
+        painter.line_segment(
+            [
+                Pos2::new(x, rect.min.y - GAUGE_TICK),
+                Pos2::new(x, rect.max.y + GAUGE_TICK),
+            ],
+            Stroke::new(2.0, p.ink),
+        );
     }
 }
 
@@ -785,5 +881,110 @@ mod tests {
         harness.get_by_label("Remove ux").click();
         harness.run();
         assert_eq!(harness.state().1, ["bug", "ux"]);
+    }
+
+    /// A gauge's label gives its share and, when there is one, the even pace.
+    #[test]
+    fn a_gauge_names_a_known_unknown_and_warn_share() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut harness = egui_kittest::Harness::new_ui_state(
+            |ui, themed: &mut bool| {
+                if !std::mem::replace(themed, true) {
+                    theme::install(ui.ctx());
+                    return;
+                }
+                gauge(ui, Some(0.62), Some(0.5), GAUGE_H, "the week");
+                gauge(ui, None, None, GAUGE_H, "the week");
+                gauge(ui, Some(0.31), Some(0.38), GAUGE_H, "the month");
+                gauge(ui, Some(0.74), None, GAUGE_SLIM_H, "the tokens");
+            },
+            false,
+        );
+        harness.run_steps(2);
+        harness.get_by_role_and_label(Role::Image, "62% of the week used, an even pace is 50%");
+        harness.get_by_role_and_label(Role::Image, "No cap set");
+        harness.get_by_role_and_label(Role::Image, "31% of the month used, an even pace is 38%");
+        harness.get_by_role_and_label(Role::Image, "74% of the tokens");
+    }
+
+    /// An unknown share draws a dashed outline and no fill: 0% is the only
+    /// empty solid one. Over its tick, a gauge and a ring turn `status-doing`.
+    #[test]
+    fn an_unknown_share_fills_nothing_and_a_warn_one_is_doing() {
+        let (shapes, p) = painted(|ui| {
+            ring(ui, None, false);
+        });
+        assert!(!drawn_in(&shapes, p.accent) && !drawn_in(&shapes, p.status_doing));
+
+        let (shapes, p) = painted(|ui| {
+            ring(ui, Some(0.0), false);
+        });
+        assert!(!drawn_in(&shapes, p.accent));
+
+        let (shapes, p) = painted(|ui| {
+            ring(ui, Some(0.4), false);
+        });
+        assert!(drawn_in(&shapes, p.accent));
+
+        let (shapes, p) = painted(|ui| {
+            ring(ui, Some(0.4), true);
+        });
+        assert!(drawn_in(&shapes, p.status_doing));
+
+        let (shapes, p) = painted(|ui| {
+            gauge(ui, None, None, GAUGE_H, "the week");
+        });
+        assert!(!drawn_in(&shapes, p.accent) && !drawn_in(&shapes, p.status_doing));
+
+        let (shapes, p) = painted(|ui| {
+            gauge(ui, Some(0.0), Some(0.5), GAUGE_H, "the week");
+        });
+        assert!(!drawn_in(&shapes, p.accent));
+
+        let (shapes, p) = painted(|ui| {
+            gauge(ui, Some(0.31), Some(0.38), GAUGE_H, "the month");
+        });
+        assert!(drawn_in(&shapes, p.accent));
+
+        let (shapes, p) = painted(|ui| {
+            gauge(ui, Some(0.62), Some(0.5), GAUGE_H, "the week");
+        });
+        assert!(drawn_in(&shapes, p.status_doing));
+    }
+
+    fn painted(mut draw: impl FnMut(&mut Ui)) -> (Vec<egui::Shape>, &'static theme::Palette) {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let raw = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0))),
+            ..Default::default()
+        };
+        ctx.run_ui(raw(), |_| {}).textures_delta.clear();
+        let mut palette = None;
+        let mut output = ctx.run_ui(raw(), |ui| {
+            palette = Some(theme::palette(ui));
+            draw(ui);
+        });
+        output.textures_delta.clear();
+        let shapes = output.shapes.into_iter().map(|clipped| clipped.shape);
+        (shapes.collect(), palette.expect("the UI runs once"))
+    }
+
+    fn drawn_in(shapes: &[egui::Shape], color: Color32) -> bool {
+        shapes.iter().any(|shape| match shape {
+            egui::Shape::Circle(circle) => circle.fill == color || circle.stroke.color == color,
+            egui::Shape::Rect(rect) => rect.fill == color || rect.stroke.color == color,
+            egui::Shape::Path(path) => {
+                path.fill == color
+                    || matches!(
+                        path.stroke.color,
+                        egui::epaint::ColorMode::Solid(solid) if solid == color
+                    )
+            }
+            egui::Shape::LineSegment { stroke, .. } => stroke.color == color,
+            egui::Shape::Vec(shapes) => drawn_in(shapes, color),
+            _ => false,
+        })
     }
 }

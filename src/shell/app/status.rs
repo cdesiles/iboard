@@ -100,7 +100,8 @@ impl IboardApp {
         let mut anchor: Option<Rect> = None;
         for meter in &meters {
             let detail = meter_detail(meter, now);
-            let response = widgets::meter_ring(ui, meter.share(), &meter.name, &detail);
+            let response =
+                widgets::meter_ring(ui, meter.share(), meter.over_pace(), &meter.name, &detail);
             clicked |= response.clicked();
             anchor = Some(anchor.map_or(response.rect, |rect| rect.union(response.rect)));
         }
@@ -394,7 +395,7 @@ fn meter_row(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) {
     let p = theme::palette(ui);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_3;
-        widgets::ring(ui, meter.share());
+        widgets::ring(ui, meter.share(), meter.over_pace());
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme::SPACE_1;
             ui.label(
