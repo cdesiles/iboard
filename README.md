@@ -148,6 +148,22 @@ has no Settings toggle; turn it on in the same file, then restart:
 enabled = false     # true: the Design panel and Draft design
 ```
 
+### Subscription usage
+
+The status bar's usage pill reads Copilot's own quota, not a cap typed in
+Settings. Its source is GitHub's internal endpoint
+`GET https://api.github.com/copilot_internal/user`, asked with the GitHub OAuth
+token opencode already stores (`$XDG_DATA_HOME/opencode/auth.json`, or
+`~/.local/share/opencode/auth.json`). It reports premium interactions, so the
+Copilot row reads `9,212 of 30,000 AI credits` with the `quota_reset_date`
+beside it.
+
+The endpoint is internal and undocumented, and may refuse the token or change
+its reply at any time. The board reads it off the UI thread at most every five
+minutes while the board shows; when the token, the network or the reply fails,
+the row falls back to the tokens the usage log counted, with no share, and
+never shows an earlier figure as current.
+
 ### Workspace
 
 Several projects can be seen as one board: each group is a board of its own

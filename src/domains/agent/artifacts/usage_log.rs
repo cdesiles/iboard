@@ -11,9 +11,7 @@ use chrono::{DateTime, Duration, NaiveDate, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::domains::agent::runtime::service::Session;
-use crate::domains::agent::runtime::{
-    Billing, Cap, Plan, Plans, Provider, Tokens, Window, provider_key, provider_name,
-};
+use crate::domains::agent::runtime::{Billing, Cap, Plan, Quota, Tokens, Window, provider_key};
 use crate::platform::files;
 
 /// How long a session stays in the log.
@@ -126,6 +124,8 @@ pub struct Meter {
     pub name: String,
     pub plan: Plan,
     pub consumed: Consumption,
+    /// The share, used, cap and unit the provider reports; it wins over a cap.
+    pub reported: Option<Quota>,
     /// When the plan's window ends, in UTC.
     pub reset: DateTime<Utc>,
     /// The window's runs, for its daily and model split.
@@ -135,8 +135,12 @@ pub struct Meter {
 }
 
 impl Meter {
-    /// The share of the cap the window used, or `None` with no known cap.
+    /// The share of the cap the window used, or `None` with no known cap: the
+    /// provider's own count first, then a cap the user declared.
     pub fn share(&self) -> Option<f32> {
+        if let Some(quota) = &self.reported {
+            return quota.share();
+        }
         match self.plan.cap? {
             Cap::Money(cap) if cap > 0.0 => Some((self.consumed.dollars(&self.plan) / cap) as f32),
             Cap::Tokens(cap) if cap > 0 => Some(self.consumed.tokens as f32 / cap as f32),
@@ -235,45 +239,9 @@ impl Meter {
     }
 }
 
-/// Every subscription plan, known or declared, with its window's use.
-pub fn subscription_meters(plans: &Plans, entries: &[Entry], now: DateTime<Utc>) -> Vec<Meter> {
-    let mut keys: Vec<String> = Provider::ALL
-        .iter()
-        .map(|provider| provider.key().to_string())
-        .collect();
-    for key in plans.overrides().keys() {
-        if !keys.contains(key) {
-            keys.push(key.clone());
-        }
-    }
-    keys.into_iter()
-        .filter_map(|key| {
-            let plan = plans.plan(&key);
-            if plan.billing != Billing::Subscription {
-                return None;
-            }
-            let start = plan.window.start(now);
-            let reset = plan.window.reset(now);
-            let runs: Vec<Entry> = entries
-                .iter()
-                .filter(|entry| {
-                    entry.provider.as_deref().map(provider_key).as_deref() == Some(key.as_str())
-                        && instant(&entry.ended).is_some_and(|ended| ended >= start && ended <= now)
-                })
-                .cloned()
-                .collect();
-            Some(Meter {
-                name: provider_name(&key),
-                consumed: Consumption::of(&runs, &key, &plan, now),
-                reset,
-                provider: key,
-                plan,
-                runs,
-                now,
-            })
-        })
-        .collect()
-}
+mod meters;
+
+pub use meters::{subscription_meters, subscription_meters_with};
 
 /// What a board's projects spent, as the log has it: today's and this week's
 /// metered dollars, and the last finished session's.
@@ -985,3 +953,5 @@ mod tests {
 
 #[cfg(test)]
 mod pace_tests;
+#[cfg(test)]
+mod quota_tests;

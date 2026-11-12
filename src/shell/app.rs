@@ -118,6 +118,9 @@ const RESCAN_EVERY: Duration = Duration::from_secs(2);
 /// How often the subscription meters read the usage log again.
 const METERS_EVERY: Duration = Duration::from_secs(30);
 
+/// How often Copilot's quota is asked of GitHub while the board shows.
+const QUOTA_EVERY: Duration = Duration::from_secs(5 * 60);
+
 /// On macOS the header bar doubles as the window's title bar (the native
 /// title is hidden and the content runs under the traffic lights).
 pub const UNIFIED_TITLEBAR: bool = cfg!(target_os = "macos");
@@ -406,6 +409,14 @@ struct Session {
     /// What the sessions running in the board's projects cost, as the feed
     /// last read it. A test sets it to show a run.
     live_spend: agent::spend::Live,
+    /// The quota GitHub last reported for Copilot, dropped when a read fails
+    /// so an old figure never reads as current.
+    quotas: Vec<agent::Quota>,
+    /// The quota read in the background, and when the last one landed.
+    quota_feed: Option<Job<Option<agent::Quota>>>,
+    quota_read: Option<Instant>,
+    /// Whether the board asks GitHub for its quotas; a test never does.
+    quota_live: bool,
 }
 
 impl Default for Session {
@@ -459,6 +470,10 @@ impl Default for Session {
             spend_feed: None,
             spend_read: None,
             live_spend: agent::spend::Live::default(),
+            quotas: Vec::new(),
+            quota_feed: None,
+            quota_read: None,
+            quota_live: false,
         }
     }
 }
@@ -529,6 +544,7 @@ impl IboardApp {
         app.plan_dir = files::cache_dir();
         app.usage_log_file = usage_log::path();
         app.refresh_usage();
+        app.session.quota_live = true;
         app.trash = Trash::System;
         // Likewise for the user configuration.
         app.config_file = settings::config_file();

@@ -101,7 +101,7 @@ fn plan_help(plan: &Plan) -> &'static str {
             "Pay as you go, against a cap you set: the log's dollars are money spent."
         }
         (Billing::Subscription, None) => {
-            "A subscription: its dollars are API-equivalent, never spend. Without a cap its share is unknown."
+            "A subscription: its dollars are API-equivalent, never spend. Without a cap or a provider report, its share is unknown."
         }
         (Billing::Subscription, Some(Cap::Money(_))) => {
             "A subscription: its dollars are API-equivalent, never spend. The cap is the money it includes."

@@ -300,7 +300,7 @@ fn detail(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) -> bool {
             });
             days(ui, meter, now);
             models(ui, meter);
-            if meter.plan.cap.is_none() {
+            if meter.plan.cap.is_none() && meter.reported.is_none() {
                 let link = RichText::new("Set a cap").font(theme::meta());
                 if ui.link(link).clicked() {
                     settings = true;
@@ -310,8 +310,17 @@ fn detail(ui: &mut egui::Ui, meter: &Meter, now: DateTime<Utc>) -> bool {
     settings
 }
 
-/// `3.1M of 5M tokens`, `$6.20 of $10.00`, or `3.1M tokens burnt`.
+/// `9,212 of 30,000 AI credits · from GitHub`, `3.1M of 5M tokens`,
+/// `$6.20 of $10.00`, or `3.1M tokens burnt`.
 fn used_line(meter: &Meter) -> String {
+    if let Some(quota) = &meter.reported {
+        return format!(
+            "{} of {} {} · from GitHub",
+            thousands(quota.used as usize),
+            thousands(quota.cap as usize),
+            quota.unit
+        );
+    }
     let tokens = thousands(meter.consumed.tokens as usize);
     match meter.plan.cap {
         Some(Cap::Tokens(cap)) => format!("{tokens} of {} tokens", thousands(cap as usize)),

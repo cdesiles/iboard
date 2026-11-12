@@ -431,6 +431,42 @@ fn a_subscription_with_no_cap_reads_usage_and_its_tokens() {
     harness.get_by_label("3,100,000 tokens burnt");
 }
 
+/// Copilot's share, used and cap come from GitHub's report, in AI credits,
+/// with its reset date and no cap to type.
+#[test]
+fn a_copilot_quota_reports_ai_credits_and_its_reset() {
+    let dir = scratch_dir("subscription-copilot-quota");
+    std::fs::create_dir_all(dir.join("issues/todo")).unwrap();
+    let app = IboardApp::from_located(discovery::locate(&dir).unwrap());
+    let mut harness = kittest(app);
+    let app = &mut harness.state_mut().1;
+    app.prefs
+        .usage
+        .set("claude", plan(Billing::Metered, Window::Week, None));
+    app.session.quotas = vec![crate::agent::Quota {
+        provider: "copilot".to_string(),
+        used: 9_193,
+        cap: 30_000,
+        unit: "AI credits",
+        reset: Utc::now() + chrono::Duration::days(19),
+    }];
+    log_run(app, "copilot", 500, 3.0);
+    harness.run_steps(2);
+
+    harness.get_by_label_contains("Copilot · 31% of the month used");
+    harness
+        .get_all_by_label_contains("Copilot · 31%")
+        .last()
+        .unwrap()
+        .click();
+    harness.run_steps(2);
+    harness.get_by_label("9,193 of 30,000 AI credits · from GitHub");
+    assert!(
+        harness.query_all_by_label("Set a cap").next().is_none(),
+        "a reported quota needs no cap"
+    );
+}
+
 /// A board with no subscription plan shows no pill, and a metered plan keeps
 /// its dollars out of it.
 #[test]

@@ -66,6 +66,7 @@ impl IboardApp {
             self.poll_stats(),
             self.poll_plan(),
             self.poll_spend(),
+            self.poll_quota(),
         ];
         if let Some(after) = wake.into_iter().flatten().min() {
             ctx.request_repaint_after(after);
@@ -106,6 +107,41 @@ impl IboardApp {
         }
         self.session.spend_feed = Some(feed);
         Some(agent::spend::EVERY)
+    }
+
+    /// Copilot's quota, asked of GitHub off the UI thread every few minutes
+    /// while the window shows. A failed read leaves no figure at all, so the
+    /// meter falls back on the log instead of an old number.
+    fn poll_quota(&mut self) -> Option<Duration> {
+        if !self.session.quota_live {
+            self.session.quota_feed = None;
+            return None;
+        }
+        if let Some(feed) = self.session.quota_feed.take() {
+            match feed.poll() {
+                Poll::Waiting => {
+                    self.session.quota_feed = Some(feed);
+                    return Some(crate::job::POLL_EVERY);
+                }
+                Poll::Ready(quota) => self.session.quotas = quota.into_iter().collect(),
+                Poll::Lost => self.session.quotas.clear(),
+            }
+            self.session.quota_read = Some(Instant::now());
+            return Some(super::QUOTA_EVERY);
+        }
+        let left = self
+            .session
+            .quota_read
+            .map(|read| super::QUOTA_EVERY.saturating_sub(read.elapsed()));
+        if left.is_some_and(|left| !left.is_zero()) {
+            return left;
+        }
+        let feed = Job::spawn(agent::quotas::copilot);
+        if let Some(ctx) = self.ctx.clone() {
+            feed.wake(move || ctx.request_repaint());
+        }
+        self.session.quota_feed = Some(feed);
+        Some(super::QUOTA_EVERY)
     }
 
     /// The dialog up owns the keyboard: Settings, which `⌘,` closes as it

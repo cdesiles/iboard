@@ -83,7 +83,12 @@ impl IboardApp {
     /// knows one.
     fn meter_rings(&mut self, ui: &mut egui::Ui) {
         let now = Utc::now();
-        let meters = usage_log::subscription_meters(&self.prefs.usage, &self.usage_entries, now);
+        let meters = usage_log::subscription_meters_with(
+            &self.prefs.usage,
+            &self.usage_entries,
+            now,
+            &self.session.quotas,
+        );
         let id = super::usage_popover::popup_id();
         if meters.is_empty() {
             egui::Popup::close_id(ui.ctx(), id);
