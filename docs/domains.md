@@ -75,13 +75,13 @@ The numbers in the last column are the extraction tickets in `issues/`.
 | **agent** | `Agent`, `AgentConfig`, `ReviewMode`, `Verdict`, `Report`, `Leash`, `Challenge`, `Refinement`, the build queue, Ask, `Plan`, `Draft`, `Engine`, prompts, `BuildLog`, review sidecars | `src/domains/agent/{runtime,workflows,artifacts}` (done) |
 | **authoring** | `Sheet`, `Section`, checklist progress, word count, `Prose`/`Block`, `Diff`/`File`/`Hunk`/`Line`; the draft and parked notes of `new_issue` | `src/domains/authoring/` (done) |
 | **workspace** | `Workspace`, `Group`, `WorkspaceSection`, `Order`, the group draft, a project's repo paths | `src/domains/workspace/` (done) |
-| **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, the tag, the changelog note and the push | `src/domains/delivery/` (done) |
+| **delivery** | `Release`, `ReleaseChoices`, `ReleaseSection`, `Update`, the tag, the changelog note and the push, the app bundle and its staged update | `src/domains/delivery/` (done) |
 | **insights** | `Snapshot`, `Measures`, `Cycle`, `Trend`, the release line, `Agenda`/`DayCommit`/`Range` and the watch | `src/domains/insights/` (done) |
 | **onboarding** | the folder a board lives in: its name from the project `iboard.toml`, the standard columns it is missing, their `.gitkeep` and `.gitignore` entries, and the `init` layout that creates them | `src/domains/onboarding/` (done); the dialog and its prompt stay shell |
 | **design** | `DesignSystem`, `Token`, `Theme`, the `Catalog` and its pages, components, assets, CSS, Rust tokens, scaffold and validation | `src/domains/design/` (done); `design_ui` stays shell; `design/` on disk stays the shared format |
 | **preferences** | `Preferences`, `UserConfig`, `Section`, appearance, delete confirmation, notifications, label colours and presets, splits, filter suggestions, the idesign switch | `src/domains/preferences/` (done); the bell stays shell |
 | **shell** | `App`, screen, frame, dialog and widget vocabulary, `Theme`, `Intent`, `Action`, the keymap, `CardFacts` and the other view models | `src/shell/` (done); `settings_ui`, `design_ui` and `pasteboard` stay at the crate root and are shell by the same rule |
-| **platform** | `Job`/`Cancel`, `Process`, `Git`/`Batch`, `File` and atomic writes, the markdown structure, paths/times/numbers formatting | `src/platform/` (done) |
+| **platform** | `Job`/`Cancel`, `Process`, `Git`/`Batch`, `File` and atomic writes, `download` through curl, the markdown structure, paths/times/numbers formatting | `src/platform/` (done) |
 
 ## Domain edges
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New
+#### Delivery
+- Install iboard from a GitHub release, and update it from the status bar
+
 ## v0.4.0 — 11 Nov 2026
 
 ### New

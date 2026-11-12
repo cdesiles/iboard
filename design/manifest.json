@@ -47,6 +47,7 @@
     "components/TextField/README.md",
     "components/Thinking/README.md",
     "components/TitleSettings/README.md",
+    "components/UpdateDialog/README.md",
     "components/UsageMeter/README.md",
     "components/WelcomeScreen/README.md",
     "components/bundle.css",
@@ -279,6 +280,11 @@
       "name": "TitleSettings",
       "group": "AI review",
       "summary": "The Titles tab of the Settings dialog: which engine names new issues from their description."
+    },
+    {
+      "name": "UpdateDialog",
+      "group": "Navigation",
+      "summary": "The modal behind the status bar's newer-release offer: download the GitHub release, then restart iboard on the same project."
     },
     {
       "name": "UsageMeter",

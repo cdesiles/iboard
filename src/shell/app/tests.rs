@@ -41,6 +41,7 @@ mod settings;
 mod splitting;
 mod stats;
 mod unsaved;
+mod update;
 mod welcome;
 mod workspace;
 use crate::shell::app::filter_bar::filter_id;

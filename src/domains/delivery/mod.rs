@@ -14,6 +14,8 @@ use crate::platform::git;
 
 mod note;
 
+pub mod update;
+
 pub use note::{Kind, Note, note, opening, preamble_prompt};
 
 /// The note file at the project root, newest release first.

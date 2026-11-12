@@ -38,6 +38,7 @@ impl IboardApp {
                     self.save_pill(ui, path);
                 }
                 self.meter_rings(ui);
+                self.update_item(ui);
                 if matches!(screen, Screen::Board) {
                     self.board_spend(ui);
                 }

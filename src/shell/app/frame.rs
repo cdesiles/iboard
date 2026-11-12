@@ -67,6 +67,7 @@ impl IboardApp {
             self.poll_plan(),
             self.poll_spend(),
             self.poll_quota(),
+            self.poll_update(),
         ];
         if let Some(after) = wake.into_iter().flatten().min() {
             ctx.request_repaint_after(after);
@@ -148,6 +149,18 @@ impl IboardApp {
     /// opened it, Groups, Commits, the project menu, Project stats, Ask AI,
     /// NewIssueModal or the refinement. True when one does.
     fn modal_keys(&mut self, ctx: &egui::Context) -> bool {
+        if self.update.open {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
+                self.update.open = false;
+            } else if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Enter)) {
+                if super::update::update_secondary_focused(ctx) {
+                    self.update_secondary();
+                } else {
+                    self.update_confirm();
+                }
+            }
+            return true;
+        }
         if self.settings.is_some() {
             if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma))
                 && self
@@ -317,6 +330,7 @@ impl IboardApp {
             || self.session.ask_draft.is_some()
             || self.composer_open()
             || self.refinement_shown()
+            || self.update.open
     }
 
     /// The confirmation owns Escape and Enter while it is up, and no other

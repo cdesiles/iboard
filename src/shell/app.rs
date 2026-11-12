@@ -93,6 +93,7 @@ mod split;
 mod stats;
 mod status;
 mod traffic_lights;
+mod update;
 mod usage_popover;
 mod welcome;
 mod windows;
@@ -168,6 +169,8 @@ enum Leave {
     Open(all::Target),
     /// Closing the window.
     Quit,
+    /// Installing the staged release: the app quits and reopens on this board.
+    Update,
 }
 
 /// The answer to "Save changes to … ?" when leaving with unsaved edits.
@@ -298,6 +301,8 @@ pub struct IboardApp {
     config_checked: Instant,
     /// The installed agents and their models, for the settings dialog.
     catalog: Catalog,
+    /// The newer GitHub release this copy may install, and its download.
+    update: update::Updater,
     /// Where a pasted image comes from: the pasteboard in the app, none in
     /// tests unless they hold one.
     clipboard: images::Clipboard,
@@ -567,6 +572,7 @@ impl IboardApp {
         app.reload_project_order(&projects);
         app.order_dir = workspace::order::dir();
         app.catalog = Catalog::probing();
+        app.update = update::Updater::new();
         let first = app.workspace.as_ref().and_then(|w| w.groups.first());
         if let (true, Some(first)) = (all, first.map(|group| group.name.clone())) {
             app.open_group(&first);
@@ -662,6 +668,7 @@ impl IboardApp {
             config_stamp: None,
             config_checked: Instant::now(),
             catalog: Catalog::default(),
+            update: update::Updater::default(),
             clipboard: images::Clipboard::Held(None),
         };
         app.session.scanned = Some(stamps);
@@ -904,6 +911,7 @@ impl IboardApp {
         self.enrichment_window(ui);
         self.commits_window(ui);
         self.release_window(ui);
+        self.update_window(ui);
         self.new_issue_modal(ui);
         widgets::settle_modals(ui.ctx());
         self.flush_pending_front(ui.ctx());

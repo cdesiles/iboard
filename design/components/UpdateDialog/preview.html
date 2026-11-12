@@ -1,0 +1,41 @@
+<!-- @dsCard group="Navigation" height=430 subtitle="The status bar offers a newer release; the modal downloads it, then restarts iboard on the same project" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>UpdateDialog</title></head>
+<body>
+<div class="ib-pad ib-stack" style="gap:16px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px;align-items:start">
+
+<div class="ib-stack"><span class="ib-cap">1 · A newer release exists: the status bar offers it, before the usage pill</span>
+<div class="ib-statusbar" style="justify-content:flex-end"><button class="ib-btn ib-btn--ghost">Update to 0.5.0</button><span class="ib-pill ib-pill--saved">62%</span></div>
+<div class="ib-scrim" style="min-height:280px">
+<section class="ib-confirm" role="alertdialog" aria-modal="true" aria-labelledby="u1t">
+<h2 class="ib-confirm__title" id="u1t">Update iboard?</h2>
+<div class="ib-confirm__subject"><b>iboard 0.5.0</b><span>You're on 0.4.0.</span></div>
+<p class="ib-confirm__body">It replaces this copy and reopens it on this project. Your issues and settings stay where they are.</p>
+<div class="ib-confirm__foot"><button class="ib-btn">Later <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--primary is-focus">Download <span class="ib-btn__key">↩</span></button></div>
+</section></div></div>
+
+<div class="ib-stack"><span class="ib-cap">2 · Downloading: the primary says so and the secondary cancels; closing the dialog lets it finish</span>
+<div class="ib-scrim" style="min-height:280px">
+<section class="ib-confirm" role="alertdialog" aria-modal="true" aria-labelledby="u2t">
+<h2 class="ib-confirm__title" id="u2t">Update iboard?</h2>
+<div class="ib-confirm__subject"><b>iboard 0.5.0</b><span>You're on 0.4.0.</span></div>
+<p class="ib-confirm__body">Downloading iboard 0.5.0…</p>
+<div class="ib-confirm__foot"><button class="ib-btn">Cancel</button><button class="ib-btn ib-btn--primary" disabled>Downloading…</button></div>
+</section></div></div>
+
+<div class="ib-stack"><span class="ib-cap">3 · Staged: restart replaces the bundle and reopens the same project</span>
+<div class="ib-statusbar" style="justify-content:flex-end"><button class="ib-btn ib-btn--ghost">Restart to update</button><span class="ib-pill ib-pill--saved">62%</span></div>
+<div class="ib-scrim" style="min-height:280px">
+<section class="ib-confirm" role="alertdialog" aria-modal="true" aria-labelledby="u3t">
+<h2 class="ib-confirm__title" id="u3t">Update iboard?</h2>
+<div class="ib-confirm__subject"><b>iboard 0.5.0</b><span>You're on 0.4.0.</span></div>
+<p class="ib-confirm__body">iboard 0.5.0 is ready. Restarting replaces this copy and reopens it on this project.</p>
+<div class="ib-confirm__foot"><button class="ib-btn">Later <span class="ib-btn__key">esc</span></button><button class="ib-btn ib-btn--primary is-focus">Restart to update <span class="ib-btn__key">↩</span></button></div>
+</section></div></div>
+
+</div>
+</div>
+</body>
+</html>

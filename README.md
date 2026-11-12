@@ -48,6 +48,22 @@ iboard --all --list        # print every workspace project's board, merged
 One iboard runs at a time: when it is already open, `iboard` brings its window
 forward, and `iboard ~/code/my-project` shows that project in it.
 
+## Install
+
+Download `iboard.app.zip` from the [latest release](https://github.com/cdesiles/iboard/releases/latest),
+unzip it, and move `iboard.app` to `~/Applications`. A first install needs no toolchain,
+just macOS 12 or later:
+
+```sh
+curl -L https://github.com/cdesiles/iboard/releases/latest/download/iboard.app.zip -o /tmp/iboard.app.zip
+ditto -x -k /tmp/iboard.app.zip ~/Applications
+open ~/Applications/iboard.app
+```
+
+The app checks GitHub for a newer release when it opens and every six hours. When one exists,
+the status bar offers `Update to x.y.z`: it downloads the bundle, replaces the running copy and
+reopens it on the same project.
+
 ## Building from sources
 
 From this repository:

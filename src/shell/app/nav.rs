@@ -73,6 +73,12 @@ impl IboardApp {
                 self.closing = true;
                 self.send_close = true;
             }
+            Leave::Update => {
+                if self.relaunch_update() {
+                    self.closing = true;
+                    self.send_close = true;
+                }
+            }
         }
     }
 

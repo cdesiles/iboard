@@ -8,6 +8,8 @@ A 24pt strip at the bottom of the window in `meta` (Inter 12/16), `ink-muted` on
 | Reader | The file path · "modified 15d ago" · checklist progress (a 48pt `status-done` meter and "1/3 done"), or the word count when there are no checkboxes. The sheet no longer repeats any of these. | The usage pill at rest |
 | Editor | The file path | The usage pill, then the save state pill (Unsaved, Saved, the write error) |
 
+A newer release adds one item before the usage pill, on every screen; see [Update offer](#update-offer).
+
 - On the board, a click on the issues folder copies its full path. In the Reader and the Editor, a click on the file path copies the file's full path. Hovering says "Click to copy the full path"; after the click the tooltip says "Copied the full path" until the pointer leaves.
 - Separators are `·` in `ink-faint`.
 - No total issue count on the board: the column heads already count.
@@ -22,6 +24,15 @@ On the board only, the right side starts with what the project spent. A group bo
 - **Only metered dollars count.** A subscription run's API-equivalent is never added, so a board whose runs all came out of a subscription shows `$0.00`.
 - **The colour** is `ink` once anything was spent, `ink-muted` at `$0.00`.
 - **The tooltip** holds the week and the last finished session: `This week · $3.10` then `Last session · $0.42`.
+
+## Update offer
+
+When a newer GitHub release exists, one more item sits between the key hints and the usage pill, on every screen that shows the bar: a `Ghost` text button in `meta`.
+
+- **At rest** it reads `Update to 0.5.0` in `ink-muted`, turning `ink` under the pointer; no edge, no colour, no animation.
+- **While the download runs** it reads `Downloading update…`; once the bundle is staged, `Restart to update`. A click always opens the UpdateDialog, which owns the states and the restart.
+- **Only an installed app** shows it: a copy run from a checkout has no bundle to replace.
+- It does not take the usage pill's place: the pill stays the rightmost item on the board and Reader, and the save state after it in the Editor.
 
 ## Subscription meters
 
