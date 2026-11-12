@@ -1,0 +1,3 @@
+[release]
+prepare = 'make version V="$IBOARD_VERSION"'
+files = ["Cargo.toml", "Cargo.lock"]
