@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.1 — 12 Nov 2026
+
+### Fixed
+- Tests do not read the OS Reduce motion setting
+
 ## v0.5.0 — 12 Nov 2026
 
 Added a usage screen charting every provider's daily spend, one status-bar usage pill, and background Claude builds that ask from the board and survive a restart.
@@ -105,4 +110,3 @@ Added a usage screen charting every provider's daily spend, one status-bar usage
 ## v0.1-v0.3 — <11 Nov 2026
 
 The dark age. Bring more 500 food and build 2 buildings.
-
