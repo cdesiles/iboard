@@ -85,9 +85,14 @@ html{background:var(--bg)}
     </figure>
 
     <figure class="pv-fig">
-      <figcaption class="ib-cap">The status bar popover once the full screen exists: it keeps the quick answer (will I make it to the reset?) and loses the day chart and model split. Rows no longer open. The foot gains a link to the screen.</figcaption>
-      <div class="ib-usage pv-pop" role="group" aria-label="Subscription usage, proposed">
-        <div class="ib-usage__head"><h3 class="ib-usage__title">Subscription usage</h3></div>
+      <figcaption class="ib-cap">The status bar popover once the full screen exists: it keeps the quick answer (what did the board spend today, and will I make it to the reset?) and loses the day chart and model split. Rows no longer open. The foot gains a link to the screen.</figcaption>
+      <div class="ib-usage pv-pop" role="group" aria-label="Usage, proposed">
+        <div class="ib-usage__head"><h3 class="ib-usage__title">Usage</h3></div>
+        <div class="ib-usage__spend">
+          <span class="ib-usage__name">Today</span>
+          <span class="ib-usage__spend__fig">$28.61</span>
+          <span class="ib-usage__spend__sub"><span>This week · $142.30</span><span>Last session · $12.40</span></span>
+        </div>
         <ul class="ib-usage__list">
           <li><div class="ib-usage__sum">
             <span class="ib-usage__ring"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
@@ -104,7 +109,7 @@ html{background:var(--bg)}
             <span class="ib-usage__sub"><span>Under pace</span><span class="ib-usage__end"><span>resets in 19d</span></span></span>
           </div></li>
         </ul>
-        <div class="ib-usage__foot"><span class="ib-usage__legend"><i></i>Even pace</span><span class="ib-usage__links"><button class="ib-usage__link" type="button" data-toast="Opens Usage">Full usage</button><button class="ib-usage__link" type="button" data-toast="Opens Settings › AI">Settings › AI</button></span></div>
+        <div class="ib-usage__foot"><span class="ib-usage__links"><button class="ib-usage__link" type="button" data-toast="Opens Usage">Full usage</button><button class="ib-usage__link" type="button" data-toast="Opens Settings › AI">Settings › AI</button></span></div>
       </div>
     </figure>
   </div>
@@ -361,7 +366,7 @@ function pillHTML() {
   const p = providers.find(x => x.plan);
   if (!p) return "";
   const over = p.plan.share > p.plan.pace;
-  return '<button class="ib-usage-trigger' + (over ? " is-warn" : "") + '" type="button" aria-label="Subscription usage: ' + p.name + " " + Math.round(p.plan.share * 100) + '% of the month used" data-toast="Opens the usage popover"><svg class="ib-ring' + (over ? " is-warn" : "") + '" viewBox="0 0 14 14" aria-hidden="true" style="--p:' + p.plan.share + '"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">' + Math.round(p.plan.share * 100) + "%</span></button>";
+  return '<button class="ib-usage-trigger' + (over ? " is-warn" : "") + '" type="button" aria-label="' + p.name + " " + Math.round(p.plan.share * 100) + '% of the month used" data-toast="Opens the usage popover"><span class="ib-usage-trigger__meter"><svg class="ib-ring' + (over ? " is-warn" : "") + '" viewBox="0 0 14 14" aria-hidden="true" style="--p:' + p.plan.share + '"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">' + Math.round(p.plan.share * 100) + "%</span></span></button>";
 }
 
 function render() {

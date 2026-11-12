@@ -1,4 +1,4 @@
-<!-- @dsCard group="Navigation" height=1340 subtitle="The status bar's usage trigger and the popover behind it: one pill, pace per provider, daily tokens and models on demand" -->
+<!-- @dsCard group="Navigation" height=1340 subtitle="The bar's one trigger — the board's spend, then the closest window — and the popover behind it: Building, the week, and one row of pace per window" -->
 <!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>UsageMeter</title>
@@ -14,8 +14,13 @@
 </head>
 <body>
 <div class="um-page">
-<figure class="um-fig"><figcaption class="ib-cap">Caps set</figcaption><div class="um-stage" style="--h:340px"><div class="ib-usage" role="dialog" aria-label="Subscription usage">
-    <div class="ib-usage__head"><h3 class="ib-usage__title">Subscription usage</h3></div>
+<figure class="um-fig"><figcaption class="ib-cap">At rest · one trigger, its popover open</figcaption><div class="um-stage" style="--h:380px"><div class="ib-usage" role="dialog" aria-label="Usage">
+    <div class="ib-usage__head"><h3 class="ib-usage__title">Usage</h3></div>
+    <div class="ib-usage__spend">
+      <span class="ib-usage__name">Today</span>
+      <span class="ib-usage__spend__fig">$28.61</span>
+      <span class="ib-usage__spend__sub"><span>This week · $142.30</span><span>Last session · $12.40</span></span>
+    </div>
     <ul class="ib-usage__list">
       <li><div class="ib-usage__sum">
           <span class="ib-usage__ring"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
@@ -34,10 +39,44 @@
         </div>
         </li>
     </ul>
-    <div class="ib-usage__foot"><span class="ib-usage__legend"><i></i>Even pace</span><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
-  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><span>Building · $0.03</span><button class="ib-usage-trigger is-warn" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Subscription usage: Claude.ai 62% of the week used, over pace"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">62%</span><span class="ib-usage-tip" role="tooltip"><b>Claude.ai</b><span>62% of the week used · resets in 3d</span><b>Copilot</b><span>31% of the month used · resets in 19d</span></span></button></span></div></div></figure>
-<figure class="um-fig"><figcaption class="ib-cap">No cap set · today's state</figcaption><div class="um-stage" style="--h:340px"><div class="ib-usage" role="dialog" aria-label="Subscription usage">
-    <div class="ib-usage__head"><h3 class="ib-usage__title">Subscription usage</h3></div>
+    <div class="ib-usage__foot"><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
+  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Today $28.61, this week $142.30 · Claude.ai 62% of the week used, over pace, resets in 3d · Copilot 31% of the month used, resets in 19d"><span class="ib-usage-trigger__spend">$28.61</span><span class="ib-usage-trigger__meter"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">62%</span></span></button></span></div></div></figure>
+
+<figure class="um-fig"><figcaption class="ib-cap">Building · the bar keeps quiet, the popover names it</figcaption><div class="um-stage" style="--h:380px"><div class="ib-usage" role="dialog" aria-label="Usage">
+    <div class="ib-usage__head"><h3 class="ib-usage__title">Usage</h3></div>
+    <div class="ib-usage__spend">
+      <span class="ib-usage__name">Building</span>
+      <span class="ib-usage__spend__fig">$28.61</span>
+      <span class="ib-usage__spend__sub"><span>This week · $142.30</span><span>Last session · $12.40</span></span>
+    </div>
+    <ul class="ib-usage__list">
+      <li><div class="ib-usage__sum">
+          <span class="ib-usage__ring"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
+          <span class="ib-usage__name">Claude.ai</span>
+          <span class="ib-usage__figure">62%</span>
+          <span class="ib-usage__bar"><div class="ib-gauge is-warn" role="img" aria-label="62% of the week used, an even pace is 50%" style="--p:0.62;--t:0.5"><span class="ib-gauge__fill"></span><span class="ib-gauge__tick"></span></div></span>
+          <span class="ib-usage__sub"><span class="is-warn">Over pace · cap by Sat</span><span class="ib-usage__end"><span>resets in 3d</span></span></span>
+        </div>
+        </li>
+      <li><div class="ib-usage__sum">
+          <span class="ib-usage__ring"><svg class="ib-ring" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.307"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
+          <span class="ib-usage__name">Copilot</span>
+          <span class="ib-usage__figure">31%</span>
+          <span class="ib-usage__bar"><div class="ib-gauge" role="img" aria-label="31% of the month used, an even pace is 38%" style="--p:0.307;--t:0.38"><span class="ib-gauge__fill"></span><span class="ib-gauge__tick"></span></div></span>
+          <span class="ib-usage__sub"><span>Under pace</span><span class="ib-usage__end"><span>resets in 19d</span></span></span>
+        </div>
+        </li>
+    </ul>
+    <div class="ib-usage__foot"><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
+  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Building $28.61, this week $142.30 · Claude.ai 62% of the week used, over pace, resets in 3d · Copilot 31% of the month used, resets in 19d"><span class="ib-usage-trigger__spend">$28.61</span><span class="ib-usage-trigger__meter"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">62%</span></span></button></span></div></div></figure>
+
+<figure class="um-fig"><figcaption class="ib-cap">No cap set · today's state</figcaption><div class="um-stage" style="--h:380px"><div class="ib-usage" role="dialog" aria-label="Usage">
+    <div class="ib-usage__head"><h3 class="ib-usage__title">Usage</h3></div>
+    <div class="ib-usage__spend">
+      <span class="ib-usage__name">Today</span>
+      <span class="ib-usage__spend__fig">$0.00</span>
+      <span class="ib-usage__spend__sub"><span>This week · $0.00</span><span></span></span>
+    </div>
     <ul class="ib-usage__list">
       <li><div class="ib-usage__sum">
           <span class="ib-usage__ring"><svg class="ib-ring is-unknown" viewBox="0 0 14 14" aria-hidden="true" style="--p:0"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
@@ -56,10 +95,16 @@
         </div>
         </li>
     </ul>
-    <div class="ib-usage__foot"><span></span><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
-  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><span>Building · $0.03</span><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Subscription usage: no cap set"><svg class="ib-ring is-unknown" viewBox="0 0 14 14" aria-hidden="true" style="--p:0"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span>Usage</span><span class="ib-usage-tip" role="tooltip"><b>Claude.ai</b><span>No cap set · 3.1M tokens this week</span><b>Copilot</b><span>No cap set · 600K tokens this month</span></span></button></span></div></div></figure>
-<figure class="um-fig"><figcaption class="ib-cap">Dark</figcaption><div class="um-stage" data-theme="dark" style="--h:340px"><div class="ib-usage" role="dialog" aria-label="Subscription usage">
-    <div class="ib-usage__head"><h3 class="ib-usage__title">Subscription usage</h3></div>
+    <div class="ib-usage__foot"><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
+  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Today $0.00, this week $0.00 · no cap set"><span class="ib-usage-trigger__spend is-zero">$0.00</span><span class="ib-usage-trigger__meter"><svg class="ib-ring is-unknown" viewBox="0 0 14 14" aria-hidden="true" style="--p:0"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span>Usage</span></span></button></span></div></div></figure>
+
+<figure class="um-fig"><figcaption class="ib-cap">Dark</figcaption><div class="um-stage" data-theme="dark" style="--h:380px"><div class="ib-usage" role="dialog" aria-label="Usage">
+    <div class="ib-usage__head"><h3 class="ib-usage__title">Usage</h3></div>
+    <div class="ib-usage__spend">
+      <span class="ib-usage__name">Today</span>
+      <span class="ib-usage__spend__fig">$28.61</span>
+      <span class="ib-usage__spend__sub"><span>This week · $142.30</span><span>Last session · $12.40</span></span>
+    </div>
     <ul class="ib-usage__list">
       <li><div class="ib-usage__sum">
           <span class="ib-usage__ring"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
@@ -78,12 +123,26 @@
         </div>
         </li>
     </ul>
-    <div class="ib-usage__foot"><span class="ib-usage__legend"><i></i>Even pace</span><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
-  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><span>Building · $0.03</span><button class="ib-usage-trigger is-warn" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Subscription usage: Claude.ai 62% of the week used, over pace"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">62%</span><span class="ib-usage-tip" role="tooltip"><b>Claude.ai</b><span>62% of the week used · resets in 3d</span><b>Copilot</b><span>31% of the month used · resets in 19d</span></span></button></span></div></div></figure>
-<figure class="um-fig"><figcaption class="ib-cap">Hover on the trigger</figcaption><div class="um-stage" style="--h:150px"><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><span>Building · $0.03</span><button class="ib-usage-trigger is-warn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Subscription usage: Claude.ai 62% of the week used, over pace"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">62%</span><span class="ib-usage-tip" style="display:block" role="tooltip"><b>Claude.ai</b><span>62% of the week used · resets in 3d</span><b>Copilot</b><span>31% of the month used · resets in 19d</span></span></button></span></div></div></figure>
-<figure class="um-fig"><figcaption class="ib-cap">Hover, no cap set</figcaption><div class="um-stage" style="--h:150px"><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><span>Building · $0.03</span><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Subscription usage: no cap set"><svg class="ib-ring is-unknown" viewBox="0 0 14 14" aria-hidden="true" style="--p:0"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span>Usage</span><span class="ib-usage-tip" style="display:block" role="tooltip"><b>Claude.ai</b><span>No cap set · 3.1M tokens this week</span><b>Copilot</b><span>No cap set · 600K tokens this month</span></span></button></span></div></div></figure>
-<figure class="um-fig"><figcaption class="ib-cap">Two windows · Claude.ai session and week</figcaption><div class="um-stage" style="--h:360px"><div class="ib-usage" role="dialog" aria-label="Subscription usage">
-    <div class="ib-usage__head"><h3 class="ib-usage__title">Subscription usage</h3></div>
+    <div class="ib-usage__foot"><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
+  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Today $28.61, this week $142.30 · Claude.ai 62% of the week used, over pace, resets in 3d · Copilot 31% of the month used, resets in 19d"><span class="ib-usage-trigger__spend">$28.61</span><span class="ib-usage-trigger__meter"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">62%</span></span></button></span></div></div></figure>
+
+<figure class="um-fig"><figcaption class="ib-cap">A board with no plan window: the spend alone, and the way to Full usage</figcaption><div class="um-stage" style="--h:240px"><div class="ib-usage" role="dialog" aria-label="Usage">
+    <div class="ib-usage__head"><h3 class="ib-usage__title">Usage</h3></div>
+    <div class="ib-usage__spend">
+      <span class="ib-usage__name">Today</span>
+      <span class="ib-usage__spend__fig">$28.61</span>
+      <span class="ib-usage__spend__sub"><span>This week · $142.30</span><span>Last session · $12.40</span></span>
+    </div>
+    <div class="ib-usage__foot"><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
+  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Today $28.61, this week $142.30, last session $12.40"><span class="ib-usage-trigger__spend">$28.61</span></button></span></div></div></figure>
+
+<figure class="um-fig"><figcaption class="ib-cap">Two windows · Claude.ai session and week</figcaption><div class="um-stage" style="--h:380px"><div class="ib-usage" role="dialog" aria-label="Usage">
+    <div class="ib-usage__head"><h3 class="ib-usage__title">Usage</h3></div>
+    <div class="ib-usage__spend">
+      <span class="ib-usage__name">Today</span>
+      <span class="ib-usage__spend__fig">$28.61</span>
+      <span class="ib-usage__spend__sub"><span>This week · $142.30</span><span>Last session · $12.40</span></span>
+    </div>
     <ul class="ib-usage__list">
       <li><div class="ib-usage__sum">
           <span class="ib-usage__ring"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
@@ -102,8 +161,25 @@
         </div>
         </li>
     </ul>
-    <div class="ib-usage__foot"><span class="ib-usage__legend"><i></i>Even pace</span><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
-  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><span>Building · $0.03</span><button class="ib-usage-trigger is-warn" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Subscription usage: Claude.ai session 62% used, over pace"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">62%</span><span class="ib-usage-tip" role="tooltip"><b>Claude.ai · Session</b><span>62% of the session used · resets in 2h</span><b>Claude.ai · Week</b><span>31% of the week used · resets in 4d</span></span></button></span></div></div></figure>
+    <div class="ib-usage__foot"><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
+  </div><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Today $28.61, this week $142.30 · Claude.ai session 62% used, over pace, resets in 2h · Claude.ai week 31% used, resets in 4d"><span class="ib-usage-trigger__spend">$28.61</span><span class="ib-usage-trigger__meter"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">62%</span></span></button></span></div></div></figure>
+
+<figure class="um-fig"><figcaption class="ib-cap">Reader and Editor: no spend on the bar, the pill alone</figcaption><div class="um-stage" style="--h:290px"><div class="ib-usage" role="dialog" aria-label="Usage">
+    <div class="ib-usage__head"><h3 class="ib-usage__title">Usage</h3></div>
+    <ul class="ib-usage__list">
+      <li><div class="ib-usage__sum">
+          <span class="ib-usage__ring"><svg class="ib-ring" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.307"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg></span>
+          <span class="ib-usage__name">Copilot</span>
+          <span class="ib-usage__figure">31%</span>
+          <span class="ib-usage__bar"><div class="ib-gauge" role="img" aria-label="31% of the month used, an even pace is 38%" style="--p:0.307;--t:0.38"><span class="ib-gauge__fill"></span><span class="ib-gauge__tick"></span></div></span>
+          <span class="ib-usage__sub"><span>Under pace</span><span class="ib-usage__end"><span>resets in 19d</span></span></span>
+        </div>
+        </li>
+    </ul>
+    <div class="ib-usage__foot"><span class="ib-usage__links"><button class="ib-usage__link" type="button">Full usage</button><button class="ib-usage__link" type="button">Settings › AI</button></span></div>
+  </div><div class="ib-statusbar"><span class="um-path">todo/ai-assist.md</span><span class="um-right"><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="true" aria-label="Copilot 31% of the month used, resets in 19d"><span class="ib-usage-trigger__meter"><svg class="ib-ring" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.307"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">31%</span></span></button></span></div></div></figure>
+
+<figure class="um-fig"><figcaption class="ib-cap">At rest, the popover closed: no hover, no tooltip</figcaption><div class="um-stage" style="--h:90px"><div class="ib-statusbar"><span class="um-path">~/workspace/perso/iboard/issues</span><span class="um-right"><button class="ib-usage-trigger" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Today $28.61, this week $142.30 · Claude.ai 62% of the week used, over pace, resets in 3d · Copilot 31% of the month used, resets in 19d"><span class="ib-usage-trigger__spend">$28.61</span><span class="ib-usage-trigger__meter"><svg class="ib-ring is-warn" viewBox="0 0 14 14" aria-hidden="true" style="--p:0.62"><circle class="ib-ring__track" cx="7" cy="7" r="5.25" pathLength="100"/><circle class="ib-ring__arc" cx="7" cy="7" r="5.25" pathLength="100"/></svg><span class="ib-usage-trigger__fig">62%</span></span></button></span></div></div></figure>
 </div>
 </body>
 </html>

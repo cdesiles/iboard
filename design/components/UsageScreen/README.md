@@ -2,7 +2,7 @@
 
 The full view of what the AI providers cost and consume, one provider at a time. **Tools › Usage…** opens it as a screen of its own, like Stats: the header bar stays, the board is not behind it.
 
-It completes the UsageMeter and does not repeat it. The status-bar pill and its popover answer one question about now: will I make it to the reset? This screen answers the other: how much did each provider burn, day by day, over the last week, month or quarter, and on what. The popover keeps no chart and no model split; its foot links here (see UsageMeter).
+It completes the UsageMeter and does not repeat it. The status-bar trigger and its popover answer two questions about now: what did the board spend today, and will I make it to the reset? This screen answers the other: how much did each provider burn, day by day, over the last week, month or quarter, and on what. The popover keeps no chart and no model split; its foot links here (see UsageMeter).
 
 ## Layout
 
@@ -10,7 +10,7 @@ Top to bottom, on `bg`:
 
 1. **Header bar**: **Board** (`esc`), a `line` divider, the crumb `Usage`, then at the right `Read 14:02 · from the usage log` in `meta`, **Refresh**, and the bell last. Same bar and height as every screen.
 2. **Rail** (left, `208pt`, a `line` rule on its right) and **main** (the rest, `space-6` padding, `space-5` between blocks).
-3. **Status bar** as everywhere. The usage pill shows only when a provider reports a plan window.
+3. **Status bar** as everywhere. The usage trigger carries the board's spend, and a plan window when a provider reports one.
 
 ### The rail
 
