@@ -1,0 +1,109 @@
+<!-- @dsCard group="Screens" height=1500 subtitle="The Reader's notice when the open issue has moved or is gone: a picture, one sentence, and the way to follow it" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>IssueGone</title>
+<style>
+.ig-page{display:flex;flex-direction:column;gap:var(--space-6)}
+.ig-demo{display:flex;flex-direction:column;gap:var(--space-3);min-width:0}
+.ig-stage{display:flex;justify-content:center;padding:var(--space-6) var(--space-5);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-md);color:var(--ink)}
+.ig-split{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:var(--space-5);align-items:start;padding:var(--space-5);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-md);color:var(--ink)}
+.ig-split .ib-alog{height:100%;min-height:0}
+.ig-pane{display:flex;justify-content:center;min-width:0}
+.ig-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-6);align-items:start}
+</style>
+</head>
+<body>
+<div class="ib-pad ig-page">
+
+<div class="ig-demo">
+  <span class="ib-cap">Moved to Done, with the agent log still open beside it: the case this was made for</span>
+  <div class="ig-split">
+    <div class="ig-pane">
+    <section class="ib-gone" aria-labelledby="ig1">
+      <img class="ib-gone__art ib-gone__art--light" src="files/issue-moved-light.jpg" alt="">
+      <img class="ib-gone__art ib-gone__art--dark" src="files/issue-moved-dark.jpg" alt="">
+      <div class="ib-gone__body">
+        <div class="ib-gone__text">
+          <h2 class="ib-gone__title" id="ig1"><svg class="ib-sico" style="color:var(--status-done)" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="currentColor"/><path d="M4.4 7.1l1.8 1.8 3.4-3.6" style="stroke:var(--surface)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Moved to Done</h2>
+          <p class="ib-gone__lede"><b>release-mechanism-based-on-git-tag.md</b> moved from doing/ to done/.</p>
+          <p class="ib-gone__note">Its agent log is still open beside it.</p>
+        </div>
+        <div class="ib-gone__actions">
+          <button class="ib-btn ib-btn--primary">Open in Done <span class="ib-btn__key">↩</span></button>
+          <button class="ib-btn">Back to board <span class="ib-btn__key">esc</span></button>
+        </div>
+      </div>
+    </section>
+    </div>
+    <section class="ib-alog" aria-label="Agent log of release-mechanism-based-on-git-tag.md" style="height:420px">
+      <header class="ib-alog__head"><span class="ib-alog__title">Agent log of release-mechanism-based-on-git-tag.md</span><span class="ib-alog__detail">not running</span></header>
+      <div class="ib-alog__body" tabindex="0">
+        <section class="ib-run" aria-label="Run 2, today 14:02, opencode">
+          <div class="ib-run__head"><span class="ib-run__n">Run 2</span><span class="ib-run__meta">today 14:02 · <b>opencode</b></span></div>
+          <div class="ib-msg"><p>The tag path is in and <code>cargo test --release</code> passes. v-prefixed tags still resolve; the changelog is untouched.</p></div>
+          <div class="ib-out"><svg class="ib-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg><span class="ib-out__label">Finished</span><span class="ib-out__time">in 3:12</span></div>
+        </section>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="ig-pair">
+  <div class="ig-demo">
+    <span class="ib-cap">Not found in any column</span>
+    <div class="ig-stage">
+      <section class="ib-gone" aria-labelledby="ig2">
+        <img class="ib-gone__art ib-gone__art--light" src="files/issue-gone-light.jpg" alt="">
+        <img class="ib-gone__art ib-gone__art--dark" src="files/issue-gone-dark.jpg" alt="">
+        <div class="ib-gone__body">
+          <div class="ib-gone__text">
+            <h2 class="ib-gone__title" id="ig2">Issue not found</h2>
+            <p class="ib-gone__lede"><b>release-mechanism-based-on-git-tag.md</b> is no longer in any column. It was deleted, or renamed outside iboard.</p>
+          </div>
+          <div class="ib-gone__actions"><button class="ib-btn ib-btn--primary">Back to board <span class="ib-btn__key">esc</span></button></div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="ig-demo">
+    <span class="ib-cap">Moved to another column than Done: no picture, that column's icon</span>
+    <div class="ig-stage">
+      <section class="ib-gone" aria-labelledby="ig3">
+        <div class="ib-gone__body">
+          <div class="ib-gone__text">
+            <h2 class="ib-gone__title" id="ig3"><svg class="ib-sico" style="color:var(--status-ready)" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="0 2.749" aria-hidden="true"><circle cx="7" cy="7" r="5.25"/></svg>Moved to Ready</h2>
+            <p class="ib-gone__lede"><b>release-mechanism-based-on-git-tag.md</b> moved from todo/ to ready/.</p>
+          </div>
+          <div class="ib-gone__actions">
+            <button class="ib-btn ib-btn--primary">Open in Ready <span class="ib-btn__key">↩</span></button>
+            <button class="ib-btn">Back to board <span class="ib-btn__key">esc</span></button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="ig-demo">
+  <span class="ib-cap">Dark: the same notice with the picture recoloured for the theme</span>
+  <div class="ig-stage" data-theme="dark">
+    <section class="ib-gone" aria-labelledby="ig4">
+      <img class="ib-gone__art ib-gone__art--light" src="files/issue-moved-light.jpg" alt="">
+      <img class="ib-gone__art ib-gone__art--dark" src="files/issue-moved-dark.jpg" alt="">
+      <div class="ib-gone__body">
+        <div class="ib-gone__text">
+          <h2 class="ib-gone__title" id="ig4"><svg class="ib-sico" style="color:var(--status-done)" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="currentColor"/><path d="M4.4 7.1l1.8 1.8 3.4-3.6" style="stroke:var(--surface)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Moved to Done</h2>
+          <p class="ib-gone__lede"><b>release-mechanism-based-on-git-tag.md</b> moved from doing/ to done/.</p>
+        </div>
+        <div class="ib-gone__actions">
+          <button class="ib-btn ib-btn--primary">Open in Done <span class="ib-btn__key">↩</span></button>
+          <button class="ib-btn">Back to board <span class="ib-btn__key">esc</span></button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

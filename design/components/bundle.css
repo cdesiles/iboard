@@ -1127,3 +1127,18 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans)
 .ib-usage__link{margin:0;padding:0;border:0;background:none;font:var(--text-meta);color:var(--accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .ib-usage__link:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--radius-sm)}
 @media (prefers-reduced-motion:reduce){.ib-usage__chev{transition:none}}
+
+/* IssueGone: the Reader's notice when the open issue's file is no longer at its path */
+.ib-gone{display:flex;flex-direction:column;width:100%;max-width:var(--reader-max);box-sizing:border-box;overflow:hidden;background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--radius-md)}
+.ib-gone__art{display:block;width:100%;aspect-ratio:7/2;object-fit:cover;border-bottom:1px solid var(--line-soft)}
+.ib-gone__art--dark{display:none}
+[data-theme="dark"] .ib-gone__art--light{display:none}
+[data-theme="dark"] .ib-gone__art--dark{display:block}
+.ib-gone__body{display:flex;flex-direction:column;gap:var(--space-5);padding:var(--space-6) var(--space-7) var(--space-7)}
+.ib-gone__text{display:flex;flex-direction:column;gap:var(--space-3);min-width:0}
+.ib-gone__title{display:flex;align-items:center;gap:var(--space-3);margin:0;font:var(--text-read-h2);color:var(--ink)}
+.ib-gone__lede,.ib-gone__note{margin:0;max-width:var(--read-measure);font:var(--text-ui-body);color:var(--ink-muted)}
+.ib-gone__lede b{font-weight:500;color:var(--ink);overflow-wrap:anywhere}
+.ib-gone__note{font:var(--text-meta)}
+.ib-gone__actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3)}
+.ib-gone__actions .ib-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}

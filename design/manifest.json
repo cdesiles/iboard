@@ -21,6 +21,7 @@
     "components/HeaderBar/README.md",
     "components/Icons/README.md",
     "components/IssueCard/README.md",
+    "components/IssueGone/README.md",
     "components/Kbd/README.md",
     "components/Label/README.md",
     "components/LabelPicker/README.md",
@@ -146,6 +147,11 @@
       "name": "IssueCard",
       "group": "Board",
       "summary": "An issue on the board: its labels, the file's first heading as title, its first paragraph as summary."
+    },
+    {
+      "name": "IssueGone",
+      "group": "Screens",
+      "summary": "What the Reader shows when the open issue is no longer at its path: it names where the file moved, offers one button to follow it, and keeps the agent log beside it."
     },
     {
       "name": "Kbd",
